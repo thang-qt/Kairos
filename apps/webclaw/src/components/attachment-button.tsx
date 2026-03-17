@@ -267,6 +267,7 @@ export function AttachmentButton({
         aria-hidden="true"
       />
       <Button
+        {...buttonProps}
         variant={buttonProps?.variant ?? 'ghost'}
         size={buttonProps?.size ?? 'icon-sm'}
         onClick={(event) => {
@@ -277,7 +278,6 @@ export function AttachmentButton({
         className={cn('rounded-full', buttonProps?.className)}
         aria-label="Attach image"
         type={buttonProps?.type ?? 'button'}
-        {...buttonProps}
       >
         <HugeiconsIcon icon={PlusSignIcon} size={20} strokeWidth={1.5} />
       </Button>
