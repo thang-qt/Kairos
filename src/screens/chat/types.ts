@@ -74,10 +74,3 @@ export type SessionMeta = {
   totalTokens?: number
   contextTokens?: number
 }
-
-export type PathsPayload = {
-  agentId: string
-  stateDir: string
-  sessionsDir: string
-  storePath: string
-}

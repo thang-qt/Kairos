@@ -2,16 +2,25 @@
 
 ## Current Focus
 
-Extract the `apps/webclaw` app into the repository root as a standalone app, remove the landing page and other redundant monorepo pieces, and rename the app from WebClaw to Kairos.
+Run Kairos on a generic in-browser chat backend with mock conversation and streaming behavior, with the old OpenClaw server transport removed.
 
 ## Status
 
 - Completed
 
+## Completed This Step
+
+- Completed:
+  Add a generic chat backend interface and persisted mock frontend backend for conversations, history, send, rename, delete, and streaming updates.
+- Completed:
+  Refactor the chat hooks and screen to consume the backend interface instead of `/api/*` routes and the OpenClaw gateway.
+- Completed:
+  Remove the leftover OpenClaw-only routes/server code and clean up generic chat copy in the UI.
+
 ## Next Task
 
-Introduce a generic chat backend boundary for Kairos, then replace the current OpenClaw-specific app calls incrementally with a pluggable frontend implementation starting with mock conversation, message, and streaming behavior.
+Convert Kairos from the TanStack Start server runtime to a plain frontend build oriented around static assets, then add a real HTTP adapter shaped for a future Go `net/http` service that can serve the built assets and power chat over standard HTTP and streaming endpoints.
 
 ## Planned Follow-Up
 
-After the backend boundary and mock frontend backend are in place, add a real HTTP adapter shaped for a future Go `net/http` service that can serve the compiled frontend assets and power the chat API over standard HTTP and streaming endpoints.
+After the static frontend conversion is done, add a selectable HTTP backend adapter while keeping the mock backend available for local UI development.

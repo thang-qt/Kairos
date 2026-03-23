@@ -7,7 +7,7 @@ import {
 } from '../chat-queries'
 import { clearPendingSendForSession, resetPendingSend } from '../pending-send'
 import { clearSessionDeleted, markSessionDeleted } from '../session-tombstones'
-import { readError } from '../utils'
+import { getChatBackend } from '@/lib/chat-backend'
 
 export type DeleteSessionResult = {
   deleteSession: (
@@ -30,13 +30,11 @@ export function useDeleteSession(): DeleteSessionResult {
       friendlyId: string
       isActive: boolean
     }) {
-      const query = new URLSearchParams()
-      if (payload.sessionKey) query.set('sessionKey', payload.sessionKey)
-      if (payload.friendlyId) query.set('friendlyId', payload.friendlyId)
-      const res = await fetch(`/api/sessions?${query.toString()}`, {
-        method: 'DELETE',
+      const backend = getChatBackend()
+      await backend.deleteConversation({
+        sessionKey: payload.sessionKey,
+        friendlyId: payload.friendlyId,
       })
-      if (!res.ok) throw new Error(await readError(res))
       return payload
     },
     onMutate: async function onMutate(payload) {

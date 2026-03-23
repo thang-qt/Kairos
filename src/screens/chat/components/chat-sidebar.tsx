@@ -52,13 +52,8 @@ function ChatSidebarComponent({
   const {
     settingsOpen,
     setSettingsOpen,
-    pathsLoading,
-    pathsError,
-    paths,
     handleOpenSettings,
     closeSettings,
-    copySessionsDir,
-    copyStorePath,
   } = useChatSettings()
   const { deleteSession } = useDeleteSession()
   const { renameSession } = useRenameSession()
@@ -349,12 +344,7 @@ function ChatSidebarComponent({
       <SettingsDialog
         open={settingsOpen}
         onOpenChange={setSettingsOpen}
-        pathsLoading={pathsLoading}
-        pathsError={pathsError}
-        paths={paths}
         onClose={closeSettings}
-        onCopySessionsDir={copySessionsDir}
-        onCopyStorePath={copyStorePath}
       />
 
       <SessionRenameDialog

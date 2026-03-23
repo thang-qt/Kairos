@@ -1,19 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Navigate, useNavigate } from '@tanstack/react-router'
+import { useNavigate } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 
-import {
-  deriveFriendlyIdFromKey,
-  isMissingGatewayAuth,
-  isSessionNotFound,
-  readError,
-} from './utils'
+import { isSessionNotFound } from './utils'
 import { createOptimisticMessage } from './chat-screen-utils'
 import {
   appendHistoryMessage,
   chatQueryKeys,
   clearHistoryMessages,
-  fetchGatewayStatus,
+  fetchChatStatus,
   removeHistoryMessageByClientId,
   updateHistoryMessageByClientId,
   updateSessionLastMessage,
@@ -23,7 +18,7 @@ import { ChatSidebar } from './components/chat-sidebar'
 import { ChatHeader } from './components/chat-header'
 import { ChatMessageList } from './components/chat-message-list'
 import { ChatComposer } from './components/chat-composer'
-import { GatewayStatusMessage } from './components/gateway-status-message'
+import { BackendStatusMessage } from './components/backend-status-message'
 import {
   hasPendingGeneration,
   hasPendingSend,
@@ -39,13 +34,13 @@ import { useChatSessions } from './hooks/use-chat-sessions'
 import { useChatStream } from './hooks/use-chat-stream'
 import { useChatPendingSend } from './hooks/use-chat-pending-send'
 import { useChatGenerationGuard } from './hooks/use-chat-generation-guard'
-import { shouldRedirectToConnect } from './hooks/use-chat-error-state'
 import { useChatRedirect } from './hooks/use-chat-redirect'
 import type { AttachmentFile } from '@/components/attachment-button'
 import type { ChatComposerHelpers } from './components/chat-composer'
 import { useExport } from '@/hooks/use-export'
 import { useChatSettings } from '@/hooks/use-chat-settings'
 import { cn, randomUUID } from '@/lib/utils'
+import { getChatBackend } from '@/lib/chat-backend'
 
 type ChatScreenProps = {
   activeFriendlyId: string
@@ -123,25 +118,25 @@ export function ChatScreen({
     },
     staleTime: Infinity,
   })
-  const gatewayStatusQuery = useQuery({
-    queryKey: ['gateway', 'status'],
-    queryFn: fetchGatewayStatus,
+  const backendStatusQuery = useQuery({
+    queryKey: ['chat-backend', 'status'],
+    queryFn: fetchChatStatus,
     retry: false,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
     refetchOnMount: 'always',
   })
-  const gatewayStatusMountRef = useRef(Date.now())
-  const gatewayStatusError =
-    gatewayStatusQuery.error instanceof Error
-      ? gatewayStatusQuery.error.message
-      : gatewayStatusQuery.data && !gatewayStatusQuery.data.ok
-        ? gatewayStatusQuery.data.error || 'Gateway unavailable'
+  const backendStatusMountRef = useRef(Date.now())
+  const backendStatusError =
+    backendStatusQuery.error instanceof Error
+      ? backendStatusQuery.error.message
+      : backendStatusQuery.data && !backendStatusQuery.data.ok
+        ? backendStatusQuery.data.detail || 'Chat backend unavailable'
         : null
-  const gatewayError = gatewayStatusError ?? sessionsError ?? historyError
-  const handleGatewayRefetch = useCallback(() => {
-    void gatewayStatusQuery.refetch()
-  }, [gatewayStatusQuery])
+  const backendError = backendStatusError ?? sessionsError ?? historyError
+  const handleBackendRefetch = useCallback(() => {
+    void backendStatusQuery.refetch()
+  }, [backendStatusQuery])
   const isSidebarCollapsed = uiQuery.data.isSidebarCollapsed
   const handleActiveSessionDelete = useCallback(() => {
     setIsRedirecting(true)
@@ -167,7 +162,7 @@ export function ChatScreen({
   const hideUi = shouldRedirectToNew || isRedirecting
 
   const finishRun = useCallback(
-    (runId: string) => {
+    function finishRun(runId: string) {
       if (!runId) return
       const timer = pendingRunTimersRef.current.get(runId)
       if (typeof timer === 'number') {
@@ -180,11 +175,11 @@ export function ChatScreen({
         setWaitingForResponse(false)
       }
     },
-    [setWaitingForResponse],
+    [],
   )
 
   const startRun = useCallback(
-    (runId: string) => {
+    function startRun(runId: string) {
       if (!runId) return
       pendingRunIdsRef.current.add(runId)
       const existingTimer = pendingRunTimersRef.current.get(runId)
@@ -207,7 +202,7 @@ export function ChatScreen({
     [refreshHistory],
   )
 
-  const finishAllRuns = useCallback(() => {
+  const finishAllRuns = useCallback(function finishAllRuns() {
     for (const [, timer] of pendingRunTimersRef.current) {
       window.clearTimeout(timer)
     }
@@ -218,7 +213,7 @@ export function ChatScreen({
   }, [])
 
   useEffect(() => {
-    return () => {
+    return function cleanupRuns() {
       finishAllRuns()
     }
   }, [finishAllRuns])
@@ -256,42 +251,30 @@ export function ChatScreen({
     setWaitingForResponse(true)
     setPinToTop(true)
 
-    const attachmentsPayload = attachments?.map((a) => ({
-      mimeType: a.file.type,
-      content: a.base64,
-    }))
+    const attachmentsPayload = attachments
+      ?.filter((attachment) => Boolean(attachment.base64))
+      .map((attachment) => ({
+        mimeType: attachment.file.type,
+        content: attachment.base64 as string,
+      }))
 
-    fetch('/api/send', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
+    const backend = getChatBackend()
+    void backend
+      .sendMessage({
         sessionKey,
         friendlyId,
         message: body,
         thinking: settings.thinkingLevel,
         idempotencyKey: randomUUID(),
         attachments: attachmentsPayload,
-      }),
-    })
-      .then(async (res) => {
-        if (!res.ok) throw new Error(await readError(res))
-        const payload = (await res.json().catch(() => ({}))) as {
-          runId?: string
-        }
-        if (
-          typeof payload.runId === 'string' &&
-          payload.runId.trim().length > 0
-        ) {
+      })
+      .then((payload) => {
+        if (typeof payload.runId === 'string' && payload.runId.trim().length > 0) {
           startRun(payload.runId.trim())
         }
         refreshHistory()
       })
       .catch((err) => {
-        const messageText = err instanceof Error ? err.message : String(err)
-        if (isMissingGatewayAuth(messageText)) {
-          navigate({ to: '/connect', replace: true })
-          return
-        }
         if (optimisticClientId) {
           updateHistoryMessageByClientId(
             queryClient,
@@ -306,6 +289,7 @@ export function ChatScreen({
         setPendingGeneration(false)
         setWaitingForResponse(false)
         setPinToTop(false)
+        throw err
       })
       .finally(() => {
         setSending(false)
@@ -315,30 +299,12 @@ export function ChatScreen({
   const createSessionForMessage = useCallback(async () => {
     setCreatingSession(true)
     try {
-      const res = await fetch('/api/sessions', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({}),
-      })
-      if (!res.ok) throw new Error(await readError(res))
-
-      const data = (await res.json()) as {
-        sessionKey?: string
-        friendlyId?: string
-      }
-
-      const sessionKey =
-        typeof data.sessionKey === 'string' ? data.sessionKey : ''
-      const friendlyId =
-        typeof data.friendlyId === 'string' && data.friendlyId.trim().length > 0
-          ? data.friendlyId.trim()
-          : deriveFriendlyIdFromKey(sessionKey)
-
+      const backend = getChatBackend()
+      const { sessionKey, friendlyId } = await backend.createConversation()
       if (!sessionKey || !friendlyId) {
-        throw new Error('Invalid session response')
+        throw new Error('Invalid conversation response')
       }
-
-      queryClient.invalidateQueries({ queryKey: chatQueryKeys.sessions })
+      void queryClient.invalidateQueries({ queryKey: chatQueryKeys.sessions })
       return { sessionKey, friendlyId }
     } finally {
       setCreatingSession(false)
@@ -346,10 +312,11 @@ export function ChatScreen({
   }, [queryClient])
 
   const send = useCallback(
-    (body: string, helpers: ChatComposerHelpers) => {
+    function send(body: string, helpers: ChatComposerHelpers) {
       const attachments = helpers.attachments
-      if (body.length === 0 && (!attachments || attachments.length === 0))
+      if (body.length === 0 && (!attachments || attachments.length === 0)) {
         return
+      }
       helpers.reset()
 
       if (isNewChat) {
@@ -451,31 +418,20 @@ export function ChatScreen({
   }, [queryClient])
 
   const historyLoading = historyQuery.isLoading || isRedirecting
-  const showGatewayDown = Boolean(gatewayStatusError)
-  const showGatewayNotice =
-    showGatewayDown &&
-    gatewayStatusQuery.errorUpdatedAt > gatewayStatusMountRef.current
-  const redirectToConnect = shouldRedirectToConnect({
-    isRedirecting,
-    shouldRedirectToNew,
-    sessionsReady: sessionsQuery.isSuccess,
-    activeExists,
-    sessionsError,
-    historyError,
-    gatewayStatusError,
-  })
+  const showBackendNotice =
+    Boolean(backendStatusError) &&
+    backendStatusQuery.errorUpdatedAt > backendStatusMountRef.current
   const historyEmpty = !historyLoading && displayMessages.length === 0
-  const gatewayNotice = useMemo(() => {
-    if (!showGatewayNotice) return null
-    if (!gatewayError) return null
+  const backendNotice = useMemo(() => {
+    if (!showBackendNotice || !backendError) return null
     return (
-      <GatewayStatusMessage
+      <BackendStatusMessage
         state="error"
-        error={gatewayError}
-        onRetry={handleGatewayRefetch}
+        error={backendError}
+        onRetry={handleBackendRefetch}
       />
     )
-  }, [gatewayError, handleGatewayRefetch, showGatewayNotice])
+  }, [backendError, handleBackendRefetch, showBackendNotice])
 
   useChatStream({
     activeFriendlyId,
@@ -558,10 +514,6 @@ export function ChatScreen({
     />
   )
 
-  if (redirectToConnect) {
-    return <Navigate to="/connect" replace />
-  }
-
   return (
     <div className="h-screen bg-surface text-primary-900">
       <div
@@ -571,21 +523,19 @@ export function ChatScreen({
         )}
       >
         {hideUi ? null : isMobile ? (
-          <>
-            <div
-              className={cn(
-                'fixed inset-y-0 left-0 z-50 w-[300px] transition-transform duration-200',
-                isSidebarCollapsed ? '-translate-x-full' : 'translate-x-0',
-              )}
-            >
-              {sidebar}
-            </div>
-          </>
+          <div
+            className={cn(
+              'fixed inset-y-0 left-0 z-50 w-[300px] transition-transform duration-200',
+              isSidebarCollapsed ? '-translate-x-full' : 'translate-x-0',
+            )}
+          >
+            {sidebar}
+          </div>
         ) : (
           sidebar
         )}
 
-        <main className="flex flex-col h-full min-h-0" ref={mainRef}>
+        <main className="flex h-full min-h-0 flex-col" ref={mainRef}>
           <ChatHeader
             activeTitle={activeTitle}
             wrapperRef={headerRef}
@@ -604,7 +554,7 @@ export function ChatScreen({
                 messages={displayMessages}
                 loading={historyLoading}
                 empty={historyEmpty}
-                notice={gatewayNotice}
+                notice={backendNotice}
                 noticePosition="end"
                 waitingForResponse={waitingForResponse}
                 sessionKey={activeCanonicalKey}

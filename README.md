@@ -15,7 +15,7 @@ pnpm lint
 ## Current Direction
 
 The current extraction keeps the existing app structure while moving it to the repository root.
-Next, the OpenClaw-specific backend and product flows will be replaced incrementally with a generic AI chat architecture backed by a pluggable frontend adapter.
+Kairos now runs on a generic mock chat backend in the frontend. The next step is to swap the remaining app runtime toward a static asset build and add a real HTTP adapter for a future Go `net/http` service.
 
 ## License
 

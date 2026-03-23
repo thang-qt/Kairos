@@ -1,16 +1,12 @@
-import { getMessageTimestamp, normalizeSessions, readError } from './utils'
+import { getMessageTimestamp, normalizeSessions } from './utils'
 import type { QueryClient } from '@tanstack/react-query'
 import type {
   GatewayMessage,
   HistoryResponse,
-  SessionListResponse,
   SessionMeta,
 } from './types'
-
-type GatewayStatusResponse = {
-  ok: boolean
-  error?: string
-}
+import type { ChatStatus } from '@/lib/chat-backend'
+import { getChatBackend } from '@/lib/chat-backend'
 
 export const chatQueryKeys = {
   sessions: ['chat', 'sessions'] as const,
@@ -20,40 +16,22 @@ export const chatQueryKeys = {
 } as const
 
 export async function fetchSessions(): Promise<Array<SessionMeta>> {
-  const res = await fetch('/api/sessions')
-  if (!res.ok) throw new Error(await readError(res))
-  const data = (await res.json()) as SessionListResponse
-  return normalizeSessions(data.sessions)
+  const backend = getChatBackend()
+  const sessions = await backend.listConversations()
+  return normalizeSessions(sessions)
 }
 
 export async function fetchHistory(payload: {
   sessionKey: string
   friendlyId: string
 }): Promise<HistoryResponse> {
-  const query = new URLSearchParams({ limit: '200' })
-  if (payload.sessionKey) query.set('sessionKey', payload.sessionKey)
-  if (payload.friendlyId) query.set('friendlyId', payload.friendlyId)
-  const res = await fetch(`/api/history?${query.toString()}`)
-  if (!res.ok) throw new Error(await readError(res))
-  return (await res.json()) as HistoryResponse
+  const backend = getChatBackend()
+  return backend.getConversationHistory(payload)
 }
 
-export async function fetchGatewayStatus(): Promise<GatewayStatusResponse> {
-  const controller = new AbortController()
-  const timeout = window.setTimeout(() => controller.abort(), 2500)
-
-  try {
-    const res = await fetch('/api/ping', { signal: controller.signal })
-    if (!res.ok) throw new Error(await readError(res))
-    return (await res.json()) as GatewayStatusResponse
-  } catch (err) {
-    if (err instanceof DOMException && err.name === 'AbortError') {
-      throw new Error('Gateway check timed out')
-    }
-    throw err
-  } finally {
-    window.clearTimeout(timeout)
-  }
+export async function fetchChatStatus(): Promise<ChatStatus> {
+  const backend = getChatBackend()
+  return backend.getStatus()
 }
 
 export function updateHistoryMessages(

@@ -1,7 +1,7 @@
 import { useCallback, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { chatQueryKeys } from '../chat-queries'
-import { readError } from '../utils'
+import { getChatBackend } from '@/lib/chat-backend'
 
 export type RenameSessionResult = {
   renameSession: (sessionKey: string, newTitle: string) => Promise<void>
@@ -19,15 +19,11 @@ export function useRenameSession(): RenameSessionResult {
       sessionKey: string
       newTitle: string
     }) {
-      const res = await fetch('/api/sessions', {
-        method: 'PATCH',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          sessionKey: payload.sessionKey,
-          label: payload.newTitle,
-        }),
+      const backend = getChatBackend()
+      await backend.renameConversation({
+        sessionKey: payload.sessionKey,
+        label: payload.newTitle,
       })
-      if (!res.ok) throw new Error(await readError(res))
       return payload
     },
     onMutate: async function onMutate(payload) {

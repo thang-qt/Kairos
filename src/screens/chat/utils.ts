@@ -109,28 +109,6 @@ export function normalizeSessions(
   })
 }
 
-export async function readError(res: Response): Promise<string> {
-  try {
-    const data = await res.json()
-    if (data?.error) return String(data.error)
-    if (data?.message) return String(data.message)
-    return JSON.stringify(data)
-  } catch {
-    try {
-      return await res.text()
-    } catch {
-      return res.statusText || 'Request failed'
-    }
-  }
-}
-
-export const missingGatewayAuthMessage =
-  'Missing gateway auth. Set CLAWDBOT_GATEWAY_TOKEN (recommended) or CLAWDBOT_GATEWAY_PASSWORD in the server environment.'
-
-export function isMissingGatewayAuth(message: string): boolean {
-  return message.includes(missingGatewayAuthMessage)
-}
-
 export function isSessionNotFound(message: string): boolean {
   if (!message) return false
   const normalized = message.toLowerCase()

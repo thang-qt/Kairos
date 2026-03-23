@@ -3,8 +3,7 @@ import { createFileRoute, redirect } from '@tanstack/react-router'
 export const Route = createFileRoute('/')({
   beforeLoad: () => {
     throw redirect({
-      to: '/chat/$sessionKey',
-      params: { sessionKey: 'main' },
+      to: '/new',
       replace: true,
     })
   },

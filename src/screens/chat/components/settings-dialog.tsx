@@ -5,7 +5,6 @@ import {
   Moon01Icon,
   Sun01Icon,
 } from '@hugeicons/core-free-icons'
-import type { PathsPayload } from '../types'
 import type { ThemeMode, ThinkingLevel } from '@/hooks/use-chat-settings'
 import {
   DialogClose,
@@ -56,12 +55,7 @@ function SettingsRow({ label, description, children }: SettingsRowProps) {
 type SettingsDialogProps = {
   open: boolean
   onOpenChange: (open: boolean) => void
-  pathsLoading: boolean
-  pathsError: string | null
-  paths: PathsPayload | null
   onClose: () => void
-  onCopySessionsDir: () => void
-  onCopyStorePath: () => void
 }
 
 export function SettingsDialog({
@@ -124,7 +118,7 @@ export function SettingsDialog({
             <SettingsRow label="Status">
               <span className="flex items-center gap-1.5 text-sm text-green-600">
                 <span className="size-2 rounded-full bg-green-500" />
-                Connected
+                Mock backend active
               </span>
             </SettingsRow>
           </SettingsSection>
@@ -205,7 +199,7 @@ export function SettingsDialog({
                 rel="noopener noreferrer"
                 className="text-sm text-primary-600 hover:text-primary-900 hover:underline"
               >
-                Website
+                HTTP adapter soon
               </a>
               <a
                 href="#"
@@ -213,15 +207,7 @@ export function SettingsDialog({
                 rel="noopener noreferrer"
                 className="text-sm text-primary-600 hover:text-primary-900 hover:underline"
               >
-                GitHub
-              </a>
-              <a
-                href="https://docs.openclaw.ai"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-sm text-primary-600 hover:text-primary-900 hover:underline"
-              >
-                OpenClaw docs
+                Mock conversations
               </a>
             </div>
           </SettingsSection>
