@@ -5,6 +5,7 @@ import type {
   ChatCreateConversationInput,
   ChatDeleteConversationInput,
   ChatEvent,
+  ChatForkConversationInput,
   ChatHistoryInput,
   ChatRenameConversationInput,
   ChatSendMessageInput,
@@ -23,6 +24,10 @@ type StoredConversation = {
   totalTokens?: number
   contextTokens?: number
   messages: Array<GatewayMessage>
+  parentSessionKey?: string
+  parentFriendlyId?: string
+  forkPointMessageId?: string
+  forkDepth?: number
 }
 
 type StoredState = {
@@ -113,6 +118,20 @@ function normalizeConversation(value: StoredConversation): StoredConversation {
         ? value.contextTokens
         : DEFAULT_CONTEXT_TOKENS,
     messages,
+    parentSessionKey:
+      typeof value.parentSessionKey === 'string'
+        ? value.parentSessionKey
+        : undefined,
+    parentFriendlyId:
+      typeof value.parentFriendlyId === 'string'
+        ? value.parentFriendlyId
+        : undefined,
+    forkPointMessageId:
+      typeof value.forkPointMessageId === 'string'
+        ? value.forkPointMessageId
+        : undefined,
+    forkDepth:
+      typeof value.forkDepth === 'number' ? value.forkDepth : undefined,
   }
 }
 
@@ -134,6 +153,10 @@ function toSessionMeta(conversation: StoredConversation): SessionMeta {
     lastMessage: conversation.lastMessage ?? null,
     totalTokens: conversation.totalTokens,
     contextTokens: conversation.contextTokens ?? DEFAULT_CONTEXT_TOKENS,
+    parentSessionKey: conversation.parentSessionKey,
+    parentFriendlyId: conversation.parentFriendlyId,
+    forkPointMessageId: conversation.forkPointMessageId,
+    forkDepth: conversation.forkDepth,
   }
 }
 
@@ -226,7 +249,7 @@ function createUserMessage(
   prompt: string,
   attachments?: Array<ChatAttachmentPayload>,
 ): GatewayMessage {
-  const content: Array<Record<string, unknown>> = []
+  const content: Array<any> = []
 
   if (Array.isArray(attachments)) {
     for (const attachment of attachments) {
@@ -347,7 +370,7 @@ function scheduleRun(input: {
     }, 120),
   )
 
-  answerChunks.forEach((chunk, index) => {
+  answerChunks.forEach((_chunk, index) => {
     const partialText = answerChunks.slice(0, index + 1).join('')
     timers.push(
       window.setTimeout(() => {
@@ -563,6 +586,61 @@ export function createMockChatBackend(): ChatBackend {
       return function unsubscribe() {
         streamSubscribers.delete(subscription)
       }
+    },
+    forkConversation(input: ChatForkConversationInput) {
+      const { conversation: source } = requireConversation({
+        sessionKey: input.sourceSessionKey,
+        friendlyId: input.sourceFriendlyId,
+      })
+
+      // Find the fork point message index
+      const forkIndex = source.messages.findIndex(
+        (msg) => (msg as any).id === input.forkAtMessageId,
+      )
+      if (forkIndex < 0) {
+        throw new Error('Fork point message not found')
+      }
+
+      // Copy messages up to and including the fork point
+      const copiedMessages = source.messages
+        .slice(0, forkIndex + 1)
+        .map((msg) => ({ ...msg }))
+
+      const key = randomUUID()
+      const friendlyId = randomUUID().slice(0, 8)
+      const now = Date.now()
+      const parentDepth = source.forkDepth ?? 0
+
+      const forkedConversation: StoredConversation = normalizeConversation({
+        key,
+        friendlyId,
+        title: undefined,
+        label: undefined,
+        derivedTitle: source.derivedTitle
+          ? `Fork of ${source.derivedTitle}`
+          : undefined,
+        updatedAt: now,
+        lastMessage: copiedMessages.at(-1) ?? null,
+        totalTokens: source.totalTokens,
+        contextTokens: source.contextTokens ?? DEFAULT_CONTEXT_TOKENS,
+        messages: copiedMessages,
+        parentSessionKey: source.key,
+        parentFriendlyId: source.friendlyId,
+        forkPointMessageId: input.forkAtMessageId,
+        forkDepth: parentDepth + 1,
+      })
+
+      const state = loadState()
+      saveState(
+        sortState({
+          conversations: [forkedConversation, ...state.conversations],
+        }),
+      )
+
+      return Promise.resolve({
+        sessionKey: forkedConversation.key,
+        friendlyId: forkedConversation.friendlyId,
+      })
     },
   }
 }

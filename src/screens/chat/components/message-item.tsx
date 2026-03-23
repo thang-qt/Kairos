@@ -5,6 +5,7 @@ import {
   textFromMessage,
 } from '../utils'
 import { MessageActionsBar } from './message-actions-bar'
+import type { BranchNavigatorState } from './branch-inline-navigator'
 import type {
   GatewayMessage,
   MessageContent as MessageContentPart,
@@ -24,6 +25,9 @@ type MessageItemProps = {
   wrapperRef?: React.RefObject<HTMLDivElement | null>
   wrapperClassName?: string
   wrapperScrollMarginTop?: number
+  onFork?: (messageId: string) => void
+  branchState?: BranchNavigatorState
+  onSelectBranch?: (friendlyId: string) => void
 }
 
 function mapToolCallToToolPart(
@@ -244,6 +248,9 @@ function MessageItemComponent({
   wrapperRef,
   wrapperClassName,
   wrapperScrollMarginTop,
+  onFork,
+  branchState,
+  onSelectBranch,
 }: MessageItemProps) {
   const { settings } = useChatSettings()
   const role = message.role || 'assistant'
@@ -344,6 +351,13 @@ function MessageItemComponent({
           timestamp={timestamp}
           align="start"
           forceVisible={forceActionsVisible}
+          onFork={
+            onFork && (message as any).id
+              ? () => onFork((message as any).id)
+              : undefined
+          }
+          branchState={branchState}
+          onSelectBranch={onSelectBranch}
         />
       )}
 
@@ -371,6 +385,8 @@ function areMessagesEqual(
   if (prevProps.wrapperScrollMarginTop !== nextProps.wrapperScrollMarginTop) {
     return false
   }
+  if (prevProps.branchState !== nextProps.branchState) return false
+  if (prevProps.onSelectBranch !== nextProps.onSelectBranch) return false
   if (
     (prevProps.message.role || 'assistant') !==
     (nextProps.message.role || 'assistant')

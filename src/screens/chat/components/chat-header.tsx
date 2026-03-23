@@ -1,9 +1,15 @@
 import { memo } from 'react'
+import { Link } from '@tanstack/react-router'
 import { HugeiconsIcon } from '@hugeicons/react'
-import { SidebarLeft01Icon } from '@hugeicons/core-free-icons'
+import {
+  GitBranchIcon,
+  MoreVerticalIcon,
+  SidebarLeft01Icon,
+} from '@hugeicons/core-free-icons'
 import { ContextMeter } from './context-meter'
 import { Button } from '@/components/ui/button'
 import { ExportMenu } from '@/components/export-menu'
+import { cn } from '@/lib/utils'
 
 type ExportFormat = 'markdown' | 'json' | 'text'
 
@@ -17,6 +23,12 @@ type ChatHeaderProps = {
   onExport: (format: ExportFormat) => void
   exportDisabled?: boolean
   showExport?: boolean
+  forkedFrom?: {
+    friendlyId: string
+    title: string
+  }
+  onToggleRightSidebar?: () => void
+  rightSidebarOpen?: boolean
 }
 
 function ChatHeaderComponent({
@@ -29,6 +41,9 @@ function ChatHeaderComponent({
   onExport,
   exportDisabled = false,
   showExport = true,
+  forkedFrom,
+  onToggleRightSidebar,
+  rightSidebarOpen = false,
 }: ChatHeaderProps) {
   return (
     <div
@@ -46,14 +61,40 @@ function ChatHeaderComponent({
           <HugeiconsIcon icon={SidebarLeft01Icon} size={18} strokeWidth={1.6} />
         </Button>
       ) : null}
-      <div className="flex-1 min-w-0 text-sm font-medium truncate">
-        {activeTitle}
+      <div className="flex-1 min-w-0 flex items-center gap-2">
+        <span className="text-sm font-medium truncate">
+          {activeTitle}
+        </span>
+        {forkedFrom ? (
+          <Link
+            to="/chat/$sessionKey"
+            params={{ sessionKey: forkedFrom.friendlyId }}
+            className="flex items-center gap-1 text-xs text-primary-500 hover:text-primary-700 shrink-0"
+          >
+            <HugeiconsIcon icon={GitBranchIcon} size={12} strokeWidth={1.8} />
+            <span className="truncate max-w-[120px]">{forkedFrom.title}</span>
+          </Link>
+        ) : null}
       </div>
       <div className="flex items-center gap-2 shrink-0">
         {showExport ? (
           <ExportMenu onExport={onExport} disabled={exportDisabled} />
         ) : null}
         <ContextMeter usedTokens={usedTokens} maxTokens={maxTokens} />
+        {onToggleRightSidebar ? (
+          <Button
+            size="icon-sm"
+            variant="ghost"
+            onClick={onToggleRightSidebar}
+            className={cn(
+              'text-primary-700 hover:bg-primary-100',
+              rightSidebarOpen && 'bg-primary-200 text-primary-900',
+            )}
+            aria-label="Toggle panel"
+          >
+            <HugeiconsIcon icon={MoreVerticalIcon} size={20} strokeWidth={1.5} />
+          </Button>
+        ) : null}
       </div>
     </div>
   )

@@ -51,6 +51,10 @@ export type SessionSummary = {
   friendlyId?: string
   totalTokens?: number
   contextTokens?: number
+  parentSessionKey?: string
+  parentFriendlyId?: string
+  forkPointMessageId?: string
+  forkDepth?: number
 }
 
 export type SessionListResponse = {
@@ -73,4 +77,8 @@ export type SessionMeta = {
   lastMessage?: GatewayMessage | null
   totalTokens?: number
   contextTokens?: number
+  parentSessionKey?: string
+  parentFriendlyId?: string
+  forkPointMessageId?: string
+  forkDepth?: number
 }

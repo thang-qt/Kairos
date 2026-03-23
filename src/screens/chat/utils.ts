@@ -105,6 +105,20 @@ export function normalizeSessions(
         typeof session.contextTokens === 'number'
           ? session.contextTokens
           : undefined,
+      parentSessionKey:
+        typeof session.parentSessionKey === 'string'
+          ? session.parentSessionKey
+          : undefined,
+      parentFriendlyId:
+        typeof session.parentFriendlyId === 'string'
+          ? session.parentFriendlyId
+          : undefined,
+      forkPointMessageId:
+        typeof session.forkPointMessageId === 'string'
+          ? session.forkPointMessageId
+          : undefined,
+      forkDepth:
+        typeof session.forkDepth === 'number' ? session.forkDepth : undefined,
     }
   })
 }

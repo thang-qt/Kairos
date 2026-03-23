@@ -2,6 +2,7 @@ import { memo, useLayoutEffect, useMemo, useRef } from 'react'
 import { getToolCallsFromMessage } from '../utils'
 import { MessageItem } from './message-item'
 import type { GatewayMessage } from '../types'
+import type { BranchNavigatorState } from './branch-inline-navigator'
 import {
   ChatContainerContent,
   ChatContainerRoot,
@@ -23,6 +24,13 @@ type ChatMessageListProps = {
   pinGroupMinHeight: number
   headerHeight: number
   contentStyle?: React.CSSProperties
+  onFork?: (messageId: string) => void
+  branchNavigators?: Map<string, BranchNavigatorState>
+  onSelectBranch?: (friendlyId: string) => void
+  onScrollTopChange?: (scrollTop: number) => void
+  restoreScrollTop?: number | null
+  restoreKey?: string
+  onRestoreScrollTopApplied?: () => void
 }
 
 function ChatMessageListComponent({
@@ -38,13 +46,24 @@ function ChatMessageListComponent({
   pinGroupMinHeight,
   headerHeight,
   contentStyle,
+  onFork,
+  branchNavigators,
+  onSelectBranch,
+  onScrollTopChange,
+  restoreScrollTop,
+  restoreKey,
+  onRestoreScrollTopApplied,
 }: ChatMessageListProps) {
   const { settings } = useChatSettings()
   const anchorRef = useRef<HTMLDivElement | null>(null)
   const lastUserRef = useRef<HTMLDivElement | null>(null)
-  const programmaticScroll = useRef(false)
   const prevPinRef = useRef(pinToTop)
   const prevUserIndexRef = useRef<number | undefined>(undefined)
+  const pendingRestoreSessionKeyRef = useRef<string | undefined>(undefined)
+
+  if (typeof restoreScrollTop === 'number' && sessionKey) {
+    pendingRestoreSessionKeyRef.current = sessionKey
+  }
 
   const linkedToolCallIds = useMemo(() => {
     const ids = new Set<string>()
@@ -61,7 +80,6 @@ function ChatMessageListComponent({
     return ids
   }, [messages])
 
-  // Hide only tool results that are already rendered under an associated tool call.
   const displayMessages = useMemo(() => {
     return messages.filter((msg) => {
       if (msg.role !== 'toolResult') return true
@@ -100,11 +118,18 @@ function ChatMessageListComponent({
     (typeof lastUserIndex !== 'number' ||
       typeof lastAssistantIndex !== 'number' ||
       lastAssistantIndex < lastUserIndex)
-  // Pin the last user+assistant group without adding bottom padding.
   const groupStartIndex = typeof lastUserIndex === 'number' ? lastUserIndex : -1
   const hasGroup = pinToTop && groupStartIndex >= 0
 
   useLayoutEffect(() => {
+    if (
+      pendingRestoreSessionKeyRef.current &&
+      pendingRestoreSessionKeyRef.current === sessionKey
+    ) {
+      pendingRestoreSessionKeyRef.current = undefined
+      return
+    }
+
     if (loading) return
     if (pinToTop) {
       const shouldPin =
@@ -112,11 +137,7 @@ function ChatMessageListComponent({
       prevPinRef.current = true
       prevUserIndexRef.current = lastUserIndex
       if (shouldPin && lastUserRef.current) {
-        programmaticScroll.current = true
         lastUserRef.current.scrollIntoView({ behavior: 'auto', block: 'start' })
-        window.setTimeout(() => {
-          programmaticScroll.current = false
-        }, 0)
       }
       return
     }
@@ -124,85 +145,81 @@ function ChatMessageListComponent({
     prevPinRef.current = false
     prevUserIndexRef.current = lastUserIndex
     if (anchorRef.current) {
-      programmaticScroll.current = true
       anchorRef.current.scrollIntoView({ behavior: 'auto', block: 'end' })
-      window.setTimeout(() => {
-        programmaticScroll.current = false
-      }, 0)
     }
   }, [loading, displayMessages.length, sessionKey, pinToTop, lastUserIndex])
 
+  function renderMessage(
+    chatMessage: GatewayMessage,
+    index: number,
+    options?: {
+      wrapperRef?: React.RefObject<HTMLDivElement | null>
+      wrapperClassName?: string
+      wrapperScrollMarginTop?: number
+    },
+  ) {
+    const messageKey = chatMessage.__optimisticId || (chatMessage as any).id || index
+    const forceActionsVisible =
+      typeof lastAssistantIndex === 'number' && index === lastAssistantIndex
+    const hasToolCalls =
+      chatMessage.role === 'assistant' &&
+      getToolCallsFromMessage(chatMessage).length > 0
+
+    return (
+      <MessageItem
+        key={messageKey}
+        message={chatMessage}
+        toolResultsByCallId={hasToolCalls ? toolResultsByCallId : undefined}
+        forceActionsVisible={forceActionsVisible}
+        wrapperRef={options?.wrapperRef}
+        wrapperClassName={options?.wrapperClassName}
+        wrapperScrollMarginTop={options?.wrapperScrollMarginTop}
+        onFork={onFork}
+        branchState={branchNavigators?.get((chatMessage as any).id)}
+        onSelectBranch={onSelectBranch}
+      />
+    )
+  }
+
   return (
-    // mt-2 is to fix the prompt-input cut off
-    <ChatContainerRoot className="flex-1 min-h-0 -mb-4">
-      <ChatContainerContent className="pt-14" style={contentStyle} wide={settings.wideMode}>
+    <ChatContainerRoot
+      className="flex-1 min-h-0 -mb-4"
+      onUserScroll={onScrollTopChange}
+      restoreScrollTop={restoreScrollTop}
+      restoreKey={restoreKey}
+      onRestoreScrollTopApplied={onRestoreScrollTopApplied}
+    >
+      <ChatContainerContent
+        className="pt-14"
+        style={contentStyle}
+        wide={settings.wideMode}
+      >
         {notice && noticePosition === 'start' ? notice : null}
         {empty && !notice ? (
-          (emptyState ?? <div aria-hidden></div>)
+          emptyState ?? <div aria-hidden></div>
         ) : hasGroup ? (
           <>
             {displayMessages
               .slice(0, groupStartIndex)
-              .map((chatMessage, index) => {
-                const messageKey =
-                  chatMessage.__optimisticId || (chatMessage as any).id || index
-                const forceActionsVisible =
-                  typeof lastAssistantIndex === 'number' &&
-                  index === lastAssistantIndex
-                const hasToolCalls =
-                  chatMessage.role === 'assistant' &&
-                  getToolCallsFromMessage(chatMessage).length > 0
-                return (
-                  <MessageItem
-                    key={messageKey}
-                    message={chatMessage}
-                    toolResultsByCallId={
-                      hasToolCalls ? toolResultsByCallId : undefined
-                    }
-                    forceActionsVisible={forceActionsVisible}
-                  />
-                )
-              })}
-            {/* // Keep the last exchange pinned without extra tail gap. // Account
-            for space-y-6 (24px) when pinning. */}
+              .map((chatMessage, index) => renderMessage(chatMessage, index))}
             <div
               className="flex flex-col space-y-6"
               style={{ minHeight: `${Math.max(0, pinGroupMinHeight - 24)}px` }}
             >
-              {displayMessages
-                .slice(groupStartIndex)
-                .map((chatMessage, index) => {
-                  const realIndex = groupStartIndex + index
-                  const messageKey =
-                    chatMessage.__optimisticId ||
-                    (chatMessage as any).id ||
-                    realIndex
-                  const forceActionsVisible =
-                    typeof lastAssistantIndex === 'number' &&
-                    realIndex === lastAssistantIndex
-                  const wrapperRef =
-                    realIndex === lastUserIndex ? lastUserRef : undefined
-                  const wrapperClassName =
-                    realIndex === lastUserIndex ? 'scroll-mt-0' : undefined
-                  const wrapperScrollMarginTop =
-                    realIndex === lastUserIndex ? headerHeight : undefined
-                  const hasToolCalls =
-                    chatMessage.role === 'assistant' &&
-                    getToolCallsFromMessage(chatMessage).length > 0
-                  return (
-                    <MessageItem
-                      key={messageKey}
-                      message={chatMessage}
-                      toolResultsByCallId={
-                        hasToolCalls ? toolResultsByCallId : undefined
-                      }
-                      forceActionsVisible={forceActionsVisible}
-                      wrapperRef={wrapperRef}
-                      wrapperClassName={wrapperClassName}
-                      wrapperScrollMarginTop={wrapperScrollMarginTop}
-                    />
-                  )
-                })}
+              {displayMessages.slice(groupStartIndex).map((chatMessage, index) => {
+                const realIndex = groupStartIndex + index
+                const wrapperRef =
+                  realIndex === lastUserIndex ? lastUserRef : undefined
+                const wrapperClassName =
+                  realIndex === lastUserIndex ? 'scroll-mt-0' : undefined
+                const wrapperScrollMarginTop =
+                  realIndex === lastUserIndex ? headerHeight : undefined
+                return renderMessage(chatMessage, realIndex, {
+                  wrapperRef,
+                  wrapperClassName,
+                  wrapperScrollMarginTop,
+                })
+              })}
               {showTypingIndicator ? (
                 <div className="py-2">
                   <TypingIndicator />
@@ -211,26 +228,9 @@ function ChatMessageListComponent({
             </div>
           </>
         ) : (
-          displayMessages.map((chatMessage, index) => {
-            const messageKey =
-              chatMessage.__optimisticId || (chatMessage as any).id || index
-            const forceActionsVisible =
-              typeof lastAssistantIndex === 'number' &&
-              index === lastAssistantIndex
-            const hasToolCalls =
-              chatMessage.role === 'assistant' &&
-              getToolCallsFromMessage(chatMessage).length > 0
-            return (
-              <MessageItem
-                key={messageKey}
-                message={chatMessage}
-                toolResultsByCallId={
-                  hasToolCalls ? toolResultsByCallId : undefined
-                }
-                forceActionsVisible={forceActionsVisible}
-              />
-            )
-          })
+          displayMessages.map((chatMessage, index) =>
+            renderMessage(chatMessage, index),
+          )
         )}
         {notice && noticePosition === 'end' ? notice : null}
         <ChatContainerScrollAnchor
@@ -257,7 +257,14 @@ function areChatMessageListEqual(
     prev.pinToTop === next.pinToTop &&
     prev.pinGroupMinHeight === next.pinGroupMinHeight &&
     prev.headerHeight === next.headerHeight &&
-    prev.contentStyle === next.contentStyle
+    prev.contentStyle === next.contentStyle &&
+    prev.onFork === next.onFork &&
+    prev.branchNavigators === next.branchNavigators &&
+    prev.onSelectBranch === next.onSelectBranch &&
+    prev.onScrollTopChange === next.onScrollTopChange &&
+    prev.restoreScrollTop === next.restoreScrollTop &&
+    prev.restoreKey === next.restoreKey &&
+    prev.onRestoreScrollTopApplied === next.onRestoreScrollTopApplied
   )
 }
 

@@ -16,6 +16,9 @@ export type ChatContainerRootProps = {
   children: React.ReactNode
   className?: string
   onUserScroll?: (scrollTop: number) => void
+  restoreScrollTop?: number | null
+  restoreKey?: string
+  onRestoreScrollTopApplied?: () => void
 } & React.HTMLAttributes<HTMLDivElement>
 
 export type ChatContainerContentProps = {
@@ -123,6 +126,9 @@ function ChatContainerRoot({
   children,
   className,
   onUserScroll,
+  restoreScrollTop,
+  restoreKey,
+  onRestoreScrollTopApplied,
   ...props
 }: ChatContainerRootProps) {
   const scrollRef = React.useRef<HTMLDivElement | null>(null)
@@ -148,6 +154,14 @@ function ChatContainerRoot({
     element.addEventListener('scroll', handleScroll)
     return () => element.removeEventListener('scroll', handleScroll)
   }, [onUserScroll])
+
+  React.useLayoutEffect(() => {
+    const element = scrollRef.current
+    if (!element) return
+    if (typeof restoreScrollTop !== 'number') return
+    element.scrollTop = Math.max(0, restoreScrollTop)
+    onRestoreScrollTopApplied?.()
+  }, [onRestoreScrollTopApplied, restoreKey, restoreScrollTop])
 
   return (
     <>

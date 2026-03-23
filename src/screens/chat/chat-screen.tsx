@@ -35,12 +35,15 @@ import { useChatStream } from './hooks/use-chat-stream'
 import { useChatPendingSend } from './hooks/use-chat-pending-send'
 import { useChatGenerationGuard } from './hooks/use-chat-generation-guard'
 import { useChatRedirect } from './hooks/use-chat-redirect'
+import { RightSidebar } from './components/right-sidebar'
+import type { BranchNavigatorState } from './components/branch-inline-navigator'
+import type { RightSidebarTab } from './components/right-sidebar'
 import type { AttachmentFile } from '@/components/attachment-button'
 import type { ChatComposerHelpers } from './components/chat-composer'
 import { useExport } from '@/hooks/use-export'
 import { useChatSettings } from '@/hooks/use-chat-settings'
-import { cn, randomUUID } from '@/lib/utils'
 import { getChatBackend } from '@/lib/chat-backend'
+import { cn, randomUUID } from '@/lib/utils'
 
 type ChatScreenProps = {
   activeFriendlyId: string
@@ -51,6 +54,8 @@ type ChatScreenProps = {
   }) => void
   forcedSessionKey?: string
 }
+
+const BRANCH_SCROLL_RESTORE_KEY = 'kairos.branch-scroll-restore'
 
 export function ChatScreen({
   activeFriendlyId,
@@ -63,6 +68,9 @@ export function ChatScreen({
   const [sending, setSending] = useState(false)
   const [creatingSession, setCreatingSession] = useState(false)
   const [isRedirecting, setIsRedirecting] = useState(false)
+  const [rightSidebarOpen, setRightSidebarOpen] = useState(false)
+  const [rightSidebarTab, setRightSidebarTab] = useState<RightSidebarTab>('branches')
+  const [restoreScrollTop, setRestoreScrollTop] = useState<number | null>(null)
   const { headerRef, composerRef, mainRef, pinGroupMinHeight, headerHeight } =
     useChatMeasurements()
   const [waitingForResponse, setWaitingForResponse] = useState(
@@ -74,6 +82,7 @@ export function ChatScreen({
   const { settings } = useChatSettings()
   const pendingRunIdsRef = useRef(new Set<string>())
   const pendingRunTimersRef = useRef(new Map<string, number>())
+  const scrollTopRef = useRef(0)
   const { isMobile } = useChatMobile(queryClient)
   const {
     sessionsQuery,
@@ -501,6 +510,85 @@ export function ChatScreen({
     sendMessage,
   })
 
+  const handleForkMessage = useCallback(
+    async (messageId: string) => {
+      const sourceKey = activeSessionKey || resolvedSessionKey
+      if (!sourceKey) return
+      try {
+        const backend = getChatBackend()
+        const result = await backend.forkConversation({
+          sourceSessionKey: sourceKey,
+          sourceFriendlyId: activeFriendlyId,
+          forkAtMessageId: messageId,
+        })
+        await queryClient.invalidateQueries({
+          queryKey: chatQueryKeys.sessions,
+        })
+        navigate({
+          to: '/chat/$sessionKey',
+          params: { sessionKey: result.friendlyId },
+        })
+      } catch (err) {
+        console.error('Fork failed:', err)
+      }
+    },
+    [
+      activeSessionKey,
+      resolvedSessionKey,
+      activeFriendlyId,
+      queryClient,
+      navigate,
+    ],
+  )
+
+  const handleSelectBranch = useCallback(
+    function handleSelectBranch(friendlyId: string) {
+      if (!friendlyId || friendlyId === activeFriendlyId) return
+      if (typeof window !== 'undefined') {
+        window.sessionStorage.setItem(
+          BRANCH_SCROLL_RESTORE_KEY,
+          JSON.stringify({ scrollTop: scrollTopRef.current }),
+        )
+      }
+      navigate({
+        to: '/chat/$sessionKey',
+        params: { sessionKey: friendlyId },
+      })
+    },
+    [activeFriendlyId, navigate],
+  )
+
+  const handleScrollTopChange = useCallback(function handleScrollTopChange(
+    scrollTop: number,
+  ) {
+    scrollTopRef.current = scrollTop
+  }, [])
+
+  const handleRestoreScrollTopApplied = useCallback(
+    function handleRestoreScrollTopApplied() {
+      setRestoreScrollTop(null)
+    },
+    [],
+  )
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const raw = window.sessionStorage.getItem(BRANCH_SCROLL_RESTORE_KEY)
+    if (!raw) return
+    window.sessionStorage.removeItem(BRANCH_SCROLL_RESTORE_KEY)
+    try {
+      const parsed = JSON.parse(raw) as { scrollTop?: unknown }
+      if (
+        typeof parsed.scrollTop === 'number' &&
+        Number.isFinite(parsed.scrollTop)
+      ) {
+        setRestoreScrollTop(parsed.scrollTop)
+      }
+    } catch {
+      setRestoreScrollTop(null)
+    }
+  }, [activeFriendlyId])
+
   const sidebar = (
     <ChatSidebar
       sessions={sessions}
@@ -514,12 +602,129 @@ export function ChatScreen({
     />
   )
 
+  const forkedFrom = useMemo(() => {
+    if (!activeSession?.parentSessionKey) return undefined
+    const parent = sessions.find(
+      (s) =>
+        s.key === activeSession.parentSessionKey ||
+        s.friendlyId === activeSession.parentFriendlyId,
+    )
+    if (!parent) return undefined
+    return {
+      friendlyId: parent.friendlyId,
+      title:
+        parent.label || parent.title || parent.derivedTitle || parent.friendlyId,
+    }
+  }, [activeSession, sessions])
+
+  const branchNavigators = useMemo(() => {
+    const result = new Map<string, BranchNavigatorState>()
+
+    function getSessionTitle(session: (typeof sessions)[number]) {
+      return (
+        session.label || session.title || session.derivedTitle || session.friendlyId
+      )
+    }
+
+    function setBranchNavigator(payload: {
+      messageId: string
+      activeFriendlyId: string
+      options: Array<{ friendlyId: string; title: string }>
+    }) {
+      if (!payload.messageId || payload.options.length < 2) return
+      const seen = new Set<string>()
+      const options = payload.options.filter((option) => {
+        if (!option.friendlyId || seen.has(option.friendlyId)) return false
+        seen.add(option.friendlyId)
+        return true
+      })
+      if (options.length < 2) return
+      result.set(payload.messageId, {
+        messageId: payload.messageId,
+        activeFriendlyId: payload.activeFriendlyId,
+        options,
+      })
+    }
+
+    if (activeSession?.parentSessionKey && activeSession.forkPointMessageId) {
+      const parent = sessions.find(
+        (session) =>
+          session.key === activeSession.parentSessionKey ||
+          session.friendlyId === activeSession.parentFriendlyId,
+      )
+      const siblingForks = sessions.filter(
+        (session) =>
+          session.parentSessionKey === activeSession.parentSessionKey &&
+          session.forkPointMessageId === activeSession.forkPointMessageId,
+      )
+      const options = [
+        ...(parent
+          ? [
+              {
+                friendlyId: parent.friendlyId,
+                title: getSessionTitle(parent),
+              },
+            ]
+          : []),
+        ...siblingForks.map((session) => ({
+          friendlyId: session.friendlyId,
+          title: getSessionTitle(session),
+        })),
+      ]
+      setBranchNavigator({
+        messageId: activeSession.forkPointMessageId,
+        activeFriendlyId,
+        options,
+      })
+    }
+
+    if (activeSessionKey) {
+      const childrenByPoint = new Map<string, typeof sessions>()
+      for (const session of sessions) {
+        if (
+          session.parentSessionKey !== activeSessionKey ||
+          !session.forkPointMessageId
+        ) {
+          continue
+        }
+        const siblings = childrenByPoint.get(session.forkPointMessageId) ?? []
+        siblings.push(session)
+        childrenByPoint.set(session.forkPointMessageId, siblings)
+      }
+
+      for (const [messageId, children] of childrenByPoint) {
+        setBranchNavigator({
+          messageId,
+          activeFriendlyId,
+          options: [
+            {
+              friendlyId: activeFriendlyId,
+              title: activeTitle,
+            },
+            ...children.map((session) => ({
+              friendlyId: session.friendlyId,
+              title: getSessionTitle(session),
+            })),
+          ],
+        })
+      }
+    }
+
+    return result
+  }, [
+    activeFriendlyId,
+    activeSession,
+    activeSessionKey,
+    activeTitle,
+    sessions,
+  ])
+
   return (
     <div className="h-screen bg-surface text-primary-900">
       <div
         className={cn(
           'h-full overflow-hidden',
-          isMobile ? 'relative' : 'grid grid-cols-[auto_1fr]',
+          isMobile ? 'relative' : 'grid grid-cols-[auto_1fr_auto]',
         )}
       >
         {hideUi ? null : isMobile ? (
@@ -555,6 +760,9 @@ export function ChatScreen({
                 showExport={!isNewChat}
                 usedTokens={activeSession?.totalTokens}
                 maxTokens={activeSession?.contextTokens}
+                forkedFrom={forkedFrom}
+                onToggleRightSidebar={() => setRightSidebarOpen((prev) => !prev)}
+                rightSidebarOpen={rightSidebarOpen}
               />
             </div>
           </div>
@@ -573,6 +781,13 @@ export function ChatScreen({
                 pinGroupMinHeight={pinGroupMinHeight}
                 headerHeight={headerHeight}
                 contentStyle={stableContentStyle}
+                onFork={handleForkMessage}
+                branchNavigators={branchNavigators}
+                onSelectBranch={handleSelectBranch}
+                onScrollTopChange={handleScrollTopChange}
+                restoreScrollTop={restoreScrollTop}
+                restoreKey={activeFriendlyId}
+                onRestoreScrollTopApplied={handleRestoreScrollTopApplied}
               />
               <ChatComposer
                 onSubmit={send}
@@ -583,6 +798,17 @@ export function ChatScreen({
             </>
           )}
         </main>
+
+        {hideUi || isMobile ? null : (
+          <RightSidebar
+            isOpen={rightSidebarOpen}
+            activeTab={rightSidebarTab}
+            onTabChange={setRightSidebarTab}
+            onClose={() => setRightSidebarOpen(false)}
+            sessions={sessions}
+            activeSessionKey={activeSessionKey || resolvedSessionKey}
+          />
+        )}
       </div>
     </div>
   )

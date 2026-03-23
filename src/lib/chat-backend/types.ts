@@ -47,6 +47,12 @@ export type ChatDeleteConversationInput = {
   friendlyId?: string
 }
 
+export type ChatForkConversationInput = {
+  sourceSessionKey: string
+  sourceFriendlyId: string
+  forkAtMessageId: string
+}
+
 export type ChatSendMessageResult = {
   runId: string
   sessionKey: string
@@ -83,5 +89,8 @@ export type ChatBackend = {
   ) => Promise<ChatConversationResult>
   deleteConversation: (input: ChatDeleteConversationInput) => Promise<void>
   sendMessage: (input: ChatSendMessageInput) => Promise<ChatSendMessageResult>
+  forkConversation: (
+    input: ChatForkConversationInput,
+  ) => Promise<ChatConversationResult>
   subscribeToConversation: (subscription: ChatSubscription) => () => void
 }

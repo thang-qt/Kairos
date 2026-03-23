@@ -21,6 +21,10 @@ Run Kairos on a generic in-browser chat backend with mock conversation and strea
 
 Convert Kairos from the TanStack Start server runtime to a plain frontend build oriented around static assets, then add a real HTTP adapter shaped for a future Go `net/http` service that can serve the built assets and power chat over standard HTTP and streaming endpoints.
 
+Current branch feature work:
+- Completed:
+  Add inline fork navigation at branch points so sibling branches can be switched from the message flow while keeping forks as separate conversations under the hood.
+
 ## Planned Follow-Up
 
 After the static frontend conversion is done, add a selectable HTTP backend adapter while keeping the mock backend available for local UI development.
