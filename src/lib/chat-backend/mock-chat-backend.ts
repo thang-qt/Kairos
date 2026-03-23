@@ -4,6 +4,8 @@ import type {
   ChatBackend,
   ChatCreateConversationInput,
   ChatDeleteConversationInput,
+  ChatDeleteUserMessageInput,
+  ChatEditUserMessageInput,
   ChatEvent,
   ChatForkConversationInput,
   ChatHistoryInput,
@@ -284,6 +286,14 @@ function summarizePrompt(message: string): string {
   return normalized.slice(0, 117).trimEnd() + '...'
 }
 
+function textFromMessage(message: GatewayMessage): string {
+  const content = Array.isArray(message.content) ? message.content : []
+  return content
+    .map((part) => (part.type === 'text' ? String(part.text ?? '') : ''))
+    .join('')
+    .trim()
+}
+
 function deriveTitleFromMessages(messages: Array<GatewayMessage>): string | undefined {
   const firstUserMessage = messages.find((message) => message.role === 'user')
   if (!firstUserMessage) return undefined
@@ -299,6 +309,107 @@ function countApproximateTokens(text: string): number {
   const normalized = text.trim()
   if (!normalized) return 0
   return Math.max(1, Math.round(normalized.length / 4))
+}
+
+function countConversationTokens(messages: Array<GatewayMessage>): number {
+  return messages.reduce(function count(total, message) {
+    if (message.role !== 'user') return total
+    return total + countApproximateTokens(textFromMessage(message))
+  }, 0)
+}
+
+function cloneMessage(message: GatewayMessage): GatewayMessage {
+  return {
+    ...message,
+    content: Array.isArray(message.content)
+      ? message.content.map((part) => ({ ...part }))
+      : [],
+  }
+}
+
+function extractAttachmentsFromMessage(
+  message: GatewayMessage,
+): Array<ChatAttachmentPayload> {
+  const content = Array.isArray(message.content) ? message.content : []
+  return content.flatMap(function mapPart(part) {
+    const imagePart = part as {
+      type?: string
+      source?: {
+        media_type?: unknown
+        data?: unknown
+      }
+    }
+    if (
+      imagePart.type !== 'image' ||
+      !imagePart.source ||
+      typeof imagePart.source !== 'object'
+    ) {
+      return []
+    }
+    const source = imagePart.source
+    if (
+      typeof source.media_type !== 'string' ||
+      typeof source.data !== 'string' ||
+      source.data.trim().length === 0
+    ) {
+      return []
+    }
+    return [
+      {
+        mimeType: source.media_type,
+        content: source.data,
+      },
+    ]
+  })
+}
+
+function createForkedConversation(
+  source: StoredConversation,
+  input: {
+    messages: Array<GatewayMessage>
+    forkPointMessageId?: string
+  },
+): StoredConversation {
+  const key = randomUUID()
+  const friendlyId = randomUUID().slice(0, 8)
+  const now = Date.now()
+  const parentDepth = source.forkDepth ?? 0
+  const messages = input.messages.map(cloneMessage)
+
+  return normalizeConversation({
+    key,
+    friendlyId,
+    title: undefined,
+    label: undefined,
+    derivedTitle: deriveTitleFromMessages(messages),
+    updatedAt: now,
+    lastMessage: messages.at(-1) ?? null,
+    totalTokens: countConversationTokens(messages),
+    contextTokens: source.contextTokens ?? DEFAULT_CONTEXT_TOKENS,
+    messages,
+    parentSessionKey: source.key,
+    parentFriendlyId: source.friendlyId,
+    forkPointMessageId: input.forkPointMessageId,
+    forkDepth: parentDepth + 1,
+  })
+}
+
+function saveForkedConversation(conversation: StoredConversation) {
+  const state = loadState()
+  saveState(
+    sortState({
+      conversations: [conversation, ...state.conversations],
+    }),
+  )
+}
+
+function findMessageIndex(
+  conversation: StoredConversation,
+  messageId: string,
+): number {
+  return conversation.messages.findIndex(function findMessage(message) {
+    return (message as { id?: unknown }).id === messageId
+  })
 }
 
 function buildAssistantDraft(input: ChatSendMessageInput): {
@@ -593,49 +704,99 @@ export function createMockChatBackend(): ChatBackend {
         friendlyId: input.sourceFriendlyId,
       })
 
-      // Find the fork point message index
-      const forkIndex = source.messages.findIndex(
-        (msg) => (msg as any).id === input.forkAtMessageId,
-      )
+      const forkIndex = findMessageIndex(source, input.forkAtMessageId)
       if (forkIndex < 0) {
         throw new Error('Fork point message not found')
       }
 
-      // Copy messages up to and including the fork point
-      const copiedMessages = source.messages
-        .slice(0, forkIndex + 1)
-        .map((msg) => ({ ...msg }))
-
-      const key = randomUUID()
-      const friendlyId = randomUUID().slice(0, 8)
-      const now = Date.now()
-      const parentDepth = source.forkDepth ?? 0
-
-      const forkedConversation: StoredConversation = normalizeConversation({
-        key,
-        friendlyId,
-        title: undefined,
-        label: undefined,
-        derivedTitle: source.derivedTitle
-          ? `Fork of ${source.derivedTitle}`
-          : undefined,
-        updatedAt: now,
-        lastMessage: copiedMessages.at(-1) ?? null,
-        totalTokens: source.totalTokens,
-        contextTokens: source.contextTokens ?? DEFAULT_CONTEXT_TOKENS,
-        messages: copiedMessages,
-        parentSessionKey: source.key,
-        parentFriendlyId: source.friendlyId,
+      const forkedConversation = createForkedConversation(source, {
+        messages: source.messages.slice(0, forkIndex + 1),
         forkPointMessageId: input.forkAtMessageId,
-        forkDepth: parentDepth + 1,
+      })
+      saveForkedConversation(forkedConversation)
+
+      return Promise.resolve({
+        sessionKey: forkedConversation.key,
+        friendlyId: forkedConversation.friendlyId,
+      })
+    },
+    editUserMessage(input: ChatEditUserMessageInput) {
+      const { conversation: source } = requireConversation({
+        sessionKey: input.sourceSessionKey,
+        friendlyId: input.sourceFriendlyId,
+      })
+      const messageIndex = findMessageIndex(source, input.messageId)
+      if (messageIndex < 0) {
+        throw new Error('User message not found')
+      }
+      const existingMessage = source.messages[messageIndex]
+      if (existingMessage.role !== 'user') {
+        throw new Error('Only user messages can be edited')
+      }
+
+      const forkPointMessage = source.messages.at(messageIndex - 1)
+      const forkPointMessageId =
+        forkPointMessage &&
+        typeof (forkPointMessage as { id?: unknown }).id === 'string'
+          ? (forkPointMessage as { id: string }).id
+          : undefined
+      const editedMessage = createUserMessage(
+        input.message,
+        extractAttachmentsFromMessage(existingMessage),
+      )
+      const forkedConversation = createForkedConversation(source, {
+        messages: [...source.messages.slice(0, messageIndex), editedMessage],
+        forkPointMessageId,
+      })
+      saveForkedConversation(forkedConversation)
+
+      const runId = randomUUID()
+      const draft = buildAssistantDraft({
+        sessionKey: forkedConversation.key,
+        friendlyId: forkedConversation.friendlyId,
+        message: input.message,
+        thinking: input.thinking,
+        attachments: extractAttachmentsFromMessage(existingMessage),
+      })
+      scheduleRun({
+        runId,
+        sessionKey: forkedConversation.key,
+        friendlyId: forkedConversation.friendlyId,
+        thinking: draft.thinking,
+        answer: draft.answer,
       })
 
-      const state = loadState()
-      saveState(
-        sortState({
-          conversations: [forkedConversation, ...state.conversations],
-        }),
-      )
+      return Promise.resolve({
+        sessionKey: forkedConversation.key,
+        friendlyId: forkedConversation.friendlyId,
+        runId,
+      })
+    },
+    deleteUserMessage(input: ChatDeleteUserMessageInput) {
+      const { conversation: source } = requireConversation({
+        sessionKey: input.sourceSessionKey,
+        friendlyId: input.sourceFriendlyId,
+      })
+      const messageIndex = findMessageIndex(source, input.messageId)
+      if (messageIndex < 0) {
+        throw new Error('User message not found')
+      }
+      const existingMessage = source.messages[messageIndex]
+      if (existingMessage.role !== 'user') {
+        throw new Error('Only user messages can be deleted')
+      }
+
+      const forkPointMessage = source.messages.at(messageIndex - 1)
+      const forkPointMessageId =
+        forkPointMessage &&
+        typeof (forkPointMessage as { id?: unknown }).id === 'string'
+          ? (forkPointMessage as { id: string }).id
+          : undefined
+      const forkedConversation = createForkedConversation(source, {
+        messages: source.messages.slice(0, messageIndex),
+        forkPointMessageId,
+      })
+      saveForkedConversation(forkedConversation)
 
       return Promise.resolve({
         sessionKey: forkedConversation.key,

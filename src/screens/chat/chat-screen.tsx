@@ -19,6 +19,8 @@ import { ChatHeader } from './components/chat-header'
 import { ChatMessageList } from './components/chat-message-list'
 import { ChatComposer } from './components/chat-composer'
 import { BackendStatusMessage } from './components/backend-status-message'
+import { UserTurnDeleteDialog } from './components/user-turn-delete-dialog'
+import { UserTurnEditDialog } from './components/user-turn-edit-dialog'
 import {
   hasPendingGeneration,
   hasPendingSend,
@@ -57,6 +59,11 @@ type ChatScreenProps = {
 
 const BRANCH_SCROLL_RESTORE_KEY = 'kairos.branch-scroll-restore'
 
+type UserTurnActionState = {
+  messageId: string
+  currentText: string
+} | null
+
 export function ChatScreen({
   activeFriendlyId,
   isNewChat = false,
@@ -71,6 +78,10 @@ export function ChatScreen({
   const [rightSidebarOpen, setRightSidebarOpen] = useState(false)
   const [rightSidebarTab, setRightSidebarTab] = useState<RightSidebarTab>('branches')
   const [restoreScrollTop, setRestoreScrollTop] = useState<number | null>(null)
+  const [editingUserTurn, setEditingUserTurn] =
+    useState<UserTurnActionState>(null)
+  const [deletingUserTurn, setDeletingUserTurn] =
+    useState<UserTurnActionState>(null)
   const { headerRef, composerRef, mainRef, pinGroupMinHeight, headerHeight } =
     useChatMeasurements()
   const [waitingForResponse, setWaitingForResponse] = useState(
@@ -541,21 +552,122 @@ export function ChatScreen({
     ],
   )
 
+  const storeBranchScrollRestore = useCallback(function storeBranchScrollRestore() {
+    if (typeof window === 'undefined') return
+    window.sessionStorage.setItem(
+      BRANCH_SCROLL_RESTORE_KEY,
+      JSON.stringify({ scrollTop: scrollTopRef.current }),
+    )
+  }, [])
+
   const handleSelectBranch = useCallback(
     function handleSelectBranch(friendlyId: string) {
       if (!friendlyId || friendlyId === activeFriendlyId) return
-      if (typeof window !== 'undefined') {
-        window.sessionStorage.setItem(
-          BRANCH_SCROLL_RESTORE_KEY,
-          JSON.stringify({ scrollTop: scrollTopRef.current }),
-        )
-      }
+      storeBranchScrollRestore()
       navigate({
         to: '/chat/$sessionKey',
         params: { sessionKey: friendlyId },
       })
     },
-    [activeFriendlyId, navigate],
+    [activeFriendlyId, navigate, storeBranchScrollRestore],
+  )
+
+  const handleOpenEditUserTurn = useCallback(function handleOpenEditUserTurn(
+    messageId: string,
+    currentText: string,
+  ) {
+    setEditingUserTurn({ messageId, currentText })
+  }, [])
+
+  const handleOpenDeleteUserTurn = useCallback(
+    function handleOpenDeleteUserTurn(messageId: string, currentText: string) {
+      setDeletingUserTurn({ messageId, currentText })
+    },
+    [],
+  )
+
+  const handleSaveEditedUserTurn = useCallback(
+    async function handleSaveEditedUserTurn(nextMessage: string) {
+      const sourceKey = activeSessionKey || resolvedSessionKey
+      const target = editingUserTurn
+      const normalizedMessage = nextMessage.trim()
+      if (!sourceKey || !target || normalizedMessage.length === 0) {
+        return
+      }
+
+      setEditingUserTurn(null)
+      storeBranchScrollRestore()
+
+      try {
+        const backend = getChatBackend()
+        const result = await backend.editUserMessage({
+          sourceSessionKey: sourceKey,
+          sourceFriendlyId: activeFriendlyId,
+          messageId: target.messageId,
+          message: normalizedMessage,
+          thinking: settings.thinkingLevel,
+        })
+        startRun(result.runId)
+        await queryClient.invalidateQueries({
+          queryKey: chatQueryKeys.sessions,
+        })
+        navigate({
+          to: '/chat/$sessionKey',
+          params: { sessionKey: result.friendlyId },
+        })
+      } catch (err) {
+        console.error('Edit user turn failed:', err)
+      }
+    },
+    [
+      activeFriendlyId,
+      activeSessionKey,
+      editingUserTurn,
+      navigate,
+      queryClient,
+      resolvedSessionKey,
+      settings.thinkingLevel,
+      startRun,
+      storeBranchScrollRestore,
+    ],
+  )
+
+  const handleConfirmDeleteUserTurn = useCallback(
+    async function handleConfirmDeleteUserTurn() {
+      const sourceKey = activeSessionKey || resolvedSessionKey
+      const target = deletingUserTurn
+      if (!sourceKey || !target) return
+
+      setDeletingUserTurn(null)
+      storeBranchScrollRestore()
+
+      try {
+        const backend = getChatBackend()
+        const result = await backend.deleteUserMessage({
+          sourceSessionKey: sourceKey,
+          sourceFriendlyId: activeFriendlyId,
+          messageId: target.messageId,
+        })
+        await queryClient.invalidateQueries({
+          queryKey: chatQueryKeys.sessions,
+        })
+        navigate({
+          to: '/chat/$sessionKey',
+          params: { sessionKey: result.friendlyId },
+        })
+      } catch (err) {
+        console.error('Delete user turn failed:', err)
+      }
+    },
+    [
+      activeFriendlyId,
+      activeSessionKey,
+      deletingUserTurn,
+      navigate,
+      queryClient,
+      resolvedSessionKey,
+      storeBranchScrollRestore,
+    ],
   )
 
   const handleScrollTopChange = useCallback(function handleScrollTopChange(
@@ -609,11 +721,17 @@ export function ChatScreen({
         s.key === activeSession.parentSessionKey ||
         s.friendlyId === activeSession.parentFriendlyId,
     )
-    if (!parent) return undefined
+    if (!parent) {
+      return {
+        title: 'Original deleted',
+        isOrphaned: true,
+      }
+    }
     return {
       friendlyId: parent.friendlyId,
       title:
         parent.label || parent.title || parent.derivedTitle || parent.friendlyId,
+      isOrphaned: false,
     }
   }, [activeSession, sessions])
 
@@ -782,6 +900,8 @@ export function ChatScreen({
                 headerHeight={headerHeight}
                 contentStyle={stableContentStyle}
                 onFork={handleForkMessage}
+                onEditUserTurn={handleOpenEditUserTurn}
+                onDeleteUserTurn={handleOpenDeleteUserTurn}
                 branchNavigators={branchNavigators}
                 onSelectBranch={handleSelectBranch}
                 onScrollTopChange={handleScrollTopChange}
@@ -815,6 +935,32 @@ export function ChatScreen({
             activeSessionKey={activeSessionKey || resolvedSessionKey}
           />
         )}
+        <UserTurnEditDialog
+          open={editingUserTurn !== null}
+          onOpenChange={function handleOpenChange(open) {
+            if (!open) {
+              setEditingUserTurn(null)
+            }
+          }}
+          initialMessage={editingUserTurn?.currentText ?? ''}
+          onSave={handleSaveEditedUserTurn}
+          onCancel={function handleCancelEdit() {
+            setEditingUserTurn(null)
+          }}
+        />
+        <UserTurnDeleteDialog
+          open={deletingUserTurn !== null}
+          onOpenChange={function handleOpenChange(open) {
+            if (!open) {
+              setDeletingUserTurn(null)
+            }
+          }}
+          messagePreview={deletingUserTurn?.currentText ?? ''}
+          onConfirm={handleConfirmDeleteUserTurn}
+          onCancel={function handleCancelDelete() {
+            setDeletingUserTurn(null)
+          }}
+        />
       </div>
     </div>
   )

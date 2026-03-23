@@ -26,6 +26,8 @@ Current branch feature work:
   Add inline fork navigation at branch points so sibling branches can be switched from the message flow while keeping forks as separate conversations under the hood.
 - Completed:
   Add a desktop-only conversation navigator on the right side of the chat scroll area so long threads can jump between user turns without opening the sidebar.
+- Completed:
+  Add user-turn edit and delete actions that create a new branch instead of mutating the current branch. Editing regenerates immediately from the edited turn; deleting truncates at that point in a new branch and leaves the user to continue intentionally.
 
 ## Planned Follow-Up
 

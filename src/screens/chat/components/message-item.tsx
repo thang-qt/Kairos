@@ -26,6 +26,8 @@ type MessageItemProps = {
   wrapperClassName?: string
   wrapperScrollMarginTop?: number
   onFork?: (messageId: string) => void
+  onEdit?: (messageId: string, currentText: string) => void
+  onDelete?: (messageId: string, currentText: string) => void
   branchState?: BranchNavigatorState
   onSelectBranch?: (friendlyId: string) => void
 }
@@ -249,6 +251,8 @@ function MessageItemComponent({
   wrapperClassName,
   wrapperScrollMarginTop,
   onFork,
+  onEdit,
+  onDelete,
   branchState,
   onSelectBranch,
 }: MessageItemProps) {
@@ -367,6 +371,16 @@ function MessageItemComponent({
           timestamp={timestamp}
           align="end"
           forceVisible={forceActionsVisible}
+          onEdit={
+            onEdit && typeof (message as { id?: unknown }).id === 'string'
+              ? () => onEdit((message as { id: string }).id, text)
+              : undefined
+          }
+          onDelete={
+            onDelete && typeof (message as { id?: unknown }).id === 'string'
+              ? () => onDelete((message as { id: string }).id, text)
+              : undefined
+          }
         />
       )}
     </div>
@@ -387,6 +401,8 @@ function areMessagesEqual(
   }
   if (prevProps.branchState !== nextProps.branchState) return false
   if (prevProps.onSelectBranch !== nextProps.onSelectBranch) return false
+  if (prevProps.onEdit !== nextProps.onEdit) return false
+  if (prevProps.onDelete !== nextProps.onDelete) return false
   if (
     (prevProps.message.role || 'assistant') !==
     (nextProps.message.role || 'assistant')

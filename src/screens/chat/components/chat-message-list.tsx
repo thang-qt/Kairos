@@ -26,6 +26,8 @@ type ChatMessageListProps = {
   headerHeight: number
   contentStyle?: React.CSSProperties
   onFork?: (messageId: string) => void
+  onEditUserTurn?: (messageId: string, currentText: string) => void
+  onDeleteUserTurn?: (messageId: string, currentText: string) => void
   branchNavigators?: Map<string, BranchNavigatorState>
   onSelectBranch?: (friendlyId: string) => void
   onScrollTopChange?: (scrollTop: number) => void
@@ -49,6 +51,8 @@ function ChatMessageListComponent({
   headerHeight,
   contentStyle,
   onFork,
+  onEditUserTurn,
+  onDeleteUserTurn,
   branchNavigators,
   onSelectBranch,
   onScrollTopChange,
@@ -249,6 +253,8 @@ function ChatMessageListComponent({
         wrapperClassName={options?.wrapperClassName}
         wrapperScrollMarginTop={wrapperScrollMarginTop}
         onFork={onFork}
+        onEdit={onEditUserTurn}
+        onDelete={onDeleteUserTurn}
         branchState={branchNavigators?.get((chatMessage as any).id)}
         onSelectBranch={onSelectBranch}
       />
@@ -344,6 +350,8 @@ function areChatMessageListEqual(
     prev.headerHeight === next.headerHeight &&
     prev.contentStyle === next.contentStyle &&
     prev.onFork === next.onFork &&
+    prev.onEditUserTurn === next.onEditUserTurn &&
+    prev.onDeleteUserTurn === next.onDeleteUserTurn &&
     prev.branchNavigators === next.branchNavigators &&
     prev.onSelectBranch === next.onSelectBranch &&
     prev.onScrollTopChange === next.onScrollTopChange &&

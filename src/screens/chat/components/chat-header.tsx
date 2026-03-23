@@ -24,8 +24,9 @@ type ChatHeaderProps = {
   exportDisabled?: boolean
   showExport?: boolean
   forkedFrom?: {
-    friendlyId: string
     title: string
+    friendlyId?: string
+    isOrphaned?: boolean
   }
   onToggleRightSidebar?: () => void
   rightSidebarOpen?: boolean
@@ -65,7 +66,7 @@ function ChatHeaderComponent({
         <span className="text-sm font-medium truncate">
           {activeTitle}
         </span>
-        {forkedFrom ? (
+        {forkedFrom?.friendlyId ? (
           <Link
             to="/chat/$sessionKey"
             params={{ sessionKey: forkedFrom.friendlyId }}
@@ -74,6 +75,11 @@ function ChatHeaderComponent({
             <HugeiconsIcon icon={GitBranchIcon} size={12} strokeWidth={1.8} />
             <span className="truncate max-w-[120px]">{forkedFrom.title}</span>
           </Link>
+        ) : forkedFrom ? (
+          <span className="flex items-center gap-1 text-xs text-primary-400 shrink-0">
+            <HugeiconsIcon icon={GitBranchIcon} size={12} strokeWidth={1.8} />
+            <span className="truncate max-w-[120px]">{forkedFrom.title}</span>
+          </span>
         ) : null}
       </div>
       <div className="flex items-center gap-2 shrink-0">

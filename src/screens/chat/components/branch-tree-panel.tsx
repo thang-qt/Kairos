@@ -17,11 +17,19 @@ type BranchTreePanelProps = {
 }
 
 function buildTree(sessions: Array<SessionMeta>): Array<TreeNode> {
+  const sessionsByKey = new Map(
+    sessions.map(function mapSession(session) {
+      return [session.key, session] as const
+    }),
+  )
   const childrenMap = new Map<string, Array<SessionMeta>>()
   const roots: Array<SessionMeta> = []
 
   for (const s of sessions) {
-    if (s.parentSessionKey) {
+    const hasParent =
+      typeof s.parentSessionKey === 'string' &&
+      sessionsByKey.has(s.parentSessionKey)
+    if (hasParent && s.parentSessionKey) {
       const siblings = childrenMap.get(s.parentSessionKey) ?? []
       siblings.push(s)
       childrenMap.set(s.parentSessionKey, siblings)
@@ -45,6 +53,16 @@ function buildTree(sessions: Array<SessionMeta>): Array<TreeNode> {
 function getLabel(session: SessionMeta): string {
   return (
     session.label || session.title || session.derivedTitle || session.friendlyId
+  )
+}
+
+function isOrphanBranch(
+  session: SessionMeta,
+  sessionsByKey: Map<string, SessionMeta>,
+): boolean {
+  return (
+    typeof session.parentSessionKey === 'string' &&
+    !sessionsByKey.has(session.parentSessionKey)
   )
 }
 
@@ -110,6 +128,16 @@ function BranchTreePanelComponent({
   sessions,
   activeSessionKey,
 }: BranchTreePanelProps) {
+  const sessionsByKey = useMemo(
+    function createSessionsByKey() {
+      return new Map(
+        sessions.map(function mapSession(session) {
+          return [session.key, session] as const
+        }),
+      )
+    },
+    [sessions],
+  )
   const tree = useMemo(() => buildTree(sessions), [sessions])
 
   const relevantRoots = useMemo(() => {
@@ -136,7 +164,7 @@ function BranchTreePanelComponent({
     }
 
     const relevant = tree.filter((root) => containsKey(root, currentKey))
-    return relevant.length > 0 ? relevant : tree
+    return relevant
   }, [tree, activeSessionKey, sessions])
 
   const hasForks = sessions.some(
@@ -160,14 +188,34 @@ function BranchTreePanelComponent({
     )
   }
 
+  if (activeSessionKey && relevantRoots.length === 0) {
+    return (
+      <div className="flex h-32 flex-col items-center justify-center px-4 text-center text-xs text-primary-500">
+        <HugeiconsIcon
+          icon={GitBranchIcon}
+          size={20}
+          strokeWidth={1.5}
+          className="mb-2 text-primary-400"
+        />
+        <p>Branch tree unavailable</p>
+        <p className="mt-1 text-primary-400">
+          This conversation could not be matched to a visible branch root
+        </p>
+      </div>
+    )
+  }
+
   return (
     <div className="flex flex-col gap-0.5 py-1">
-      {relevantRoots.map((root) => (
-        <TreeNodeItem
-          key={root.session.key}
-          node={root}
-          activeSessionKey={activeSessionKey}
-        />
+      {(activeSessionKey ? relevantRoots : tree).map((root) => (
+        <div key={root.session.key} className="flex flex-col gap-0.5">
+          {isOrphanBranch(root.session, sessionsByKey) ? (
+            <div className="px-2 pt-1 text-[11px] text-primary-400">
+              Original deleted
+            </div>
+          ) : null}
+          <TreeNodeItem node={root} activeSessionKey={activeSessionKey} />
+        </div>
       ))}
     </div>
   )

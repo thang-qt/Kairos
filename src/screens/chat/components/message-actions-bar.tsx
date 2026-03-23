@@ -4,7 +4,9 @@ import {
   ArrowLeft01Icon,
   ArrowRight01Icon,
   Copy01Icon,
+  Delete01Icon,
   GitBranchIcon,
+  PencilEdit02Icon,
   Tick02Icon,
 } from '@hugeicons/core-free-icons'
 import { MessageTimestamp } from './message-timestamp'
@@ -23,6 +25,8 @@ type MessageActionsBarProps = {
   timestamp: number
   forceVisible?: boolean
   onFork?: () => void
+  onEdit?: () => void
+  onDelete?: () => void
   branchState?: BranchNavigatorState
   onSelectBranch?: (friendlyId: string) => void
 }
@@ -33,6 +37,8 @@ export function MessageActionsBar({
   timestamp,
   forceVisible = false,
   onFork,
+  onEdit,
+  onDelete,
   branchState,
   onSelectBranch,
 }: MessageActionsBarProps) {
@@ -179,6 +185,42 @@ export function MessageActionsBar({
                 />
               </TooltipTrigger>
               <TooltipContent side="top">Fork</TooltipContent>
+            </TooltipRoot>
+          </TooltipProvider>
+        ) : null}
+        {onEdit ? (
+          <TooltipProvider>
+            <TooltipRoot>
+              <TooltipTrigger
+                type="button"
+                onClick={onEdit}
+                className="inline-flex items-center justify-center rounded border border-transparent bg-transparent p-1 text-primary-700 hover:bg-primary-100 hover:text-primary-900"
+              >
+                <HugeiconsIcon
+                  icon={PencilEdit02Icon}
+                  size={16}
+                  strokeWidth={1.6}
+                />
+              </TooltipTrigger>
+              <TooltipContent side="top">Edit</TooltipContent>
+            </TooltipRoot>
+          </TooltipProvider>
+        ) : null}
+        {onDelete ? (
+          <TooltipProvider>
+            <TooltipRoot>
+              <TooltipTrigger
+                type="button"
+                onClick={onDelete}
+                className="inline-flex items-center justify-center rounded border border-transparent bg-transparent p-1 text-primary-700 hover:bg-primary-100 hover:text-primary-900"
+              >
+                <HugeiconsIcon
+                  icon={Delete01Icon}
+                  size={16}
+                  strokeWidth={1.6}
+                />
+              </TooltipTrigger>
+              <TooltipContent side="top">Delete</TooltipContent>
             </TooltipRoot>
           </TooltipProvider>
         ) : null}
