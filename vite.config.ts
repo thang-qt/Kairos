@@ -5,7 +5,7 @@ import { tanstackStart } from '@tanstack/react-start/plugin/vite'
 import viteReact from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 // nitro plugin removed (tanstackStart handles server runtime)
-import { defineConfig } from 'vite'
+import { configDefaults, defineConfig } from 'vitest/config'
 import viteTsConfigPaths from 'vite-tsconfig-paths'
 
 const config = defineConfig({
@@ -24,6 +24,9 @@ const config = defineConfig({
     tanstackStart(),
     viteReact(),
   ],
+  test: {
+    exclude: [...configDefaults.exclude, '**/.direnv/**'],
+  },
 })
 
 export default config

@@ -2,17 +2,17 @@
 
 ## Overview
 
-WebClaw app lives in `apps/webclaw` and is built with React + TanStack Router + Tailwind CSS v4.
+Kairos lives at the repository root and is built with React + TanStack Router + Tailwind CSS v4.
 
 ## Commands
 
-- `pnpm -C apps/webclaw dev` — Start development server
-- `pnpm -C apps/webclaw build` — Build for production
-- `pnpm -C apps/webclaw preview` — Preview production build
-- `pnpm -C apps/webclaw test` — Run tests
-- `pnpm -C apps/webclaw lint` — Run ESLint
-- `pnpm -C apps/webclaw format` — Run Prettier
-- `pnpm -C apps/webclaw check` — Format and lint fix
+- `pnpm dev` — Start development server
+- `pnpm build` — Build for production
+- `pnpm preview` — Preview production build
+- `pnpm test` — Run tests
+- `pnpm lint` — Run ESLint
+- `pnpm format` — Run Prettier
+- `pnpm check` — Format and lint fix
 
 ## Conventions
 
@@ -26,9 +26,9 @@ WebClaw app lives in `apps/webclaw` and is built with React + TanStack Router + 
 
 ### Routing & Structure
 
-- Routes live in `apps/webclaw/src/routes` using TanStack file routing.
-- Global styles and CSS variables live in `apps/webclaw/src/styles.css`.
-- Local environment values go in `apps/webclaw/.env.local`.
+- Routes live in `src/routes` using TanStack file routing.
+- Global styles and CSS variables live in `src/styles.css`.
+- Local environment values go in `.env.local`.
 
 ### UI & Styling
 

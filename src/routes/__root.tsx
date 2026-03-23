@@ -48,19 +48,19 @@ export const Route = createRootRoute({
         content: 'width=device-width, initial-scale=1',
       },
       {
-        title: 'WebClaw',
+        title: 'Kairos',
       },
       {
         name: 'description',
-        content: 'a fast web client for OpenClaw',
+        content: 'A focused AI chat app.',
       },
       {
         property: 'og:image',
-        content: '/cover.webp',
+        content: '/cover.jpg',
       },
       {
         property: 'og:image:type',
-        content: 'image/webp',
+        content: 'image/jpeg',
       },
       {
         name: 'twitter:card',
@@ -68,7 +68,7 @@ export const Route = createRootRoute({
       },
       {
         name: 'twitter:image',
-        content: '/cover.webp',
+        content: '/cover.jpg',
       },
     ],
     links: [

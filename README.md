@@ -1,26 +1,21 @@
-# WebClaw
+# Kairos
 
-![Cover](https://raw.githubusercontent.com/ibelick/webclaw/main/apps/webclaw/public/cover.jpg)
+Kairos is a standalone chat app extracted from the original WebClaw app source.
 
-Fast web client for OpenClaw.
-
-[webclaw.dev](https://webclaw.dev)
-
-Currently in beta.
-
-## Installation
+## Commands
 
 ```bash
-npx webclaw
+pnpm dev
+pnpm build
+pnpm preview
+pnpm test
+pnpm lint
 ```
 
-The CLI will ask for a project name, env keys, and a port, then create the folder and start WebClaw.
+## Current Direction
 
-WebClaw env vars: `CLAWDBOT_GATEWAY_URL` + `CLAWDBOT_GATEWAY_TOKEN` (or `CLAWDBOT_GATEWAY_PASSWORD`) — OpenClaw gateway/auth docs: https://docs.openclaw.ai/gateway (env precedence: https://docs.openclaw.ai/help/environment).
-
-## Contributing
-
-Please read the [contributing guide](CONTRIBUTING.md).
+The current extraction keeps the existing app structure while moving it to the repository root.
+Next, the OpenClaw-specific backend and product flows will be replaced incrementally with a generic AI chat architecture backed by a pluggable frontend adapter.
 
 ## License
 

@@ -1,4 +1,5 @@
 node_modules
+.direnv/
 .DS_Store
 dist
 dist-ssr
@@ -11,4 +12,4 @@ count.txt
 .output
 .vinxi
 todos.json
-apps/webclaw/.device-keys.json
+.device-keys.json

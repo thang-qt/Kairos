@@ -170,7 +170,7 @@ function ChatSidebarComponent({
                 )}
               >
                 <WebClawIconBig className="size-5 rounded-sm" />
-                WebClaw
+                Kairos
               </Link>
             </motion.div>
           ) : null}
