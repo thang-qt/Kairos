@@ -8,6 +8,7 @@ export type ThinkingLevel = 'low' | 'medium' | 'high'
 export type ChatSettings = {
   showToolMessages: boolean
   showReasoningBlocks: boolean
+  showConversationNavigator: boolean
   thinkingLevel: ThinkingLevel
   theme: ThemeMode
   wideMode: boolean
@@ -24,6 +25,7 @@ export const useChatSettingsStore = create<ChatSettingsState>()(
       settings: {
         showToolMessages: true,
         showReasoningBlocks: true,
+        showConversationNavigator: true,
         thinkingLevel: 'medium',
         theme: 'system',
         wideMode: true,

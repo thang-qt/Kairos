@@ -788,6 +788,11 @@ export function ChatScreen({
                 restoreScrollTop={restoreScrollTop}
                 restoreKey={activeFriendlyId}
                 onRestoreScrollTopApplied={handleRestoreScrollTopApplied}
+                showConversationNavigator={
+                  settings.showConversationNavigator &&
+                  !isMobile &&
+                  !rightSidebarOpen
+                }
               />
               <ChatComposer
                 onSubmit={send}

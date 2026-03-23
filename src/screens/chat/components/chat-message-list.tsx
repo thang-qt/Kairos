@@ -1,6 +1,7 @@
-import { memo, useLayoutEffect, useMemo, useRef } from 'react'
-import { getToolCallsFromMessage } from '../utils'
+import { memo, useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { getToolCallsFromMessage, textFromMessage } from '../utils'
 import { MessageItem } from './message-item'
+import { ConversationNavigator } from './conversation-navigator'
 import type { GatewayMessage } from '../types'
 import type { BranchNavigatorState } from './branch-inline-navigator'
 import {
@@ -31,6 +32,7 @@ type ChatMessageListProps = {
   restoreScrollTop?: number | null
   restoreKey?: string
   onRestoreScrollTopApplied?: () => void
+  showConversationNavigator?: boolean
 }
 
 function ChatMessageListComponent({
@@ -53,10 +55,15 @@ function ChatMessageListComponent({
   restoreScrollTop,
   restoreKey,
   onRestoreScrollTopApplied,
+  showConversationNavigator = false,
 }: ChatMessageListProps) {
   const { settings } = useChatSettings()
   const anchorRef = useRef<HTMLDivElement | null>(null)
   const lastUserRef = useRef<HTMLDivElement | null>(null)
+  const [viewportNode, setViewportNode] = useState<HTMLDivElement | null>(null)
+  const userTurnRefsRef = useRef(
+    new Map<string, React.RefObject<HTMLDivElement | null>>(),
+  )
   const prevPinRef = useRef(pinToTop)
   const prevUserIndexRef = useRef<number | undefined>(undefined)
   const pendingRestoreSessionKeyRef = useRef<string | undefined>(undefined)
@@ -103,6 +110,43 @@ function ChatMessageListComponent({
     return map
   }, [messages])
 
+  function getMessageKey(message: GatewayMessage, index: number): string {
+    return String(message.__optimisticId || (message as any).id || index)
+  }
+
+  function getOrCreateUserTurnRef(messageId: string) {
+    const existingRef = userTurnRefsRef.current.get(messageId)
+    if (existingRef) return existingRef
+    const nextRef = { current: null } as React.RefObject<HTMLDivElement | null>
+    userTurnRefsRef.current.set(messageId, nextRef)
+    return nextRef
+  }
+
+  const conversationTurns = useMemo(() => {
+    const activeIds = new Set<string>()
+    const turns: Array<{ id: string; preview: string }> = []
+
+    for (const [index, message] of displayMessages.entries()) {
+      if (message.role !== 'user') continue
+      const messageId = getMessageKey(message, index)
+      activeIds.add(messageId)
+      getOrCreateUserTurnRef(messageId)
+      const previewText = textFromMessage(message).replace(/\s+/g, ' ').trim()
+      turns.push({
+        id: messageId,
+        preview: previewText || 'Attachment',
+      })
+    }
+
+    for (const existingId of userTurnRefsRef.current.keys()) {
+      if (!activeIds.has(existingId)) {
+        userTurnRefsRef.current.delete(existingId)
+      }
+    }
+
+    return turns
+  }, [displayMessages])
+
   const lastAssistantIndex = displayMessages
     .map((message, index) => ({ message, index }))
     .filter(({ message }) => message.role !== 'user')
@@ -120,6 +164,29 @@ function ChatMessageListComponent({
       lastAssistantIndex < lastUserIndex)
   const groupStartIndex = typeof lastUserIndex === 'number' ? lastUserIndex : -1
   const hasGroup = pinToTop && groupStartIndex >= 0
+  const shouldShowConversationNavigator =
+    showConversationNavigator && conversationTurns.length >= 2
+
+  useLayoutEffect(() => {
+    if (typeof lastUserIndex !== 'number') {
+      lastUserRef.current = null
+      return
+    }
+
+    const lastUserMessage = displayMessages[lastUserIndex]
+    const messageId = getMessageKey(lastUserMessage, lastUserIndex)
+    lastUserRef.current = getOrCreateUserTurnRef(messageId).current
+  }, [displayMessages, lastUserIndex])
+
+  const handleViewportNodeChange = useCallback(function handleViewportNodeChange(
+    node: HTMLDivElement | null,
+  ) {
+    setViewportNode(node)
+  }, [])
+
+  const getTurnNode = useCallback(function getTurnNode(turnId: string) {
+    return userTurnRefsRef.current.get(turnId)?.current ?? null
+  }, [])
 
   useLayoutEffect(() => {
     if (
@@ -158,12 +225,19 @@ function ChatMessageListComponent({
       wrapperScrollMarginTop?: number
     },
   ) {
-    const messageKey = chatMessage.__optimisticId || (chatMessage as any).id || index
+    const messageKey = getMessageKey(chatMessage, index)
     const forceActionsVisible =
       typeof lastAssistantIndex === 'number' && index === lastAssistantIndex
     const hasToolCalls =
       chatMessage.role === 'assistant' &&
       getToolCallsFromMessage(chatMessage).length > 0
+    const isUserMessage = chatMessage.role === 'user'
+    const wrapperRef = isUserMessage
+      ? getOrCreateUserTurnRef(messageKey)
+      : options?.wrapperRef
+    const wrapperScrollMarginTop = isUserMessage
+      ? headerHeight + 12
+      : options?.wrapperScrollMarginTop
 
     return (
       <MessageItem
@@ -171,9 +245,9 @@ function ChatMessageListComponent({
         message={chatMessage}
         toolResultsByCallId={hasToolCalls ? toolResultsByCallId : undefined}
         forceActionsVisible={forceActionsVisible}
-        wrapperRef={options?.wrapperRef}
+        wrapperRef={wrapperRef}
         wrapperClassName={options?.wrapperClassName}
-        wrapperScrollMarginTop={options?.wrapperScrollMarginTop}
+        wrapperScrollMarginTop={wrapperScrollMarginTop}
         onFork={onFork}
         branchState={branchNavigators?.get((chatMessage as any).id)}
         onSelectBranch={onSelectBranch}
@@ -184,7 +258,18 @@ function ChatMessageListComponent({
   return (
     <ChatContainerRoot
       className="flex-1 min-h-0 -mb-4"
+      overlay={
+        shouldShowConversationNavigator ? (
+          <ConversationNavigator
+            turns={conversationTurns}
+            headerHeight={headerHeight}
+            scrollElement={viewportNode}
+            getTurnNode={getTurnNode}
+          />
+        ) : null
+      }
       onUserScroll={onScrollTopChange}
+      onViewportNodeChange={handleViewportNodeChange}
       restoreScrollTop={restoreScrollTop}
       restoreKey={restoreKey}
       onRestoreScrollTopApplied={onRestoreScrollTopApplied}
@@ -264,7 +349,8 @@ function areChatMessageListEqual(
     prev.onScrollTopChange === next.onScrollTopChange &&
     prev.restoreScrollTop === next.restoreScrollTop &&
     prev.restoreKey === next.restoreKey &&
-    prev.onRestoreScrollTopApplied === next.onRestoreScrollTopApplied
+    prev.onRestoreScrollTopApplied === next.onRestoreScrollTopApplied &&
+    prev.showConversationNavigator === next.showConversationNavigator
   )
 }
 

@@ -51,7 +51,7 @@ function RightSidebarComponent({
           animate={{ width: 280, opacity: 1 }}
           exit={{ width: 0, opacity: 0 }}
           transition={{ duration: 0.2, ease: 'easeInOut' }}
-          className="flex h-full shrink-0 flex-col overflow-hidden border-l border-primary-200 bg-surface"
+          className="relative z-30 flex h-full shrink-0 flex-col overflow-hidden border-l border-primary-200 bg-surface"
         >
           <div className="flex h-12 shrink-0 items-center justify-between border-b border-primary-200 px-2">
             <div className="flex items-center gap-0.5">

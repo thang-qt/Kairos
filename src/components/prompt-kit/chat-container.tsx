@@ -15,7 +15,9 @@ import { cn } from '@/lib/utils'
 export type ChatContainerRootProps = {
   children: React.ReactNode
   className?: string
+  overlay?: React.ReactNode
   onUserScroll?: (scrollTop: number) => void
+  onViewportNodeChange?: (node: HTMLDivElement | null) => void
   restoreScrollTop?: number | null
   restoreKey?: string
   onRestoreScrollTopApplied?: () => void
@@ -34,6 +36,7 @@ export type ChatContainerScrollAnchorProps = {
 
 type ChatContainerShellProps = {
   className?: string
+  overlay?: React.ReactNode
   viewportRef: React.Ref<HTMLDivElement>
   scrollRef: React.RefObject<HTMLDivElement | null>
   viewportProps: React.HTMLAttributes<HTMLDivElement>
@@ -41,19 +44,21 @@ type ChatContainerShellProps = {
 
 function ChatContainerShell({
   className,
+  overlay,
   viewportRef,
   scrollRef,
   viewportProps,
 }: ChatContainerShellProps) {
   return (
     <ScrollAreaRoot
-      className={cn('relative flex flex-1 min-h-0 flex-col', className)}
+      className={cn('group/chat-shell relative flex flex-1 min-h-0 flex-col', className)}
     >
       <ScrollAreaViewport
         className="relative"
         ref={viewportRef}
         {...viewportProps}
       />
+      {overlay}
       <div className="relative mx-auto w-full max-w-full px-5 sm:max-w-[768px] sm:min-w-[400px] ">
         <div className="pointer-events-none absolute bottom-10 right-10 z-50">
           <ScrollButton scrollRef={scrollRef} />
@@ -91,6 +96,7 @@ function areShellPropsEqual(
   nextProps: ChatContainerShellProps,
 ): boolean {
   if (prevProps.className !== nextProps.className) return false
+  if (prevProps.overlay !== nextProps.overlay) return false
   if (prevProps.viewportRef !== nextProps.viewportRef) return false
   if (prevProps.scrollRef !== nextProps.scrollRef) return false
   if (
@@ -125,7 +131,9 @@ function ChatContainerPortal({
 function ChatContainerRoot({
   children,
   className,
+  overlay,
   onUserScroll,
+  onViewportNodeChange,
   restoreScrollTop,
   restoreKey,
   onRestoreScrollTopApplied,
@@ -140,7 +148,8 @@ function ChatContainerRoot({
   ) {
     scrollRef.current = node
     setViewportNode(node)
-  }, [])
+    onViewportNodeChange?.(node)
+  }, [onViewportNodeChange])
 
   // Handle scroll events
   React.useLayoutEffect(() => {
@@ -167,6 +176,7 @@ function ChatContainerRoot({
     <>
       <MemoizedChatContainerShell
         className={className}
+        overlay={overlay}
         viewportRef={handleViewportRef}
         scrollRef={scrollRef}
         viewportProps={props}

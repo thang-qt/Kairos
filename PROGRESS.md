@@ -24,6 +24,8 @@ Convert Kairos from the TanStack Start server runtime to a plain frontend build 
 Current branch feature work:
 - Completed:
   Add inline fork navigation at branch points so sibling branches can be switched from the message flow while keeping forks as separate conversations under the hood.
+- Completed:
+  Add a desktop-only conversation navigator on the right side of the chat scroll area so long threads can jump between user turns without opening the sidebar.
 
 ## Planned Follow-Up
 

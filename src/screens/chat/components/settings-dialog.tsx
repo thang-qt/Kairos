@@ -180,6 +180,17 @@ export function SettingsDialog({
                 }
               />
             </SettingsRow>
+            <SettingsRow
+              label="Conversation navigator"
+              description="Show the right-edge turn rail for jumping between user messages"
+            >
+              <Switch
+                checked={settings.showConversationNavigator}
+                onCheckedChange={(checked) =>
+                  updateSettings({ showConversationNavigator: checked })
+                }
+              />
+            </SettingsRow>
             <SettingsRow label="Thinking level">
               <Tabs
                 value={settings.thinkingLevel}
