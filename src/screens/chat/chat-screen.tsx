@@ -37,6 +37,7 @@ import { useChatStream } from './hooks/use-chat-stream'
 import { useChatPendingSend } from './hooks/use-chat-pending-send'
 import { useChatGenerationGuard } from './hooks/use-chat-generation-guard'
 import { useChatRedirect } from './hooks/use-chat-redirect'
+import { useConversationSettings } from './conversation-settings'
 import { RightSidebar } from './components/right-sidebar'
 import type { BranchNavigatorState } from './components/branch-inline-navigator'
 import type { RightSidebarTab } from './components/right-sidebar'
@@ -76,7 +77,7 @@ export function ChatScreen({
   const [creatingSession, setCreatingSession] = useState(false)
   const [isRedirecting, setIsRedirecting] = useState(false)
   const [rightSidebarOpen, setRightSidebarOpen] = useState(false)
-  const [rightSidebarTab, setRightSidebarTab] = useState<RightSidebarTab>('branches')
+  const [rightSidebarTab, setRightSidebarTab] = useState<RightSidebarTab>('options')
   const [restoreScrollTop, setRestoreScrollTop] = useState<number | null>(null)
   const [editingUserTurn, setEditingUserTurn] =
     useState<UserTurnActionState>(null)
@@ -91,6 +92,9 @@ export function ChatScreen({
     () => hasPendingSend() || hasPendingGeneration(),
   )
   const { settings } = useChatSettings()
+  const { settings: conversationSettings } = useConversationSettings(
+    activeFriendlyId || 'new',
+  )
   const pendingRunIdsRef = useRef(new Set<string>())
   const pendingRunTimersRef = useRef(new Map<string, number>())
   const scrollTopRef = useRef(0)
@@ -284,7 +288,11 @@ export function ChatScreen({
         sessionKey,
         friendlyId,
         message: body,
-        thinking: settings.thinkingLevel,
+        model: conversationSettings.model,
+        thinking: conversationSettings.thinkingLevel,
+        temperature: conversationSettings.temperature,
+        topP: conversationSettings.topP,
+        maxOutputTokens: conversationSettings.maxOutputTokens,
         idempotencyKey: randomUUID(),
         attachments: attachmentsPayload,
       })
@@ -402,7 +410,11 @@ export function ChatScreen({
       onSessionResolved,
       queryClient,
       resolvedSessionKey,
-      settings.thinkingLevel,
+      conversationSettings.thinkingLevel,
+      conversationSettings.model,
+      conversationSettings.temperature,
+      conversationSettings.topP,
+      conversationSettings.maxOutputTokens,
     ],
   )
 
@@ -605,7 +617,11 @@ export function ChatScreen({
           sourceFriendlyId: activeFriendlyId,
           messageId: target.messageId,
           message: normalizedMessage,
-          thinking: settings.thinkingLevel,
+          model: conversationSettings.model,
+          thinking: conversationSettings.thinkingLevel,
+          temperature: conversationSettings.temperature,
+          topP: conversationSettings.topP,
+          maxOutputTokens: conversationSettings.maxOutputTokens,
         })
         startRun(result.runId)
         await queryClient.invalidateQueries({
@@ -626,7 +642,11 @@ export function ChatScreen({
       navigate,
       queryClient,
       resolvedSessionKey,
-      settings.thinkingLevel,
+      conversationSettings.thinkingLevel,
+      conversationSettings.model,
+      conversationSettings.temperature,
+      conversationSettings.topP,
+      conversationSettings.maxOutputTokens,
       startRun,
       storeBranchScrollRestore,
     ],
@@ -873,9 +893,6 @@ export function ChatScreen({
                 wrapperRef={headerRef}
                 isSidebarCollapsed={isSidebarCollapsed}
                 onOpenSidebar={handleOpenSidebar}
-                onExport={exportConversation}
-                exportDisabled={historyLoading || displayMessages.length === 0}
-                showExport={!isNewChat}
                 usedTokens={activeSession?.totalTokens}
                 maxTokens={activeSession?.contextTokens}
                 forkedFrom={forkedFrom}
@@ -931,6 +948,9 @@ export function ChatScreen({
             activeTab={rightSidebarTab}
             onTabChange={setRightSidebarTab}
             onClose={() => setRightSidebarOpen(false)}
+            onExport={exportConversation}
+            exportDisabled={isNewChat || historyLoading || displayMessages.length === 0}
+            conversationId={activeFriendlyId || 'new'}
             sessions={sessions}
             activeSessionKey={activeSessionKey || resolvedSessionKey}
           />

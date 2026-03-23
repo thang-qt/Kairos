@@ -27,7 +27,11 @@ export type ChatSendMessageInput = {
   sessionKey: string
   friendlyId: string
   message: string
+  model?: string
   thinking?: string
+  temperature?: number
+  topP?: number
+  maxOutputTokens?: number
   idempotencyKey?: string
   attachments?: Array<ChatAttachmentPayload>
 }
@@ -58,7 +62,11 @@ export type ChatEditUserMessageInput = {
   sourceFriendlyId: string
   messageId: string
   message: string
+  model?: string
   thinking?: string
+  temperature?: number
+  topP?: number
+  maxOutputTokens?: number
 }
 
 export type ChatDeleteUserMessageInput = {

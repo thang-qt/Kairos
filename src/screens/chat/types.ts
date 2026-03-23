@@ -31,6 +31,9 @@ export type MessageContent = TextContent | ToolCallContent | ThinkingContent
 
 export type GatewayMessage = {
   role?: string
+  model?: string
+  modelName?: string
+  modelDescription?: string
   content?: Array<MessageContent>
   toolCallId?: string
   toolName?: string

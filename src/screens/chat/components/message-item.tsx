@@ -243,6 +243,27 @@ function imagesFromMessage(msg: GatewayMessage): Array<ImagePart> {
   return images
 }
 
+function modelFromMessage(message: GatewayMessage): string | null {
+  if (
+    typeof message.modelName === 'string' &&
+    message.modelName.trim().length > 0
+  ) {
+    return message.modelName.trim()
+  }
+  if (typeof message.model === 'string' && message.model.trim().length > 0) {
+    return message.model.trim()
+  }
+  const detailsModel =
+    message.details &&
+    typeof message.details === 'object' &&
+    typeof message.details.model === 'string'
+      ? message.details.model
+      : null
+  return detailsModel && detailsModel.trim().length > 0
+    ? detailsModel.trim()
+    : null
+}
+
 function MessageItemComponent({
   message,
   toolResultsByCallId,
@@ -264,6 +285,7 @@ function MessageItemComponent({
   const isToolResult = role === 'toolResult'
   const isAssistant = role === 'assistant'
   const timestamp = getMessageTimestamp(message)
+  const model = modelFromMessage(message)
   const standaloneToolPart = isToolResult
     ? mapStandaloneToolResultToToolPart(message)
     : null
@@ -312,7 +334,7 @@ function MessageItemComponent({
           : undefined
       }
       className={cn(
-        'group flex flex-col gap-1',
+        'group flex flex-col gap-0.5',
         wrapperClassName,
         isUser ? 'items-end' : 'items-start',
       )}
@@ -346,6 +368,14 @@ function MessageItemComponent({
           <Tool toolPart={standaloneToolPart} defaultOpen={false} />
         </div>
       )}
+
+      {isAssistant && model ? (
+        <div className="flex items-center gap-2 text-sm text-primary-800">
+          <span className="font-mono font-medium text-primary-900">
+            {model}
+          </span>
+        </div>
+      ) : null}
 
       {isAssistant && assistantParts.map(renderAssistantPart)}
 
@@ -440,6 +470,9 @@ function areMessagesEqual(
     return false
   }
   if (rawTimestamp(prevProps.message) !== rawTimestamp(nextProps.message)) {
+    return false
+  }
+  if (modelFromMessage(prevProps.message) !== modelFromMessage(nextProps.message)) {
     return false
   }
   // No need to check settings here as the hook will cause a re-render

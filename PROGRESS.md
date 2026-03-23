@@ -28,6 +28,10 @@ Current branch feature work:
   Add a desktop-only conversation navigator on the right side of the chat scroll area so long threads can jump between user turns without opening the sidebar.
 - Completed:
   Add user-turn edit and delete actions that create a new branch instead of mutating the current branch. Editing regenerates immediately from the edited turn; deleting truncates at that point in a new branch and leaves the user to continue intentionally.
+- Completed:
+  Rework the right pane into icon-only options, config, and branches tabs; move conversation export into options; and make each assistant response retain its own model label so changing the selected model only affects future turns.
+- Completed:
+  Split global display settings from conversation-scoped generation settings so the settings dialog remains the single place for app-wide toggles, while the right pane holds per-conversation model and generation controls like thinking level, temperature, top-p, and max output.
 
 ## Planned Follow-Up
 

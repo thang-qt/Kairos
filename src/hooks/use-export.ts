@@ -86,6 +86,19 @@ function roleLabel(role: string | undefined): string {
   return role || 'Unknown'
 }
 
+function modelLabel(message: GatewayMessage): string | null {
+  if (
+    typeof message.modelName === 'string' &&
+    message.modelName.trim().length > 0
+  ) {
+    return message.modelName.trim()
+  }
+  if (typeof message.model === 'string' && message.model.trim().length > 0) {
+    return message.model.trim()
+  }
+  return null
+}
+
 function toMarkdown(messages: Array<GatewayMessage>, title: string): string {
   const lines: Array<string> = []
   lines.push('# ' + title)
@@ -99,8 +112,11 @@ function toMarkdown(messages: Array<GatewayMessage>, title: string): string {
     const text = textFromMessage(message)
     if (!text) continue
     const label = roleLabel(message.role)
+    const model = modelLabel(message)
     const time = formatTimestamp(message)
-    lines.push('### ' + label + ' — ' + time)
+    lines.push(
+      '### ' + label + (model ? ` (${model})` : '') + ' — ' + time,
+    )
     lines.push('')
     lines.push(text)
     lines.push('')
@@ -118,6 +134,7 @@ function toJSON(messages: Array<GatewayMessage>, title: string): string {
       if (!text) return null
       return {
         role: message.role || 'unknown',
+        model: modelLabel(message),
         text,
         timestamp: getMessageTimestamp(message),
       }
@@ -146,8 +163,9 @@ function toPlainText(messages: Array<GatewayMessage>, title: string): string {
     const text = textFromMessage(message)
     if (!text) continue
     const label = roleLabel(message.role)
+    const model = modelLabel(message)
     const time = formatTimestamp(message)
-    lines.push('[' + label + ' — ' + time + ']')
+    lines.push('[' + label + (model ? ` | ${model}` : '') + ' — ' + time + ']')
     lines.push(text)
     lines.push('')
   }

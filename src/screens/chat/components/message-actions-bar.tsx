@@ -23,6 +23,7 @@ type MessageActionsBarProps = {
   text: string
   align: 'start' | 'end'
   timestamp: number
+  showTimestamp?: boolean
   forceVisible?: boolean
   onFork?: () => void
   onEdit?: () => void
@@ -35,6 +36,7 @@ export function MessageActionsBar({
   text,
   align,
   timestamp,
+  showTimestamp = true,
   forceVisible = false,
   onFork,
   onEdit,
@@ -224,7 +226,7 @@ export function MessageActionsBar({
             </TooltipRoot>
           </TooltipProvider>
         ) : null}
-        <MessageTimestamp timestamp={timestamp} />
+        {showTimestamp ? <MessageTimestamp timestamp={timestamp} /> : null}
       </div>
     </div>
   )

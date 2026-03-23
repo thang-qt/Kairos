@@ -21,21 +21,21 @@ function Thinking({ content }: ThinkingProps) {
           render={
             <Button
               variant="ghost"
-              className="h-auto gap-1.5 px-1.5 py-0.5 -mx-2"
+              className="text-primary-600 h-auto gap-1.5 px-1.5 py-0.5 -mx-2 hover:bg-primary-100/70 hover:text-primary-700"
             />
           }
         >
-          <span className="text-sm font-medium text-primary-900">Thinking</span>
+          <span className="text-sm font-medium text-primary-700">Thinking</span>
           <HugeiconsIcon
             icon={ArrowDown01Icon}
             size={14}
             strokeWidth={1.5}
-            className="text-primary-900 transition-transform duration-150 group-data-panel-open:rotate-180"
+            className="text-primary-600 transition-transform duration-150 group-data-panel-open:rotate-180"
           />
         </CollapsibleTrigger>
         <CollapsiblePanel>
-          <div className="pt-1 mb-3">
-            <p className="text-sm text-primary-700 whitespace-pre-wrap">
+          <div className="pb-2 pt-0.5">
+            <p className="text-sm text-primary-600 whitespace-pre-wrap">
               {content}
             </p>
           </div>

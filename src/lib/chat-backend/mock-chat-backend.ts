@@ -13,6 +13,7 @@ import type {
   ChatSendMessageInput,
   ChatSubscription,
 } from './types'
+import { getChatModelInfo } from '@/hooks/use-chat-settings'
 import { randomUUID } from '@/lib/utils'
 
 type StoredConversation = {
@@ -413,10 +414,15 @@ function findMessageIndex(
 }
 
 function buildAssistantDraft(input: ChatSendMessageInput): {
+  model: string
+  modelName?: string
+  modelDescription?: string
   thinking: string
   answer: string
 } {
   const summary = summarizePrompt(input.message)
+  const model = input.model?.trim() || 'kairos-balanced'
+  const modelInfo = getChatModelInfo(model)
   const attachmentCount = Array.isArray(input.attachments)
     ? input.attachments.length
     : 0
@@ -437,13 +443,22 @@ function buildAssistantDraft(input: ChatSendMessageInput): {
     attachmentNote +
     ' This placeholder backend is designed to mirror a real chat flow, so the UI can be wired to an HTTP service later without another state rewrite.'
 
-  return { thinking, answer }
+  return {
+    model,
+    modelName: modelInfo?.name,
+    modelDescription: modelInfo?.description,
+    thinking,
+    answer,
+  }
 }
 
 function scheduleRun(input: {
   runId: string
   sessionKey: string
   friendlyId: string
+  model: string
+  modelName?: string
+  modelDescription?: string
   thinking: string
   answer: string
 }) {
@@ -451,6 +466,9 @@ function scheduleRun(input: {
   const thinkingMessage: GatewayMessage = {
     id: assistantMessageId,
     role: 'assistant',
+    model: input.model,
+    modelName: input.modelName,
+    modelDescription: input.modelDescription,
     timestamp: Date.now(),
     content: [
       {
@@ -493,6 +511,9 @@ function scheduleRun(input: {
           message: {
             id: assistantMessageId,
             role: 'assistant',
+            model: input.model,
+            modelName: input.modelName,
+            modelDescription: input.modelDescription,
             timestamp: Date.now(),
             content: [
               {
@@ -515,6 +536,9 @@ function scheduleRun(input: {
       const finalMessage: GatewayMessage = {
         id: assistantMessageId,
         role: 'assistant',
+        model: input.model,
+        modelName: input.modelName,
+        modelDescription: input.modelDescription,
         timestamp: Date.now(),
         content: [
           {
@@ -683,6 +707,9 @@ export function createMockChatBackend(): ChatBackend {
         runId,
         sessionKey: input.sessionKey,
         friendlyId: input.friendlyId,
+        model: draft.model,
+        modelName: draft.modelName,
+        modelDescription: draft.modelDescription,
         thinking: draft.thinking,
         answer: draft.answer,
       })
@@ -755,6 +782,7 @@ export function createMockChatBackend(): ChatBackend {
         sessionKey: forkedConversation.key,
         friendlyId: forkedConversation.friendlyId,
         message: input.message,
+        model: input.model,
         thinking: input.thinking,
         attachments: extractAttachmentsFromMessage(existingMessage),
       })
@@ -762,6 +790,9 @@ export function createMockChatBackend(): ChatBackend {
         runId,
         sessionKey: forkedConversation.key,
         friendlyId: forkedConversation.friendlyId,
+        model: draft.model,
+        modelName: draft.modelName,
+        modelDescription: draft.modelDescription,
         thinking: draft.thinking,
         answer: draft.answer,
       })

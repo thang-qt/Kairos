@@ -8,10 +8,7 @@ import {
 } from '@hugeicons/core-free-icons'
 import { ContextMeter } from './context-meter'
 import { Button } from '@/components/ui/button'
-import { ExportMenu } from '@/components/export-menu'
 import { cn } from '@/lib/utils'
-
-type ExportFormat = 'markdown' | 'json' | 'text'
 
 type ChatHeaderProps = {
   activeTitle: string
@@ -20,9 +17,6 @@ type ChatHeaderProps = {
   onOpenSidebar?: () => void
   usedTokens?: number
   maxTokens?: number
-  onExport: (format: ExportFormat) => void
-  exportDisabled?: boolean
-  showExport?: boolean
   forkedFrom?: {
     title: string
     friendlyId?: string
@@ -39,9 +33,6 @@ function ChatHeaderComponent({
   onOpenSidebar,
   usedTokens,
   maxTokens,
-  onExport,
-  exportDisabled = false,
-  showExport = true,
   forkedFrom,
   onToggleRightSidebar,
   rightSidebarOpen = false,
@@ -83,9 +74,6 @@ function ChatHeaderComponent({
         ) : null}
       </div>
       <div className="flex items-center gap-2 shrink-0">
-        {showExport ? (
-          <ExportMenu onExport={onExport} disabled={exportDisabled} />
-        ) : null}
         <ContextMeter usedTokens={usedTokens} maxTokens={maxTokens} />
         {onToggleRightSidebar ? (
           <Button
