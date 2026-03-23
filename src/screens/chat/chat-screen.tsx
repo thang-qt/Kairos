@@ -804,9 +804,10 @@ export function ChatScreen({
           )}
         </main>
 
-        {hideUi || isMobile ? null : (
+        {hideUi ? null : (
           <RightSidebar
             isOpen={rightSidebarOpen}
+            isMobile={isMobile}
             activeTab={rightSidebarTab}
             onTabChange={setRightSidebarTab}
             onClose={() => setRightSidebarOpen(false)}
