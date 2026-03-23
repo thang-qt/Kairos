@@ -10,6 +10,7 @@ export type ChatSettings = {
   showReasoningBlocks: boolean
   thinkingLevel: ThinkingLevel
   theme: ThemeMode
+  wideMode: boolean
 }
 
 type ChatSettingsState = {
@@ -25,6 +26,7 @@ export const useChatSettingsStore = create<ChatSettingsState>()(
         showReasoningBlocks: true,
         thinkingLevel: 'medium',
         theme: 'system',
+        wideMode: true,
       },
       updateSettings: (updates) =>
         set((state) => ({

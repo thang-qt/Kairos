@@ -535,18 +535,29 @@ export function ChatScreen({
           sidebar
         )}
 
-        <main className="flex h-full min-h-0 flex-col" ref={mainRef}>
-          <ChatHeader
-            activeTitle={activeTitle}
-            wrapperRef={headerRef}
-            showSidebarButton={isMobile}
-            onOpenSidebar={handleOpenSidebar}
-            onExport={exportConversation}
-            exportDisabled={historyLoading || displayMessages.length === 0}
-            showExport={!isNewChat}
-            usedTokens={activeSession?.totalTokens}
-            maxTokens={activeSession?.contextTokens}
-          />
+        <main className="flex h-full min-h-0 flex-col relative" ref={mainRef}>
+          <div
+            className="absolute top-0 left-0 right-0 z-10 pointer-events-none"
+            style={{
+              height: 80,
+              background:
+                'linear-gradient(to bottom, var(--color-surface), transparent)',
+            }}
+          >
+            <div className="pointer-events-auto">
+              <ChatHeader
+                activeTitle={activeTitle}
+                wrapperRef={headerRef}
+                isSidebarCollapsed={isSidebarCollapsed}
+                onOpenSidebar={handleOpenSidebar}
+                onExport={exportConversation}
+                exportDisabled={historyLoading || displayMessages.length === 0}
+                showExport={!isNewChat}
+                usedTokens={activeSession?.totalTokens}
+                maxTokens={activeSession?.contextTokens}
+              />
+            </div>
+          </div>
 
           {hideUi ? null : (
             <>

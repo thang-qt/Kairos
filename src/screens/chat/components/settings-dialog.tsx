@@ -150,6 +150,17 @@ export function SettingsDialog({
                 </TabsList>
               </Tabs>
             </SettingsRow>
+            <SettingsRow
+              label="Wide mode"
+              description="Use wider chat message area"
+            >
+              <Switch
+                checked={settings.wideMode}
+                onCheckedChange={(checked) =>
+                  updateSettings({ wideMode: checked })
+                }
+              />
+            </SettingsRow>
           </SettingsSection>
 
           <SettingsSection title="Chat">

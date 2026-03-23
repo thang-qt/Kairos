@@ -21,6 +21,7 @@ export type ChatContainerRootProps = {
 export type ChatContainerContentProps = {
   children: React.ReactNode
   className?: string
+  wide?: boolean
 } & React.HTMLAttributes<HTMLDivElement>
 
 export type ChatContainerScrollAnchorProps = {
@@ -168,6 +169,7 @@ const MemoizedChatContainerRoot = React.memo(ChatContainerRoot)
 function ChatContainerContent({
   children,
   className,
+  wide = false,
   ...props
 }: ChatContainerContentProps) {
   return (
@@ -175,7 +177,12 @@ function ChatContainerContent({
       className={cn('flex w-full flex-col min-h-full', className)}
       {...props}
     >
-      <div className="mx-auto w-full max-w-full px-5 sm:max-w-[768px] sm:min-w-[400px] flex flex-col flex-1 min-h-full">
+      <div
+        className={cn(
+          'mx-auto w-full max-w-full px-5 sm:min-w-[400px] flex flex-col flex-1 min-h-full',
+          wide ? 'sm:max-w-[900px]' : 'sm:max-w-[768px]',
+        )}
+      >
         <div className="flex flex-col space-y-6">{children}</div>
       </div>
     </div>

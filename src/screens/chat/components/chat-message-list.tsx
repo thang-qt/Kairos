@@ -135,7 +135,7 @@ function ChatMessageListComponent({
   return (
     // mt-2 is to fix the prompt-input cut off
     <ChatContainerRoot className="flex-1 min-h-0 -mb-4">
-      <ChatContainerContent className="pt-6" style={contentStyle}>
+      <ChatContainerContent className="pt-14" style={contentStyle} wide={settings.wideMode}>
         {notice && noticePosition === 'start' ? notice : null}
         {empty && !notice ? (
           (emptyState ?? <div aria-hidden></div>)

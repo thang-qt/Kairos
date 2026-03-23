@@ -112,9 +112,9 @@ function ChatSidebarComponent({
     setDeleteFriendlyId(session.friendlyId)
     setDeleteSessionTitle(
       session.label ||
-        session.title ||
-        session.derivedTitle ||
-        session.friendlyId,
+      session.title ||
+      session.derivedTitle ||
+      session.friendlyId,
     )
     setDeleteDialogOpen(true)
   }
@@ -140,9 +140,10 @@ function ChatSidebarComponent({
   return (
     <motion.aside
       initial={false}
-      animate={{ width: isCollapsed ? 48 : 300 }}
+      animate={{ width: isCollapsed ? 0 : 300 }}
       transition={transition}
       className={asideProps.className}
+      style={{ overflow: 'hidden' }}
     >
       <motion.div
         layout

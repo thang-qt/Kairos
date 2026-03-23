@@ -7,7 +7,6 @@ import type { AttachmentFile } from '@/components/attachment-button'
 import {
   PromptInput,
   PromptInputAction,
-  PromptInputActions,
   PromptInputTextarea,
 } from '@/components/prompt-kit/prompt-input'
 import { Button } from '@/components/ui/button'
@@ -107,55 +106,57 @@ function ChatComposerComponent({
           onSubmit={handleSubmit}
           isLoading={isLoading}
           disabled={disabled}
+          className="flex-col gap-0 py-0"
         >
-          <AttachmentPreviewList
-            attachments={attachments}
-            onRemove={handleRemoveAttachment}
-          />
-          <PromptInputTextarea
-            placeholder="Type a message…"
-            inputRef={promptRef}
-          />
-          <PromptInputActions className="justify-end px-3">
-            <div className="flex items-center gap-2 min-h-8 flex-nowrap">
-              <PromptInputAction
-                tooltip="Attach image"
-                render={(triggerProps) => (
-                  <AttachmentButton
-                    onFileSelect={handleFileSelect}
-                    disabled={disabled}
-                    buttonProps={{
-                      ...triggerProps,
-                      className: cn('rounded-full', triggerProps.className),
-                    }}
+          {attachments.length > 0 && (
+            <AttachmentPreviewList
+              attachments={attachments}
+              onRemove={handleRemoveAttachment}
+            />
+          )}
+          <div className="flex items-end gap-1 px-2 py-[9px]">
+            <PromptInputAction
+              tooltip="Attach image"
+              render={(triggerProps) => (
+                <AttachmentButton
+                  onFileSelect={handleFileSelect}
+                  disabled={disabled}
+                  buttonProps={{
+                    ...triggerProps,
+                    className: cn('rounded-full shrink-0', triggerProps.className),
+                  }}
+                />
+              )}
+            />
+            <PromptInputTextarea
+              placeholder="Type a message…"
+              inputRef={promptRef}
+              className="pl-2 pr-1 flex-1"
+            />
+            <PromptInputAction
+              tooltip="Send message"
+              render={(triggerProps) => (
+                <Button
+                  {...triggerProps}
+                  onClick={(event) => {
+                    triggerProps.onClick?.(event)
+                    handleSubmit()
+                  }}
+                  disabled={submitDisabled || triggerProps.disabled}
+                  size="icon-sm"
+                  variant="default"
+                  className={cn('rounded-full shrink-0', triggerProps.className)}
+                  aria-label="Send message"
+                >
+                  <HugeiconsIcon
+                    icon={ArrowUp02Icon}
+                    size={20}
+                    strokeWidth={1.5}
                   />
-                )}
-              />
-              <PromptInputAction
-                tooltip="Send message"
-                render={(triggerProps) => (
-                  <Button
-                    {...triggerProps}
-                    onClick={(event) => {
-                      triggerProps.onClick?.(event)
-                      handleSubmit()
-                    }}
-                    disabled={submitDisabled || triggerProps.disabled}
-                    size="icon-sm"
-                    variant="default"
-                    className={cn('rounded-full', triggerProps.className)}
-                    aria-label="Send message"
-                  >
-                    <HugeiconsIcon
-                      icon={ArrowUp02Icon}
-                      size={20}
-                      strokeWidth={1.5}
-                    />
-                  </Button>
-                )}
-              />
-            </div>
-          </PromptInputActions>
+                </Button>
+              )}
+            />
+          </div>
         </PromptInput>
       </TooltipProvider>
     </div>
