@@ -304,7 +304,10 @@ func hashPassword(password string) (string, error) {
 
 func verifyPassword(password string, encoded string) bool {
 	parts := strings.Split(encoded, "$")
-	if len(parts) != 6 {
+	if len(parts) != 5 {
+		return false
+	}
+	if parts[0] != "argon2id" {
 		return false
 	}
 
@@ -312,18 +315,18 @@ func verifyPassword(password string, encoded string) bool {
 	var memory uint32
 	var iterations uint32
 	var parallelism uint8
-	if _, err := fmt.Sscanf(parts[2], "v=%d", &version); err != nil || version != 19 {
+	if _, err := fmt.Sscanf(parts[1], "v=%d", &version); err != nil || version != 19 {
 		return false
 	}
-	if _, err := fmt.Sscanf(parts[3], "m=%d,t=%d,p=%d", &memory, &iterations, &parallelism); err != nil {
+	if _, err := fmt.Sscanf(parts[2], "m=%d,t=%d,p=%d", &memory, &iterations, &parallelism); err != nil {
 		return false
 	}
 
-	salt, err := base64.RawStdEncoding.DecodeString(parts[4])
+	salt, err := base64.RawStdEncoding.DecodeString(parts[3])
 	if err != nil {
 		return false
 	}
-	expectedHash, err := base64.RawStdEncoding.DecodeString(parts[5])
+	expectedHash, err := base64.RawStdEncoding.DecodeString(parts[4])
 	if err != nil {
 		return false
 	}
