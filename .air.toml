@@ -1,0 +1,16 @@
+root = "."
+tmp_dir = "tmp/air"
+
+[build]
+  bin = "./tmp/air/kairosd"
+  cmd = "go build -o ./tmp/air/kairosd ./cmd/kairosd"
+  delay = 300
+  exclude_dir = ["dist", "node_modules", "tmp/air"]
+  include_ext = ["go", "sql"]
+  stop_on_error = true
+
+[log]
+  time = true
+
+[misc]
+  clean_on_exit = true
