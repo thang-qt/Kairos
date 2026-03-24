@@ -35,6 +35,19 @@ type authResponse struct {
 	User *User `json:"user"`
 }
 
+type sessionsResponse struct {
+	Sessions []SessionSummary `json:"sessions"`
+}
+
+type createSessionRequest struct {
+	Label string `json:"label"`
+}
+
+type sessionMutationResponse struct {
+	SessionKey string `json:"sessionKey"`
+	FriendlyID string `json:"friendlyId"`
+}
+
 type errorResponse struct {
 	Error string `json:"error"`
 }
@@ -125,6 +138,110 @@ func (app *App) handleMe(writer http.ResponseWriter, request *http.Request) {
 	writeJSON(writer, http.StatusOK, sessionResponse{User: user})
 }
 
+func (app *App) handleListSessions(writer http.ResponseWriter, request *http.Request) {
+	user, ok := app.requireAuthenticatedUser(writer, request)
+	if !ok {
+		return
+	}
+
+	sessions, err := app.chat.ListSessions(request.Context(), user.ID)
+	if err != nil {
+		writeError(writer, http.StatusInternalServerError, "failed to list sessions")
+		return
+	}
+
+	writeJSON(writer, http.StatusOK, sessionsResponse{Sessions: sessions})
+}
+
+func (app *App) handleCreateSession(writer http.ResponseWriter, request *http.Request) {
+	user, ok := app.requireAuthenticatedUser(writer, request)
+	if !ok {
+		return
+	}
+
+	var payload createSessionRequest
+	if err := decodeJSON(request, &payload); err != nil {
+		writeError(writer, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	session, err := app.chat.CreateSession(request.Context(), user.ID, payload.Label)
+	if err != nil {
+		writeError(writer, http.StatusInternalServerError, "failed to create session")
+		return
+	}
+
+	writeJSON(writer, http.StatusCreated, sessionMutationResponse{
+		SessionKey: session.Key,
+		FriendlyID: session.FriendlyID,
+	})
+}
+
+func (app *App) handleRenameSession(writer http.ResponseWriter, request *http.Request) {
+	user, ok := app.requireAuthenticatedUser(writer, request)
+	if !ok {
+		return
+	}
+
+	var payload createSessionRequest
+	if err := decodeJSON(request, &payload); err != nil {
+		writeError(writer, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	session, err := app.chat.RenameSession(request.Context(), user.ID, request.PathValue("friendlyId"), payload.Label)
+	if err != nil {
+		if errors.Is(err, errChatSessionNotFound) {
+			writeError(writer, http.StatusNotFound, err.Error())
+			return
+		}
+		writeError(writer, http.StatusInternalServerError, "failed to rename session")
+		return
+	}
+
+	writeJSON(writer, http.StatusOK, sessionMutationResponse{
+		SessionKey: session.Key,
+		FriendlyID: session.FriendlyID,
+	})
+}
+
+func (app *App) handleDeleteSession(writer http.ResponseWriter, request *http.Request) {
+	user, ok := app.requireAuthenticatedUser(writer, request)
+	if !ok {
+		return
+	}
+
+	if err := app.chat.DeleteSession(request.Context(), user.ID, request.PathValue("friendlyId")); err != nil {
+		if errors.Is(err, errChatSessionNotFound) {
+			writeError(writer, http.StatusNotFound, err.Error())
+			return
+		}
+		writeError(writer, http.StatusInternalServerError, "failed to delete session")
+		return
+	}
+
+	writeJSON(writer, http.StatusOK, map[string]any{"ok": true})
+}
+
+func (app *App) handleSessionHistory(writer http.ResponseWriter, request *http.Request) {
+	user, ok := app.requireAuthenticatedUser(writer, request)
+	if !ok {
+		return
+	}
+
+	history, err := app.chat.GetHistory(request.Context(), user.ID, request.PathValue("friendlyId"))
+	if err != nil {
+		if errors.Is(err, errChatSessionNotFound) {
+			writeError(writer, http.StatusNotFound, err.Error())
+			return
+		}
+		writeError(writer, http.StatusInternalServerError, "failed to load history")
+		return
+	}
+
+	writeJSON(writer, http.StatusOK, history)
+}
+
 func (app *App) sessionTokenFromRequest(request *http.Request) string {
 	cookie, err := request.Cookie(app.config.CookieName)
 	if err != nil {
@@ -156,6 +273,22 @@ func (app *App) clearSessionCookie(writer http.ResponseWriter) {
 		Expires:  time.Unix(0, 0),
 		MaxAge:   -1,
 	})
+}
+
+func (app *App) requireAuthenticatedUser(
+	writer http.ResponseWriter,
+	request *http.Request,
+) (*User, bool) {
+	user, err := app.auth.CurrentUser(request.Context(), app.sessionTokenFromRequest(request))
+	if err != nil {
+		if errors.Is(err, errSessionNotFound) {
+			writeError(writer, http.StatusUnauthorized, "authentication required")
+			return nil, false
+		}
+		writeError(writer, http.StatusUnauthorized, err.Error())
+		return nil, false
+	}
+	return user, true
 }
 
 func requestMetaFromHTTP(request *http.Request) RequestMeta {

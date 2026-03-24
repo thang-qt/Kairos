@@ -1,16 +1,10 @@
-import {
-  Navigate,
-  createFileRoute,
-  useNavigate,
-} from '@tanstack/react-router'
+import { Navigate, createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useCallback, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { ChatScreen } from '../../screens/chat/chat-screen'
 import { moveHistoryMessages } from '../../screens/chat/chat-queries'
-import {
-  isUnauthorizedError,
-  useCurrentUserQuery,
-} from '@/lib/app-api'
+import { isUnauthorizedError, useCurrentUserQuery } from '@/lib/app-api'
+import { configureChatBackend } from '@/lib/chat-backend'
 import { FullScreenMessage } from '@/components/full-screen-message'
 
 export const Route = createFileRoute('/chat/$sessionKey')({
@@ -69,6 +63,7 @@ function ChatRoute() {
 
   if (currentUserQuery.error) {
     if (isUnauthorizedError(currentUserQuery.error)) {
+      configureChatBackend('mock')
       return <Navigate replace to="/auth" />
     }
 
@@ -84,6 +79,8 @@ function ChatRoute() {
       />
     )
   }
+
+  configureChatBackend('http')
 
   return (
     <ChatScreen

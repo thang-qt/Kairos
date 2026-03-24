@@ -1,4 +1,8 @@
-import type { GatewayMessage, HistoryResponse, SessionMeta } from '@/screens/chat/types'
+import type {
+  GatewayMessage,
+  HistoryResponse,
+  SessionMeta,
+} from '@/screens/chat/types'
 import type {
   ChatAttachmentPayload,
   ChatBackend,
@@ -100,7 +104,7 @@ function normalizeConversation(value: StoredConversation): StoredConversation {
     : []
   const lastMessage = value.lastMessage
     ? normalizeMessage(value.lastMessage)
-    : messages.at(-1) ?? null
+    : (messages.at(-1) ?? null)
 
   return {
     key,
@@ -163,7 +167,9 @@ function toSessionMeta(conversation: StoredConversation): SessionMeta {
   }
 }
 
-function getMessageTimestamp(message: GatewayMessage | null | undefined): number {
+function getMessageTimestamp(
+  message: GatewayMessage | null | undefined,
+): number {
   if (!message) return Date.now()
   const timestamp = message.timestamp
   return typeof timestamp === 'number' && Number.isFinite(timestamp)
@@ -192,7 +198,11 @@ function findConversationIndex(
 }
 
 function requireConversation(
-  input: ChatHistoryInput | ChatSendMessageInput | ChatDeleteConversationInput | ChatRenameConversationInput,
+  input:
+    | ChatHistoryInput
+    | ChatSendMessageInput
+    | ChatDeleteConversationInput
+    | ChatRenameConversationInput,
 ): { state: StoredState; index: number; conversation: StoredConversation } {
   const state = loadState()
   const index = findConversationIndex(state, input)
@@ -231,6 +241,56 @@ function sortState(state: StoredState): StoredState {
       (left, right) => right.updatedAt - left.updatedAt,
     ),
   }
+}
+
+export function hydrateMockConversation(
+  session: SessionMeta,
+  history?: HistoryResponse,
+) {
+  const state = loadState()
+  const index = findConversationIndex(state, {
+    sessionKey: session.key,
+    friendlyId: session.friendlyId,
+  })
+  const existing = index >= 0 ? state.conversations[index] : null
+  const historyMessages = Array.isArray(history?.messages)
+    ? history.messages.map(cloneMessage)
+    : (existing?.messages ?? [])
+  const lastMessage =
+    historyMessages.at(-1) ??
+    session.lastMessage ??
+    existing?.lastMessage ??
+    null
+  const updatedAtCandidates = [
+    typeof session.updatedAt === 'number' ? session.updatedAt : 0,
+    existing?.updatedAt ?? 0,
+    getMessageTimestamp(lastMessage),
+  ]
+  const updatedAt = Math.max(...updatedAtCandidates)
+  const conversation = normalizeConversation({
+    key: session.key,
+    friendlyId: session.friendlyId,
+    title: session.title,
+    derivedTitle: session.derivedTitle,
+    label: session.label,
+    updatedAt,
+    lastMessage,
+    totalTokens: session.totalTokens,
+    contextTokens: session.contextTokens ?? DEFAULT_CONTEXT_TOKENS,
+    messages: historyMessages,
+    parentSessionKey: session.parentSessionKey,
+    parentFriendlyId: session.parentFriendlyId,
+    forkPointMessageId: session.forkPointMessageId,
+    forkDepth: session.forkDepth,
+  })
+
+  const nextConversations =
+    index >= 0
+      ? state.conversations.map((value, valueIndex) =>
+          valueIndex === index ? conversation : value,
+        )
+      : [conversation, ...state.conversations]
+  saveState(sortState({ conversations: nextConversations }))
 }
 
 function emitEvent(event: ChatEvent) {
@@ -295,10 +355,14 @@ function textFromMessage(message: GatewayMessage): string {
     .trim()
 }
 
-function deriveTitleFromMessages(messages: Array<GatewayMessage>): string | undefined {
+function deriveTitleFromMessages(
+  messages: Array<GatewayMessage>,
+): string | undefined {
   const firstUserMessage = messages.find((message) => message.role === 'user')
   if (!firstUserMessage) return undefined
-  const firstText = firstUserMessage.content?.find((part) => part.type === 'text')
+  const firstText = firstUserMessage.content?.find(
+    (part) => part.type === 'text',
+  )
   const title =
     firstText && 'text' in firstText ? String(firstText.text ?? '') : ''
   const normalized = title.replace(/\s+/g, ' ').trim()
@@ -502,92 +566,101 @@ function scheduleRun(input: {
   answerChunks.forEach((_chunk, index) => {
     const partialText = answerChunks.slice(0, index + 1).join('')
     timers.push(
-      window.setTimeout(() => {
-        emitEvent({
-          runId: input.runId,
-          sessionKey: input.sessionKey,
-          friendlyId: input.friendlyId,
-          state: 'delta',
-          message: {
-            id: assistantMessageId,
-            role: 'assistant',
-            model: input.model,
-            modelName: input.modelName,
-            modelDescription: input.modelDescription,
-            timestamp: Date.now(),
-            content: [
-              {
-                type: 'thinking',
-                thinking: input.thinking,
-              },
-              {
-                type: 'text',
-                text: partialText,
-              },
-            ],
-          },
-        })
-      }, 300 + index * 160),
+      window.setTimeout(
+        () => {
+          emitEvent({
+            runId: input.runId,
+            sessionKey: input.sessionKey,
+            friendlyId: input.friendlyId,
+            state: 'delta',
+            message: {
+              id: assistantMessageId,
+              role: 'assistant',
+              model: input.model,
+              modelName: input.modelName,
+              modelDescription: input.modelDescription,
+              timestamp: Date.now(),
+              content: [
+                {
+                  type: 'thinking',
+                  thinking: input.thinking,
+                },
+                {
+                  type: 'text',
+                  text: partialText,
+                },
+              ],
+            },
+          })
+        },
+        300 + index * 160,
+      ),
     )
   })
 
   timers.push(
-    window.setTimeout(() => {
-      const finalMessage: GatewayMessage = {
-        id: assistantMessageId,
-        role: 'assistant',
-        model: input.model,
-        modelName: input.modelName,
-        modelDescription: input.modelDescription,
-        timestamp: Date.now(),
-        content: [
-          {
-            type: 'thinking',
-            thinking: input.thinking,
-          },
-          {
-            type: 'text',
-            text: input.answer,
-          },
-        ],
-      }
-
-      const { index } = requireConversation({
-        sessionKey: input.sessionKey,
-        friendlyId: input.friendlyId,
-      })
-
-      updateConversation(index, function appendAssistantMessage(conversation) {
-        const messages = [...conversation.messages, finalMessage]
-        const totalTokens = messages.reduce((sum, message) => {
-          const messageText = message.content
-            ?.filter((part) => part.type === 'text')
-            .map((part) => ('text' in part ? String(part.text ?? '') : ''))
-            .join(' ')
-          return sum + countApproximateTokens(messageText ?? '')
-        }, 0)
-
-        return {
-          ...conversation,
-          messages,
-          lastMessage: finalMessage,
-          updatedAt: getMessageTimestamp(finalMessage),
-          derivedTitle:
-            conversation.derivedTitle ?? deriveTitleFromMessages(messages),
-          totalTokens,
+    window.setTimeout(
+      () => {
+        const finalMessage: GatewayMessage = {
+          id: assistantMessageId,
+          role: 'assistant',
+          model: input.model,
+          modelName: input.modelName,
+          modelDescription: input.modelDescription,
+          timestamp: Date.now(),
+          content: [
+            {
+              type: 'thinking',
+              thinking: input.thinking,
+            },
+            {
+              type: 'text',
+              text: input.answer,
+            },
+          ],
         }
-      })
 
-      emitEvent({
-        runId: input.runId,
-        sessionKey: input.sessionKey,
-        friendlyId: input.friendlyId,
-        state: 'final',
-        message: finalMessage,
-      })
+        const { index } = requireConversation({
+          sessionKey: input.sessionKey,
+          friendlyId: input.friendlyId,
+        })
 
-      clearPendingRun(input.runId)
-    }, 600 + answerChunks.length * 160),
+        updateConversation(
+          index,
+          function appendAssistantMessage(conversation) {
+            const messages = [...conversation.messages, finalMessage]
+            const totalTokens = messages.reduce((sum, message) => {
+              const messageText = message.content
+                ?.filter((part) => part.type === 'text')
+                .map((part) => ('text' in part ? String(part.text ?? '') : ''))
+                .join(' ')
+              return sum + countApproximateTokens(messageText ?? '')
+            }, 0)
+
+            return {
+              ...conversation,
+              messages,
+              lastMessage: finalMessage,
+              updatedAt: getMessageTimestamp(finalMessage),
+              derivedTitle:
+                conversation.derivedTitle ?? deriveTitleFromMessages(messages),
+              totalTokens,
+            }
+          },
+        )
+
+        emitEvent({
+          runId: input.runId,
+          sessionKey: input.sessionKey,
+          friendlyId: input.friendlyId,
+          state: 'final',
+          message: finalMessage,
+        })
+
+        clearPendingRun(input.runId)
+      },
+      600 + answerChunks.length * 160,
+    ),
   )
 }
 
@@ -656,14 +729,17 @@ export function createMockChatBackend(): ChatBackend {
     renameConversation(input: ChatRenameConversationInput) {
       const { index, conversation } = requireConversation(input)
       const label = input.label.trim()
-      const nextConversation = updateConversation(index, function rename(current) {
-        return {
-          ...current,
-          title: label,
-          label,
-          derivedTitle: current.derivedTitle ?? conversation.derivedTitle,
-        }
-      })
+      const nextConversation = updateConversation(
+        index,
+        function rename(current) {
+          return {
+            ...current,
+            title: label,
+            label,
+            derivedTitle: current.derivedTitle ?? conversation.derivedTitle,
+          }
+        },
+      )
       return Promise.resolve({
         sessionKey: nextConversation.key,
         friendlyId: nextConversation.friendlyId,

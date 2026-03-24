@@ -15,6 +15,7 @@ type App struct {
 	config     Config
 	db         *sql.DB
 	auth       *AuthService
+	chat       *ChatService
 	capability CapabilitySet
 }
 
@@ -43,11 +44,13 @@ func NewApp(config Config) (*App, error) {
 		db.Close()
 		return nil, err
 	}
+	chat := NewChatService(db)
 
 	app := &App{
 		config: config,
 		db:     db,
 		auth:   auth,
+		chat:   chat,
 		capability: CapabilitySet{
 			Auth: AuthCapabilities{
 				Enabled:       config.AuthEnabled,
@@ -71,6 +74,11 @@ func (app *App) Handler() http.Handler {
 	mux.HandleFunc("POST /api/auth/login", app.handleLogin)
 	mux.HandleFunc("POST /api/auth/logout", app.handleLogout)
 	mux.HandleFunc("GET /api/me", app.handleMe)
+	mux.HandleFunc("GET /api/sessions", app.handleListSessions)
+	mux.HandleFunc("POST /api/sessions", app.handleCreateSession)
+	mux.HandleFunc("PATCH /api/sessions/{friendlyId}", app.handleRenameSession)
+	mux.HandleFunc("DELETE /api/sessions/{friendlyId}", app.handleDeleteSession)
+	mux.HandleFunc("GET /api/sessions/{friendlyId}/history", app.handleSessionHistory)
 
 	return app.withCommonMiddleware(mux)
 }

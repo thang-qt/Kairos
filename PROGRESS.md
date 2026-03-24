@@ -2,7 +2,7 @@
 
 ## Current Focus
 
-Build Kairos out from the locked backend architecture by landing vertical slices in order, starting with auth and app capabilities.
+Build Kairos out from the locked backend architecture by landing vertical slices in order, with auth and authenticated session persistence now in place.
 
 ## Status
 
@@ -26,25 +26,33 @@ Build Kairos out from the locked backend architecture by landing vertical slices
   Land the first backend vertical slice with a Go `net/http` service, SQLite migration bootstrap, cookie-based auth, app capabilities, optional env-based admin bootstrap, and Nix shell support for Go and SQLite tooling.
 - Completed:
   Add the frontend auth/app shell for the first slice: `/auth`, capability-aware signup hiding, session gating on chat routes, and logout from the existing settings dialog while leaving chat data on the mock backend.
+- Completed:
+  Land the second backend vertical slice with incremental `user_preferences`, `chat_sessions`, and `chat_messages` migrations plus authenticated session list, create, rename, delete, and history endpoints.
+- Completed:
+  Add a hybrid HTTP chat backend adapter that hydrates the existing mock runtime from real backend sessions/history so authenticated users can use persisted conversations without rewriting the current send/stream UI yet.
+- Completed:
+  Add backend tests for authenticated session persistence, user scoping, rename/delete behavior, and history loading.
 
 ## Next Task
 
-Start the second backend vertical slice: authenticated sessions and history.
+Start the provider and model-management slice.
 
 Scope of the next slice:
-- Add incremental migrations for `user_preferences`, `chat_sessions`, and `chat_messages`.
-- Implement authenticated `GET /api/sessions`, `POST /api/sessions`, and `GET /api/sessions/:friendlyId/history`.
-- Return the same session/history shapes the current frontend mock adapter already exposes.
-- Add a selectable HTTP chat backend adapter for sessions and history while keeping mock send/stream behavior in place until the later chat-run slice.
 
-Planned slice order after the sessions/history slice:
-- Provider registry plus `openai_compatible` provider driver and provider settings endpoints
-- Real model catalog loading from backend
+- Add the provider registry abstraction and the first `openai_compatible` driver using the OpenAI Go client.
+- Add env-backed single system provider resolution plus user BYOK provider storage and policy gating.
+- Implement `GET /api/providers`, `POST /api/providers`, `PATCH /api/providers/:providerId`, `DELETE /api/providers/:providerId`, and `GET /api/models`.
+- Resolve model lists from upstream by default, with env-defined allowlists as the locked-down exception.
+- Move hardcoded frontend model data behind backend-driven provider/model APIs.
+
+Planned slice order after the provider/model slice:
+
 - Chat send plus SSE streaming
 - Branch fork/edit/delete flows
 - Title generation
 
 Current branch feature work:
+
 - Completed:
   Add inline fork navigation at branch points so sibling branches can be switched from the message flow while keeping forks as separate conversations under the hood.
 - Completed:
@@ -58,6 +66,7 @@ Current branch feature work:
 
 ## Planned Follow-Up
 
-After the sessions/history slice lands:
-- Move hardcoded model data out of the frontend and behind backend-driven provider/model APIs.
+After the provider/model slice lands:
+
+- Replace the remaining mock-only send path with backend chat runs and SSE streaming.
 - Continue schema work incrementally by feature migration instead of front-loading unused tables.
