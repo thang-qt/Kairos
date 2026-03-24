@@ -71,6 +71,13 @@ export type ModelsPayload = {
   capabilities: AppCapabilities['models']
 }
 
+export type UpdateModelMetadataPayload = {
+  modelId: string
+  name?: string
+  description?: string
+  contextWindow?: number
+}
+
 export type CreateProviderPayload = {
   kind?: string
   label: string
@@ -196,6 +203,14 @@ export async function fetchModels(): Promise<ModelsPayload> {
   return parseJSON<ModelsPayload>(response)
 }
 
+export async function syncModels(): Promise<ModelsPayload> {
+  const response = await fetch('/api/models/sync', {
+    method: 'POST',
+    credentials: 'include',
+  })
+  return parseJSON<ModelsPayload>(response)
+}
+
 export async function fetchPreferences(): Promise<UserPreferences> {
   const response = await fetch('/api/me/preferences', {
     credentials: 'include',
@@ -262,6 +277,21 @@ export async function updatePreferences(
   })
   const data = await parseJSON<{ preferences: UserPreferences }>(response)
   return data.preferences
+}
+
+export async function updateModelMetadata(
+  payload: UpdateModelMetadataPayload,
+): Promise<ProviderModel> {
+  const response = await fetch('/api/models/metadata', {
+    method: 'PATCH',
+    credentials: 'include',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  })
+  const data = await parseJSON<{ model: ProviderModel }>(response)
+  return data.model
 }
 
 export async function testConnection(

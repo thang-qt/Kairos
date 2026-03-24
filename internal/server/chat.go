@@ -429,6 +429,27 @@ func (service *ChatService) appendMessage(
 	return sessionRecordToSummary(session)
 }
 
+func (service *ChatService) UpdateSessionContextTokens(
+	ctx context.Context,
+	sessionID string,
+	userID string,
+	contextTokens int64,
+) error {
+	if contextTokens <= 0 {
+		return nil
+	}
+
+	if _, err := service.db.ExecContext(ctx, `
+		UPDATE chat_sessions
+		SET context_tokens = ?
+		WHERE id = ? AND user_id = ?
+	`, contextTokens, sessionID, userID); err != nil {
+		return fmt.Errorf("update session context tokens: %w", err)
+	}
+
+	return nil
+}
+
 func (service *ChatService) listMessageRecords(
 	ctx context.Context,
 	sessionID string,

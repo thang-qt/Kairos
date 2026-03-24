@@ -115,6 +115,8 @@ func (app *App) Handler() http.Handler {
 	mux.HandleFunc("PATCH /api/providers/{providerId}", app.handleUpdateProvider)
 	mux.HandleFunc("DELETE /api/providers/{providerId}", app.handleDeleteProvider)
 	mux.HandleFunc("GET /api/models", app.handleListModels)
+	mux.HandleFunc("POST /api/models/sync", app.handleSyncModels)
+	mux.HandleFunc("PATCH /api/models/metadata", app.handleUpdateModelMetadata)
 	mux.HandleFunc("GET /api/sessions", app.handleListSessions)
 	mux.HandleFunc("POST /api/sessions", app.handleCreateSession)
 	mux.HandleFunc("PATCH /api/sessions/{friendlyId}", app.handleRenameSession)

@@ -108,6 +108,11 @@ export function ChatScreen({
     modelsQuery.data?.models ?? [],
     modelsQuery.data?.preferences.defaultModelId,
   )
+  const resolvedConversationModelDetails = (modelsQuery.data?.models ?? []).find(
+    function matchResolvedModel(model) {
+      return model.id === resolvedConversationModel
+    },
+  )
   const hasAvailableModel = resolvedConversationModel.trim().length > 0
   const pendingRunIdsRef = useRef(new Set<string>())
   const pendingRunTimersRef = useRef(new Map<string, number>())
@@ -1009,7 +1014,10 @@ export function ChatScreen({
                 isSidebarCollapsed={isSidebarCollapsed}
                 onOpenSidebar={handleOpenSidebar}
                 usedTokens={activeSession?.totalTokens}
-                maxTokens={activeSession?.contextTokens}
+                maxTokens={
+                  activeSession?.contextTokens ??
+                  resolvedConversationModelDetails?.contextWindow
+                }
                 forkedFrom={forkedFrom}
                 onToggleRightSidebar={() =>
                   setRightSidebarOpen((prev) => !prev)

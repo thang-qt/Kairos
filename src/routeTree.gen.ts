@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as SignupRouteImport } from './routes/signup'
+import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as NewRouteImport } from './routes/new'
 import { Route as ConnectRouteImport } from './routes/connect'
 import { Route as AuthRouteImport } from './routes/auth'
@@ -19,6 +20,11 @@ import { Route as ChatSessionKeyRouteImport } from './routes/chat/$sessionKey'
 const SignupRoute = SignupRouteImport.update({
   id: '/signup',
   path: '/signup',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SettingsRoute = SettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
   getParentRoute: () => rootRouteImport,
 } as any)
 const NewRoute = NewRouteImport.update({
@@ -52,6 +58,7 @@ export interface FileRoutesByFullPath {
   '/auth': typeof AuthRoute
   '/connect': typeof ConnectRoute
   '/new': typeof NewRoute
+  '/settings': typeof SettingsRoute
   '/signup': typeof SignupRoute
   '/chat/$sessionKey': typeof ChatSessionKeyRoute
 }
@@ -60,6 +67,7 @@ export interface FileRoutesByTo {
   '/auth': typeof AuthRoute
   '/connect': typeof ConnectRoute
   '/new': typeof NewRoute
+  '/settings': typeof SettingsRoute
   '/signup': typeof SignupRoute
   '/chat/$sessionKey': typeof ChatSessionKeyRoute
 }
@@ -69,6 +77,7 @@ export interface FileRoutesById {
   '/auth': typeof AuthRoute
   '/connect': typeof ConnectRoute
   '/new': typeof NewRoute
+  '/settings': typeof SettingsRoute
   '/signup': typeof SignupRoute
   '/chat/$sessionKey': typeof ChatSessionKeyRoute
 }
@@ -79,16 +88,25 @@ export interface FileRouteTypes {
     | '/auth'
     | '/connect'
     | '/new'
+    | '/settings'
     | '/signup'
     | '/chat/$sessionKey'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/auth' | '/connect' | '/new' | '/signup' | '/chat/$sessionKey'
+  to:
+    | '/'
+    | '/auth'
+    | '/connect'
+    | '/new'
+    | '/settings'
+    | '/signup'
+    | '/chat/$sessionKey'
   id:
     | '__root__'
     | '/'
     | '/auth'
     | '/connect'
     | '/new'
+    | '/settings'
     | '/signup'
     | '/chat/$sessionKey'
   fileRoutesById: FileRoutesById
@@ -98,6 +116,7 @@ export interface RootRouteChildren {
   AuthRoute: typeof AuthRoute
   ConnectRoute: typeof ConnectRoute
   NewRoute: typeof NewRoute
+  SettingsRoute: typeof SettingsRoute
   SignupRoute: typeof SignupRoute
   ChatSessionKeyRoute: typeof ChatSessionKeyRoute
 }
@@ -109,6 +128,13 @@ declare module '@tanstack/react-router' {
       path: '/signup'
       fullPath: '/signup'
       preLoaderRoute: typeof SignupRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/settings': {
+      id: '/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof SettingsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/new': {
@@ -154,6 +180,7 @@ const rootRouteChildren: RootRouteChildren = {
   AuthRoute: AuthRoute,
   ConnectRoute: ConnectRoute,
   NewRoute: NewRoute,
+  SettingsRoute: SettingsRoute,
   SignupRoute: SignupRoute,
   ChatSessionKeyRoute: ChatSessionKeyRoute,
 }

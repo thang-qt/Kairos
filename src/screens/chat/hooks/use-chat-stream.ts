@@ -167,8 +167,6 @@ export function useChatStream({
     activeFriendlyId,
     isNewChat,
     isRedirecting,
-    onChatEvent,
-    queryClient,
     resolvedSessionKey,
     sessionKeyForHistory,
     stopStream,

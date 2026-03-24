@@ -52,6 +52,10 @@ type modelsResponse struct {
 	Capabilities ModelCapabilities `json:"capabilities"`
 }
 
+type modelMutationResponse struct {
+	Model ProviderModel `json:"model"`
+}
+
 type createSessionRequest struct {
 	Label string `json:"label"`
 }
@@ -77,6 +81,10 @@ type forkSessionRequest struct {
 
 type pinSessionRequest struct {
 	IsPinned bool `json:"isPinned"`
+}
+
+type syncModelsResponse struct {
+	OK bool `json:"ok"`
 }
 
 type sessionMutationResponse struct {
@@ -169,6 +177,56 @@ func (app *App) handleListProviders(writer http.ResponseWriter, request *http.Re
 		Providers:   providers,
 		Preferences: preferences,
 	})
+}
+
+func (app *App) handleSyncModels(writer http.ResponseWriter, request *http.Request) {
+	user, ok := app.requireAuthenticatedUser(writer, request)
+	if !ok {
+		return
+	}
+
+	if err := app.providers.SyncModelCatalog(request.Context()); err != nil {
+		writeError(writer, http.StatusBadGateway, err.Error())
+		return
+	}
+
+	models, preferences, err := app.providers.ListModels(request.Context(), user.ID)
+	if err != nil {
+		writeError(writer, http.StatusInternalServerError, "failed to load models")
+		return
+	}
+
+	writeJSON(writer, http.StatusOK, modelsResponse{
+		Models:       models,
+		Preferences:  preferences,
+		Capabilities: app.capability.Models,
+	})
+}
+
+func (app *App) handleUpdateModelMetadata(writer http.ResponseWriter, request *http.Request) {
+	user, ok := app.requireAuthenticatedUser(writer, request)
+	if !ok {
+		return
+	}
+
+	var payload UpdateModelMetadataInput
+	if err := decodeJSON(request, &payload); err != nil {
+		writeError(writer, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	model, err := app.providers.UpdateModelMetadata(request.Context(), user.ID, payload)
+	if err != nil {
+		switch {
+		case errors.Is(err, errModelNotAvailable):
+			writeError(writer, http.StatusNotFound, err.Error())
+		default:
+			writeError(writer, http.StatusBadRequest, err.Error())
+		}
+		return
+	}
+
+	writeJSON(writer, http.StatusOK, modelMutationResponse{Model: model})
 }
 
 func (app *App) handleCreateProvider(writer http.ResponseWriter, request *http.Request) {

@@ -3,6 +3,7 @@ package server
 import (
 	"net/http"
 	"testing"
+	"time"
 )
 
 func TestCreateListUpdateAndDeleteProvider(t *testing.T) {
@@ -82,6 +83,72 @@ func TestModelListUsesSystemProviderStaticModels(t *testing.T) {
 	}
 	if payload.Models[0].ID != "gpt-4.1-mini" {
 		t.Fatalf("model id = %q, want gpt-4.1-mini", payload.Models[0].ID)
+	}
+}
+
+func TestModelListAppliesCatalogAndUserMetadata(t *testing.T) {
+	testServer := newTestApp(t, func(config *Config) {
+		config.SystemProviderEnabled = true
+		config.SystemProviderLabel = "Server Default"
+		config.SystemProviderStaticModels = []string{"gpt-4.1-mini"}
+	})
+	testServer.app.providers.modelCatalog = &modelCatalog{
+		httpClient: nil,
+		ttl:        time.Hour,
+		entries: map[string]modelCatalogEntry{
+			"gpt-4.1-mini": {
+				Name:          "GPT-4.1 Mini",
+				Description:   "Catalog description",
+				ContextWindow: 1_000_000,
+			},
+		},
+	}
+	testServer.app.providers.modelCatalog.expiresAt = time.Now().Add(time.Hour)
+
+	cookie := signupAndRequireCookie(t, testServer, "model-metadata@example.com")
+
+	response := performJSONRequest(t, testServer.handler, http.MethodGet, "/api/models", nil, []*http.Cookie{cookie})
+	assertStatusCode(t, response, http.StatusOK)
+
+	var initial modelsResponse
+	decodeResponseJSON(t, response, &initial)
+	if initial.Models[0].Name != "GPT-4.1 Mini" {
+		t.Fatalf("model name = %q, want catalog name", initial.Models[0].Name)
+	}
+	if initial.Models[0].ContextWindow != 1_000_000 {
+		t.Fatalf("context window = %d, want 1000000", initial.Models[0].ContextWindow)
+	}
+
+	updatedName := "My GPT-4.1 Mini"
+	updatedDescription := "Custom description"
+	updatedContextWindow := int64(256_000)
+	updateResponse := performJSONRequest(t, testServer.handler, http.MethodPatch, "/api/models/metadata", UpdateModelMetadataInput{
+		ModelID:       "gpt-4.1-mini",
+		Name:          &updatedName,
+		Description:   &updatedDescription,
+		ContextWindow: &updatedContextWindow,
+	}, []*http.Cookie{cookie})
+	assertStatusCode(t, updateResponse, http.StatusOK)
+
+	var mutation modelMutationResponse
+	decodeResponseJSON(t, updateResponse, &mutation)
+	if mutation.Model.Name != updatedName {
+		t.Fatalf("updated model name = %q, want %q", mutation.Model.Name, updatedName)
+	}
+	if mutation.Model.Description != updatedDescription {
+		t.Fatalf("updated model description = %q, want %q", mutation.Model.Description, updatedDescription)
+	}
+	if mutation.Model.ContextWindow != updatedContextWindow {
+		t.Fatalf("updated context window = %d, want %d", mutation.Model.ContextWindow, updatedContextWindow)
+	}
+
+	response = performJSONRequest(t, testServer.handler, http.MethodGet, "/api/models", nil, []*http.Cookie{cookie})
+	assertStatusCode(t, response, http.StatusOK)
+
+	var persisted modelsResponse
+	decodeResponseJSON(t, response, &persisted)
+	if persisted.Models[0].Name != updatedName {
+		t.Fatalf("persisted model name = %q, want %q", persisted.Models[0].Name, updatedName)
 	}
 }
 

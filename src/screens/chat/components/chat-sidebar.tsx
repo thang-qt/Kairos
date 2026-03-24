@@ -8,12 +8,9 @@ import {
 import { AnimatePresence, motion } from 'motion/react'
 import { memo, useState } from 'react'
 import { Link, useNavigate } from '@tanstack/react-router'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { useChatSettings } from '../hooks/use-chat-settings'
 import { useDeleteSession } from '../hooks/use-delete-session'
 import { useRenameSession } from '../hooks/use-rename-session'
 import { useSessionShortcuts } from '../hooks/use-session-shortcuts'
-import { SettingsDialog } from './settings-dialog'
 import { SessionRenameDialog } from './sidebar/session-rename-dialog'
 import { SessionDeleteDialog } from './sidebar/session-delete-dialog'
 import { SidebarSessions } from './sidebar/sidebar-sessions'
@@ -25,7 +22,6 @@ import {
   TooltipRoot,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
-import { appQueryKeys, logout } from '@/lib/app-api'
 import { cn } from '@/lib/utils'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { KairosIconBig } from '@/components/icons/kairos-icon-big'
@@ -51,8 +47,6 @@ function ChatSidebarComponent({
   onSelectSession,
   onActiveSessionDelete,
 }: ChatSidebarProps) {
-  const { settingsOpen, setSettingsOpen, handleOpenSettings, closeSettings } =
-    useChatSettings()
   const { deleteSession } = useDeleteSession()
   const { renameSession } = useRenameSession()
   const transition = {
@@ -71,19 +65,6 @@ function ChatSidebarComponent({
   const [deleteSessionTitle, setDeleteSessionTitle] = useState('')
   const [searchDialogOpen, setSearchDialogOpen] = useState(false)
   const navigate = useNavigate()
-  const queryClient = useQueryClient()
-  const logoutMutation = useMutation({
-    mutationFn: logout,
-    onSuccess: async () => {
-      queryClient.setQueryData(appQueryKeys.me, null)
-      await queryClient.invalidateQueries({ queryKey: appQueryKeys.me })
-      closeSettings()
-      void navigate({
-        to: '/auth',
-        replace: true,
-      })
-    },
-  })
 
   useSessionShortcuts({
     onNewSession: onCreateSession,
@@ -333,7 +314,9 @@ function ChatSidebarComponent({
           <Button
             variant="ghost"
             size="sm"
-            onClick={handleOpenSettings}
+            onClick={function handleOpenSettings() {
+              void navigate({ to: '/settings' })
+            }}
             title={isCollapsed ? 'Settings' : undefined}
             className="w-full justify-start pl-1.5"
           >
@@ -359,14 +342,6 @@ function ChatSidebarComponent({
           </Button>
         </motion.div>
       </div>
-
-      <SettingsDialog
-        open={settingsOpen}
-        onOpenChange={setSettingsOpen}
-        onClose={closeSettings}
-        onLogout={() => logoutMutation.mutate()}
-        logoutPending={logoutMutation.isPending}
-      />
 
       <SessionRenameDialog
         open={renameDialogOpen}

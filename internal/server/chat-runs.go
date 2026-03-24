@@ -161,12 +161,12 @@ func (broker *RunBroker) pruneRecentEvents(
 }
 
 type ChatRunService struct {
-	db        *sql.DB
-	chat      *ChatService
-	providers *ProviderService
-	broker    *RunBroker
-	runMu     sync.Mutex
-	runCancels map[string]context.CancelFunc
+	db          *sql.DB
+	chat        *ChatService
+	providers   *ProviderService
+	broker      *RunBroker
+	runMu       sync.Mutex
+	runCancels  map[string]context.CancelFunc
 	sessionRuns map[string]map[string]struct{}
 }
 
@@ -177,11 +177,11 @@ func NewChatRunService(
 	broker *RunBroker,
 ) *ChatRunService {
 	return &ChatRunService{
-		db:         db,
-		chat:       chat,
-		providers:  providers,
-		broker:     broker,
-		runCancels: make(map[string]context.CancelFunc),
+		db:          db,
+		chat:        chat,
+		providers:   providers,
+		broker:      broker,
+		runCancels:  make(map[string]context.CancelFunc),
 		sessionRuns: make(map[string]map[string]struct{}),
 	}
 }
@@ -371,6 +371,11 @@ func (service *ChatRunService) executeRun(
 		}
 		service.publishRunError(ctx, record, session, err)
 		return
+	}
+	if model.ContextWindow > 0 {
+		if err := service.chat.UpdateSessionContextTokens(ctx, session.ID, session.UserID, model.ContextWindow); err == nil {
+			session.ContextTokens = model.ContextWindow
+		}
 	}
 
 	driver := service.providers.drivers[provider.Record.Kind]

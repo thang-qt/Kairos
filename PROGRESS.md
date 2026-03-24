@@ -13,6 +13,14 @@ Build Kairos out from the locked backend architecture by landing vertical slices
 - Completed:
   Move conversation pin state into the backend with a `chat_sessions.is_pinned` migration, authenticated pin API, and frontend mutations that no longer rely on local-only storage.
 - Completed:
+  Move settings out of the chat dialog into a dedicated `/settings` page with route-driven tabs for models, providers, appearance, and display preferences.
+- Completed:
+  Enrich backend model metadata with catalog-backed `name`, `description`, and `contextWindow` values, plus per-user metadata overrides persisted in SQLite.
+- Completed:
+  Add backend model metadata update and catalog sync APIs so the frontend can edit model details and refresh catalog data from `models.dev`.
+- Completed:
+  Wire the chat topbar context window display to resolved model metadata so the header shows model context size even when the session record is stale.
+- Completed:
   Land the backend-owned branching slice with real fork, edit, and delete session/message endpoints backed by SQLite session/message cloning instead of mock-only branch state.
 - Completed:
   Switch the authenticated HTTP chat backend off the mock branch path so fork/edit/delete actions now use backend routes with mock fallback only for missing local-only sessions.

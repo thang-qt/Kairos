@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	openai "github.com/openai/openai-go/v3"
@@ -93,6 +94,13 @@ type UpdateUserPreferencesInput struct {
 	DefaultModelID     *string `json:"defaultModelId"`
 }
 
+type UpdateModelMetadataInput struct {
+	ModelID       string  `json:"modelId"`
+	Name          *string `json:"name"`
+	Description   *string `json:"description"`
+	ContextWindow *int64  `json:"contextWindow"`
+}
+
 type providerRow struct {
 	ID                string
 	UserID            string
@@ -123,6 +131,22 @@ type resolvedProvider struct {
 	BaseURL      string
 	APIKey       string
 	StaticModels []string
+}
+
+type modelMetadataOverrideRow struct {
+	UserID        string
+	ModelID       string
+	Name          string
+	Description   string
+	ContextWindow int64
+	CreatedAt     int64
+	UpdatedAt     int64
+}
+
+type modelCatalogEntry struct {
+	Name          string
+	Description   string
+	ContextWindow int64
 }
 
 type ChatGenerationRequest struct {
@@ -297,6 +321,15 @@ type ProviderService struct {
 	encryptionKey [32]byte
 	drivers       map[string]ProviderDriver
 	system        *systemProvider
+	modelCatalog  *modelCatalog
+}
+
+type modelCatalog struct {
+	httpClient *http.Client
+	ttl        time.Duration
+	mu         sync.Mutex
+	expiresAt  time.Time
+	entries    map[string]modelCatalogEntry
 }
 
 func NewProviderService(db *sql.DB, config Config) *ProviderService {
@@ -309,6 +342,7 @@ func NewProviderService(db *sql.DB, config Config) *ProviderService {
 				httpClient: &http.Client{Timeout: 10 * time.Second},
 			},
 		},
+		modelCatalog: newModelCatalog(),
 	}
 	if config.SystemProviderEnabled {
 		service.system = &systemProvider{
@@ -324,6 +358,14 @@ func NewProviderService(db *sql.DB, config Config) *ProviderService {
 		}
 	}
 	return service
+}
+
+func newModelCatalog() *modelCatalog {
+	return &modelCatalog{
+		httpClient: &http.Client{Timeout: 5 * time.Second},
+		ttl:        12 * time.Hour,
+		entries:    make(map[string]modelCatalogEntry),
+	}
 }
 
 func (service *ProviderService) ListProviders(
@@ -711,10 +753,122 @@ func (service *ProviderService) ListModels(
 	if len(visibleModels) == 0 {
 		return nil, preferences, nil
 	}
+	visibleModels = service.enrichModels(ctx, userID, visibleModels)
 	slices.SortFunc(visibleModels, func(left ProviderModel, right ProviderModel) int {
 		return strings.Compare(left.ID, right.ID)
 	})
 	return visibleModels, preferences, nil
+}
+
+func (service *ProviderService) UpdateModelMetadata(
+	ctx context.Context,
+	userID string,
+	input UpdateModelMetadataInput,
+) (ProviderModel, error) {
+	modelID := strings.TrimSpace(input.ModelID)
+	if modelID == "" {
+		return ProviderModel{}, errors.New("model id is required")
+	}
+
+	models, _, err := service.ListModels(ctx, userID)
+	if err != nil {
+		return ProviderModel{}, err
+	}
+
+	matchedIndex := -1
+	for index, model := range models {
+		if strings.TrimSpace(model.ID) == modelID {
+			matchedIndex = index
+			break
+		}
+	}
+	if matchedIndex < 0 {
+		return ProviderModel{}, errModelNotAvailable
+	}
+
+	override, err := service.findModelMetadataOverride(ctx, userID, modelID)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return ProviderModel{}, err
+	}
+
+	name := strings.TrimSpace(models[matchedIndex].Name)
+	description := strings.TrimSpace(models[matchedIndex].Description)
+	contextWindow := models[matchedIndex].ContextWindow
+	if err == nil {
+		if strings.TrimSpace(override.Name) != "" {
+			name = strings.TrimSpace(override.Name)
+		}
+		if strings.TrimSpace(override.Description) != "" {
+			description = strings.TrimSpace(override.Description)
+		}
+		if override.ContextWindow > 0 {
+			contextWindow = override.ContextWindow
+		}
+	}
+
+	if input.Name != nil {
+		name = strings.TrimSpace(*input.Name)
+	}
+	if input.Description != nil {
+		description = strings.TrimSpace(*input.Description)
+	}
+	if input.ContextWindow != nil {
+		if *input.ContextWindow > 0 {
+			contextWindow = *input.ContextWindow
+		} else {
+			contextWindow = 0
+		}
+	}
+
+	if name == "" && description == "" && contextWindow <= 0 {
+		if _, deleteErr := service.db.ExecContext(ctx, `
+			DELETE FROM user_model_metadata
+			WHERE user_id = ? AND model_id = ?
+		`, userID, modelID); deleteErr != nil {
+			return ProviderModel{}, fmt.Errorf("delete model metadata override: %w", deleteErr)
+		}
+	} else {
+		now := time.Now().UnixMilli()
+		if _, upsertErr := service.db.ExecContext(ctx, `
+			INSERT INTO user_model_metadata(
+				user_id,
+				model_id,
+				name,
+				description,
+				context_window,
+				created_at,
+				updated_at
+			)
+			VALUES (?, ?, ?, ?, ?, ?, ?)
+			ON CONFLICT(user_id, model_id) DO UPDATE SET
+				name = excluded.name,
+				description = excluded.description,
+				context_window = excluded.context_window,
+				updated_at = excluded.updated_at
+		`, userID, modelID, name, description, maxInt64(contextWindow, 0), now, now); upsertErr != nil {
+			return ProviderModel{}, fmt.Errorf("upsert model metadata override: %w", upsertErr)
+		}
+	}
+
+	models, _, err = service.ListModels(ctx, userID)
+	if err != nil {
+		return ProviderModel{}, err
+	}
+	for _, model := range models {
+		if strings.TrimSpace(model.ID) == modelID {
+			return model, nil
+		}
+	}
+
+	return ProviderModel{}, errModelNotAvailable
+}
+
+func (service *ProviderService) SyncModelCatalog(ctx context.Context) error {
+	if service.modelCatalog == nil {
+		return nil
+	}
+	_, err := service.modelCatalog.load(ctx, true)
+	return err
 }
 
 func (service *ProviderService) ResolveGenerationTarget(
@@ -786,7 +940,7 @@ func (service *ProviderService) ResolveGenerationTarget(
 		if strings.TrimSpace(candidate.Model.ID) != effectiveModel {
 			continue
 		}
-		return candidate.Provider, candidate.Model, preferences, nil
+		return candidate.Provider, service.enrichModel(ctx, userID, candidate.Model), preferences, nil
 	}
 
 	if len(candidates) == 1 {
@@ -794,16 +948,149 @@ func (service *ProviderService) ResolveGenerationTarget(
 		if err != nil {
 			return resolvedProvider{}, ProviderModel{}, preferences, err
 		}
-		return resolved, ProviderModel{
+		return resolved, service.enrichModel(ctx, userID, ProviderModel{
 			ID:            effectiveModel,
 			Object:        "model",
 			OwnedBy:       candidates[0].Label,
 			ProviderRef:   candidates[0].Ref,
 			ProviderLabel: candidates[0].Label,
-		}, preferences, nil
+		}), preferences, nil
 	}
 
 	return resolvedProvider{}, ProviderModel{}, preferences, errModelNotAvailable
+}
+
+func (service *ProviderService) enrichModels(
+	ctx context.Context,
+	userID string,
+	models []ProviderModel,
+) []ProviderModel {
+	if len(models) == 0 {
+		return models
+	}
+
+	entries := map[string]modelCatalogEntry{}
+	if service.modelCatalog != nil {
+		ids := make([]string, 0, len(models))
+		for _, model := range models {
+			if strings.TrimSpace(model.ID) != "" {
+				ids = append(ids, model.ID)
+			}
+		}
+		entries = service.modelCatalog.lookupMany(ctx, ids)
+	}
+	overrides := service.loadModelMetadataOverrides(ctx, userID, models)
+
+	enriched := make([]ProviderModel, 0, len(models))
+	for _, model := range models {
+		next := model
+		if entry, ok := entries[strings.TrimSpace(model.ID)]; ok {
+			next = applyModelCatalogEntry(next, entry)
+		}
+		if override, ok := overrides[strings.TrimSpace(model.ID)]; ok {
+			next = applyModelMetadataOverride(next, override)
+		}
+		enriched = append(enriched, next)
+	}
+	return enriched
+}
+
+func (service *ProviderService) enrichModel(
+	ctx context.Context,
+	userID string,
+	model ProviderModel,
+) ProviderModel {
+	enriched := service.enrichModels(ctx, userID, []ProviderModel{model})
+	if len(enriched) == 0 {
+		return model
+	}
+	return enriched[0]
+}
+
+func (service *ProviderService) loadModelMetadataOverrides(
+	ctx context.Context,
+	userID string,
+	models []ProviderModel,
+) map[string]modelMetadataOverrideRow {
+	if len(models) == 0 {
+		return nil
+	}
+
+	result := make(map[string]modelMetadataOverrideRow)
+	rows, err := service.db.QueryContext(ctx, `
+		SELECT
+			user_id,
+			model_id,
+			name,
+			description,
+			context_window,
+			created_at,
+			updated_at
+		FROM user_model_metadata
+		WHERE user_id = ?
+	`, userID)
+	if err != nil {
+		return result
+	}
+	defer rows.Close()
+
+	visible := make(map[string]struct{}, len(models))
+	for _, model := range models {
+		visible[strings.TrimSpace(model.ID)] = struct{}{}
+	}
+
+	for rows.Next() {
+		var row modelMetadataOverrideRow
+		if scanErr := rows.Scan(
+			&row.UserID,
+			&row.ModelID,
+			&row.Name,
+			&row.Description,
+			&row.ContextWindow,
+			&row.CreatedAt,
+			&row.UpdatedAt,
+		); scanErr != nil {
+			continue
+		}
+		if _, ok := visible[strings.TrimSpace(row.ModelID)]; !ok {
+			continue
+		}
+		result[strings.TrimSpace(row.ModelID)] = row
+	}
+
+	return result
+}
+
+func (service *ProviderService) findModelMetadataOverride(
+	ctx context.Context,
+	userID string,
+	modelID string,
+) (modelMetadataOverrideRow, error) {
+	var row modelMetadataOverrideRow
+	err := service.db.QueryRowContext(ctx, `
+		SELECT
+			user_id,
+			model_id,
+			name,
+			description,
+			context_window,
+			created_at,
+			updated_at
+		FROM user_model_metadata
+		WHERE user_id = ? AND model_id = ?
+	`, userID, strings.TrimSpace(modelID)).Scan(
+		&row.UserID,
+		&row.ModelID,
+		&row.Name,
+		&row.Description,
+		&row.ContextWindow,
+		&row.CreatedAt,
+		&row.UpdatedAt,
+	)
+	if err != nil {
+		return modelMetadataOverrideRow{}, err
+	}
+	return row, nil
 }
 
 func (service *ProviderService) ensureUserPreferences(ctx context.Context, userID string) error {
@@ -976,6 +1263,222 @@ func providerRowToRecord(row providerRow) ProviderRecord {
 		SupportsModelSync: row.SupportsModelSync,
 		SystemManaged:     false,
 	}
+}
+
+func (catalog *modelCatalog) lookupMany(
+	ctx context.Context,
+	ids []string,
+) map[string]modelCatalogEntry {
+	result := make(map[string]modelCatalogEntry)
+	if len(ids) == 0 {
+		return result
+	}
+
+	entries, err := catalog.load(ctx, false)
+	if err != nil {
+		return result
+	}
+
+	for _, id := range ids {
+		normalizedID := strings.TrimSpace(id)
+		if normalizedID == "" {
+			continue
+		}
+		if entry, ok := entries[normalizedID]; ok {
+			result[normalizedID] = entry
+		}
+	}
+	return result
+}
+
+func (catalog *modelCatalog) load(
+	ctx context.Context,
+	force bool,
+) (map[string]modelCatalogEntry, error) {
+	catalog.mu.Lock()
+	defer catalog.mu.Unlock()
+
+	if !force && time.Now().Before(catalog.expiresAt) && len(catalog.entries) > 0 {
+		return cloneModelCatalogEntries(catalog.entries), nil
+	}
+
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://models.dev/api.json", nil)
+	if err != nil {
+		return nil, fmt.Errorf("build models.dev request: %w", err)
+	}
+
+	response, err := catalog.httpClient.Do(request)
+	if err != nil {
+		if len(catalog.entries) > 0 {
+			return cloneModelCatalogEntries(catalog.entries), nil
+		}
+		return nil, fmt.Errorf("fetch models.dev catalog: %w", err)
+	}
+	defer response.Body.Close()
+
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		if len(catalog.entries) > 0 {
+			return cloneModelCatalogEntries(catalog.entries), nil
+		}
+		return nil, fmt.Errorf("fetch models.dev catalog: status %d", response.StatusCode)
+	}
+
+	var payload any
+	if err := json.NewDecoder(response.Body).Decode(&payload); err != nil {
+		if len(catalog.entries) > 0 {
+			return cloneModelCatalogEntries(catalog.entries), nil
+		}
+		return nil, fmt.Errorf("decode models.dev catalog: %w", err)
+	}
+
+	entries := make(map[string]modelCatalogEntry)
+	extractModelCatalogEntries(payload, entries)
+	if len(entries) == 0 {
+		if len(catalog.entries) > 0 {
+			return cloneModelCatalogEntries(catalog.entries), nil
+		}
+		return nil, errors.New("models.dev catalog was empty")
+	}
+
+	catalog.entries = entries
+	catalog.expiresAt = time.Now().Add(catalog.ttl)
+	return cloneModelCatalogEntries(entries), nil
+}
+
+func cloneModelCatalogEntries(
+	source map[string]modelCatalogEntry,
+) map[string]modelCatalogEntry {
+	result := make(map[string]modelCatalogEntry, len(source))
+	for key, value := range source {
+		result[key] = value
+	}
+	return result
+}
+
+func extractModelCatalogEntries(value any, result map[string]modelCatalogEntry) {
+	switch typed := value.(type) {
+	case map[string]any:
+		if entryID, entry, ok := parseModelCatalogEntry(typed); ok {
+			result[entryID] = mergeModelCatalogEntries(result[entryID], entry)
+		}
+		for _, nested := range typed {
+			extractModelCatalogEntries(nested, result)
+		}
+	case []any:
+		for _, nested := range typed {
+			extractModelCatalogEntries(nested, result)
+		}
+	}
+}
+
+func parseModelCatalogEntry(
+	value map[string]any,
+) (string, modelCatalogEntry, bool) {
+	id := strings.TrimSpace(stringValue(value["id"]))
+	if id == "" {
+		return "", modelCatalogEntry{}, false
+	}
+
+	entry := modelCatalogEntry{
+		Name:          strings.TrimSpace(stringValue(value["name"])),
+		Description:   strings.TrimSpace(stringValue(value["description"])),
+		ContextWindow: catalogInt64Value(value["contextWindow"]),
+	}
+	if entry.ContextWindow <= 0 {
+		entry.ContextWindow = catalogInt64Value(value["context_window"])
+	}
+	if entry.ContextWindow <= 0 {
+		entry.ContextWindow = catalogInt64Value(value["context"])
+	}
+	if limits, ok := value["limit"].(map[string]any); ok && entry.ContextWindow <= 0 {
+		entry.ContextWindow = catalogInt64Value(limits["context"])
+	}
+	if entry.Name == "" && entry.Description == "" && entry.ContextWindow <= 0 {
+		return "", modelCatalogEntry{}, false
+	}
+	return id, entry, true
+}
+
+func mergeModelCatalogEntries(
+	current modelCatalogEntry,
+	next modelCatalogEntry,
+) modelCatalogEntry {
+	if strings.TrimSpace(current.Name) == "" && strings.TrimSpace(next.Name) != "" {
+		current.Name = strings.TrimSpace(next.Name)
+	}
+	if len(strings.TrimSpace(next.Description)) > len(strings.TrimSpace(current.Description)) {
+		current.Description = strings.TrimSpace(next.Description)
+	}
+	if next.ContextWindow > current.ContextWindow {
+		current.ContextWindow = next.ContextWindow
+	}
+	return current
+}
+
+func applyModelCatalogEntry(
+	model ProviderModel,
+	entry modelCatalogEntry,
+) ProviderModel {
+	if strings.TrimSpace(model.Name) == "" && strings.TrimSpace(entry.Name) != "" {
+		model.Name = strings.TrimSpace(entry.Name)
+	}
+	if strings.TrimSpace(model.Description) == "" && strings.TrimSpace(entry.Description) != "" {
+		model.Description = strings.TrimSpace(entry.Description)
+	}
+	if model.ContextWindow <= 0 && entry.ContextWindow > 0 {
+		model.ContextWindow = entry.ContextWindow
+	}
+	return model
+}
+
+func applyModelMetadataOverride(
+	model ProviderModel,
+	override modelMetadataOverrideRow,
+) ProviderModel {
+	if strings.TrimSpace(override.Name) != "" {
+		model.Name = strings.TrimSpace(override.Name)
+	}
+	if strings.TrimSpace(override.Description) != "" {
+		model.Description = strings.TrimSpace(override.Description)
+	}
+	if override.ContextWindow > 0 {
+		model.ContextWindow = override.ContextWindow
+	}
+	return model
+}
+
+func stringValue(value any) string {
+	typed, ok := value.(string)
+	if !ok {
+		return ""
+	}
+	return typed
+}
+
+func catalogInt64Value(value any) int64 {
+	switch typed := value.(type) {
+	case int:
+		return int64(typed)
+	case int32:
+		return int64(typed)
+	case int64:
+		return typed
+	case float32:
+		return int64(typed)
+	case float64:
+		return int64(typed)
+	case json.Number:
+		parsed, err := typed.Int64()
+		if err == nil {
+			return parsed
+		}
+	case string:
+		parsed, err := json.Number(strings.TrimSpace(typed)).Int64()
+		if err == nil {
+			return parsed
+		}
+	}
+	return 0
 }
 
 func modelsFromStaticList(modelIDs []string, provider ProviderRecord) []ProviderModel {
