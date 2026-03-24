@@ -4,6 +4,8 @@ export type ChatUiState = {
   isSidebarCollapsed: boolean
 }
 
+const CHAT_UI_STORAGE_KEY = 'kairos.chat-ui.v1'
+
 const defaultChatUiState: ChatUiState = {
   isSidebarCollapsed: false,
 }
@@ -15,9 +17,15 @@ export function getChatUiState(queryClient: QueryClient): ChatUiState {
   if (cached && typeof cached === 'object') {
     return {
       ...defaultChatUiState,
-      ...(cached as Partial<ChatUiState>),
+        ...(cached as Partial<ChatUiState>),
     }
   }
+
+  const persisted = readPersistedChatUiState()
+  if (persisted) {
+    return persisted
+  }
+
   return defaultChatUiState
 }
 
@@ -33,6 +41,41 @@ export function setChatUiState(
             ...(state as Partial<ChatUiState>),
           }
         : defaultChatUiState
-    return updater(current)
+    const next = updater(current)
+    persistChatUiState(next)
+    return next
   })
+}
+
+function readPersistedChatUiState(): ChatUiState | null {
+  if (typeof window === 'undefined') {
+    return null
+  }
+
+  try {
+    const rawValue = window.localStorage.getItem(CHAT_UI_STORAGE_KEY)
+    if (!rawValue) {
+      return null
+    }
+
+    const parsed = JSON.parse(rawValue) as Partial<ChatUiState>
+    return {
+      ...defaultChatUiState,
+      ...parsed,
+    }
+  } catch {
+    return null
+  }
+}
+
+function persistChatUiState(state: ChatUiState) {
+  if (typeof window === 'undefined') {
+    return
+  }
+
+  try {
+    window.localStorage.setItem(CHAT_UI_STORAGE_KEY, JSON.stringify(state))
+  } catch {
+    // Ignore storage failures and keep UI state in-memory.
+  }
 }
