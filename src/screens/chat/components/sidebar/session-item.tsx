@@ -143,6 +143,7 @@ function areSessionItemsEqual(prev: SessionItemProps, next: SessionItemProps) {
     prev.session.label === next.session.label &&
     prev.session.title === next.session.title &&
     prev.session.derivedTitle === next.session.derivedTitle &&
+    prev.session.isPinned === next.session.isPinned &&
     prev.session.updatedAt === next.session.updatedAt &&
     prev.session.parentSessionKey === next.session.parentSessionKey
   )

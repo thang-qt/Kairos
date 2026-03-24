@@ -165,6 +165,58 @@ func TestRenameAndDeleteSession(t *testing.T) {
 	}
 }
 
+func TestPinSessionPersistsAndSortsToTop(t *testing.T) {
+	testServer := newTestApp(t, nil)
+	cookie := signupAndRequireCookie(t, testServer, "pin@example.com")
+
+	firstResponse := performJSONRequest(t, testServer.handler, http.MethodPost, "/api/sessions", createSessionRequest{
+		Label: "Older",
+	}, []*http.Cookie{cookie})
+	assertStatusCode(t, firstResponse, http.StatusCreated)
+	var first sessionMutationResponse
+	decodeResponseJSON(t, firstResponse, &first)
+
+	secondResponse := performJSONRequest(t, testServer.handler, http.MethodPost, "/api/sessions", createSessionRequest{
+		Label: "Newer",
+	}, []*http.Cookie{cookie})
+	assertStatusCode(t, secondResponse, http.StatusCreated)
+	var second sessionMutationResponse
+	decodeResponseJSON(t, secondResponse, &second)
+
+	pinResponse := performJSONRequest(t, testServer.handler, http.MethodPatch, "/api/sessions/"+first.FriendlyID+"/pin", pinSessionRequest{
+		IsPinned: true,
+	}, []*http.Cookie{cookie})
+	assertStatusCode(t, pinResponse, http.StatusOK)
+
+	var pinned SessionSummary
+	decodeResponseJSON(t, pinResponse, &pinned)
+	if !pinned.IsPinned {
+		t.Fatal("pin response isPinned = false, want true")
+	}
+
+	listResponse := performJSONRequest(t, testServer.handler, http.MethodGet, "/api/sessions", nil, []*http.Cookie{cookie})
+	assertStatusCode(t, listResponse, http.StatusOK)
+
+	var sessionsPayload sessionsResponse
+	decodeResponseJSON(t, listResponse, &sessionsPayload)
+	if len(sessionsPayload.Sessions) != 2 {
+		t.Fatalf("sessions count after pin = %d, want 2", len(sessionsPayload.Sessions))
+	}
+	if sessionsPayload.Sessions[0].FriendlyID != first.FriendlyID {
+		t.Fatalf("first listed session = %q, want pinned %q", sessionsPayload.Sessions[0].FriendlyID, first.FriendlyID)
+	}
+	if !sessionsPayload.Sessions[0].IsPinned {
+		t.Fatal("first listed session isPinned = false, want true")
+	}
+
+	reloadResponse := performJSONRequest(t, testServer.handler, http.MethodGet, "/api/sessions", nil, []*http.Cookie{cookie})
+	assertStatusCode(t, reloadResponse, http.StatusOK)
+	decodeResponseJSON(t, reloadResponse, &sessionsPayload)
+	if !sessionsPayload.Sessions[0].IsPinned {
+		t.Fatal("reloaded pinned session isPinned = false, want true")
+	}
+}
+
 func TestForkSessionCreatesBackendBranch(t *testing.T) {
 	testServer := newTestApp(t, nil)
 	cookie := signupAndRequireCookie(t, testServer, "fork@example.com")

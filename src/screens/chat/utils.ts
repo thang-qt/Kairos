@@ -94,6 +94,8 @@ export function normalizeSessions(
           ? session.derivedTitle
           : undefined,
       label: typeof session.label === 'string' ? session.label : undefined,
+      isPinned:
+        typeof session.isPinned === 'boolean' ? session.isPinned : undefined,
       updatedAt:
         typeof session.updatedAt === 'number' ? session.updatedAt : undefined,
       lastMessage: session.lastMessage ?? null,

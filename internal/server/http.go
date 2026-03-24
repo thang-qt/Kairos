@@ -75,6 +75,10 @@ type forkSessionRequest struct {
 	MessageID string `json:"messageId"`
 }
 
+type pinSessionRequest struct {
+	IsPinned bool `json:"isPinned"`
+}
+
 type sessionMutationResponse struct {
 	SessionKey string `json:"sessionKey"`
 	FriendlyID string `json:"friendlyId"`
@@ -469,6 +473,36 @@ func (app *App) handleDeleteSession(writer http.ResponseWriter, request *http.Re
 	}
 
 	writeJSON(writer, http.StatusOK, map[string]any{"ok": true})
+}
+
+func (app *App) handlePinSession(writer http.ResponseWriter, request *http.Request) {
+	user, ok := app.requireAuthenticatedUser(writer, request)
+	if !ok {
+		return
+	}
+
+	var payload pinSessionRequest
+	if err := decodeJSON(request, &payload); err != nil {
+		writeError(writer, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	session, err := app.chat.PinSession(
+		request.Context(),
+		user.ID,
+		request.PathValue("friendlyId"),
+		payload.IsPinned,
+	)
+	if err != nil {
+		if errors.Is(err, errChatSessionNotFound) {
+			writeError(writer, http.StatusNotFound, err.Error())
+			return
+		}
+		writeError(writer, http.StatusInternalServerError, "failed to pin session")
+		return
+	}
+
+	writeJSON(writer, http.StatusOK, session)
 }
 
 func (app *App) handleSessionHistory(writer http.ResponseWriter, request *http.Request) {

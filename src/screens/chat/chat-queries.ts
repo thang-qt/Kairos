@@ -226,6 +226,11 @@ function sortSessionsByUpdatedAt(
   sessions: Array<SessionMeta>,
 ): Array<SessionMeta> {
   return [...sessions].sort((a, b) => {
+    const aPinned = a.isPinned === true
+    const bPinned = b.isPinned === true
+    if (aPinned !== bPinned) {
+      return aPinned ? -1 : 1
+    }
     const aUpdatedAt =
       typeof a.updatedAt === 'number' && Number.isFinite(a.updatedAt)
         ? a.updatedAt

@@ -138,6 +138,29 @@ export function createHTTPChatBackend(): ChatBackend {
         throw error
       }
     },
+    async pinConversation(input) {
+      try {
+        const response = await fetch(
+          `/api/sessions/${encodeURIComponent(input.friendlyId)}/pin`,
+          {
+            method: 'PATCH',
+            credentials: 'include',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              isPinned: input.isPinned,
+            }),
+          },
+        )
+        return parseJSON<ChatConversation>(response)
+      } catch (error) {
+        if (error instanceof ApiError && error.status === 404) {
+          return mockBackend.pinConversation(input)
+        }
+        throw error
+      }
+    },
     async deleteConversation(input: ChatDeleteConversationInput) {
       try {
         const response = await fetch(

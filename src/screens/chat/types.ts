@@ -49,6 +49,7 @@ export type SessionSummary = {
   label?: string
   title?: string
   derivedTitle?: string
+  isPinned?: boolean
   updatedAt?: number
   lastMessage?: GatewayMessage | null
   friendlyId?: string
@@ -76,6 +77,7 @@ export type SessionMeta = {
   title?: string
   derivedTitle?: string
   label?: string
+  isPinned?: boolean
   updatedAt?: number
   lastMessage?: GatewayMessage | null
   totalTokens?: number

@@ -118,6 +118,7 @@ func (app *App) Handler() http.Handler {
 	mux.HandleFunc("GET /api/sessions", app.handleListSessions)
 	mux.HandleFunc("POST /api/sessions", app.handleCreateSession)
 	mux.HandleFunc("PATCH /api/sessions/{friendlyId}", app.handleRenameSession)
+	mux.HandleFunc("PATCH /api/sessions/{friendlyId}/pin", app.handlePinSession)
 	mux.HandleFunc("DELETE /api/sessions/{friendlyId}", app.handleDeleteSession)
 	mux.HandleFunc("GET /api/sessions/{friendlyId}/history", app.handleSessionHistory)
 	mux.HandleFunc("POST /api/sessions/{friendlyId}/messages", app.handleSendMessage)

@@ -3,6 +3,7 @@
 import { HugeiconsIcon } from '@hugeicons/react'
 import { ArrowRight01Icon } from '@hugeicons/core-free-icons'
 import { memo, useCallback, useMemo } from 'react'
+import { usePinSession } from '../../hooks/use-pin-session'
 import { SessionItem } from './session-item'
 import type { SessionMeta } from '../../types'
 import {
@@ -16,7 +17,6 @@ import {
   ScrollAreaThumb,
   ScrollAreaViewport,
 } from '@/components/ui/scroll-area'
-import { usePinnedSessions } from '@/hooks/use-pinned-sessions'
 
 type SidebarSessionsProps = {
   sessions: Array<SessionMeta>
@@ -35,28 +35,27 @@ export const SidebarSessions = memo(function SidebarSessions({
   onRename,
   onDelete,
 }: SidebarSessionsProps) {
-  const { pinnedSessionKeys, togglePinnedSession } = usePinnedSessions()
-
-  const pinnedSessionSet = useMemo(
-    () => new Set(pinnedSessionKeys),
-    [pinnedSessionKeys],
-  )
+  const { pinSession } = usePinSession()
 
   const pinnedSessions = useMemo(
-    () => sessions.filter((session) => pinnedSessionSet.has(session.key)),
-    [sessions, pinnedSessionSet],
+    () => sessions.filter((session) => session.isPinned === true),
+    [sessions],
   )
 
   const unpinnedSessions = useMemo(
-    () => sessions.filter((session) => !pinnedSessionSet.has(session.key)),
-    [sessions, pinnedSessionSet],
+    () => sessions.filter((session) => session.isPinned !== true),
+    [sessions],
   )
 
   const handleTogglePin = useCallback(
-    (session: SessionMeta) => {
-      togglePinnedSession(session.key)
+    function handleTogglePin(session: SessionMeta) {
+      void pinSession({
+        sessionKey: session.key,
+        friendlyId: session.friendlyId,
+        isPinned: session.isPinned !== true,
+      })
     },
-    [togglePinnedSession],
+    [pinSession],
   )
 
   return (
@@ -139,6 +138,7 @@ function areSidebarSessionsEqual(
     if (prevSession.label !== nextSession.label) return false
     if (prevSession.title !== nextSession.title) return false
     if (prevSession.derivedTitle !== nextSession.derivedTitle) return false
+    if (prevSession.isPinned !== nextSession.isPinned) return false
     if (prevSession.updatedAt !== nextSession.updatedAt) return false
   }
   return true

@@ -51,6 +51,12 @@ export type ChatDeleteConversationInput = {
   friendlyId?: string
 }
 
+export type ChatPinConversationInput = {
+  sessionKey: string
+  friendlyId: string
+  isPinned: boolean
+}
+
 export type ChatStopConversationInput = {
   sessionKey: string
   friendlyId?: string
@@ -120,6 +126,9 @@ export type ChatBackend = {
   renameConversation: (
     input: ChatRenameConversationInput,
   ) => Promise<ChatConversationResult>
+  pinConversation: (
+    input: ChatPinConversationInput,
+  ) => Promise<ChatConversation>
   deleteConversation: (input: ChatDeleteConversationInput) => Promise<void>
   stopConversation: (input: ChatStopConversationInput) => Promise<void>
   sendMessage: (input: ChatSendMessageInput) => Promise<ChatSendMessageResult>

@@ -12,6 +12,7 @@ import {
   resolveConversationModelID,
   useConversationSettings,
 } from '../conversation-settings'
+import { usePinSession } from '../hooks/use-pin-session'
 import { useRenameSession } from '../hooks/use-rename-session'
 import { BranchTreePanel } from './branch-tree-panel'
 import { SessionRenameDialog } from './sidebar/session-rename-dialog'
@@ -28,7 +29,6 @@ import {
 } from '@/components/ui/command'
 import { ExportMenu } from '@/components/export-menu'
 import { useModelsQuery } from '@/lib/app-api'
-import { usePinnedSessions } from '@/hooks/use-pinned-sessions'
 import { cn } from '@/lib/utils'
 import {
   TooltipContent,
@@ -147,8 +147,8 @@ function OptionsPanel({
   exportDisabled?: boolean
 }) {
   const { settings, updateSettings } = useConversationSettings(conversationId)
+  const { pinSession } = usePinSession()
   const { renameSession } = useRenameSession()
-  const { togglePinnedSession, isSessionPinned } = usePinnedSessions()
   const modelsQuery = useModelsQuery()
   const [query, setQuery] = useState('')
   const [renameDialogOpen, setRenameDialogOpen] = useState(false)
@@ -173,7 +173,7 @@ function OptionsPanel({
     activeSession?.derivedTitle ||
     activeSession?.friendlyId ||
     ''
-  const pinned = activeSession ? isSessionPinned(activeSession.key) : false
+  const pinned = activeSession?.isPinned === true
 
   async function handleSaveRename(nextTitle: string) {
     if (!activeSession?.key || !activeSession.friendlyId) return
@@ -186,8 +186,12 @@ function OptionsPanel({
   }
 
   function handleTogglePinned() {
-    if (!activeSession?.key) return
-    togglePinnedSession(activeSession.key)
+    if (!activeSession?.key || !activeSession.friendlyId) return
+    void pinSession({
+      sessionKey: activeSession.key,
+      friendlyId: activeSession.friendlyId,
+      isPinned: !pinned,
+    })
   }
 
   return (

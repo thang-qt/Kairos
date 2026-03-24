@@ -11,6 +11,8 @@ Build Kairos out from the locked backend architecture by landing vertical slices
 ## Completed This Step
 
 - Completed:
+  Move conversation pin state into the backend with a `chat_sessions.is_pinned` migration, authenticated pin API, and frontend mutations that no longer rely on local-only storage.
+- Completed:
   Land the backend-owned branching slice with real fork, edit, and delete session/message endpoints backed by SQLite session/message cloning instead of mock-only branch state.
 - Completed:
   Switch the authenticated HTTP chat backend off the mock branch path so fork/edit/delete actions now use backend routes with mock fallback only for missing local-only sessions.

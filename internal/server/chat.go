@@ -20,6 +20,7 @@ type SessionSummary struct {
 	Title              string         `json:"title,omitempty"`
 	DerivedTitle       string         `json:"derivedTitle,omitempty"`
 	Label              string         `json:"label,omitempty"`
+	IsPinned           bool           `json:"isPinned,omitempty"`
 	UpdatedAt          int64          `json:"updatedAt,omitempty"`
 	LastMessage        map[string]any `json:"lastMessage,omitempty"`
 	TotalTokens        int64          `json:"totalTokens,omitempty"`
@@ -47,6 +48,7 @@ type sessionRecord struct {
 	Title              sql.NullString
 	DerivedTitle       sql.NullString
 	Label              sql.NullString
+	IsPinned           bool
 	UpdatedAt          int64
 	LastMessageJSON    sql.NullString
 	TotalTokens        int64
@@ -84,6 +86,7 @@ func (service *ChatService) ListSessions(
 			title,
 			derived_title,
 			label,
+			is_pinned,
 			updated_at,
 			last_message_json,
 			total_tokens,
@@ -94,7 +97,7 @@ func (service *ChatService) ListSessions(
 			fork_depth
 		FROM chat_sessions
 		WHERE user_id = ?
-		ORDER BY updated_at DESC, created_at DESC, id DESC
+		ORDER BY is_pinned DESC, updated_at DESC, created_at DESC, id DESC
 	`, userID)
 	if err != nil {
 		return nil, fmt.Errorf("list sessions: %w", err)
@@ -138,14 +141,15 @@ func (service *ChatService) CreateSession(
 			title,
 			derived_title,
 			label,
+			is_pinned,
 			updated_at,
 			created_at,
 			total_tokens,
 			context_tokens,
 			fork_depth
 		)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, 0)
-	`, sessionID, userID, friendlyID, nullableString(normalizedLabel), nullableString(normalizedLabel), nullableString(normalizedLabel), now, now, defaultContextTokens); err != nil {
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, 0)
+	`, sessionID, userID, friendlyID, nullableString(normalizedLabel), nullableString(normalizedLabel), nullableString(normalizedLabel), 0, now, now, defaultContextTokens); err != nil {
 		return SessionSummary{}, fmt.Errorf("create session: %w", err)
 	}
 
@@ -155,10 +159,34 @@ func (service *ChatService) CreateSession(
 		Title:         normalizedLabel,
 		DerivedTitle:  normalizedLabel,
 		Label:         normalizedLabel,
+		IsPinned:      false,
 		UpdatedAt:     now,
 		TotalTokens:   0,
 		ContextTokens: defaultContextTokens,
 	}, nil
+}
+
+func (service *ChatService) PinSession(
+	ctx context.Context,
+	userID string,
+	friendlyID string,
+	isPinned bool,
+) (SessionSummary, error) {
+	record, err := service.findSessionByFriendlyID(ctx, userID, friendlyID)
+	if err != nil {
+		return SessionSummary{}, err
+	}
+
+	if _, err := service.db.ExecContext(ctx, `
+		UPDATE chat_sessions
+		SET is_pinned = ?
+		WHERE id = ? AND user_id = ?
+	`, boolAsInt(isPinned), record.ID, userID); err != nil {
+		return SessionSummary{}, fmt.Errorf("pin session: %w", err)
+	}
+
+	record.IsPinned = isPinned
+	return sessionRecordToSummary(record)
 }
 
 func (service *ChatService) RenameSession(
@@ -481,6 +509,7 @@ func (service *ChatService) createForkedSession(
 			title,
 			derived_title,
 			label,
+			is_pinned,
 			updated_at,
 			created_at,
 			last_message_json,
@@ -491,8 +520,8 @@ func (service *ChatService) createForkedSession(
 			fork_point_message_id,
 			fork_depth
 		)
-		VALUES (?, ?, ?, NULL, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, sessionID, source.UserID, friendlyID, nullableString(derivedTitle), now, now, lastMessageJSON, totalTokens, source.ContextTokens, source.ID, nullableString(source.FriendlyID), nullableString(forkPointMessageID), source.ForkDepth+1); err != nil {
+		VALUES (?, ?, ?, NULL, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, sessionID, source.UserID, friendlyID, nullableString(derivedTitle), 0, now, now, lastMessageJSON, totalTokens, source.ContextTokens, source.ID, nullableString(source.FriendlyID), nullableString(forkPointMessageID), source.ForkDepth+1); err != nil {
 		return SessionSummary{}, fmt.Errorf("create fork session: %w", err)
 	}
 
@@ -521,6 +550,7 @@ func (service *ChatService) createForkedSession(
 		Key:                sessionID,
 		FriendlyID:         friendlyID,
 		DerivedTitle:       derivedTitle,
+		IsPinned:           false,
 		UpdatedAt:          now,
 		LastMessage:        lastMessageFromRecords(messageRecords),
 		TotalTokens:        totalTokens,
@@ -546,6 +576,7 @@ func (service *ChatService) findSessionByFriendlyID(
 			title,
 			derived_title,
 			label,
+			is_pinned,
 			updated_at,
 			last_message_json,
 			total_tokens,
@@ -563,6 +594,7 @@ func (service *ChatService) findSessionByFriendlyID(
 		&record.Title,
 		&record.DerivedTitle,
 		&record.Label,
+		&record.IsPinned,
 		&record.UpdatedAt,
 		&record.LastMessageJSON,
 		&record.TotalTokens,
@@ -592,6 +624,7 @@ func scanSessionRecord(scanner interface {
 		&record.Title,
 		&record.DerivedTitle,
 		&record.Label,
+		&record.IsPinned,
 		&record.UpdatedAt,
 		&record.LastMessageJSON,
 		&record.TotalTokens,
@@ -687,6 +720,7 @@ func sessionRecordToSummary(record sessionRecord) (SessionSummary, error) {
 		Title:              nullStringValue(record.Title),
 		DerivedTitle:       nullStringValue(record.DerivedTitle),
 		Label:              nullStringValue(record.Label),
+		IsPinned:           record.IsPinned,
 		UpdatedAt:          record.UpdatedAt,
 		LastMessage:        lastMessage,
 		TotalTokens:        record.TotalTokens,

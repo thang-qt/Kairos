@@ -13,6 +13,7 @@ import type {
   ChatEvent,
   ChatForkConversationInput,
   ChatHistoryInput,
+  ChatPinConversationInput,
   ChatRenameConversationInput,
   ChatSendMessageInput,
   ChatSubscription,
@@ -26,6 +27,7 @@ type StoredConversation = {
   title?: string
   derivedTitle?: string
   label?: string
+  isPinned?: boolean
   updatedAt: number
   lastMessage?: GatewayMessage | null
   totalTokens?: number
@@ -113,6 +115,7 @@ function normalizeConversation(value: StoredConversation): StoredConversation {
     derivedTitle:
       typeof value.derivedTitle === 'string' ? value.derivedTitle : undefined,
     label: typeof value.label === 'string' ? value.label : undefined,
+    isPinned: typeof value.isPinned === 'boolean' ? value.isPinned : false,
     updatedAt:
       typeof value.updatedAt === 'number' && Number.isFinite(value.updatedAt)
         ? value.updatedAt
@@ -156,6 +159,7 @@ function toSessionMeta(conversation: StoredConversation): SessionMeta {
     title: conversation.title,
     derivedTitle: conversation.derivedTitle,
     label: conversation.label,
+    isPinned: conversation.isPinned,
     updatedAt: conversation.updatedAt,
     lastMessage: conversation.lastMessage ?? null,
     totalTokens: conversation.totalTokens,
@@ -202,7 +206,8 @@ function requireConversation(
     | ChatHistoryInput
     | ChatSendMessageInput
     | ChatDeleteConversationInput
-    | ChatRenameConversationInput,
+    | ChatRenameConversationInput
+    | ChatPinConversationInput,
 ): { state: StoredState; index: number; conversation: StoredConversation } {
   const state = loadState()
   const index = findConversationIndex(state, input)
@@ -237,9 +242,15 @@ function updateConversation(
 
 function sortState(state: StoredState): StoredState {
   return {
-    conversations: [...state.conversations].sort(
-      (left, right) => right.updatedAt - left.updatedAt,
-    ),
+    conversations: [...state.conversations].sort(function sortConversations(
+      left,
+      right,
+    ) {
+      if ((left.isPinned ?? false) !== (right.isPinned ?? false)) {
+        return left.isPinned ? -1 : 1
+      }
+      return right.updatedAt - left.updatedAt
+    }),
   }
 }
 
@@ -273,6 +284,7 @@ export function hydrateMockConversation(
     title: session.title,
     derivedTitle: session.derivedTitle,
     label: session.label,
+    isPinned: session.isPinned ?? existing?.isPinned ?? false,
     updatedAt,
     lastMessage,
     totalTokens: session.totalTokens,
@@ -744,6 +756,19 @@ export function createMockChatBackend(): ChatBackend {
         sessionKey: nextConversation.key,
         friendlyId: nextConversation.friendlyId,
       })
+    },
+    pinConversation(input) {
+      const { index } = requireConversation(input)
+      const nextConversation = updateConversation(
+        index,
+        function pinConversation(current) {
+          return {
+            ...current,
+            isPinned: input.isPinned,
+          }
+        },
+      )
+      return Promise.resolve(toSessionMeta(nextConversation))
     },
     deleteConversation(input: ChatDeleteConversationInput) {
       const state = loadState()
