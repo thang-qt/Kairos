@@ -259,6 +259,7 @@ export function ChatScreen({
     friendlyId: string,
     body: string,
     skipOptimistic = false,
+    modelOverride?: string,
     attachments?: Array<AttachmentFile>,
   ) {
     let optimisticClientId = ''
@@ -296,12 +297,13 @@ export function ChatScreen({
       }))
 
     const backend = getChatBackend()
+    const model = modelOverride?.trim() || resolvedConversationModel
     void backend
       .sendMessage({
         sessionKey,
         friendlyId,
         message: body,
-        model: resolvedConversationModel,
+        model,
         idempotencyKey: randomUUID(),
         attachments: attachmentsPayload,
       })
@@ -382,6 +384,7 @@ export function ChatScreen({
               sessionKey,
               friendlyId,
               message: body,
+              model: resolvedConversationModel,
               optimisticMessage,
               attachments,
             })
@@ -417,7 +420,14 @@ export function ChatScreen({
         resolvedSessionKey ||
         activeSessionKey ||
         activeFriendlyId
-      sendMessage(sessionKeyForSend, activeFriendlyId, body, false, attachments)
+      sendMessage(
+        sessionKeyForSend,
+        activeFriendlyId,
+        body,
+        false,
+        resolvedConversationModel,
+        attachments,
+      )
     },
     [
       activeFriendlyId,
@@ -482,10 +492,21 @@ export function ChatScreen({
         .join('')
       if (text.trim()) {
         setStreamError(null)
-        sendMessage(activeSessionKey || '', activeFriendlyId, text, true)
+        sendMessage(
+          activeSessionKey || '',
+          activeFriendlyId,
+          text,
+          true,
+          resolvedConversationModel,
+        )
       }
     }
-  }, [displayMessages, activeSessionKey, activeFriendlyId])
+  }, [
+    activeFriendlyId,
+    activeSessionKey,
+    displayMessages,
+    resolvedConversationModel,
+  ])
 
   const backendNotice = useMemo(() => {
     if (streamError) {

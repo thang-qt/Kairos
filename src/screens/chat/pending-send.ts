@@ -5,6 +5,7 @@ export type PendingSendPayload = {
   sessionKey: string
   friendlyId: string
   message: string
+  model?: string
   optimisticMessage: GatewayMessage
   attachments?: Array<AttachmentFile>
 }

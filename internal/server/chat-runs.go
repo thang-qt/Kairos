@@ -47,24 +47,39 @@ type runRecord struct {
 }
 
 type RunBroker struct {
-	mu          sync.RWMutex
-	subscribers map[string]map[chan ChatEvent]struct{}
+	mu           sync.RWMutex
+	subscribers  map[string]map[chan ChatEvent]struct{}
+	recentEvents map[string][]bufferedChatEvent
 }
+
+type bufferedChatEvent struct {
+	event       ChatEvent
+	publishedAt time.Time
+}
+
+const maxBufferedChatEvents = 12
+
+const bufferedChatEventTTL = 30 * time.Second
 
 func NewRunBroker() *RunBroker {
 	return &RunBroker{
-		subscribers: make(map[string]map[chan ChatEvent]struct{}),
+		subscribers:  make(map[string]map[chan ChatEvent]struct{}),
+		recentEvents: make(map[string][]bufferedChatEvent),
 	}
 }
 
 func (broker *RunBroker) Publish(sessionID string, event ChatEvent) {
-	broker.mu.RLock()
+	broker.mu.Lock()
+	broker.recentEvents[sessionID] = broker.appendRecentEvent(
+		broker.recentEvents[sessionID],
+		event,
+	)
 	sessionSubscribers := broker.subscribers[sessionID]
 	channels := make([]chan ChatEvent, 0, len(sessionSubscribers))
 	for channel := range sessionSubscribers {
 		channels = append(channels, channel)
 	}
-	broker.mu.RUnlock()
+	broker.mu.Unlock()
 
 	for _, channel := range channels {
 		select {
@@ -82,7 +97,20 @@ func (broker *RunBroker) Subscribe(sessionID string) (<-chan ChatEvent, func()) 
 		broker.subscribers[sessionID] = make(map[chan ChatEvent]struct{})
 	}
 	broker.subscribers[sessionID][channel] = struct{}{}
+	recentEvents := broker.pruneRecentEvents(broker.recentEvents[sessionID])
+	if len(recentEvents) == 0 {
+		delete(broker.recentEvents, sessionID)
+	} else {
+		broker.recentEvents[sessionID] = recentEvents
+	}
 	broker.mu.Unlock()
+
+	for _, recentEvent := range recentEvents {
+		select {
+		case channel <- recentEvent.event:
+		default:
+		}
+	}
 
 	return channel, func() {
 		broker.mu.Lock()
@@ -95,6 +123,38 @@ func (broker *RunBroker) Subscribe(sessionID string) (<-chan ChatEvent, func()) 
 		broker.mu.Unlock()
 		close(channel)
 	}
+}
+
+func (broker *RunBroker) appendRecentEvent(
+	recentEvents []bufferedChatEvent,
+	event ChatEvent,
+) []bufferedChatEvent {
+	pruned := broker.pruneRecentEvents(recentEvents)
+	pruned = append(pruned, bufferedChatEvent{
+		event:       event,
+		publishedAt: time.Now(),
+	})
+	if len(pruned) > maxBufferedChatEvents {
+		pruned = pruned[len(pruned)-maxBufferedChatEvents:]
+	}
+	return pruned
+}
+
+func (broker *RunBroker) pruneRecentEvents(
+	recentEvents []bufferedChatEvent,
+) []bufferedChatEvent {
+	if len(recentEvents) == 0 {
+		return nil
+	}
+	cutoff := time.Now().Add(-bufferedChatEventTTL)
+	pruned := recentEvents[:0]
+	for _, recentEvent := range recentEvents {
+		if recentEvent.publishedAt.Before(cutoff) {
+			continue
+		}
+		pruned = append(pruned, recentEvent)
+	}
+	return pruned
 }
 
 type ChatRunService struct {

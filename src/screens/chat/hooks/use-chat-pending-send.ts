@@ -28,6 +28,7 @@ type UseChatPendingSendInput = {
     friendlyId: string,
     body: string,
     skipOptimistic: boolean,
+    model?: string,
     attachments?: Array<AttachmentFile>,
   ) => void
 }
@@ -107,6 +108,7 @@ export function useChatPendingSend({
       pending.friendlyId,
       pending.message,
       true,
+      pending.model,
       pending.attachments,
     )
   }, [
