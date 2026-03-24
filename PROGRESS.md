@@ -2,7 +2,7 @@
 
 ## Current Focus
 
-Build Kairos out from the locked backend architecture by landing vertical slices in order, with auth, persisted sessions/history, and refresh-safe message send/stream now in place.
+Build Kairos out from the locked backend architecture by landing vertical slices in order, with auth, persisted sessions/history, provider/model management, and real provider-backed message send/stream now in place.
 
 ## Status
 
@@ -44,6 +44,10 @@ Build Kairos out from the locked backend architecture by landing vertical slices
   Land the provider/model slice with env-backed single system provider resolution, encrypted user BYOK provider storage, capability-aware provider and preference APIs, and backend-driven model discovery with static fallback behavior.
 - Completed:
   Replace the hardcoded frontend model picker with `/api/models` data, resolve per-conversation model selection against backend defaults, and add a minimal provider management panel in the existing settings dialog.
+- Completed:
+  Replace the placeholder chat runtime with provider-backed generation so authenticated message sends now resolve a real enabled provider/model pair, stream provider deltas over the existing SSE contract, and persist the final assistant response from that provider runtime.
+- Completed:
+  Add backend coverage for provider-backed streaming with a fake driver and remove the fake frontend/server `kairos-*` model fallback so chats only send when a real provider model is available.
 
 ## Next Task
 
@@ -55,7 +59,7 @@ Scope of the next slice:
 - Move the remaining mock-only branch semantics into SQLite-backed session/message operations.
 - Keep the existing inline branch navigator and branch tree UI, but switch them to backend data instead of local mock-only state.
 
-Planned slice order after the provider/model slice:
+Planned slice order after the provider-backed runtime slice:
 
 - Title generation
 
@@ -73,8 +77,6 @@ Current branch feature work:
   Split global display settings from conversation-scoped generation settings so the settings dialog remains the single place for app-wide toggles, while the right pane holds per-conversation model and generation controls like thinking level, temperature, top-p, and max output.
 
 ## Planned Follow-Up
-
-After the provider/model slice lands:
 
 - Replace the remaining mock-only branch edit/delete/fork flows with backend-owned branching semantics.
 - Continue schema work incrementally by feature migration instead of front-loading unused tables.

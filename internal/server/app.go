@@ -63,14 +63,14 @@ func NewApp(config Config) (*App, error) {
 	chat := NewChatService(db)
 	providers := NewProviderService(db, config)
 	runBroker := NewRunBroker()
-	runs := NewChatRunService(db, chat, runBroker)
+	runs := NewChatRunService(db, chat, providers, runBroker)
 
 	app := &App{
-		config: config,
-		db:     db,
-		auth:   auth,
-		chat:   chat,
-		runs:   runs,
+		config:    config,
+		db:        db,
+		auth:      auth,
+		chat:      chat,
+		runs:      runs,
 		providers: providers,
 		capability: CapabilitySet{
 			Auth: AuthCapabilities{

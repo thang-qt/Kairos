@@ -47,8 +47,8 @@ type providersResponse struct {
 }
 
 type modelsResponse struct {
-	Models       []ProviderModel  `json:"models"`
-	Preferences  UserPreferences  `json:"preferences"`
+	Models       []ProviderModel   `json:"models"`
+	Preferences  UserPreferences   `json:"preferences"`
 	Capabilities ModelCapabilities `json:"capabilities"`
 }
 
@@ -65,14 +65,10 @@ type preferencesResponse struct {
 }
 
 type sendMessageRequest struct {
-	Message         string              `json:"message"`
-	Model           string              `json:"model"`
-	Thinking        string              `json:"thinking"`
-	Temperature     *float64            `json:"temperature"`
-	TopP            *float64            `json:"topP"`
-	MaxOutputTokens *int                `json:"maxOutputTokens"`
-	IdempotencyKey  string              `json:"idempotencyKey"`
-	Attachments     []AttachmentPayload `json:"attachments"`
+	Message        string              `json:"message"`
+	Model          string              `json:"model"`
+	IdempotencyKey string              `json:"idempotencyKey"`
+	Attachments    []AttachmentPayload `json:"attachments"`
 }
 
 type sessionMutationResponse struct {
@@ -443,22 +439,22 @@ func (app *App) handleSendMessage(writer http.ResponseWriter, request *http.Requ
 	}
 
 	result, err := app.runs.StartRun(request.Context(), user.ID, SendMessageInput{
-		FriendlyID:      request.PathValue("friendlyId"),
-		Message:         payload.Message,
-		Model:           payload.Model,
-		Thinking:        payload.Thinking,
-		Temperature:     payload.Temperature,
-		TopP:            payload.TopP,
-		MaxOutputTokens: payload.MaxOutputTokens,
-		IdempotencyKey:  payload.IdempotencyKey,
-		Attachments:     payload.Attachments,
+		FriendlyID:     request.PathValue("friendlyId"),
+		Message:        payload.Message,
+		Model:          payload.Model,
+		IdempotencyKey: payload.IdempotencyKey,
+		Attachments:    payload.Attachments,
 	})
 	if err != nil {
 		switch {
 		case errors.Is(err, errChatSessionNotFound):
 			writeError(writer, http.StatusNotFound, err.Error())
-		default:
+		case errors.Is(err, errNoProviderAvailable),
+			errors.Is(err, errNoModelAvailable),
+			errors.Is(err, errModelNotAvailable):
 			writeError(writer, http.StatusBadRequest, err.Error())
+		default:
+			writeError(writer, http.StatusBadGateway, err.Error())
 		}
 		return
 	}

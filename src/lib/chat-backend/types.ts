@@ -94,6 +94,7 @@ export type ChatEvent = {
   sessionKey?: string
   friendlyId?: string
   state?: 'delta' | 'final' | 'error' | 'aborted'
+  error?: string
   message?: GatewayMessage
 }
 

@@ -22,6 +22,7 @@ type UseChatStreamInput = {
     runId?: string
     sessionKey?: string
     state?: string
+    error?: string
     message?: GatewayMessage
   }) => void
 }

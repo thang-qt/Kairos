@@ -5,21 +5,18 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"log"
 	"strings"
 	"sync"
 	"time"
 )
 
 type SendMessageInput struct {
-	FriendlyID      string              `json:"-"`
-	Message         string              `json:"message"`
-	Model           string              `json:"model"`
-	Thinking        string              `json:"thinking"`
-	Temperature     *float64            `json:"temperature"`
-	TopP            *float64            `json:"topP"`
-	MaxOutputTokens *int                `json:"maxOutputTokens"`
-	IdempotencyKey  string              `json:"idempotencyKey"`
-	Attachments     []AttachmentPayload `json:"attachments"`
+	FriendlyID     string              `json:"-"`
+	Message        string              `json:"message"`
+	Model          string              `json:"model"`
+	IdempotencyKey string              `json:"idempotencyKey"`
+	Attachments    []AttachmentPayload `json:"attachments"`
 }
 
 type AttachmentPayload struct {
@@ -37,6 +34,7 @@ type ChatEvent struct {
 	SessionKey string         `json:"sessionKey,omitempty"`
 	FriendlyID string         `json:"friendlyId,omitempty"`
 	State      string         `json:"state,omitempty"`
+	Error      string         `json:"error,omitempty"`
 	Message    map[string]any `json:"message,omitempty"`
 }
 
@@ -100,16 +98,23 @@ func (broker *RunBroker) Subscribe(sessionID string) (<-chan ChatEvent, func()) 
 }
 
 type ChatRunService struct {
-	db     *sql.DB
-	chat   *ChatService
-	broker *RunBroker
+	db        *sql.DB
+	chat      *ChatService
+	providers *ProviderService
+	broker    *RunBroker
 }
 
-func NewChatRunService(db *sql.DB, chat *ChatService, broker *RunBroker) *ChatRunService {
+func NewChatRunService(
+	db *sql.DB,
+	chat *ChatService,
+	providers *ProviderService,
+	broker *RunBroker,
+) *ChatRunService {
 	return &ChatRunService{
-		db:     db,
-		chat:   chat,
-		broker: broker,
+		db:        db,
+		chat:      chat,
+		providers: providers,
+		broker:    broker,
 	}
 }
 
@@ -123,7 +128,7 @@ func (service *ChatRunService) StartRun(
 		return SendMessageResult{}, err
 	}
 
-	userMessage, messageText, err := buildUserMessage(input.Message, input.Attachments)
+	userMessage, _, err := buildUserMessage(input.Message, input.Attachments)
 	if err != nil {
 		return SendMessageResult{}, err
 	}
@@ -146,13 +151,18 @@ func (service *ChatRunService) StartRun(
 		return SendMessageResult{}, err
 	}
 
+	history, err := service.chat.GetHistory(ctx, userID, input.FriendlyID)
+	if err != nil {
+		return SendMessageResult{}, err
+	}
+
 	service.runAsync(runRecord{
 		ID:        runID,
 		UserID:    userID,
 		SessionID: session.ID,
 		Status:    "running",
 		Model:     model,
-	}, session, messageText, normalizeThinking(input.Thinking))
+	}, session, history.Messages, input)
 
 	return SendMessageResult{
 		RunID:      runID,
@@ -230,104 +240,96 @@ func (service *ChatRunService) insertRun(
 func (service *ChatRunService) runAsync(
 	record runRecord,
 	session sessionRecord,
-	userMessage string,
-	thinking string,
+	history []map[string]any,
+	input SendMessageInput,
 ) {
 	go func() {
 		ctx := context.Background()
 		assistantMessageID := newID()
-		answer := buildAssistantAnswer(userMessage)
+		provider, model, _, err := service.providers.ResolveGenerationTarget(ctx, record.UserID, record.Model)
+		if err != nil {
+			service.publishRunError(ctx, record, session, err)
+			return
+		}
 
-		thinkingMessage := map[string]any{
-			"id":               assistantMessageID,
-			"role":             "assistant",
-			"model":            record.Model,
-			"modelName":        "Kairos Placeholder",
-			"modelDescription": "Temporary server-side response until provider integrations land",
-			"timestamp":        time.Now().UnixMilli(),
-			"content": []map[string]any{
-				{
-					"type":     "thinking",
-					"thinking": thinking,
-				},
+		driver := service.providers.drivers[provider.Record.Kind]
+		if driver == nil {
+			service.publishRunError(
+				ctx,
+				record,
+				session,
+				fmt.Errorf("unsupported provider kind: %s", provider.Record.Kind),
+			)
+			return
+		}
+
+		accumulatedText := ""
+		accumulatedThinking := ""
+		modelID := model.ID
+		modelName := firstNonEmpty(model.Name, model.ID)
+		modelDescription := provider.Record.Label
+		result, err := driver.GenerateChatStream(
+			ctx,
+			provider,
+			ChatGenerationRequest{
+				Model:    model.ID,
+				Messages: buildProviderMessages(history),
 			},
-		}
-
-		service.broker.Publish(record.SessionID, ChatEvent{
-			RunID:      record.ID,
-			SessionKey: session.ID,
-			FriendlyID: session.FriendlyID,
-			State:      "delta",
-			Message:    thinkingMessage,
-		})
-
-		chunks := chunkText(answer, 30)
-		for index := range chunks {
-			partialText := strings.Join(chunks[:index+1], "")
-			time.Sleep(160 * time.Millisecond)
-			service.broker.Publish(record.SessionID, ChatEvent{
-				RunID:      record.ID,
-				SessionKey: session.ID,
-				FriendlyID: session.FriendlyID,
-				State:      "delta",
-				Message: map[string]any{
-					"id":               assistantMessageID,
-					"role":             "assistant",
-					"model":            record.Model,
-					"modelName":        "Kairos Placeholder",
-					"modelDescription": "Temporary server-side response until provider integrations land",
-					"timestamp":        time.Now().UnixMilli(),
-					"content": []map[string]any{
-						{
-							"type":     "thinking",
-							"thinking": thinking,
-						},
-						{
-							"type": "text",
-							"text": partialText,
-						},
+			func(delta ChatGenerationDelta) error {
+				if delta.Thinking != "" {
+					accumulatedThinking += delta.Thinking
+				}
+				if delta.Text != "" {
+					accumulatedText += delta.Text
+				}
+				content := buildAssistantContent(accumulatedThinking, accumulatedText)
+				if len(content) == 0 {
+					return nil
+				}
+				service.broker.Publish(record.SessionID, ChatEvent{
+					RunID:      record.ID,
+					SessionKey: session.ID,
+					FriendlyID: session.FriendlyID,
+					State:      "delta",
+					Message: map[string]any{
+						"id":               assistantMessageID,
+						"role":             "assistant",
+						"model":            modelID,
+						"modelName":        modelName,
+						"modelDescription": modelDescription,
+						"timestamp":        time.Now().UnixMilli(),
+						"content":          content,
 					},
-				},
-			})
+				})
+				return nil
+			},
+		)
+		if err != nil {
+			service.publishRunError(ctx, record, session, err)
+			return
 		}
+		modelID = firstNonEmpty(result.Model, modelID)
+		modelName = firstNonEmpty(result.ModelName, modelName)
+		modelDescription = firstNonEmpty(result.ModelDescription, modelDescription)
+		accumulatedThinking = firstNonEmpty(result.ThinkingText, accumulatedThinking)
 
 		finalTimestamp := time.Now().UnixMilli()
 		finalMessage := map[string]any{
 			"id":               assistantMessageID,
 			"role":             "assistant",
-			"model":            record.Model,
-			"modelName":        "Kairos Placeholder",
-			"modelDescription": "Temporary server-side response until provider integrations land",
+			"model":            modelID,
+			"modelName":        modelName,
+			"modelDescription": modelDescription,
 			"timestamp":        finalTimestamp,
-			"content": []map[string]any{
-				{
-					"type":     "thinking",
-					"thinking": thinking,
-				},
-				{
-					"type": "text",
-					"text": answer,
-				},
-			},
+			"content":          buildAssistantContent(accumulatedThinking, result.OutputText),
 		}
 
 		if _, err := service.chat.appendMessage(ctx, session, finalMessage, finalTimestamp); err != nil {
-			_ = service.markRunFailed(ctx, record.ID, err)
-			service.broker.Publish(record.SessionID, ChatEvent{
-				RunID:      record.ID,
-				SessionKey: session.ID,
-				FriendlyID: session.FriendlyID,
-				State:      "error",
-			})
+			service.publishRunError(ctx, record, session, err)
 			return
 		}
 		if err := service.markRunCompleted(ctx, record.ID, finalTimestamp); err != nil {
-			service.broker.Publish(record.SessionID, ChatEvent{
-				RunID:      record.ID,
-				SessionKey: session.ID,
-				FriendlyID: session.FriendlyID,
-				State:      "error",
-			})
+			service.publishRunError(ctx, record, session, err)
 			return
 		}
 
@@ -339,6 +341,35 @@ func (service *ChatRunService) runAsync(
 			Message:    finalMessage,
 		})
 	}()
+}
+
+func (service *ChatRunService) publishRunError(
+	ctx context.Context,
+	record runRecord,
+	session sessionRecord,
+	runErr error,
+) {
+	normalizedError := strings.TrimSpace(runErr.Error())
+	if normalizedError == "" {
+		normalizedError = "run failed"
+	}
+	if err := service.markRunFailed(ctx, record.ID, runErr); err != nil {
+		log.Printf("kairos: failed to persist run error for run %s: %v", record.ID, err)
+	}
+	log.Printf(
+		"kairos: run %s failed for session %s (%s): %s",
+		record.ID,
+		session.ID,
+		session.FriendlyID,
+		normalizedError,
+	)
+	service.broker.Publish(record.SessionID, ChatEvent{
+		RunID:      record.ID,
+		SessionKey: session.ID,
+		FriendlyID: session.FriendlyID,
+		State:      "error",
+		Error:      normalizedError,
+	})
 }
 
 func (service *ChatRunService) markRunCompleted(ctx context.Context, runID string, completedAt int64) error {
@@ -400,56 +431,94 @@ func buildUserMessage(
 	}, normalizedMessage, nil
 }
 
-func buildAssistantAnswer(userMessage string) string {
-	summary := summarizePrompt(userMessage)
-	return `Here is a temporary Kairos backend reply based on "` + summary + `". ` +
-		`This slice is focused on persistence and streaming, so the server now owns message history and refresh-safe chat state. ` +
-		`Provider-backed generation will replace this placeholder in the next runtime slice.`
-}
-
-func summarizePrompt(value string) string {
-	normalized := strings.Join(strings.Fields(value), " ")
-	if normalized == "" {
-		return "your latest message"
-	}
-	if len(normalized) <= 120 {
-		return normalized
-	}
-	return strings.TrimSpace(normalized[:117]) + "..."
-}
-
 func normalizeModel(value string) string {
-	if strings.TrimSpace(value) == "" {
-		return "kairos-placeholder"
-	}
 	return strings.TrimSpace(value)
 }
 
-func normalizeThinking(value string) string {
-	switch strings.TrimSpace(value) {
-	case "high":
-		return "Reviewing the request carefully before drafting a fuller answer."
-	case "low":
-		return "Preparing a concise reply."
-	default:
-		return "Planning a direct response."
+func buildAssistantContent(thinking string, text string) []map[string]any {
+	content := make([]map[string]any, 0, 2)
+	if normalizedThinking := strings.TrimSpace(thinking); normalizedThinking != "" {
+		content = append(content, map[string]any{
+			"type":     "thinking",
+			"thinking": normalizedThinking,
+		})
 	}
+	if normalizedText := strings.TrimSpace(text); normalizedText != "" {
+		content = append(content, map[string]any{
+			"type": "text",
+			"text": normalizedText,
+		})
+	}
+	return content
 }
 
-func chunkText(text string, chunkSize int) []string {
-	if chunkSize <= 0 {
-		chunkSize = 30
-	}
-	if text == "" {
-		return []string{""}
-	}
-	chunks := make([]string, 0, (len(text)+chunkSize-1)/chunkSize)
-	for index := 0; index < len(text); index += chunkSize {
-		end := index + chunkSize
-		if end > len(text) {
-			end = len(text)
+func buildProviderMessages(history []map[string]any) []ProviderMessage {
+	messages := make([]ProviderMessage, 0, len(history))
+	for _, message := range history {
+		role := strings.TrimSpace(stringValueFromMap(message, "role"))
+		if role == "" {
+			continue
 		}
-		chunks = append(chunks, text[index:end])
+		parts := extractProviderMessageParts(message["content"])
+		if len(parts) == 0 {
+			continue
+		}
+		messages = append(messages, ProviderMessage{
+			Role:  role,
+			Parts: parts,
+		})
 	}
-	return chunks
+	return messages
+}
+
+func extractProviderMessageParts(value any) []ProviderMessagePart {
+	items, ok := value.([]any)
+	if !ok {
+		return nil
+	}
+
+	parts := make([]ProviderMessagePart, 0, len(items))
+	for _, item := range items {
+		part, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		switch strings.TrimSpace(stringValueFromMap(part, "type")) {
+		case "text":
+			if text := strings.TrimSpace(stringValueFromMap(part, "text")); text != "" {
+				parts = append(parts, ProviderMessagePart{
+					Type: "text",
+					Text: text,
+				})
+			}
+		case "image":
+			source, ok := part["source"].(map[string]any)
+			if !ok {
+				continue
+			}
+			if strings.TrimSpace(stringValueFromMap(source, "type")) != "base64" {
+				continue
+			}
+			mimeType := strings.TrimSpace(stringValueFromMap(source, "media_type"))
+			content := strings.TrimSpace(stringValueFromMap(source, "data"))
+			if mimeType == "" || content == "" {
+				continue
+			}
+			parts = append(parts, ProviderMessagePart{
+				Type:     "image",
+				MimeType: mimeType,
+				Content:  content,
+			})
+		}
+	}
+	return parts
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
 }

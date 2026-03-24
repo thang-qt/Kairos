@@ -175,10 +175,6 @@ export function createHTTPChatBackend(): ChatBackend {
             body: JSON.stringify({
               message: input.message,
               model: input.model,
-              thinking: input.thinking,
-              temperature: input.temperature,
-              topP: input.topP,
-              maxOutputTokens: input.maxOutputTokens,
               idempotencyKey: input.idempotencyKey,
               attachments: input.attachments,
             }),

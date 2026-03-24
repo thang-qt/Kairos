@@ -19,6 +19,7 @@ import { ChatHeader } from './components/chat-header'
 import { ChatMessageList } from './components/chat-message-list'
 import { ChatComposer } from './components/chat-composer'
 import { BackendStatusMessage } from './components/backend-status-message'
+import { MessageStatus } from './components/message-status'
 import { UserTurnDeleteDialog } from './components/user-turn-delete-dialog'
 import { UserTurnEditDialog } from './components/user-turn-edit-dialog'
 import {
@@ -80,6 +81,7 @@ export function ChatScreen({
   const [sending, setSending] = useState(false)
   const [creatingSession, setCreatingSession] = useState(false)
   const [isRedirecting, setIsRedirecting] = useState(false)
+  const [streamError, setStreamError] = useState<string | null>(null)
   const [rightSidebarOpen, setRightSidebarOpen] = useState(false)
   const [rightSidebarTab, setRightSidebarTab] = useState<RightSidebarTab>('options')
   const [restoreScrollTop, setRestoreScrollTop] = useState<number | null>(null)
@@ -105,6 +107,7 @@ export function ChatScreen({
     modelsQuery.data?.models ?? [],
     modelsQuery.data?.preferences.defaultModelId,
   )
+  const hasAvailableModel = resolvedConversationModel.trim().length > 0
   const pendingRunIdsRef = useRef(new Set<string>())
   const pendingRunTimersRef = useRef(new Map<string, number>())
   const scrollTopRef = useRef(0)
@@ -282,6 +285,7 @@ export function ChatScreen({
 
     setPendingGeneration(true)
     setSending(true)
+    setStreamError(null)
     setWaitingForResponse(true)
     setPinToTop(true)
 
@@ -299,10 +303,6 @@ export function ChatScreen({
         friendlyId,
         message: body,
         model: resolvedConversationModel,
-        thinking: conversationSettings.thinkingLevel,
-        temperature: conversationSettings.temperature,
-        topP: conversationSettings.topP,
-        maxOutputTokens: conversationSettings.maxOutputTokens,
         idempotencyKey: randomUUID(),
         attachments: attachmentsPayload,
       })
@@ -327,6 +327,7 @@ export function ChatScreen({
         setPendingGeneration(false)
         setWaitingForResponse(false)
         setPinToTop(false)
+        setStreamError(err instanceof Error ? err.message : 'The model request failed.')
         throw err
       })
       .finally(() => {
@@ -352,6 +353,9 @@ export function ChatScreen({
   const send = useCallback(
     function send(body: string, helpers: ChatComposerHelpers) {
       const attachments = helpers.attachments
+      if (!hasAvailableModel) {
+        return
+      }
       if (body.length === 0 && (!attachments || attachments.length === 0)) {
         return
       }
@@ -363,6 +367,7 @@ export function ChatScreen({
         appendHistoryMessage(queryClient, 'new', 'new', optimisticMessage)
         setPendingGeneration(true)
         setSending(true)
+        setStreamError(null)
         setWaitingForResponse(true)
         setPinToTop(true)
 
@@ -415,16 +420,13 @@ export function ChatScreen({
       activeSessionKey,
       createSessionForMessage,
       forcedSessionKey,
+      hasAvailableModel,
       isNewChat,
       navigate,
       onSessionResolved,
       queryClient,
       resolvedSessionKey,
-      conversationSettings.thinkingLevel,
       resolvedConversationModel,
-      conversationSettings.temperature,
-      conversationSettings.topP,
-      conversationSettings.maxOutputTokens,
     ],
   )
 
@@ -465,6 +467,21 @@ export function ChatScreen({
     backendStatusQuery.errorUpdatedAt > backendStatusMountRef.current
   const historyEmpty = !historyLoading && displayMessages.length === 0
   const backendNotice = useMemo(() => {
+    if (streamError) {
+      return <MessageStatus title="Message failed" description={streamError} />
+    }
+    if (
+      modelsQuery.isSuccess &&
+      modelsQuery.data.models.length === 0 &&
+      !backendError
+    ) {
+      return (
+        <MessageStatus
+          title="No chat model available"
+          description="Add a provider in Settings before sending messages."
+        />
+      )
+    }
     if (!showBackendNotice || !backendError) return null
     return (
       <BackendStatusMessage
@@ -473,7 +490,14 @@ export function ChatScreen({
         onRetry={handleBackendRefetch}
       />
     )
-  }, [backendError, handleBackendRefetch, showBackendNotice])
+  }, [
+    backendError,
+    handleBackendRefetch,
+    modelsQuery.data?.models.length,
+    modelsQuery.isSuccess,
+    showBackendNotice,
+    streamError,
+  ])
 
   useChatStream({
     activeFriendlyId,
@@ -496,6 +520,8 @@ export function ChatScreen({
       }
       const runId = typeof payload.runId === 'string' ? payload.runId : ''
       const state = typeof payload.state === 'string' ? payload.state : ''
+      const streamErrorMessage =
+        typeof payload.error === 'string' ? payload.error.trim() : ''
       if (runId && state === 'delta') {
         startRun(runId)
       }
@@ -510,6 +536,13 @@ export function ChatScreen({
         (state === 'final' || state === 'error' || state === 'aborted')
       ) {
         finishAllRuns()
+      }
+      if (state === 'error') {
+        setStreamError(streamErrorMessage || 'The model request failed.')
+        return
+      }
+      if (state === 'final') {
+        setStreamError(null)
       }
     },
   })
@@ -628,10 +661,6 @@ export function ChatScreen({
           messageId: target.messageId,
           message: normalizedMessage,
           model: resolvedConversationModel,
-          thinking: conversationSettings.thinkingLevel,
-          temperature: conversationSettings.temperature,
-          topP: conversationSettings.topP,
-          maxOutputTokens: conversationSettings.maxOutputTokens,
         })
         startRun(result.runId)
         await queryClient.invalidateQueries({
@@ -652,11 +681,7 @@ export function ChatScreen({
       navigate,
       queryClient,
       resolvedSessionKey,
-      conversationSettings.thinkingLevel,
       resolvedConversationModel,
-      conversationSettings.temperature,
-      conversationSettings.topP,
-      conversationSettings.maxOutputTokens,
       startRun,
       storeBranchScrollRestore,
     ],
@@ -944,7 +969,7 @@ export function ChatScreen({
               <ChatComposer
                 onSubmit={send}
                 isLoading={sending}
-                disabled={sending}
+                disabled={sending || !hasAvailableModel}
                 wrapperRef={composerRef}
               />
             </>

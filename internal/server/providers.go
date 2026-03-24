@@ -15,6 +15,9 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	openai "github.com/openai/openai-go/v3"
+	"github.com/openai/openai-go/v3/option"
 )
 
 var errProvidersDisabled = errors.New("user-managed providers are disabled by server policy")
@@ -22,17 +25,20 @@ var errProviderNotFound = errors.New("provider not found")
 var errProviderOwnedBySystem = errors.New("system providers are managed by the server")
 var errSystemProviderDisableLocked = errors.New("system provider usage is locked by server policy")
 var errProviderKindUnsupported = errors.New("provider kind is not supported")
+var errNoProviderAvailable = errors.New("no enabled provider is available for this account")
+var errNoModelAvailable = errors.New("no chat model is available for the selected provider")
+var errModelNotAvailable = errors.New("selected chat model is not available")
 
 type ProviderCapabilities struct {
-	SystemProvidersEnabled  bool `json:"systemProvidersEnabled"`
-	UserProvidersEnabled    bool `json:"userProvidersEnabled"`
+	SystemProvidersEnabled   bool `json:"systemProvidersEnabled"`
+	UserProvidersEnabled     bool `json:"userProvidersEnabled"`
 	CanDisableSystemProvider bool `json:"canDisableSystemProvider"`
-	CanAddCustomBaseURL     bool `json:"canAddCustomBaseUrl"`
-	CanSyncModels           bool `json:"canSyncModels"`
+	CanAddCustomBaseURL      bool `json:"canAddCustomBaseUrl"`
+	CanSyncModels            bool `json:"canSyncModels"`
 }
 
 type ModelCapabilities struct {
-	CanSelectModel    bool `json:"canSelectModel"`
+	CanSelectModel     bool `json:"canSelectModel"`
 	DefaultModelLocked bool `json:"defaultModelLocked"`
 }
 
@@ -119,9 +125,48 @@ type resolvedProvider struct {
 	StaticModels []string
 }
 
+type ChatGenerationRequest struct {
+	Model    string
+	Messages []ProviderMessage
+}
+
+type ChatGenerationDelta struct {
+	Text     string
+	Thinking string
+}
+
+type ChatGenerationResult struct {
+	Model            string
+	ModelName        string
+	ModelDescription string
+	OutputText       string
+	ThinkingText     string
+	PromptTokens     int64
+	CompletionTokens int64
+	TotalTokens      int64
+}
+
+type ProviderMessage struct {
+	Role  string
+	Parts []ProviderMessagePart
+}
+
+type ProviderMessagePart struct {
+	Type     string
+	Text     string
+	MimeType string
+	Content  string
+}
+
 type ProviderDriver interface {
 	Kind() string
 	ListModels(ctx context.Context, provider resolvedProvider) ([]ProviderModel, error)
+	GenerateChatStream(
+		ctx context.Context,
+		provider resolvedProvider,
+		request ChatGenerationRequest,
+		onDelta func(delta ChatGenerationDelta) error,
+	) (ChatGenerationResult, error)
 }
 
 type OpenAICompatibleDriver struct {
@@ -190,6 +235,60 @@ func (driver *OpenAICompatibleDriver) ListModels(
 		return strings.Compare(left.ID, right.ID)
 	})
 	return models, nil
+}
+
+func (driver *OpenAICompatibleDriver) GenerateChatStream(
+	ctx context.Context,
+	provider resolvedProvider,
+	request ChatGenerationRequest,
+	onDelta func(delta ChatGenerationDelta) error,
+) (ChatGenerationResult, error) {
+	client := openai.NewClient(driver.requestOptions(provider)...)
+	params := openai.ChatCompletionNewParams{
+		Messages: buildOpenAIChatMessages(request.Messages),
+		Model:    openai.ChatModel(strings.TrimSpace(request.Model)),
+	}
+
+	stream := client.Chat.Completions.NewStreaming(ctx, params)
+	defer stream.Close()
+
+	accumulator := openai.ChatCompletionAccumulator{}
+	for stream.Next() {
+		chunk := stream.Current()
+		accumulator.AddChunk(chunk)
+		if len(chunk.Choices) == 0 {
+			continue
+		}
+		delta := chunk.Choices[0].Delta.Content
+		if delta == "" {
+			continue
+		}
+		if err := onDelta(ChatGenerationDelta{Text: delta}); err != nil {
+			return ChatGenerationResult{}, err
+		}
+	}
+	if err := stream.Err(); err != nil {
+		return ChatGenerationResult{}, fmt.Errorf("stream chat completion: %w", err)
+	}
+
+	outputText := ""
+	if len(accumulator.Choices) > 0 {
+		outputText = accumulator.Choices[0].Message.Content
+	}
+	modelID := strings.TrimSpace(accumulator.Model)
+	if modelID == "" {
+		modelID = strings.TrimSpace(request.Model)
+	}
+
+	return ChatGenerationResult{
+		Model:            modelID,
+		ModelName:        fallbackString(modelID, provider.Record.Label),
+		ModelDescription: provider.Record.Label,
+		OutputText:       outputText,
+		PromptTokens:     accumulator.Usage.PromptTokens,
+		CompletionTokens: accumulator.Usage.CompletionTokens,
+		TotalTokens:      accumulator.Usage.TotalTokens,
+	}, nil
 }
 
 type ProviderService struct {
@@ -537,12 +636,101 @@ func (service *ProviderService) ListModels(
 	}
 
 	if len(visibleModels) == 0 {
-		visibleModels = append(visibleModels, builtinFallbackModels()...)
+		return nil, preferences, nil
 	}
 	slices.SortFunc(visibleModels, func(left ProviderModel, right ProviderModel) int {
 		return strings.Compare(left.ID, right.ID)
 	})
 	return visibleModels, preferences, nil
+}
+
+func (service *ProviderService) ResolveGenerationTarget(
+	ctx context.Context,
+	userID string,
+	requestedModel string,
+) (resolvedProvider, ProviderModel, UserPreferences, error) {
+	providers, preferences, err := service.ListProviders(ctx, userID)
+	if err != nil {
+		return resolvedProvider{}, ProviderModel{}, UserPreferences{}, err
+	}
+
+	candidates := make([]ProviderRecord, 0, len(providers))
+	for _, record := range providers {
+		if record.Owner == "system" && !preferences.UseSystemProviders {
+			continue
+		}
+		if !record.Enabled {
+			continue
+		}
+		candidates = append(candidates, record)
+	}
+	if len(candidates) == 0 {
+		return resolvedProvider{}, ProviderModel{}, preferences, errNoProviderAvailable
+	}
+
+	type candidateModel struct {
+		Provider resolvedProvider
+		Model    ProviderModel
+	}
+
+	models := make([]candidateModel, 0)
+	for _, record := range candidates {
+		resolved, err := service.resolveProvider(ctx, userID, record.Ref)
+		if err != nil {
+			continue
+		}
+		driver := service.drivers[resolved.Record.Kind]
+		if driver == nil {
+			continue
+		}
+		visibleModels, err := driver.ListModels(ctx, resolved)
+		if err != nil {
+			continue
+		}
+		for _, model := range visibleModels {
+			models = append(models, candidateModel{
+				Provider: resolved,
+				Model:    model,
+			})
+		}
+	}
+
+	effectiveModel := strings.TrimSpace(requestedModel)
+	if effectiveModel == "" {
+		effectiveModel = strings.TrimSpace(preferences.DefaultModelID)
+	}
+	if effectiveModel == "" {
+		effectiveModel = strings.TrimSpace(service.config.DefaultChatModel)
+	}
+	if effectiveModel == "" && len(models) > 0 {
+		effectiveModel = strings.TrimSpace(models[0].Model.ID)
+	}
+	if effectiveModel == "" {
+		return resolvedProvider{}, ProviderModel{}, preferences, errNoModelAvailable
+	}
+
+	for _, candidate := range models {
+		if strings.TrimSpace(candidate.Model.ID) != effectiveModel {
+			continue
+		}
+		return candidate.Provider, candidate.Model, preferences, nil
+	}
+
+	if len(candidates) == 1 {
+		resolved, err := service.resolveProvider(ctx, userID, candidates[0].Ref)
+		if err != nil {
+			return resolvedProvider{}, ProviderModel{}, preferences, err
+		}
+		return resolved, ProviderModel{
+			ID:            effectiveModel,
+			Object:        "model",
+			OwnedBy:       candidates[0].Label,
+			ProviderRef:   candidates[0].Ref,
+			ProviderLabel: candidates[0].Label,
+		}, preferences, nil
+	}
+
+	return resolvedProvider{}, ProviderModel{}, preferences, errModelNotAvailable
 }
 
 func (service *ProviderService) ensureUserPreferences(ctx context.Context, userID string) error {
@@ -593,7 +781,7 @@ func (service *ProviderService) resolveProvider(
 		return resolvedProvider{}, err
 	}
 	return resolvedProvider{
-		Record: providerRowToRecord(row),
+		Record:  providerRowToRecord(row),
 		BaseURL: row.BaseURL,
 		APIKey:  apiKey,
 	}, nil
@@ -738,13 +926,92 @@ func modelsFromStaticList(modelIDs []string, provider ProviderRecord) []Provider
 	return models
 }
 
-func builtinFallbackModels() []ProviderModel {
-	return []ProviderModel{
-		{ID: "kairos-fast", Object: "model", Created: 1742780800, OwnedBy: "kairos", Name: "Kairos Fast", Description: "Quick responses for lightweight turns"},
-		{ID: "kairos-balanced", Object: "model", Created: 1742780800, OwnedBy: "kairos", Name: "Kairos Balanced", Description: "General-purpose model for most chats"},
-		{ID: "kairos-deep", Object: "model", Created: 1742780800, OwnedBy: "kairos", Name: "Kairos Deep", Description: "Slower, more deliberate responses"},
-		{ID: "kairos-vision", Object: "model", Created: 1742780800, OwnedBy: "kairos", Name: "Kairos Vision", Description: "Best fit when attachments matter"},
+func (driver *OpenAICompatibleDriver) requestOptions(provider resolvedProvider) []option.RequestOption {
+	options := []option.RequestOption{
+		option.WithAPIKey(strings.TrimSpace(provider.APIKey)),
 	}
+	if baseURL := normalizeProviderBaseURL(provider.BaseURL); baseURL != "" {
+		options = append(options, option.WithBaseURL(baseURL))
+	}
+	return options
+}
+
+func buildOpenAIChatMessages(messages []ProviderMessage) []openai.ChatCompletionMessageParamUnion {
+	params := make([]openai.ChatCompletionMessageParamUnion, 0, len(messages))
+	for _, message := range messages {
+		switch strings.TrimSpace(message.Role) {
+		case "assistant":
+			text := collectProviderMessageText(message.Parts)
+			if text == "" {
+				continue
+			}
+			params = append(params, openai.AssistantMessage(text))
+		case "system":
+			text := collectProviderMessageText(message.Parts)
+			if text == "" {
+				continue
+			}
+			params = append(params, openai.SystemMessage(text))
+		default:
+			parts := buildOpenAIMessageParts(message.Parts)
+			if len(parts) == 0 {
+				continue
+			}
+			params = append(params, openai.UserMessage(parts))
+		}
+	}
+	return params
+}
+
+func buildOpenAIMessageParts(parts []ProviderMessagePart) []openai.ChatCompletionContentPartUnionParam {
+	result := make([]openai.ChatCompletionContentPartUnionParam, 0, len(parts))
+	for _, part := range parts {
+		switch strings.TrimSpace(part.Type) {
+		case "image":
+			if dataURL := imageDataURL(part.MimeType, part.Content); dataURL != "" {
+				result = append(result, openai.ImageContentPart(
+					openai.ChatCompletionContentPartImageImageURLParam{
+						URL: dataURL,
+					},
+				))
+			}
+		default:
+			if text := strings.TrimSpace(part.Text); text != "" {
+				result = append(result, openai.TextContentPart(text))
+			}
+		}
+	}
+	return result
+}
+
+func collectProviderMessageText(parts []ProviderMessagePart) string {
+	fragments := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if strings.TrimSpace(part.Type) != "text" {
+			continue
+		}
+		if text := strings.TrimSpace(part.Text); text != "" {
+			fragments = append(fragments, text)
+		}
+	}
+	return strings.Join(fragments, "\n\n")
+}
+
+func imageDataURL(mimeType string, content string) string {
+	normalizedMimeType := strings.TrimSpace(mimeType)
+	normalizedContent := strings.TrimSpace(content)
+	if normalizedMimeType == "" || normalizedContent == "" {
+		return ""
+	}
+	return "data:" + normalizedMimeType + ";base64," + normalizedContent
+}
+
+func normalizeProviderBaseURL(value string) string {
+	normalized := strings.TrimSpace(value)
+	if normalized == "" {
+		return ""
+	}
+	return strings.TrimRight(normalized, "/") + "/"
 }
 
 func fallbackString(value string, fallback string) string {

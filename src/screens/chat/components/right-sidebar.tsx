@@ -4,7 +4,6 @@ import {
   Cancel01Icon,
   FilterHorizontalIcon,
   GitBranchIcon,
-  Settings01Icon,
 } from '@hugeicons/core-free-icons'
 import { AnimatePresence, motion } from 'motion/react'
 import {
@@ -13,7 +12,6 @@ import {
 } from '../conversation-settings'
 import { BranchTreePanel } from './branch-tree-panel'
 import type { SessionMeta } from '../types'
-import type { ThinkingLevel } from '@/hooks/use-chat-settings'
 import { Button } from '@/components/ui/button'
 import {
   Command,
@@ -25,8 +23,6 @@ import {
   CommandPanel,
 } from '@/components/ui/command'
 import { ExportMenu } from '@/components/export-menu'
-import { Input } from '@/components/ui/input'
-import { Tabs, TabsList, TabsTab } from '@/components/ui/tabs'
 import { useModelsQuery } from '@/lib/app-api'
 import { cn } from '@/lib/utils'
 import {
@@ -38,7 +34,7 @@ import {
 
 type ExportFormat = 'markdown' | 'json' | 'text'
 
-export type RightSidebarTab = 'options' | 'config' | 'branches'
+export type RightSidebarTab = 'options' | 'branches'
 
 type RightSidebarProps = {
   isOpen: boolean
@@ -58,11 +54,6 @@ const TABS = [
     id: 'options' as const,
     label: 'Options',
     icon: FilterHorizontalIcon,
-  },
-  {
-    id: 'config' as const,
-    label: 'Config',
-    icon: Settings01Icon,
   },
   {
     id: 'branches' as const,
@@ -243,115 +234,6 @@ function OptionsPanel({
   )
 }
 
-function NumberField({
-  value,
-  min,
-  max,
-  step,
-  onChange,
-}: {
-  value: number
-  min: number
-  max: number
-  step: number
-  onChange: (value: number) => void
-}) {
-  return (
-    <Input
-      type="number"
-      min={min}
-      max={max}
-      step={step}
-      value={value}
-      size="sm"
-      onChange={(event) => {
-        const nextValue = Number(event.target.value)
-        if (!Number.isFinite(nextValue)) return
-        onChange(Math.min(max, Math.max(min, nextValue)))
-      }}
-      className="w-24 text-right"
-    />
-  )
-}
-
-function ConfigPanel({
-  conversationId,
-}: {
-  conversationId: string
-}) {
-  const { settings, updateSettings } = useConversationSettings(conversationId)
-  const thinkingOptions = [
-    { value: 'low', label: 'Low' },
-    { value: 'medium', label: 'Medium' },
-    { value: 'high', label: 'High' },
-  ] as const
-
-  return (
-    <div className="pb-4">
-      <PanelSection title="Reasoning">
-        <SettingsRow label="Thinking level">
-          <Tabs
-            value={settings.thinkingLevel}
-            onValueChange={function handleValueChange(value) {
-              updateSettings({ thinkingLevel: value as ThinkingLevel })
-            }}
-          >
-            <TabsList className="w-full gap-1 bg-transparent p-0">
-              {thinkingOptions.map((option) => (
-                <TabsTab
-                  key={option.value}
-                  value={option.value}
-                  className="flex-1 rounded-md border border-primary-200 px-3 data-active:border-primary-300 data-active:bg-primary-100"
-                >
-                  <span>{option.label}</span>
-                </TabsTab>
-              ))}
-            </TabsList>
-          </Tabs>
-        </SettingsRow>
-      </PanelSection>
-      <PanelSection title="Sampling">
-        <SettingsRow
-          label="Temperature"
-          description="Higher values increase randomness"
-        >
-          <NumberField
-            value={settings.temperature}
-            min={0}
-            max={2}
-            step={0.1}
-            onChange={(value) => updateSettings({ temperature: value })}
-          />
-        </SettingsRow>
-        <SettingsRow
-          label="Top-p"
-          description="Limit token choices by cumulative probability"
-        >
-          <NumberField
-            value={settings.topP}
-            min={0}
-            max={1}
-            step={0.05}
-            onChange={(value) => updateSettings({ topP: value })}
-          />
-        </SettingsRow>
-        <SettingsRow
-          label="Max output"
-          description="Cap generated completion length"
-        >
-          <NumberField
-            value={settings.maxOutputTokens}
-            min={64}
-            max={8192}
-            step={64}
-            onChange={(value) => updateSettings({ maxOutputTokens: value })}
-          />
-        </SettingsRow>
-      </PanelSection>
-    </div>
-  )
-}
-
 function RightSidebarComponent({
   isOpen,
   isMobile = false,
@@ -411,9 +293,6 @@ function RightSidebarComponent({
                     exportDisabled={exportDisabled}
                   />
                 ) : null}
-                {activeTab === 'config' ? (
-                  <ConfigPanel conversationId={conversationId} />
-                ) : null}
                 {activeTab === 'branches' ? (
                   <BranchTreePanel
                     sessions={sessions}
@@ -462,9 +341,6 @@ function RightSidebarComponent({
                 onExport={onExport}
                 exportDisabled={exportDisabled}
               />
-            ) : null}
-            {activeTab === 'config' ? (
-              <ConfigPanel conversationId={conversationId} />
             ) : null}
             {activeTab === 'branches' ? (
               <BranchTreePanel

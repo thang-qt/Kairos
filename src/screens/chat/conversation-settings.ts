@@ -4,10 +4,6 @@ import type { ProviderModel } from '@/lib/app-api'
 
 export type ConversationSettings = {
   model: string
-  thinkingLevel: 'low' | 'medium' | 'high'
-  temperature: number
-  topP: number
-  maxOutputTokens: number
 }
 
 type ConversationSettingsState = {
@@ -20,10 +16,6 @@ type ConversationSettingsState = {
 
 export const defaultConversationSettings: ConversationSettings = {
   model: '',
-  thinkingLevel: 'medium',
-  temperature: 0.7,
-  topP: 1,
-  maxOutputTokens: 2048,
 }
 
 export const useConversationSettingsStore =
@@ -89,9 +81,5 @@ export function resolveConversationModelID(
     return models[0].id
   }
 
-  if (normalizedPreferredModelID) {
-    return normalizedPreferredModelID
-  }
-
-  return 'kairos-balanced'
+  return ''
 }

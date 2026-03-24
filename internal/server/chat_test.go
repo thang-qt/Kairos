@@ -187,7 +187,23 @@ func TestChatServiceCreateSessionCreatesUserPreferencesIncrementally(t *testing.
 }
 
 func TestSendMessagePersistsHistoryAndStreamsFinalEvent(t *testing.T) {
-	testServer := newTestApp(t, nil)
+	testServer := newTestApp(t, func(config *Config) {
+		config.SystemProviderEnabled = true
+		config.SystemProviderLabel = "Server Default"
+		config.SystemProviderStaticModels = []string{"test-model"}
+	})
+	testServer.app.providers.drivers["openai_compatible"] = fakeProviderDriver{
+		models: []ProviderModel{
+			{
+				ID:            "test-model",
+				Object:        "model",
+				OwnedBy:       "test",
+				ProviderRef:   "system:system-default",
+				ProviderLabel: "Server Default",
+			},
+		},
+		output: "This reply came from the provider runtime.",
+	}
 	cookie := signupAndRequireCookie(t, testServer, "stream@example.com")
 
 	createResponse := performJSONRequest(t, testServer.handler, http.MethodPost, "/api/sessions", createSessionRequest{
@@ -221,7 +237,7 @@ func TestSendMessagePersistsHistoryAndStreamsFinalEvent(t *testing.T) {
 
 	sendResponse := performJSONRequest(t, testServer.handler, http.MethodPost, "/api/sessions/"+created.FriendlyID+"/messages", sendMessageRequest{
 		Message: "Explain the new slice",
-		Model:   "kairos-balanced",
+		Model:   "test-model",
 	}, []*http.Cookie{cookie})
 	assertStatusCode(t, sendResponse, http.StatusOK)
 
@@ -245,11 +261,92 @@ func TestSendMessagePersistsHistoryAndStreamsFinalEvent(t *testing.T) {
 	if len(historyPayload.Messages) != 2 {
 		t.Fatalf("history message count after send = %d, want 2", len(historyPayload.Messages))
 	}
-	if historyPayload.Messages[0]["role"] != "user" {
-		t.Fatalf("first message role = %v, want user", historyPayload.Messages[0]["role"])
+	userMessage := findHistoryMessageByRole(historyPayload.Messages, "user")
+	if userMessage == nil {
+		t.Fatal("user message missing from history")
 	}
-	if historyPayload.Messages[1]["role"] != "assistant" {
-		t.Fatalf("second message role = %v, want assistant", historyPayload.Messages[1]["role"])
+	assistantMessage := findHistoryMessageByRole(historyPayload.Messages, "assistant")
+	if assistantMessage == nil {
+		t.Fatal("assistant message missing from history")
+	}
+	assistantContent, ok := assistantMessage["content"].([]any)
+	if !ok {
+		t.Fatalf("assistant content = %T, want []any", assistantMessage["content"])
+	}
+	if len(assistantContent) != 1 {
+		t.Fatalf("assistant content length = %d, want 1 text part", len(assistantContent))
+	}
+	assistantPart, ok := assistantContent[0].(map[string]any)
+	if !ok {
+		t.Fatalf("assistant content part = %T, want map[string]any", assistantContent[0])
+	}
+	if assistantPart["type"] != "text" {
+		t.Fatalf("assistant content part type = %v, want text", assistantPart["type"])
+	}
+}
+
+func TestSendMessageIncludesProviderThinkingWhenAvailable(t *testing.T) {
+	testServer := newTestApp(t, func(config *Config) {
+		config.SystemProviderEnabled = true
+		config.SystemProviderLabel = "Server Default"
+		config.SystemProviderStaticModels = []string{"test-model"}
+	})
+	testServer.app.providers.drivers["openai_compatible"] = fakeProviderDriver{
+		models: []ProviderModel{
+			{
+				ID:            "test-model",
+				Object:        "model",
+				OwnedBy:       "test",
+				ProviderRef:   "system:system-default",
+				ProviderLabel: "Server Default",
+			},
+		},
+		thinking: "Provider summary of its reasoning.",
+		output:   "This reply includes reasoning.",
+	}
+	cookie := signupAndRequireCookie(t, testServer, "thinking@example.com")
+
+	createResponse := performJSONRequest(t, testServer.handler, http.MethodPost, "/api/sessions", createSessionRequest{
+		Label: "Thinking",
+	}, []*http.Cookie{cookie})
+	assertStatusCode(t, createResponse, http.StatusCreated)
+
+	var created sessionMutationResponse
+	decodeResponseJSON(t, createResponse, &created)
+
+	sendResponse := performJSONRequest(t, testServer.handler, http.MethodPost, "/api/sessions/"+created.FriendlyID+"/messages", sendMessageRequest{
+		Message: "Explain the new slice",
+		Model:   "test-model",
+	}, []*http.Cookie{cookie})
+	assertStatusCode(t, sendResponse, http.StatusOK)
+
+	waitForAssistantThinking(t, testServer, cookie, created.FriendlyID)
+
+	historyResponse := performJSONRequest(t, testServer.handler, http.MethodGet, "/api/sessions/"+created.FriendlyID+"/history", nil, []*http.Cookie{cookie})
+	assertStatusCode(t, historyResponse, http.StatusOK)
+
+	var historyPayload HistoryPayload
+	decodeResponseJSON(t, historyResponse, &historyPayload)
+	assistantMessage := findHistoryMessageByRole(historyPayload.Messages, "assistant")
+	if assistantMessage == nil {
+		t.Fatal("assistant message missing from history")
+	}
+	assistantContent, ok := assistantMessage["content"].([]any)
+	if !ok {
+		t.Fatalf("assistant content = %T, want []any", assistantMessage["content"])
+	}
+	if len(assistantContent) != 2 {
+		t.Fatalf("assistant content length = %d, want thinking + text", len(assistantContent))
+	}
+	firstPart, ok := assistantContent[0].(map[string]any)
+	if !ok {
+		t.Fatalf("assistant first part = %T, want map[string]any", assistantContent[0])
+	}
+	if firstPart["type"] != "thinking" {
+		t.Fatalf("assistant first part type = %v, want thinking", firstPart["type"])
+	}
+	if firstPart["thinking"] != "Provider summary of its reasoning." {
+		t.Fatalf("assistant thinking = %v, want provider reasoning", firstPart["thinking"])
 	}
 }
 
@@ -278,4 +375,96 @@ func userIDFromCookie(t *testing.T, testServer *testApp, cookie *http.Cookie) st
 		t.Fatalf("CurrentUser() error = %v", err)
 	}
 	return user.ID
+}
+
+type fakeProviderDriver struct {
+	models   []ProviderModel
+	thinking string
+	output   string
+}
+
+func (driver fakeProviderDriver) Kind() string {
+	return "openai_compatible"
+}
+
+func (driver fakeProviderDriver) ListModels(
+	_ context.Context,
+	_ resolvedProvider,
+) ([]ProviderModel, error) {
+	return append([]ProviderModel(nil), driver.models...), nil
+}
+
+func (driver fakeProviderDriver) GenerateChatStream(
+	_ context.Context,
+	_ resolvedProvider,
+	request ChatGenerationRequest,
+	onDelta func(delta ChatGenerationDelta) error,
+) (ChatGenerationResult, error) {
+	if driver.thinking != "" {
+		if err := onDelta(ChatGenerationDelta{Thinking: driver.thinking}); err != nil {
+			return ChatGenerationResult{}, err
+		}
+	}
+	if err := onDelta(ChatGenerationDelta{Text: driver.output[:12]}); err != nil {
+		return ChatGenerationResult{}, err
+	}
+	if err := onDelta(ChatGenerationDelta{Text: driver.output[12:]}); err != nil {
+		return ChatGenerationResult{}, err
+	}
+	return ChatGenerationResult{
+		Model:            request.Model,
+		ModelName:        request.Model,
+		ModelDescription: "Fake test provider",
+		ThinkingText:     driver.thinking,
+		OutputText:       driver.output,
+	}, nil
+}
+
+func waitForAssistantThinking(
+	t *testing.T,
+	testServer *testApp,
+	cookie *http.Cookie,
+	friendlyID string,
+) {
+	t.Helper()
+
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		historyResponse := performJSONRequest(t, testServer.handler, http.MethodGet, "/api/sessions/"+friendlyID+"/history", nil, []*http.Cookie{cookie})
+		assertStatusCode(t, historyResponse, http.StatusOK)
+
+		var historyPayload HistoryPayload
+		decodeResponseJSON(t, historyResponse, &historyPayload)
+		assistantMessage := findHistoryMessageByRole(historyPayload.Messages, "assistant")
+		if assistantMessage == nil {
+			time.Sleep(20 * time.Millisecond)
+			continue
+		}
+		content, ok := assistantMessage["content"].([]any)
+		if !ok {
+			time.Sleep(20 * time.Millisecond)
+			continue
+		}
+		for _, item := range content {
+			part, ok := item.(map[string]any)
+			if !ok {
+				continue
+			}
+			if part["type"] == "thinking" {
+				return
+			}
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	t.Fatalf("timed out waiting for assistant thinking in history for %s", friendlyID)
+}
+
+func findHistoryMessageByRole(messages []map[string]any, role string) map[string]any {
+	for _, message := range messages {
+		if message["role"] == role {
+			return message
+		}
+	}
+	return nil
 }
