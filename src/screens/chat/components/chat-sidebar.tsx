@@ -62,6 +62,7 @@ function ChatSidebarComponent({
 
   const [renameDialogOpen, setRenameDialogOpen] = useState(false)
   const [renameSessionKey, setRenameSessionKey] = useState<string | null>(null)
+  const [renameFriendlyId, setRenameFriendlyId] = useState<string | null>(null)
   const [renameSessionTitle, setRenameSessionTitle] = useState('')
 
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
@@ -104,6 +105,7 @@ function ChatSidebarComponent({
 
   function handleOpenRename(session: SessionMeta) {
     setRenameSessionKey(session.key)
+    setRenameFriendlyId(session.friendlyId)
     setRenameSessionTitle(
       session.label || session.title || session.derivedTitle || '',
     )
@@ -111,11 +113,16 @@ function ChatSidebarComponent({
   }
 
   function handleSaveRename(newTitle: string) {
-    if (renameSessionKey) {
-      void renameSession(renameSessionKey, newTitle)
+    if (renameSessionKey && renameFriendlyId) {
+      void renameSession({
+        sessionKey: renameSessionKey,
+        friendlyId: renameFriendlyId,
+        newTitle,
+      })
     }
     setRenameDialogOpen(false)
     setRenameSessionKey(null)
+    setRenameFriendlyId(null)
   }
 
   function handleOpenDelete(session: SessionMeta) {

@@ -46,9 +46,11 @@ export function usePinnedSessions() {
   const togglePinnedSession = usePinnedSessionsStore(
     (state) => state.togglePinnedSession,
   )
+  const isSessionPinned = usePinnedSessionsStore((state) => state.isSessionPinned)
 
   return {
     pinnedSessionKeys,
     togglePinnedSession,
+    isSessionPinned,
   }
 }

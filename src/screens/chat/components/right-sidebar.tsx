@@ -4,13 +4,17 @@ import {
   Cancel01Icon,
   FilterHorizontalIcon,
   GitBranchIcon,
+  Pen01Icon,
+  PinIcon,
 } from '@hugeicons/core-free-icons'
 import { AnimatePresence, motion } from 'motion/react'
 import {
   resolveConversationModelID,
   useConversationSettings,
 } from '../conversation-settings'
+import { useRenameSession } from '../hooks/use-rename-session'
 import { BranchTreePanel } from './branch-tree-panel'
+import { SessionRenameDialog } from './sidebar/session-rename-dialog'
 import type { SessionMeta } from '../types'
 import { Button } from '@/components/ui/button'
 import {
@@ -24,6 +28,7 @@ import {
 } from '@/components/ui/command'
 import { ExportMenu } from '@/components/export-menu'
 import { useModelsQuery } from '@/lib/app-api'
+import { usePinnedSessions } from '@/hooks/use-pinned-sessions'
 import { cn } from '@/lib/utils'
 import {
   TooltipContent,
@@ -132,16 +137,21 @@ function SidebarTabs({
 
 function OptionsPanel({
   conversationId,
+  activeSession,
   onExport,
   exportDisabled = false,
 }: {
   conversationId: string
+  activeSession?: SessionMeta
   onExport: (format: ExportFormat) => void
   exportDisabled?: boolean
 }) {
   const { settings, updateSettings } = useConversationSettings(conversationId)
+  const { renameSession } = useRenameSession()
+  const { togglePinnedSession, isSessionPinned } = usePinnedSessions()
   const modelsQuery = useModelsQuery()
   const [query, setQuery] = useState('')
+  const [renameDialogOpen, setRenameDialogOpen] = useState(false)
   const modelOptions = modelsQuery.data?.models ?? []
   const resolvedModelID = resolveConversationModelID(
     settings.model,
@@ -157,6 +167,28 @@ function OptionsPanel({
       return haystack.includes(normalizedQuery)
     })
   }, [modelOptions, query])
+  const sessionTitle =
+    activeSession?.label ||
+    activeSession?.title ||
+    activeSession?.derivedTitle ||
+    activeSession?.friendlyId ||
+    ''
+  const pinned = activeSession ? isSessionPinned(activeSession.key) : false
+
+  async function handleSaveRename(nextTitle: string) {
+    if (!activeSession?.key || !activeSession.friendlyId) return
+    await renameSession({
+      sessionKey: activeSession.key,
+      friendlyId: activeSession.friendlyId,
+      newTitle: nextTitle,
+    })
+    setRenameDialogOpen(false)
+  }
+
+  function handleTogglePinned() {
+    if (!activeSession?.key) return
+    togglePinnedSession(activeSession.key)
+  }
 
   return (
     <div className="pb-4">
@@ -224,12 +256,51 @@ function OptionsPanel({
 
       <PanelSection title="Conversation">
         <SettingsRow
+          label="Rename conversation"
+          description="Update the visible title for this thread"
+        >
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={function handleOpenRename() {
+              setRenameDialogOpen(true)
+            }}
+            disabled={!activeSession}
+          >
+            <HugeiconsIcon icon={Pen01Icon} size={20} strokeWidth={1.5} />
+            Rename
+          </Button>
+        </SettingsRow>
+        <SettingsRow
+          label="Pin conversation"
+          description="Keep this thread at the top of the session list"
+        >
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={handleTogglePinned}
+            disabled={!activeSession}
+          >
+            <HugeiconsIcon icon={PinIcon} size={20} strokeWidth={1.5} />
+            {pinned ? 'Unpin' : 'Pin'}
+          </Button>
+        </SettingsRow>
+        <SettingsRow
           label="Export conversation"
           description="Download the current thread in a portable format"
         >
           <ExportMenu onExport={onExport} disabled={exportDisabled} />
         </SettingsRow>
       </PanelSection>
+      <SessionRenameDialog
+        open={renameDialogOpen}
+        onOpenChange={setRenameDialogOpen}
+        sessionTitle={sessionTitle}
+        onSave={handleSaveRename}
+        onCancel={function handleCancelRename() {
+          setRenameDialogOpen(false)
+        }}
+      />
     </div>
   )
 }
@@ -246,6 +317,16 @@ function RightSidebarComponent({
   sessions,
   activeSessionKey,
 }: RightSidebarProps) {
+  const activeSession = useMemo(
+    function findActiveSession() {
+      if (!activeSessionKey) return undefined
+      return sessions.find(function matchesActiveSession(session) {
+        return session.key === activeSessionKey
+      })
+    },
+    [activeSessionKey, sessions],
+  )
+
   if (isMobile) {
     return (
       <AnimatePresence initial={false}>
@@ -289,6 +370,7 @@ function RightSidebarComponent({
                 {activeTab === 'options' ? (
                   <OptionsPanel
                     conversationId={conversationId}
+                    activeSession={activeSession}
                     onExport={onExport}
                     exportDisabled={exportDisabled}
                   />
@@ -331,12 +413,13 @@ function RightSidebarComponent({
           </div>
 
           <div className="min-h-0 flex-1 overflow-y-auto px-1">
-            {activeTab === 'options' ? (
-              <OptionsPanel
-                conversationId={conversationId}
-                onExport={onExport}
-                exportDisabled={exportDisabled}
-              />
+              {activeTab === 'options' ? (
+                <OptionsPanel
+                  conversationId={conversationId}
+                  activeSession={activeSession}
+                  onExport={onExport}
+                  exportDisabled={exportDisabled}
+                />
             ) : null}
             {activeTab === 'branches' ? (
               <BranchTreePanel

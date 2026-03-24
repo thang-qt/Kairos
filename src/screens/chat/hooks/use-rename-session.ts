@@ -4,7 +4,11 @@ import { chatQueryKeys } from '../chat-queries'
 import { getChatBackend } from '@/lib/chat-backend'
 
 export type RenameSessionResult = {
-  renameSession: (sessionKey: string, newTitle: string) => Promise<void>
+  renameSession: (input: {
+    sessionKey: string
+    friendlyId: string
+    newTitle: string
+  }) => Promise<void>
   renaming: boolean
   error: string | null
 }
@@ -17,11 +21,13 @@ export function useRenameSession(): RenameSessionResult {
   const mutation = useMutation({
     mutationFn: async function renameSessionRequest(payload: {
       sessionKey: string
+      friendlyId: string
       newTitle: string
     }) {
       const backend = getChatBackend()
       await backend.renameConversation({
         sessionKey: payload.sessionKey,
+        friendlyId: payload.friendlyId,
         label: payload.newTitle,
       })
       return payload
@@ -70,10 +76,20 @@ export function useRenameSession(): RenameSessionResult {
   })
 
   const renameSession = useCallback(
-    async (sessionKey: string, newTitle: string) => {
-      if (!sessionKey || !newTitle.trim()) return
+    async function renameSession(input: {
+      sessionKey: string
+      friendlyId: string
+      newTitle: string
+    }) {
+      if (!input.sessionKey || !input.friendlyId || !input.newTitle.trim()) {
+        return
+      }
       setRenaming(true)
-      await mutation.mutateAsync({ sessionKey, newTitle: newTitle.trim() })
+      await mutation.mutateAsync({
+        sessionKey: input.sessionKey,
+        friendlyId: input.friendlyId,
+        newTitle: input.newTitle.trim(),
+      })
     },
     [mutation],
   )
