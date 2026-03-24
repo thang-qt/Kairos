@@ -185,3 +185,97 @@ func TestChatServiceCreateSessionCreatesUserPreferencesIncrementally(t *testing.
 		t.Fatalf("CreateSession() error = %v", err)
 	}
 }
+
+func TestSendMessagePersistsHistoryAndStreamsFinalEvent(t *testing.T) {
+	testServer := newTestApp(t, nil)
+	cookie := signupAndRequireCookie(t, testServer, "stream@example.com")
+
+	createResponse := performJSONRequest(t, testServer.handler, http.MethodPost, "/api/sessions", createSessionRequest{
+		Label: "Streaming",
+	}, []*http.Cookie{cookie})
+	assertStatusCode(t, createResponse, http.StatusCreated)
+
+	var created sessionMutationResponse
+	decodeResponseJSON(t, createResponse, &created)
+	userID := userIDFromCookie(t, testServer, cookie)
+
+	eventResult := make(chan []ChatEvent, 1)
+	streamContext, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() {
+		events := make([]ChatEvent, 0, 2)
+		err := testServer.app.runs.StreamSession(streamContext, userID, created.FriendlyID, func(event ChatEvent) error {
+			events = append(events, event)
+			if event.State == "final" {
+				eventResult <- events
+				cancel()
+			}
+			return nil
+		})
+		if err != nil && streamContext.Err() == nil {
+			t.Errorf("stream session error = %v", err)
+			eventResult <- nil
+			return
+		}
+	}()
+
+	sendResponse := performJSONRequest(t, testServer.handler, http.MethodPost, "/api/sessions/"+created.FriendlyID+"/messages", sendMessageRequest{
+		Message: "Explain the new slice",
+		Model:   "kairos-balanced",
+	}, []*http.Cookie{cookie})
+	assertStatusCode(t, sendResponse, http.StatusOK)
+
+	select {
+	case events := <-eventResult:
+		if len(events) == 0 {
+			t.Fatal("stream events = empty, want delta/final events")
+		}
+		if events[len(events)-1].State != "final" {
+			t.Fatalf("final stream state = %q, want final", events[len(events)-1].State)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for streamed events")
+	}
+
+	historyResponse := performJSONRequest(t, testServer.handler, http.MethodGet, "/api/sessions/"+created.FriendlyID+"/history", nil, []*http.Cookie{cookie})
+	assertStatusCode(t, historyResponse, http.StatusOK)
+
+	var historyPayload HistoryPayload
+	decodeResponseJSON(t, historyResponse, &historyPayload)
+	if len(historyPayload.Messages) != 2 {
+		t.Fatalf("history message count after send = %d, want 2", len(historyPayload.Messages))
+	}
+	if historyPayload.Messages[0]["role"] != "user" {
+		t.Fatalf("first message role = %v, want user", historyPayload.Messages[0]["role"])
+	}
+	if historyPayload.Messages[1]["role"] != "assistant" {
+		t.Fatalf("second message role = %v, want assistant", historyPayload.Messages[1]["role"])
+	}
+}
+
+func TestSessionEventsAreUserScoped(t *testing.T) {
+	testServer := newTestApp(t, nil)
+	ownerCookie := signupAndRequireCookie(t, testServer, "event-owner@example.com")
+	otherCookie := signupAndRequireCookie(t, testServer, "event-other@example.com")
+
+	createResponse := performJSONRequest(t, testServer.handler, http.MethodPost, "/api/sessions", createSessionRequest{
+		Label: "Private stream",
+	}, []*http.Cookie{ownerCookie})
+	assertStatusCode(t, createResponse, http.StatusCreated)
+
+	var created sessionMutationResponse
+	decodeResponseJSON(t, createResponse, &created)
+
+	response := performJSONRequest(t, testServer.handler, http.MethodGet, "/api/sessions/"+created.FriendlyID+"/events", nil, []*http.Cookie{otherCookie})
+	assertStatusCode(t, response, http.StatusNotFound)
+}
+
+func userIDFromCookie(t *testing.T, testServer *testApp, cookie *http.Cookie) string {
+	t.Helper()
+
+	user, err := testServer.app.auth.CurrentUser(context.Background(), cookie.Value)
+	if err != nil {
+		t.Fatalf("CurrentUser() error = %v", err)
+	}
+	return user.ID
+}

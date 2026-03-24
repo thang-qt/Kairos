@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from 'react'
+import { useCallback, useEffect, useEffectEvent, useRef } from 'react'
 
 import { getMessageTimestamp, textFromMessage } from '../utils'
 import {
@@ -39,6 +39,129 @@ export function useChatStream({
   const unsubscribeRef = useRef<(() => void) | null>(null)
   const refreshHistoryRef = useRef(refreshHistory)
   refreshHistoryRef.current = refreshHistory
+  const handleChatEvent = useEffectEvent(function handleChatEvent(
+    payload: ChatEvent,
+  ) {
+    onChatEvent?.(payload)
+
+    const payloadState = typeof payload.state === 'string' ? payload.state : ''
+    if (
+      payloadState === 'final' ||
+      payloadState === 'error' ||
+      payloadState === 'aborted'
+    ) {
+      refreshHistoryRef.current()
+    }
+
+    if (!payload.message || typeof payload.message !== 'object') {
+      return
+    }
+
+    const payloadSessionKey =
+      typeof payload.sessionKey === 'string' ? payload.sessionKey : ''
+    if (
+      payloadSessionKey &&
+      resolvedSessionKey &&
+      payloadSessionKey !== resolvedSessionKey &&
+      payloadSessionKey !== sessionKeyForHistory
+    ) {
+      return
+    }
+
+    const streamRunId =
+      typeof payload.runId === 'string' ? payload.runId : undefined
+    const nextMessage: GatewayMessage = {
+      ...payload.message,
+      __streamRunId: streamRunId,
+    }
+
+    function upsert(messages: Array<GatewayMessage>) {
+      const nextId = getMessageId(nextMessage)
+      if (nextId) {
+        const existingById = messages.findIndex(
+          (message) => getMessageId(message) === nextId,
+        )
+        if (existingById >= 0) {
+          const next = [...messages]
+          next[existingById] = mergeStreamMessage(
+            messages[existingById],
+            nextMessage,
+          )
+          return next
+        }
+      }
+
+      if (streamRunId) {
+        const existingByRunId = findStreamMessageIndex(
+          messages,
+          nextMessage,
+          streamRunId,
+        )
+        if (existingByRunId >= 0) {
+          const next = [...messages]
+          next[existingByRunId] = mergeStreamMessage(
+            messages[existingByRunId],
+            nextMessage,
+          )
+          return next
+        }
+      }
+
+      if (nextMessage.role === 'assistant') {
+        const previousAssistantIndex = [...messages]
+          .reverse()
+          .findIndex((message) => message.role === 'assistant')
+        if (previousAssistantIndex >= 0) {
+          const targetIndex = messages.length - 1 - previousAssistantIndex
+          const previousAssistant = messages[targetIndex]
+          const previousText = textFromMessage(previousAssistant)
+          const nextText = textFromMessage(nextMessage)
+          const timeGap = Math.abs(
+            getMessageTimestamp(previousAssistant) -
+              getMessageTimestamp(nextMessage),
+          )
+          if (
+            timeGap <= 15000 ||
+            shouldMergeAssistantByText(previousText, nextText)
+          ) {
+            const next = [...messages]
+            next[targetIndex] = mergeStreamMessage(
+              previousAssistant,
+              nextMessage,
+            )
+            return next
+          }
+        }
+      }
+
+      return [...messages, nextMessage]
+    }
+
+    updateHistoryMessages(
+      queryClient,
+      activeFriendlyId,
+      sessionKeyForHistory,
+      upsert,
+    )
+
+    if (payloadSessionKey && payloadSessionKey !== sessionKeyForHistory) {
+      updateHistoryMessages(
+        queryClient,
+        activeFriendlyId,
+        payloadSessionKey,
+        upsert,
+      )
+    }
+
+    if (payloadSessionKey) {
+      updateSessionLastMessage(
+        queryClient,
+        payloadSessionKey,
+        activeFriendlyId,
+        nextMessage,
+      )
+    }
+  })
 
   const stopStream = useCallback(() => {
     unsubscribeRef.current?.()
@@ -56,128 +179,7 @@ export function useChatStream({
     const unsubscribe = backend.subscribeToConversation({
       sessionKey,
       friendlyId: activeFriendlyId,
-      onEvent(payload: ChatEvent) {
-        onChatEvent?.(payload)
-
-        const payloadState =
-          typeof payload.state === 'string' ? payload.state : ''
-        if (
-          payloadState === 'final' ||
-          payloadState === 'error' ||
-          payloadState === 'aborted'
-        ) {
-          refreshHistoryRef.current()
-        }
-
-        if (!payload.message || typeof payload.message !== 'object') {
-          return
-        }
-
-        const payloadSessionKey =
-          typeof payload.sessionKey === 'string' ? payload.sessionKey : ''
-        if (
-          payloadSessionKey &&
-          resolvedSessionKey &&
-          payloadSessionKey !== resolvedSessionKey &&
-          payloadSessionKey !== sessionKeyForHistory
-        ) {
-          return
-        }
-
-        const streamRunId =
-          typeof payload.runId === 'string' ? payload.runId : undefined
-        const nextMessage: GatewayMessage = {
-          ...payload.message,
-          __streamRunId: streamRunId,
-        }
-
-        function upsert(messages: Array<GatewayMessage>) {
-          const nextId = getMessageId(nextMessage)
-          if (nextId) {
-            const existingById = messages.findIndex(
-              (message) => getMessageId(message) === nextId,
-            )
-            if (existingById >= 0) {
-              const next = [...messages]
-              next[existingById] = mergeStreamMessage(
-                messages[existingById],
-                nextMessage,
-              )
-              return next
-            }
-          }
-
-          if (streamRunId) {
-            const existingByRunId = findStreamMessageIndex(
-              messages,
-              nextMessage,
-              streamRunId,
-            )
-            if (existingByRunId >= 0) {
-              const next = [...messages]
-              next[existingByRunId] = mergeStreamMessage(
-                messages[existingByRunId],
-                nextMessage,
-              )
-              return next
-            }
-          }
-
-          if (nextMessage.role === 'assistant') {
-            const previousAssistantIndex = [...messages]
-              .reverse()
-              .findIndex((message) => message.role === 'assistant')
-            if (previousAssistantIndex >= 0) {
-              const targetIndex = messages.length - 1 - previousAssistantIndex
-              const previousAssistant = messages[targetIndex]
-              const previousText = textFromMessage(previousAssistant)
-              const nextText = textFromMessage(nextMessage)
-              const timeGap = Math.abs(
-                getMessageTimestamp(previousAssistant) -
-                  getMessageTimestamp(nextMessage),
-              )
-              if (
-                timeGap <= 15000 ||
-                shouldMergeAssistantByText(previousText, nextText)
-              ) {
-                const next = [...messages]
-                next[targetIndex] = mergeStreamMessage(
-                  previousAssistant,
-                  nextMessage,
-                )
-                return next
-              }
-            }
-          }
-
-          return [...messages, nextMessage]
-        }
-
-        updateHistoryMessages(
-          queryClient,
-          activeFriendlyId,
-          sessionKeyForHistory,
-          upsert,
-        )
-
-        if (payloadSessionKey && payloadSessionKey !== sessionKeyForHistory) {
-          updateHistoryMessages(
-            queryClient,
-            activeFriendlyId,
-            payloadSessionKey,
-            upsert,
-          )
-        }
-
-        if (payloadSessionKey) {
-          updateSessionLastMessage(
-            queryClient,
-            payloadSessionKey,
-            activeFriendlyId,
-            nextMessage,
-          )
-        }
-      },
+      onEvent: handleChatEvent,
     })
 
     unsubscribeRef.current = unsubscribe

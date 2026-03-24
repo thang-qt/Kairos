@@ -1,5 +1,9 @@
-import { useEffect, useLayoutEffect, useRef } from 'react'
-import { appendHistoryMessage, chatQueryKeys } from '../chat-queries'
+import { useEffect, useRef } from 'react'
+import {
+  appendHistoryMessage,
+  chatQueryKeys,
+  updateSessionLastMessage,
+} from '../chat-queries'
 import {
   consumePendingSend,
   hasPendingGeneration,
@@ -54,7 +58,7 @@ export function useChatPendingSend({
     setWaitingForResponse(false)
   }, [activeFriendlyId, isNewChat, setPinToTop, setWaitingForResponse])
 
-  useLayoutEffect(() => {
+  useEffect(() => {
     if (isNewChat) return
     const pending = consumePendingSend(
       forcedSessionKey || resolvedSessionKey || activeSessionKey,
@@ -90,6 +94,12 @@ export function useChatPendingSend({
         pending.optimisticMessage,
       )
     }
+    updateSessionLastMessage(
+      queryClient,
+      pending.sessionKey,
+      pending.friendlyId,
+      pending.optimisticMessage,
+    )
     setWaitingForResponse(true)
     setPinToTop(true)
     sendMessage(

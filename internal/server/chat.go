@@ -245,6 +245,72 @@ func (service *ChatService) GetHistory(
 	}, nil
 }
 
+func (service *ChatService) appendMessage(
+	ctx context.Context,
+	session sessionRecord,
+	message map[string]any,
+	timestamp int64,
+) (SessionSummary, error) {
+	messageJSON, err := json.Marshal(message)
+	if err != nil {
+		return SessionSummary{}, fmt.Errorf("encode message: %w", err)
+	}
+
+	contentJSON, err := encodeMessageContent(message["content"])
+	if err != nil {
+		return SessionSummary{}, err
+	}
+
+	now := time.Now().UnixMilli()
+	totalTokens := session.TotalTokens + approximateMessageTokens(message)
+	derivedTitle := nullStringValue(session.DerivedTitle)
+	if derivedTitle == "" {
+		derivedTitle = deriveTitleFromMessage(message)
+	}
+
+	if _, err := service.db.ExecContext(ctx, `
+		INSERT INTO chat_messages(
+			id,
+			session_id,
+			role,
+			model,
+			model_name,
+			model_description,
+			content_json,
+			tool_call_id,
+			tool_name,
+			details_json,
+			is_error,
+			timestamp,
+			message_json,
+			created_at
+		)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, messageIDFromMap(message), session.ID, stringValueFromMap(message, "role"), stringValueFromMap(message, "model"), stringValueFromMap(message, "modelName"), stringValueFromMap(message, "modelDescription"), contentJSON, stringValueFromMap(message, "toolCallId"), stringValueFromMap(message, "toolName"), nullableJSONObject(message["details"]), boolAsInt(boolValueFromMap(message, "isError")), timestamp, string(messageJSON), now); err != nil {
+		return SessionSummary{}, fmt.Errorf("insert chat message: %w", err)
+	}
+
+	if _, err := service.db.ExecContext(ctx, `
+		UPDATE chat_sessions
+		SET
+			last_message_json = ?,
+			updated_at = ?,
+			derived_title = COALESCE(NULLIF(derived_title, ''), ?),
+			total_tokens = ?
+		WHERE id = ? AND user_id = ?
+	`, string(messageJSON), timestamp, nullableString(derivedTitle), totalTokens, session.ID, session.UserID); err != nil {
+		return SessionSummary{}, fmt.Errorf("update session after message: %w", err)
+	}
+
+	session.LastMessageJSON = nullableString(string(messageJSON))
+	session.UpdatedAt = timestamp
+	session.TotalTokens = totalTokens
+	if derivedTitle != "" {
+		session.DerivedTitle = nullableString(derivedTitle)
+	}
+	return sessionRecordToSummary(session)
+}
+
 func (service *ChatService) findSessionByFriendlyID(
 	ctx context.Context,
 	userID string,
@@ -377,4 +443,141 @@ func nullStringValue(value sql.NullString) string {
 
 func newFriendlyID() string {
 	return newID()[:8]
+}
+
+func encodeMessageContent(value any) (string, error) {
+	content, ok := value.([]any)
+	if ok {
+		bytes, err := json.Marshal(content)
+		if err != nil {
+			return "", fmt.Errorf("encode message content: %w", err)
+		}
+		return string(bytes), nil
+	}
+
+	bytes, err := json.Marshal(value)
+	if err != nil {
+		return "", fmt.Errorf("encode message content: %w", err)
+	}
+	return string(bytes), nil
+}
+
+func nullableJSONObject(value any) sql.NullString {
+	if value == nil {
+		return sql.NullString{}
+	}
+	bytes, err := json.Marshal(value)
+	if err != nil || len(bytes) == 0 || string(bytes) == "null" {
+		return sql.NullString{}
+	}
+	return sql.NullString{String: string(bytes), Valid: true}
+}
+
+func stringValueFromMap(value map[string]any, key string) string {
+	raw, ok := value[key]
+	if !ok {
+		return ""
+	}
+	text, ok := raw.(string)
+	if !ok {
+		return ""
+	}
+	return strings.TrimSpace(text)
+}
+
+func boolValueFromMap(value map[string]any, key string) bool {
+	raw, ok := value[key]
+	if !ok {
+		return false
+	}
+	enabled, ok := raw.(bool)
+	return ok && enabled
+}
+
+func boolAsInt(value bool) int {
+	if value {
+		return 1
+	}
+	return 0
+}
+
+func messageIDFromMap(message map[string]any) string {
+	if id := stringValueFromMap(message, "id"); id != "" {
+		return id
+	}
+	return newID()
+}
+
+func deriveTitleFromMessage(message map[string]any) string {
+	if stringValueFromMap(message, "role") != "user" {
+		return ""
+	}
+	content, ok := message["content"].([]map[string]any)
+	if ok {
+		for _, part := range content {
+			if strings.TrimSpace(stringValueFromMap(part, "type")) == "text" {
+				return trimTitle(stringValueFromMap(part, "text"))
+			}
+		}
+	}
+
+	rawContent, ok := message["content"].([]any)
+	if !ok {
+		return ""
+	}
+	for _, item := range rawContent {
+		part, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		if strings.TrimSpace(stringValueFromMap(part, "type")) == "text" {
+			return trimTitle(stringValueFromMap(part, "text"))
+		}
+	}
+	return ""
+}
+
+func trimTitle(value string) string {
+	normalized := strings.Join(strings.Fields(value), " ")
+	if len(normalized) <= 48 {
+		return normalized
+	}
+	return strings.TrimSpace(normalized[:48])
+}
+
+func approximateMessageTokens(message map[string]any) int64 {
+	text := textFromMessageMap(message)
+	if text == "" {
+		return 0
+	}
+	return int64(max(1, len(text)/4))
+}
+
+func textFromMessageMap(message map[string]any) string {
+	rawContent, ok := message["content"].([]any)
+	if !ok {
+		return ""
+	}
+	parts := make([]string, 0, len(rawContent))
+	for _, rawPart := range rawContent {
+		part, ok := rawPart.(map[string]any)
+		if !ok {
+			continue
+		}
+		if strings.TrimSpace(stringValueFromMap(part, "type")) != "text" {
+			continue
+		}
+		text := strings.TrimSpace(stringValueFromMap(part, "text"))
+		if text != "" {
+			parts = append(parts, text)
+		}
+	}
+	return strings.Join(parts, " ")
+}
+
+func max(left int, right int) int {
+	if left > right {
+		return left
+	}
+	return right
 }

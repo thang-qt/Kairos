@@ -162,8 +162,35 @@ export function createHTTPChatBackend(): ChatBackend {
         throw error
       }
     },
-    sendMessage(input) {
-      return mockBackend.sendMessage(input)
+    async sendMessage(input) {
+      try {
+        const response = await fetch(
+          `/api/sessions/${encodeURIComponent(input.friendlyId)}/messages`,
+          {
+            method: 'POST',
+            credentials: 'include',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              message: input.message,
+              model: input.model,
+              thinking: input.thinking,
+              temperature: input.temperature,
+              topP: input.topP,
+              maxOutputTokens: input.maxOutputTokens,
+              idempotencyKey: input.idempotencyKey,
+              attachments: input.attachments,
+            }),
+          },
+        )
+        return await parseJSON(response)
+      } catch (error) {
+        if (error instanceof ApiError && error.status === 404) {
+          return mockBackend.sendMessage(input)
+        }
+        throw error
+      }
     },
     forkConversation(input) {
       return mockBackend.forkConversation(input)
@@ -175,7 +202,45 @@ export function createHTTPChatBackend(): ChatBackend {
       return mockBackend.deleteUserMessage(input)
     },
     subscribeToConversation(subscription) {
-      return mockBackend.subscribeToConversation(subscription)
+      const friendlyId = subscription.friendlyId?.trim()
+      if (!friendlyId || typeof window === 'undefined') {
+        return mockBackend.subscribeToConversation(subscription)
+      }
+
+      const eventSource = new EventSource(
+        `/api/sessions/${encodeURIComponent(friendlyId)}/events`,
+      )
+
+      function handleMessage(event: MessageEvent<string>) {
+        if (typeof event.data !== 'string' || event.data.trim().length === 0) {
+          return
+        }
+
+        try {
+          const payload = JSON.parse(event.data)
+          subscription.onEvent(payload)
+        } catch {
+          // Ignore malformed stream payloads.
+        }
+      }
+
+      function handleError() {
+        // Let EventSource manage reconnect attempts for transient network or
+        // dev-proxy interruptions. Closing here can permanently drop the
+        // stream for later turns in the same conversation.
+      }
+
+      eventSource.addEventListener('message', handleMessage as EventListener)
+      eventSource.addEventListener('error', handleError)
+
+      return function unsubscribe() {
+        eventSource.removeEventListener(
+          'message',
+          handleMessage as EventListener,
+        )
+        eventSource.removeEventListener('error', handleError)
+        eventSource.close()
+      }
     },
   }
 }

@@ -194,14 +194,16 @@ func (service *AuthService) CurrentUser(ctx context.Context, token string) (*Use
 	var disabledAt sql.NullInt64
 	var sessionID string
 	var expiresAt int64
+	var lastSeenAt int64
 	err := service.db.QueryRowContext(ctx, `
-		SELECT s.id, s.expires_at, u.id, u.email, u.role, u.created_at, u.disabled_at
+		SELECT s.id, s.expires_at, s.last_seen_at, u.id, u.email, u.role, u.created_at, u.disabled_at
 		FROM auth_sessions s
 		JOIN users u ON u.id = s.user_id
 		WHERE s.token_hash = ?
 	`, tokenHash).Scan(
 		&sessionID,
 		&expiresAt,
+		&lastSeenAt,
 		&user.ID,
 		&user.Email,
 		&user.Role,
@@ -224,12 +226,14 @@ func (service *AuthService) CurrentUser(ctx context.Context, token string) (*Use
 		return nil, errors.New("account is disabled")
 	}
 
-	if _, err := service.db.ExecContext(ctx, `
-		UPDATE auth_sessions
-		SET last_seen_at = ?
-		WHERE id = ?
-	`, now, sessionID); err != nil {
-		return nil, err
+	if shouldRefreshLastSeen(now, lastSeenAt) {
+		if _, err := service.db.ExecContext(ctx, `
+			UPDATE auth_sessions
+			SET last_seen_at = ?
+			WHERE id = ?
+		`, now, sessionID); err != nil && !isSQLiteBusyError(err) {
+			return nil, err
+		}
 	}
 
 	if disabledAt.Valid {
@@ -237,6 +241,20 @@ func (service *AuthService) CurrentUser(ctx context.Context, token string) (*Use
 	}
 
 	return &user, nil
+}
+
+func shouldRefreshLastSeen(now int64, lastSeenAt int64) bool {
+	if lastSeenAt <= 0 {
+		return true
+	}
+	return now-lastSeenAt >= 60
+}
+
+func isSQLiteBusyError(err error) bool {
+	if err == nil {
+		return false
+	}
+	return strings.Contains(strings.ToUpper(err.Error()), "SQLITE_BUSY")
 }
 
 func (service *AuthService) Logout(ctx context.Context, token string) error {

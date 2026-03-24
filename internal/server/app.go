@@ -16,6 +16,7 @@ type App struct {
 	db         *sql.DB
 	auth       *AuthService
 	chat       *ChatService
+	runs       *ChatRunService
 	capability CapabilitySet
 }
 
@@ -28,10 +29,24 @@ func NewApp(config Config) (*App, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open db: %w", err)
 	}
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
 
 	if _, err := db.Exec(`PRAGMA foreign_keys = ON;`); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("enable foreign keys: %w", err)
+	}
+	if _, err := db.Exec(`PRAGMA journal_mode = WAL;`); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("enable wal mode: %w", err)
+	}
+	if _, err := db.Exec(`PRAGMA synchronous = NORMAL;`); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("set sqlite synchronous mode: %w", err)
+	}
+	if _, err := db.Exec(`PRAGMA busy_timeout = 5000;`); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("set busy timeout: %w", err)
 	}
 
 	if err := applyMigrations(db); err != nil {
@@ -45,12 +60,15 @@ func NewApp(config Config) (*App, error) {
 		return nil, err
 	}
 	chat := NewChatService(db)
+	runBroker := NewRunBroker()
+	runs := NewChatRunService(db, chat, runBroker)
 
 	app := &App{
 		config: config,
 		db:     db,
 		auth:   auth,
 		chat:   chat,
+		runs:   runs,
 		capability: CapabilitySet{
 			Auth: AuthCapabilities{
 				Enabled:       config.AuthEnabled,
@@ -79,6 +97,8 @@ func (app *App) Handler() http.Handler {
 	mux.HandleFunc("PATCH /api/sessions/{friendlyId}", app.handleRenameSession)
 	mux.HandleFunc("DELETE /api/sessions/{friendlyId}", app.handleDeleteSession)
 	mux.HandleFunc("GET /api/sessions/{friendlyId}/history", app.handleSessionHistory)
+	mux.HandleFunc("POST /api/sessions/{friendlyId}/messages", app.handleSendMessage)
+	mux.HandleFunc("GET /api/sessions/{friendlyId}/events", app.handleSessionEvents)
 
 	return app.withCommonMiddleware(mux)
 }

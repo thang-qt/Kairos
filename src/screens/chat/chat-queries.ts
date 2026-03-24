@@ -1,10 +1,6 @@
-import { getMessageTimestamp, normalizeSessions } from './utils'
+import { getMessageTimestamp, normalizeSessions, textFromMessage  } from './utils'
 import type { QueryClient } from '@tanstack/react-query'
-import type {
-  GatewayMessage,
-  HistoryResponse,
-  SessionMeta,
-} from './types'
+import type { GatewayMessage, HistoryResponse, SessionMeta } from './types'
 import type { ChatStatus } from '@/lib/chat-backend'
 import { getChatBackend } from '@/lib/chat-backend'
 
@@ -160,37 +156,82 @@ export function updateSessionLastMessage(
   const messageUpdatedAt = getMessageTimestamp(message)
   queryClient.setQueryData(
     chatQueryKeys.sessions,
-    function update(messages: unknown) {
-      if (!Array.isArray(messages)) return messages
-      const nextSessions = (messages as Array<SessionMeta>).map((session) => {
-        if (session.key !== sessionKey && session.friendlyId !== friendlyId) {
+    function update(currentSessions: unknown) {
+      const sessions = Array.isArray(currentSessions)
+        ? (currentSessions as Array<SessionMeta>)
+        : []
+
+      const matchedIndex = sessions.findIndex((session) => {
+        return session.key === sessionKey || session.friendlyId === friendlyId
+      })
+      const nextSessions = sessions.map((session, index) => {
+        if (index !== matchedIndex) {
           return session
         }
-        return {
-          ...session,
-          lastMessage: message,
-          updatedAt:
-            typeof session.updatedAt === 'number' &&
-            Number.isFinite(session.updatedAt) &&
-            session.updatedAt > messageUpdatedAt
-              ? session.updatedAt
-              : messageUpdatedAt,
-        }
+        return mergeSessionMessage(session, message, messageUpdatedAt)
       })
 
-      return [...nextSessions].sort((a, b) => {
-        const aUpdatedAt =
-          typeof a.updatedAt === 'number' && Number.isFinite(a.updatedAt)
-            ? a.updatedAt
-            : 0
-        const bUpdatedAt =
-          typeof b.updatedAt === 'number' && Number.isFinite(b.updatedAt)
-            ? b.updatedAt
-            : 0
-        return bUpdatedAt - aUpdatedAt
-      })
+      if (matchedIndex < 0) {
+        nextSessions.unshift(
+          mergeSessionMessage(
+            {
+              key: sessionKey,
+              friendlyId,
+            },
+            message,
+            messageUpdatedAt,
+          ),
+        )
+      }
+
+      return sortSessionsByUpdatedAt(nextSessions)
     },
   )
+}
+
+function mergeSessionMessage(
+  session: SessionMeta,
+  message: GatewayMessage,
+  messageUpdatedAt: number,
+): SessionMeta {
+  const derivedTitleCandidate = deriveSessionTitle(message)
+  return {
+    ...session,
+    lastMessage: message,
+    updatedAt:
+      typeof session.updatedAt === 'number' &&
+      Number.isFinite(session.updatedAt) &&
+      session.updatedAt > messageUpdatedAt
+        ? session.updatedAt
+        : messageUpdatedAt,
+    derivedTitle:
+      session.label || session.title || session.derivedTitle
+        ? session.derivedTitle
+        : derivedTitleCandidate || session.derivedTitle,
+  }
+}
+
+function deriveSessionTitle(message: GatewayMessage): string | undefined {
+  if (message.role !== 'user') return undefined
+  const text = textFromMessage(message).replace(/\s+/g, ' ').trim()
+  if (!text) return undefined
+  return text.slice(0, 48)
+}
+
+function sortSessionsByUpdatedAt(
+  sessions: Array<SessionMeta>,
+): Array<SessionMeta> {
+  return [...sessions].sort((a, b) => {
+    const aUpdatedAt =
+      typeof a.updatedAt === 'number' && Number.isFinite(a.updatedAt)
+        ? a.updatedAt
+        : 0
+    const bUpdatedAt =
+      typeof b.updatedAt === 'number' && Number.isFinite(b.updatedAt)
+        ? b.updatedAt
+        : 0
+    return bUpdatedAt - aUpdatedAt
+  })
 }
 
 export function removeSessionFromCache(

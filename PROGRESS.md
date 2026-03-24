@@ -2,7 +2,7 @@
 
 ## Current Focus
 
-Build Kairos out from the locked backend architecture by landing vertical slices in order, with auth and authenticated session persistence now in place.
+Build Kairos out from the locked backend architecture by landing vertical slices in order, with auth, persisted sessions/history, and refresh-safe message send/stream now in place.
 
 ## Status
 
@@ -32,6 +32,14 @@ Build Kairos out from the locked backend architecture by landing vertical slices
   Add a hybrid HTTP chat backend adapter that hydrates the existing mock runtime from real backend sessions/history so authenticated users can use persisted conversations without rewriting the current send/stream UI yet.
 - Completed:
   Add backend tests for authenticated session persistence, user scoping, rename/delete behavior, and history loading.
+- Completed:
+  Reorder the backend slice plan to land real message send and SSE streaming before provider/model work, so persisted conversations no longer lose their message history on refresh.
+- Completed:
+  Land the third backend vertical slice with incremental `chat_runs` migration, persisted user and assistant messages, server-owned placeholder run generation, and SSE events for active conversations.
+- Completed:
+  Switch the authenticated HTTP chat backend off the mock send/subscribe path so message sends and stream updates now come from the Go backend while fork/edit/delete remain on the mock runtime for now.
+- Completed:
+  Add backend tests for real send persistence, streamed finalization, and stream user scoping, and harden SQLite startup with a busy timeout plus a single open connection.
 
 ## Next Task
 
@@ -47,8 +55,7 @@ Scope of the next slice:
 
 Planned slice order after the provider/model slice:
 
-- Chat send plus SSE streaming
-- Branch fork/edit/delete flows
+- Branch fork/edit/delete flows on the real backend
 - Title generation
 
 Current branch feature work:
@@ -68,5 +75,5 @@ Current branch feature work:
 
 After the provider/model slice lands:
 
-- Replace the remaining mock-only send path with backend chat runs and SSE streaming.
+- Replace the remaining mock-only branch edit/delete/fork flows with backend-owned branching semantics.
 - Continue schema work incrementally by feature migration instead of front-loading unused tables.

@@ -43,6 +43,17 @@ type createSessionRequest struct {
 	Label string `json:"label"`
 }
 
+type sendMessageRequest struct {
+	Message         string              `json:"message"`
+	Model           string              `json:"model"`
+	Thinking        string              `json:"thinking"`
+	Temperature     *float64            `json:"temperature"`
+	TopP            *float64            `json:"topP"`
+	MaxOutputTokens *int                `json:"maxOutputTokens"`
+	IdempotencyKey  string              `json:"idempotencyKey"`
+	Attachments     []AttachmentPayload `json:"attachments"`
+}
+
 type sessionMutationResponse struct {
 	SessionKey string `json:"sessionKey"`
 	FriendlyID string `json:"friendlyId"`
@@ -240,6 +251,96 @@ func (app *App) handleSessionHistory(writer http.ResponseWriter, request *http.R
 	}
 
 	writeJSON(writer, http.StatusOK, history)
+}
+
+func (app *App) handleSendMessage(writer http.ResponseWriter, request *http.Request) {
+	user, ok := app.requireAuthenticatedUser(writer, request)
+	if !ok {
+		return
+	}
+
+	var payload sendMessageRequest
+	if err := decodeJSON(request, &payload); err != nil {
+		writeError(writer, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	result, err := app.runs.StartRun(request.Context(), user.ID, SendMessageInput{
+		FriendlyID:      request.PathValue("friendlyId"),
+		Message:         payload.Message,
+		Model:           payload.Model,
+		Thinking:        payload.Thinking,
+		Temperature:     payload.Temperature,
+		TopP:            payload.TopP,
+		MaxOutputTokens: payload.MaxOutputTokens,
+		IdempotencyKey:  payload.IdempotencyKey,
+		Attachments:     payload.Attachments,
+	})
+	if err != nil {
+		switch {
+		case errors.Is(err, errChatSessionNotFound):
+			writeError(writer, http.StatusNotFound, err.Error())
+		default:
+			writeError(writer, http.StatusBadRequest, err.Error())
+		}
+		return
+	}
+
+	writeJSON(writer, http.StatusOK, result)
+}
+
+func (app *App) handleSessionEvents(writer http.ResponseWriter, request *http.Request) {
+	user, ok := app.requireAuthenticatedUser(writer, request)
+	if !ok {
+		return
+	}
+
+	friendlyID := request.PathValue("friendlyId")
+	if _, err := app.runs.ResolveSession(request.Context(), user.ID, friendlyID); err != nil {
+		if errors.Is(err, errChatSessionNotFound) {
+			writeError(writer, http.StatusNotFound, err.Error())
+			return
+		}
+		writeError(writer, http.StatusInternalServerError, "failed to open stream")
+		return
+	}
+
+	flusher, ok := writer.(http.Flusher)
+	if !ok {
+		writeError(writer, http.StatusInternalServerError, "streaming unsupported")
+		return
+	}
+
+	writer.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
+	writer.Header().Set("Cache-Control", "no-cache")
+	writer.Header().Set("Connection", "keep-alive")
+	writer.Header().Set("X-Accel-Buffering", "no")
+	writer.WriteHeader(http.StatusOK)
+	flusher.Flush()
+
+	_, _ = writer.Write([]byte(": connected\n\n"))
+	flusher.Flush()
+
+	streamErr := app.runs.StreamSession(request.Context(), user.ID, friendlyID, func(event ChatEvent) error {
+		payload, err := json.Marshal(event)
+		if err != nil {
+			return err
+		}
+		if _, err := writer.Write([]byte("data: ")); err != nil {
+			return err
+		}
+		if _, err := writer.Write(payload); err != nil {
+			return err
+		}
+		if _, err := writer.Write([]byte("\n\n")); err != nil {
+			return err
+		}
+		flusher.Flush()
+		return nil
+	})
+	if streamErr != nil && !errors.Is(streamErr, errChatSessionNotFound) {
+		return
+	}
 }
 
 func (app *App) sessionTokenFromRequest(request *http.Request) string {
