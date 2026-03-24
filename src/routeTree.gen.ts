@@ -9,11 +9,18 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as SignupRouteImport } from './routes/signup'
 import { Route as NewRouteImport } from './routes/new'
 import { Route as ConnectRouteImport } from './routes/connect'
+import { Route as AuthRouteImport } from './routes/auth'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ChatSessionKeyRouteImport } from './routes/chat/$sessionKey'
 
+const SignupRoute = SignupRouteImport.update({
+  id: '/signup',
+  path: '/signup',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const NewRoute = NewRouteImport.update({
   id: '/new',
   path: '/new',
@@ -22,6 +29,11 @@ const NewRoute = NewRouteImport.update({
 const ConnectRoute = ConnectRouteImport.update({
   id: '/connect',
   path: '/connect',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuthRoute = AuthRouteImport.update({
+  id: '/auth',
+  path: '/auth',
   getParentRoute: () => rootRouteImport,
 } as any)
 const IndexRoute = IndexRouteImport.update({
@@ -37,40 +49,68 @@ const ChatSessionKeyRoute = ChatSessionKeyRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/auth': typeof AuthRoute
   '/connect': typeof ConnectRoute
   '/new': typeof NewRoute
+  '/signup': typeof SignupRoute
   '/chat/$sessionKey': typeof ChatSessionKeyRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/auth': typeof AuthRoute
   '/connect': typeof ConnectRoute
   '/new': typeof NewRoute
+  '/signup': typeof SignupRoute
   '/chat/$sessionKey': typeof ChatSessionKeyRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/auth': typeof AuthRoute
   '/connect': typeof ConnectRoute
   '/new': typeof NewRoute
+  '/signup': typeof SignupRoute
   '/chat/$sessionKey': typeof ChatSessionKeyRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/connect' | '/new' | '/chat/$sessionKey'
+  fullPaths:
+    | '/'
+    | '/auth'
+    | '/connect'
+    | '/new'
+    | '/signup'
+    | '/chat/$sessionKey'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/connect' | '/new' | '/chat/$sessionKey'
-  id: '__root__' | '/' | '/connect' | '/new' | '/chat/$sessionKey'
+  to: '/' | '/auth' | '/connect' | '/new' | '/signup' | '/chat/$sessionKey'
+  id:
+    | '__root__'
+    | '/'
+    | '/auth'
+    | '/connect'
+    | '/new'
+    | '/signup'
+    | '/chat/$sessionKey'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AuthRoute: typeof AuthRoute
   ConnectRoute: typeof ConnectRoute
   NewRoute: typeof NewRoute
+  SignupRoute: typeof SignupRoute
   ChatSessionKeyRoute: typeof ChatSessionKeyRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/signup': {
+      id: '/signup'
+      path: '/signup'
+      fullPath: '/signup'
+      preLoaderRoute: typeof SignupRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/new': {
       id: '/new'
       path: '/new'
@@ -83,6 +123,13 @@ declare module '@tanstack/react-router' {
       path: '/connect'
       fullPath: '/connect'
       preLoaderRoute: typeof ConnectRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/auth': {
+      id: '/auth'
+      path: '/auth'
+      fullPath: '/auth'
+      preLoaderRoute: typeof AuthRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/': {
@@ -104,8 +151,10 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AuthRoute: AuthRoute,
   ConnectRoute: ConnectRoute,
   NewRoute: NewRoute,
+  SignupRoute: SignupRoute,
   ChatSessionKeyRoute: ChatSessionKeyRoute,
 }
 export const routeTree = rootRouteImport

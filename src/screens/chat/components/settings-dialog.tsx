@@ -56,12 +56,16 @@ type SettingsDialogProps = {
   open: boolean
   onOpenChange: (open: boolean) => void
   onClose: () => void
+  onLogout?: () => void
+  logoutPending?: boolean
 }
 
 export function SettingsDialog({
   open,
   onOpenChange,
   onClose,
+  onLogout,
+  logoutPending = false,
 }: SettingsDialogProps) {
   const { settings, updateSettings } = useChatSettings()
   const themeOptions = [
@@ -211,6 +215,16 @@ export function SettingsDialog({
           </SettingsSection>
 
           <div className="mt-6 flex justify-end">
+            {onLogout ? (
+              <Button
+                variant="outline"
+                onClick={onLogout}
+                disabled={logoutPending}
+                className="mr-auto"
+              >
+                {logoutPending ? 'Signing out...' : 'Sign out'}
+              </Button>
+            ) : null}
             <DialogClose onClick={onClose}>Close</DialogClose>
           </div>
         </div>

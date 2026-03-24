@@ -1,14 +1,24 @@
-import { createFileRoute, useNavigate } from '@tanstack/react-router'
+import {
+  Navigate,
+  createFileRoute,
+  useNavigate,
+} from '@tanstack/react-router'
 import { useCallback, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { ChatScreen } from '../../screens/chat/chat-screen'
 import { moveHistoryMessages } from '../../screens/chat/chat-queries'
+import {
+  isUnauthorizedError,
+  useCurrentUserQuery,
+} from '@/lib/app-api'
+import { FullScreenMessage } from '@/components/full-screen-message'
 
 export const Route = createFileRoute('/chat/$sessionKey')({
   component: ChatRoute,
 })
 
 function ChatRoute() {
+  const currentUserQuery = useCurrentUserQuery()
   const queryClient = useQueryClient()
   const navigate = useNavigate()
   const [forcedSession, setForcedSession] = useState<{
@@ -47,6 +57,33 @@ function ChatRoute() {
     },
     [navigate, queryClient],
   )
+
+  if (currentUserQuery.isPending) {
+    return (
+      <FullScreenMessage
+        title="Checking session"
+        detail="Loading the authenticated app shell before opening chat."
+      />
+    )
+  }
+
+  if (currentUserQuery.error) {
+    if (isUnauthorizedError(currentUserQuery.error)) {
+      return <Navigate replace to="/auth" />
+    }
+
+    return (
+      <FullScreenMessage
+        title="Session check failed"
+        detail={
+          currentUserQuery.error instanceof Error
+            ? currentUserQuery.error.message
+            : 'Failed to validate the current session.'
+        }
+        tone="error"
+      />
+    )
+  }
 
   return (
     <ChatScreen

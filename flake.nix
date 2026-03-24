@@ -23,6 +23,9 @@
             pkgs.nodejs
             pkgs.pnpm
             pkgs.git
+            pkgs.go
+            pkgs.gopls
+            pkgs.sqlite
           ];
         };
       }

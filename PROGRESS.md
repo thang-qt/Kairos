@@ -2,11 +2,11 @@
 
 ## Current Focus
 
-Run Kairos on a generic in-browser chat backend with mock conversation and streaming behavior, with the old OpenClaw server transport removed.
+Build Kairos out from the locked backend architecture by landing vertical slices in order, starting with auth and app capabilities.
 
 ## Status
 
-- Completed
+- In Progress
 
 ## Completed This Step
 
@@ -16,10 +16,33 @@ Run Kairos on a generic in-browser chat backend with mock conversation and strea
   Refactor the chat hooks and screen to consume the backend interface instead of `/api/*` routes and the OpenClaw gateway.
 - Completed:
   Remove the leftover OpenClaw-only routes/server code and clean up generic chat copy in the UI.
+- Completed:
+  Draft the backend architecture in `ARCHITECTURE.md` for a multi-user Go `net/http` + SQLite app with cookie-based auth, env-driven policy, one env-backed system provider, user BYOK providers, pluggable provider drivers, and SSE streaming.
+- Completed:
+  Resolve the initial backend policy decisions: use session cookies instead of JWT, hide signup UI when disabled, use `friendly_id` for frontend routes and API-facing identifiers, hit upstream for model sync by default, auto-run title generation after the first assistant response when enabled, and defer provider-specific tuning out of v1.
+- Completed:
+  Decide to build the database incrementally with feature-driven migrations instead of creating the full final schema up front.
+- Completed:
+  Land the first backend vertical slice with a Go `net/http` service, SQLite migration bootstrap, cookie-based auth, app capabilities, optional env-based admin bootstrap, and Nix shell support for Go and SQLite tooling.
+- Completed:
+  Add the frontend auth/app shell for the first slice: `/auth`, capability-aware signup hiding, session gating on chat routes, and logout from the existing settings dialog while leaving chat data on the mock backend.
 
 ## Next Task
 
-Convert Kairos from the TanStack Start server runtime to a plain frontend build oriented around static assets, then add a real HTTP adapter shaped for a future Go `net/http` service that can serve the built assets and power chat over standard HTTP and streaming endpoints.
+Start the second backend vertical slice: authenticated sessions and history.
+
+Scope of the next slice:
+- Add incremental migrations for `user_preferences`, `chat_sessions`, and `chat_messages`.
+- Implement authenticated `GET /api/sessions`, `POST /api/sessions`, and `GET /api/sessions/:friendlyId/history`.
+- Return the same session/history shapes the current frontend mock adapter already exposes.
+- Add a selectable HTTP chat backend adapter for sessions and history while keeping mock send/stream behavior in place until the later chat-run slice.
+
+Planned slice order after the sessions/history slice:
+- Provider registry plus `openai_compatible` provider driver and provider settings endpoints
+- Real model catalog loading from backend
+- Chat send plus SSE streaming
+- Branch fork/edit/delete flows
+- Title generation
 
 Current branch feature work:
 - Completed:
@@ -35,4 +58,6 @@ Current branch feature work:
 
 ## Planned Follow-Up
 
-After the static frontend conversion is done, add a selectable HTTP backend adapter while keeping the mock backend available for local UI development.
+After the sessions/history slice lands:
+- Move hardcoded model data out of the frontend and behind backend-driven provider/model APIs.
+- Continue schema work incrementally by feature migration instead of front-loading unused tables.

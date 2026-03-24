@@ -8,6 +8,7 @@ import {
 import { AnimatePresence, motion } from 'motion/react'
 import { memo, useState } from 'react'
 import { Link, useNavigate } from '@tanstack/react-router'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useChatSettings } from '../hooks/use-chat-settings'
 import { useDeleteSession } from '../hooks/use-delete-session'
 import { useRenameSession } from '../hooks/use-rename-session'
@@ -24,6 +25,7 @@ import {
   TooltipRoot,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
+import { appQueryKeys, logout } from '@/lib/app-api'
 import { cn } from '@/lib/utils'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { WebClawIconBig } from '@/components/icons/webclaw-big'
@@ -72,6 +74,19 @@ function ChatSidebarComponent({
   const [deleteSessionTitle, setDeleteSessionTitle] = useState('')
   const [searchDialogOpen, setSearchDialogOpen] = useState(false)
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
+  const logoutMutation = useMutation({
+    mutationFn: logout,
+    onSuccess: async () => {
+      queryClient.setQueryData(appQueryKeys.me, null)
+      await queryClient.invalidateQueries({ queryKey: appQueryKeys.me })
+      closeSettings()
+      void navigate({
+        to: '/auth',
+        replace: true,
+      })
+    },
+  })
 
   useSessionShortcuts({
     onNewSession: onCreateSession,
@@ -346,6 +361,8 @@ function ChatSidebarComponent({
         open={settingsOpen}
         onOpenChange={setSettingsOpen}
         onClose={closeSettings}
+        onLogout={() => logoutMutation.mutate()}
+        logoutPending={logoutMutation.isPending}
       />
 
       <SessionRenameDialog
