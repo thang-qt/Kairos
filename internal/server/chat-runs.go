@@ -389,6 +389,7 @@ func (service *ChatRunService) executeRun(
 	modelID := model.ID
 	modelName := firstNonEmpty(model.Name, model.ID)
 	modelDescription := provider.Record.Label
+	minAssistantTimestamp := latestMessageTimestamp(history) + 1
 	result, err := driver.GenerateChatStream(
 		ctx,
 		provider,
@@ -429,12 +430,13 @@ func (service *ChatRunService) executeRun(
 	)
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
+			abortedTimestamp := maxInt64(time.Now().UnixMilli(), minAssistantTimestamp)
 			abortedMessage := buildAssistantMessage(
 				record.AssistantMessageID,
 				modelID,
 				modelName,
 				modelDescription,
-				time.Now().UnixMilli(),
+				abortedTimestamp,
 				buildAssistantContent(accumulatedThinking, accumulatedText),
 			)
 			service.publishRunAborted(ctx, record, session, abortedMessage)
@@ -448,7 +450,7 @@ func (service *ChatRunService) executeRun(
 	modelDescription = firstNonEmpty(result.ModelDescription, modelDescription)
 	accumulatedThinking = firstNonEmpty(result.ThinkingText, accumulatedThinking)
 
-	finalTimestamp := time.Now().UnixMilli()
+	finalTimestamp := maxInt64(time.Now().UnixMilli(), minAssistantTimestamp)
 	finalMessage := buildAssistantMessage(
 		record.AssistantMessageID,
 		modelID,
@@ -748,4 +750,39 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func latestMessageTimestamp(messages []map[string]any) int64 {
+	var latest int64
+	for _, message := range messages {
+		timestamp := int64Value(message["timestamp"])
+		if timestamp > latest {
+			latest = timestamp
+		}
+	}
+	return latest
+}
+
+func maxInt64(left int64, right int64) int64 {
+	if left > right {
+		return left
+	}
+	return right
+}
+
+func int64Value(value any) int64 {
+	switch typed := value.(type) {
+	case int64:
+		return typed
+	case int:
+		return int64(typed)
+	case float64:
+		return int64(typed)
+	case json.Number:
+		parsed, err := typed.Int64()
+		if err == nil {
+			return parsed
+		}
+	}
+	return 0
 }

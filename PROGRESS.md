@@ -2,7 +2,7 @@
 
 ## Current Focus
 
-Build Kairos out from the locked backend architecture by landing vertical slices in order, with auth, persisted sessions/history, provider/model management, and real provider-backed message send/stream now in place.
+Build Kairos out from the locked backend architecture by landing vertical slices in order, with auth, persisted sessions/history, provider/model management, and a simplified provider-backed chat send/stream pipeline now in place.
 
 ## Status
 
@@ -10,6 +10,18 @@ Build Kairos out from the locked backend architecture by landing vertical slices
 
 ## Completed This Step
 
+- Completed:
+  Land the backend-owned branching slice with real fork, edit, and delete session/message endpoints backed by SQLite session/message cloning instead of mock-only branch state.
+- Completed:
+  Switch the authenticated HTTP chat backend off the mock branch path so fork/edit/delete actions now use backend routes with mock fallback only for missing local-only sessions.
+- Completed:
+  Add backend coverage for fork, delete-branch, and edit-and-regenerate flows, and harden assistant message ordering so fast provider runs still persist after the triggering user turn.
+- Completed:
+  Refactor the backend chat run execution flow so assistant replies have a stable message identity during streaming instead of relying on frontend-side heuristic reconciliation.
+- Completed:
+  Simplify frontend chat stream and history merging to reconcile streamed assistant messages by message id and run id instead of time/text guesses.
+- Completed:
+  Add end-to-end stop support for active chat generation with a backend stop endpoint, frontend composer stop action, and persisted partial assistant output on abort.
 - Completed:
   Add a generic chat backend interface and persisted mock frontend backend for conversations, history, send, rename, delete, and streaming updates.
 - Completed:
@@ -51,16 +63,17 @@ Build Kairos out from the locked backend architecture by landing vertical slices
 
 ## Next Task
 
-Start the backend-owned branching slice.
+Start the title generation slice.
 
 Scope of the next slice:
 
-- Add real backend fork/edit/delete endpoints for conversations and user turns.
-- Move the remaining mock-only branch semantics into SQLite-backed session/message operations.
-- Keep the existing inline branch navigator and branch tree UI, but switch them to backend data instead of local mock-only state.
+- Generate and persist conversation titles after the first assistant response when auto-title behavior is enabled.
+- Decide how title generation interacts with forked conversations so branch labels remain predictable.
+- Keep title updates backend-owned so the frontend only consumes session metadata refreshes.
 
 Planned slice order after the provider-backed runtime slice:
 
+- Streaming UX cleanup
 - Title generation
 
 Current branch feature work:
@@ -78,5 +91,6 @@ Current branch feature work:
 
 ## Planned Follow-Up
 
-- Replace the remaining mock-only branch edit/delete/fork flows with backend-owned branching semantics.
+- Add a visible stopped/aborted state for partial assistant replies so cancelled generations are distinct from completed ones.
+- Consider moving from session-wide SSE to run-scoped streaming with explicit idempotency if the current stream contract remains hard to evolve.
 - Continue schema work incrementally by feature migration instead of front-loading unused tables.

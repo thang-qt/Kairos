@@ -71,6 +71,10 @@ type sendMessageRequest struct {
 	Attachments    []AttachmentPayload `json:"attachments"`
 }
 
+type forkSessionRequest struct {
+	MessageID string `json:"messageId"`
+}
+
 type sessionMutationResponse struct {
 	SessionKey string `json:"sessionKey"`
 	FriendlyID string `json:"friendlyId"`
@@ -520,6 +524,122 @@ func (app *App) handleSendMessage(writer http.ResponseWriter, request *http.Requ
 	}
 
 	writeJSON(writer, http.StatusOK, result)
+}
+
+func (app *App) handleForkSession(writer http.ResponseWriter, request *http.Request) {
+	user, ok := app.requireAuthenticatedUser(writer, request)
+	if !ok {
+		return
+	}
+
+	var payload forkSessionRequest
+	if err := decodeJSON(request, &payload); err != nil {
+		writeError(writer, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	session, err := app.chat.ForkSession(
+		request.Context(),
+		user.ID,
+		request.PathValue("friendlyId"),
+		payload.MessageID,
+	)
+	if err != nil {
+		switch {
+		case errors.Is(err, errChatSessionNotFound):
+			writeError(writer, http.StatusNotFound, err.Error())
+		default:
+			writeError(writer, http.StatusBadRequest, err.Error())
+		}
+		return
+	}
+
+	writeJSON(writer, http.StatusOK, sessionMutationResponse{
+		SessionKey: session.Key,
+		FriendlyID: session.FriendlyID,
+	})
+}
+
+func (app *App) handleEditUserMessage(writer http.ResponseWriter, request *http.Request) {
+	user, ok := app.requireAuthenticatedUser(writer, request)
+	if !ok {
+		return
+	}
+
+	var payload sendMessageRequest
+	if err := decodeJSON(request, &payload); err != nil {
+		writeError(writer, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	session, attachments, err := app.chat.EditUserMessage(
+		request.Context(),
+		user.ID,
+		request.PathValue("friendlyId"),
+		request.PathValue("messageId"),
+		payload.Message,
+	)
+	if err != nil {
+		switch {
+		case errors.Is(err, errChatSessionNotFound):
+			writeError(writer, http.StatusNotFound, err.Error())
+		default:
+			writeError(writer, http.StatusBadRequest, err.Error())
+		}
+		return
+	}
+
+	result, err := app.runs.StartRun(request.Context(), user.ID, SendMessageInput{
+		FriendlyID:  session.FriendlyID,
+		Message:     payload.Message,
+		Model:       payload.Model,
+		Attachments: attachments,
+	})
+	if err != nil {
+		switch {
+		case errors.Is(err, errNoProviderAvailable),
+			errors.Is(err, errNoModelAvailable),
+			errors.Is(err, errModelNotAvailable):
+			writeError(writer, http.StatusBadRequest, err.Error())
+		default:
+			writeError(writer, http.StatusBadGateway, err.Error())
+		}
+		return
+	}
+
+	writeJSON(writer, http.StatusOK, map[string]any{
+		"sessionKey": session.Key,
+		"friendlyId": session.FriendlyID,
+		"runId":      result.RunID,
+	})
+}
+
+func (app *App) handleDeleteUserMessage(writer http.ResponseWriter, request *http.Request) {
+	user, ok := app.requireAuthenticatedUser(writer, request)
+	if !ok {
+		return
+	}
+
+	session, err := app.chat.DeleteUserMessage(
+		request.Context(),
+		user.ID,
+		request.PathValue("friendlyId"),
+		request.PathValue("messageId"),
+	)
+	if err != nil {
+		switch {
+		case errors.Is(err, errChatSessionNotFound):
+			writeError(writer, http.StatusNotFound, err.Error())
+		default:
+			writeError(writer, http.StatusBadRequest, err.Error())
+		}
+		return
+	}
+
+	writeJSON(writer, http.StatusOK, sessionMutationResponse{
+		SessionKey: session.Key,
+		FriendlyID: session.FriendlyID,
+	})
 }
 
 func (app *App) handleStopSessionRuns(writer http.ResponseWriter, request *http.Request) {

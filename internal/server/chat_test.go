@@ -2,7 +2,9 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 )
@@ -163,6 +165,190 @@ func TestRenameAndDeleteSession(t *testing.T) {
 	}
 }
 
+func TestForkSessionCreatesBackendBranch(t *testing.T) {
+	testServer := newTestApp(t, nil)
+	cookie := signupAndRequireCookie(t, testServer, "fork@example.com")
+
+	createResponse := performJSONRequest(t, testServer.handler, http.MethodPost, "/api/sessions", createSessionRequest{
+		Label: "Fork Source",
+	}, []*http.Cookie{cookie})
+	assertStatusCode(t, createResponse, http.StatusCreated)
+
+	var created sessionMutationResponse
+	decodeResponseJSON(t, createResponse, &created)
+
+	messageIDs := seedSessionMessages(t, testServer, created.SessionKey, []map[string]any{
+		newUserTextMessage("Original question"),
+		newAssistantTextMessage("Original answer"),
+		newUserTextMessage("Second question"),
+	})
+
+	forkResponse := performJSONRequest(t, testServer.handler, http.MethodPost, "/api/sessions/"+created.FriendlyID+"/fork", forkSessionRequest{
+		MessageID: messageIDs[1],
+	}, []*http.Cookie{cookie})
+	assertStatusCode(t, forkResponse, http.StatusOK)
+
+	var forked sessionMutationResponse
+	decodeResponseJSON(t, forkResponse, &forked)
+	if forked.SessionKey == "" || forked.FriendlyID == "" {
+		t.Fatal("forked session identifiers = empty")
+	}
+
+	listResponse := performJSONRequest(t, testServer.handler, http.MethodGet, "/api/sessions", nil, []*http.Cookie{cookie})
+	assertStatusCode(t, listResponse, http.StatusOK)
+
+	var sessionsPayload sessionsResponse
+	decodeResponseJSON(t, listResponse, &sessionsPayload)
+	if len(sessionsPayload.Sessions) != 2 {
+		t.Fatalf("sessions count after fork = %d, want 2", len(sessionsPayload.Sessions))
+	}
+
+	var forkedSummary *SessionSummary
+	for index := range sessionsPayload.Sessions {
+		session := &sessionsPayload.Sessions[index]
+		if session.FriendlyID == forked.FriendlyID {
+			forkedSummary = session
+			break
+		}
+	}
+	if forkedSummary == nil {
+		t.Fatal("forked session summary not found")
+	}
+	if forkedSummary.ParentSessionKey != created.SessionKey {
+		t.Fatalf("fork parent key = %q, want %q", forkedSummary.ParentSessionKey, created.SessionKey)
+	}
+	if forkedSummary.ParentFriendlyID != created.FriendlyID {
+		t.Fatalf("fork parent friendlyId = %q, want %q", forkedSummary.ParentFriendlyID, created.FriendlyID)
+	}
+	if forkedSummary.ForkPointMessageID != messageIDs[1] {
+		t.Fatalf("fork point message id = %q, want %q", forkedSummary.ForkPointMessageID, messageIDs[1])
+	}
+
+	historyResponse := performJSONRequest(t, testServer.handler, http.MethodGet, "/api/sessions/"+forked.FriendlyID+"/history", nil, []*http.Cookie{cookie})
+	assertStatusCode(t, historyResponse, http.StatusOK)
+
+	var historyPayload HistoryPayload
+	decodeResponseJSON(t, historyResponse, &historyPayload)
+	if len(historyPayload.Messages) != 2 {
+		t.Fatalf("forked history count = %d, want 2", len(historyPayload.Messages))
+	}
+	if messageIDFromMap(historyPayload.Messages[0]) != messageIDs[0] {
+		t.Fatalf("forked first message id = %q, want %q", messageIDFromMap(historyPayload.Messages[0]), messageIDs[0])
+	}
+	if messageIDFromMap(historyPayload.Messages[1]) != messageIDs[1] {
+		t.Fatalf("forked second message id = %q, want %q", messageIDFromMap(historyPayload.Messages[1]), messageIDs[1])
+	}
+}
+
+func TestDeleteUserMessageCreatesBackendBranch(t *testing.T) {
+	testServer := newTestApp(t, nil)
+	cookie := signupAndRequireCookie(t, testServer, "delete-turn@example.com")
+
+	createResponse := performJSONRequest(t, testServer.handler, http.MethodPost, "/api/sessions", createSessionRequest{
+		Label: "Delete Source",
+	}, []*http.Cookie{cookie})
+	assertStatusCode(t, createResponse, http.StatusCreated)
+
+	var created sessionMutationResponse
+	decodeResponseJSON(t, createResponse, &created)
+
+	messageIDs := seedSessionMessages(t, testServer, created.SessionKey, []map[string]any{
+		newUserTextMessage("First question"),
+		newAssistantTextMessage("First answer"),
+		newUserTextMessage("Second question"),
+		newAssistantTextMessage("Second answer"),
+	})
+
+	deleteResponse := performJSONRequest(t, testServer.handler, http.MethodDelete, "/api/sessions/"+created.FriendlyID+"/messages/"+messageIDs[2], nil, []*http.Cookie{cookie})
+	assertStatusCode(t, deleteResponse, http.StatusOK)
+
+	var forked sessionMutationResponse
+	decodeResponseJSON(t, deleteResponse, &forked)
+
+	historyResponse := performJSONRequest(t, testServer.handler, http.MethodGet, "/api/sessions/"+forked.FriendlyID+"/history", nil, []*http.Cookie{cookie})
+	assertStatusCode(t, historyResponse, http.StatusOK)
+
+	var historyPayload HistoryPayload
+	decodeResponseJSON(t, historyResponse, &historyPayload)
+	if len(historyPayload.Messages) != 2 {
+		t.Fatalf("deleted-branch history count = %d, want 2", len(historyPayload.Messages))
+	}
+	if messageIDFromMap(historyPayload.Messages[1]) != messageIDs[1] {
+		t.Fatalf("deleted-branch last message id = %q, want %q", messageIDFromMap(historyPayload.Messages[1]), messageIDs[1])
+	}
+}
+
+func TestEditUserMessageCreatesBackendBranchAndRuns(t *testing.T) {
+	testServer := newTestApp(t, func(config *Config) {
+		config.SystemProviderEnabled = true
+		config.SystemProviderLabel = "Server Default"
+		config.SystemProviderStaticModels = []string{"test-model"}
+	})
+	testServer.app.providers.drivers["openai_compatible"] = fakeProviderDriver{
+		models: []ProviderModel{
+			{
+				ID:            "test-model",
+				Object:        "model",
+				OwnedBy:       "test",
+				ProviderRef:   "system:system-default",
+				ProviderLabel: "Server Default",
+			},
+		},
+		output: "Edited branch answer.",
+	}
+	cookie := signupAndRequireCookie(t, testServer, "edit-turn@example.com")
+
+	createResponse := performJSONRequest(t, testServer.handler, http.MethodPost, "/api/sessions", createSessionRequest{
+		Label: "Edit Source",
+	}, []*http.Cookie{cookie})
+	assertStatusCode(t, createResponse, http.StatusCreated)
+
+	var created sessionMutationResponse
+	decodeResponseJSON(t, createResponse, &created)
+
+	messageIDs := seedSessionMessages(t, testServer, created.SessionKey, []map[string]any{
+		newUserTextMessageWithAttachment("Original question", "image/png", "Zm9v"),
+		newAssistantTextMessage("Original answer"),
+	})
+
+	editResponse := performJSONRequest(t, testServer.handler, http.MethodPost, "/api/sessions/"+created.FriendlyID+"/messages/"+messageIDs[0]+"/edit", sendMessageRequest{
+		Message: "Edited question",
+		Model:   "test-model",
+	}, []*http.Cookie{cookie})
+	assertStatusCode(t, editResponse, http.StatusOK)
+
+	var editPayload struct {
+		SessionKey string `json:"sessionKey"`
+		FriendlyID string `json:"friendlyId"`
+		RunID      string `json:"runId"`
+	}
+	decodeResponseJSON(t, editResponse, &editPayload)
+	if editPayload.RunID == "" {
+		t.Fatal("edit runId = empty, want populated value")
+	}
+
+	waitForRunStatus(t, testServer, editPayload.RunID, "completed")
+
+	historyResponse := performJSONRequest(t, testServer.handler, http.MethodGet, "/api/sessions/"+editPayload.FriendlyID+"/history", nil, []*http.Cookie{cookie})
+	assertStatusCode(t, historyResponse, http.StatusOK)
+
+	var historyPayload HistoryPayload
+	decodeResponseJSON(t, historyResponse, &historyPayload)
+	if len(historyPayload.Messages) != 2 {
+		t.Fatalf("edited-branch history count = %d, want 2", len(historyPayload.Messages))
+	}
+	if textContentFromMessage(historyPayload.Messages[0]) != "Edited question" {
+		t.Fatalf("edited user message text = %q, want %q", textContentFromMessage(historyPayload.Messages[0]), "Edited question")
+	}
+	attachments := extractAttachmentPayloads(historyPayload.Messages[0])
+	if len(attachments) != 1 || attachments[0].MimeType != "image/png" || attachments[0].Content != "Zm9v" {
+		t.Fatalf("edited message attachments = %#v, want preserved image attachment", attachments)
+	}
+	if textContentFromMessage(historyPayload.Messages[1]) != "Edited branch answer." {
+		t.Fatalf("edited branch assistant text = %q, want %q", textContentFromMessage(historyPayload.Messages[1]), "Edited branch answer.")
+	}
+}
+
 func signupAndRequireCookie(t *testing.T, testServer *testApp, email string) *http.Cookie {
 	t.Helper()
 
@@ -172,6 +358,136 @@ func signupAndRequireCookie(t *testing.T, testServer *testApp, email string) *ht
 	}, nil)
 	assertStatusCode(t, response, http.StatusCreated)
 	return requireSessionCookie(t, response)
+}
+
+func seedSessionMessages(t *testing.T, testServer *testApp, sessionKey string, messages []map[string]any) []string {
+	t.Helper()
+
+	messageIDs := make([]string, 0, len(messages))
+	var lastMessageJSON string
+	var lastTimestamp int64
+	var totalTokens int64
+	derivedTitle := ""
+
+	for index, message := range messages {
+		messageJSON, err := json.Marshal(message)
+		if err != nil {
+			t.Fatalf("marshal message %d: %v", index, err)
+		}
+		contentJSON, err := encodeMessageContent(message["content"])
+		if err != nil {
+			t.Fatalf("encode message content %d: %v", index, err)
+		}
+		timestamp := int64(1710000000000 + index)
+		message["timestamp"] = timestamp
+		messageJSON, err = json.Marshal(message)
+		if err != nil {
+			t.Fatalf("marshal timestamped message %d: %v", index, err)
+		}
+		if _, err := testServer.app.db.Exec(`
+			INSERT INTO chat_messages(
+				id,
+				session_id,
+				role,
+				content_json,
+				timestamp,
+				message_json,
+				created_at
+			)
+			VALUES (?, ?, ?, ?, ?, ?, ?)
+		`, newID(), sessionKey, stringValueFromMap(message, "role"), contentJSON, timestamp, string(messageJSON), time.Now().UnixMilli()+int64(index)); err != nil {
+			t.Fatalf("insert message %d error = %v", index, err)
+		}
+
+		messageID := messageIDFromMap(message)
+		messageIDs = append(messageIDs, messageID)
+		lastMessageJSON = string(messageJSON)
+		lastTimestamp = timestamp
+		totalTokens += approximateMessageTokens(message)
+		if derivedTitle == "" {
+			derivedTitle = deriveTitleFromMessage(message)
+		}
+	}
+
+	if _, err := testServer.app.db.Exec(`
+		UPDATE chat_sessions
+		SET
+			last_message_json = ?,
+			updated_at = ?,
+			derived_title = ?,
+			total_tokens = ?
+		WHERE id = ?
+	`, lastMessageJSON, lastTimestamp, nullableString(derivedTitle), totalTokens, sessionKey); err != nil {
+		t.Fatalf("update seeded session metadata error = %v", err)
+	}
+
+	return messageIDs
+}
+
+func newUserTextMessage(text string) map[string]any {
+	return map[string]any{
+		"id":   newID(),
+		"role": "user",
+		"content": []map[string]any{
+			{
+				"type": "text",
+				"text": text,
+			},
+		},
+	}
+}
+
+func newUserTextMessageWithAttachment(text string, mimeType string, data string) map[string]any {
+	return map[string]any{
+		"id":   newID(),
+		"role": "user",
+		"content": []map[string]any{
+			{
+				"type": "image",
+				"source": map[string]any{
+					"type":       "base64",
+					"media_type": mimeType,
+					"data":       data,
+				},
+			},
+			{
+				"type": "text",
+				"text": text,
+			},
+		},
+	}
+}
+
+func newAssistantTextMessage(text string) map[string]any {
+	return map[string]any{
+		"id":   newID(),
+		"role": "assistant",
+		"content": []map[string]any{
+			{
+				"type": "text",
+				"text": text,
+			},
+		},
+	}
+}
+
+func textContentFromMessage(message map[string]any) string {
+	content, ok := message["content"].([]any)
+	if !ok {
+		return ""
+	}
+	var textParts []string
+	for _, item := range content {
+		part, ok := item.(map[string]any)
+		if !ok || stringValueFromMap(part, "type") != "text" {
+			continue
+		}
+		text := stringValueFromMap(part, "text")
+		if text != "" {
+			textParts = append(textParts, text)
+		}
+	}
+	return strings.Join(textParts, "")
 }
 
 func TestChatServiceCreateSessionCreatesUserPreferencesIncrementally(t *testing.T) {
@@ -375,6 +691,26 @@ func userIDFromCookie(t *testing.T, testServer *testApp, cookie *http.Cookie) st
 		t.Fatalf("CurrentUser() error = %v", err)
 	}
 	return user.ID
+}
+
+func waitForRunStatus(t *testing.T, testServer *testApp, runID string, expectedStatus string) {
+	t.Helper()
+
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		var status string
+		err := testServer.app.db.QueryRow(`
+			SELECT status
+			FROM chat_runs
+			WHERE id = ?
+		`, runID).Scan(&status)
+		if err == nil && status == expectedStatus {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	t.Fatalf("timed out waiting for run %s status %q", runID, expectedStatus)
 }
 
 type fakeProviderDriver struct {

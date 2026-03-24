@@ -208,13 +208,68 @@ export function createHTTPChatBackend(): ChatBackend {
       }
     },
     forkConversation(input) {
-      return mockBackend.forkConversation(input)
+      return fetchWithFallback(
+        async function forkViaHTTP() {
+          const response = await fetch(
+            `/api/sessions/${encodeURIComponent(input.sourceFriendlyId)}/fork`,
+            {
+              method: 'POST',
+              credentials: 'include',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                messageId: input.forkAtMessageId,
+              }),
+            },
+          )
+          return parseJSON<SessionMutationPayload>(response)
+        },
+        function forkViaMock() {
+          return mockBackend.forkConversation(input)
+        },
+      )
     },
     editUserMessage(input) {
-      return mockBackend.editUserMessage(input)
+      return fetchWithFallback(
+        async function editViaHTTP() {
+          const response = await fetch(
+            `/api/sessions/${encodeURIComponent(input.sourceFriendlyId)}/messages/${encodeURIComponent(input.messageId)}/edit`,
+            {
+              method: 'POST',
+              credentials: 'include',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                message: input.message,
+                model: input.model,
+              }),
+            },
+          )
+          return parseJSON(response)
+        },
+        function editViaMock() {
+          return mockBackend.editUserMessage(input)
+        },
+      )
     },
     deleteUserMessage(input) {
-      return mockBackend.deleteUserMessage(input)
+      return fetchWithFallback(
+        async function deleteViaHTTP() {
+          const response = await fetch(
+            `/api/sessions/${encodeURIComponent(input.sourceFriendlyId)}/messages/${encodeURIComponent(input.messageId)}`,
+            {
+              method: 'DELETE',
+              credentials: 'include',
+            },
+          )
+          return parseJSON<SessionMutationPayload>(response)
+        },
+        function deleteViaMock() {
+          return mockBackend.deleteUserMessage(input)
+        },
+      )
     },
     subscribeToConversation(subscription) {
       const friendlyId = subscription.friendlyId?.trim()
@@ -257,6 +312,20 @@ export function createHTTPChatBackend(): ChatBackend {
         eventSource.close()
       }
     },
+  }
+}
+
+async function fetchWithFallback<T>(
+  execute: () => Promise<T>,
+  fallback: () => Promise<T>,
+): Promise<T> {
+  try {
+    return await execute()
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 404) {
+      return fallback()
+    }
+    throw error
   }
 }
 

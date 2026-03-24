@@ -57,6 +57,17 @@ type sessionRecord struct {
 	ForkDepth          int64
 }
 
+type messageRecord struct {
+	StorageID   string
+	MessageID   string
+	Role        string
+	ContentJSON string
+	MessageJSON string
+	Timestamp   int64
+	CreatedAt   int64
+	Message     map[string]any
+}
+
 func NewChatService(db *sql.DB) *ChatService {
 	return &ChatService{db: db}
 }
@@ -211,31 +222,14 @@ func (service *ChatService) GetHistory(
 		return HistoryPayload{}, err
 	}
 
-	rows, err := service.db.QueryContext(ctx, `
-		SELECT message_json
-		FROM chat_messages
-		WHERE session_id = ?
-		ORDER BY timestamp ASC, created_at ASC, id ASC
-	`, record.ID)
+	messageRecords, err := service.listMessageRecords(ctx, record.ID)
 	if err != nil {
-		return HistoryPayload{}, fmt.Errorf("list messages: %w", err)
+		return HistoryPayload{}, err
 	}
-	defer rows.Close()
 
-	messages := make([]map[string]any, 0)
-	for rows.Next() {
-		var messageJSON string
-		if err := rows.Scan(&messageJSON); err != nil {
-			return HistoryPayload{}, fmt.Errorf("scan message: %w", err)
-		}
-		message, err := decodeJSONObject(messageJSON)
-		if err != nil {
-			return HistoryPayload{}, err
-		}
-		messages = append(messages, message)
-	}
-	if err := rows.Err(); err != nil {
-		return HistoryPayload{}, fmt.Errorf("iterate messages: %w", err)
+	messages := make([]map[string]any, 0, len(messageRecords))
+	for _, record := range messageRecords {
+		messages = append(messages, record.Message)
 	}
 
 	return HistoryPayload{
@@ -243,6 +237,102 @@ func (service *ChatService) GetHistory(
 		SessionID:  record.FriendlyID,
 		Messages:   messages,
 	}, nil
+}
+
+func (service *ChatService) ForkSession(
+	ctx context.Context,
+	userID string,
+	friendlyID string,
+	messageID string,
+) (SessionSummary, error) {
+	source, err := service.findSessionByFriendlyID(ctx, userID, friendlyID)
+	if err != nil {
+		return SessionSummary{}, err
+	}
+
+	messageRecords, err := service.listMessageRecords(ctx, source.ID)
+	if err != nil {
+		return SessionSummary{}, err
+	}
+
+	forkIndex := findMessageRecordIndex(messageRecords, messageID)
+	if forkIndex < 0 {
+		return SessionSummary{}, fmt.Errorf("fork point message not found")
+	}
+
+	return service.createForkedSession(ctx, source, messageRecords[:forkIndex+1], strings.TrimSpace(messageID))
+}
+
+func (service *ChatService) DeleteUserMessage(
+	ctx context.Context,
+	userID string,
+	friendlyID string,
+	messageID string,
+) (SessionSummary, error) {
+	source, err := service.findSessionByFriendlyID(ctx, userID, friendlyID)
+	if err != nil {
+		return SessionSummary{}, err
+	}
+
+	messageRecords, err := service.listMessageRecords(ctx, source.ID)
+	if err != nil {
+		return SessionSummary{}, err
+	}
+
+	messageIndex := findMessageRecordIndex(messageRecords, messageID)
+	if messageIndex < 0 {
+		return SessionSummary{}, fmt.Errorf("user message not found")
+	}
+	if messageRecords[messageIndex].Role != "user" {
+		return SessionSummary{}, fmt.Errorf("only user messages can be deleted")
+	}
+
+	forkPointMessageID := ""
+	if messageIndex > 0 {
+		forkPointMessageID = messageRecords[messageIndex-1].MessageID
+	}
+
+	return service.createForkedSession(ctx, source, messageRecords[:messageIndex], forkPointMessageID)
+}
+
+func (service *ChatService) EditUserMessage(
+	ctx context.Context,
+	userID string,
+	friendlyID string,
+	messageID string,
+	message string,
+) (SessionSummary, []AttachmentPayload, error) {
+	source, err := service.findSessionByFriendlyID(ctx, userID, friendlyID)
+	if err != nil {
+		return SessionSummary{}, nil, err
+	}
+
+	messageRecords, err := service.listMessageRecords(ctx, source.ID)
+	if err != nil {
+		return SessionSummary{}, nil, err
+	}
+
+	messageIndex := findMessageRecordIndex(messageRecords, messageID)
+	if messageIndex < 0 {
+		return SessionSummary{}, nil, fmt.Errorf("user message not found")
+	}
+
+	target := messageRecords[messageIndex]
+	if target.Role != "user" {
+		return SessionSummary{}, nil, fmt.Errorf("only user messages can be edited")
+	}
+
+	forkPointMessageID := ""
+	if messageIndex > 0 {
+		forkPointMessageID = messageRecords[messageIndex-1].MessageID
+	}
+
+	forkedSession, err := service.createForkedSession(ctx, source, messageRecords[:messageIndex], forkPointMessageID)
+	if err != nil {
+		return SessionSummary{}, nil, err
+	}
+
+	return forkedSession, extractAttachmentPayloads(target.Message), nil
 }
 
 func (service *ChatService) appendMessage(
@@ -309,6 +399,137 @@ func (service *ChatService) appendMessage(
 		session.DerivedTitle = nullableString(derivedTitle)
 	}
 	return sessionRecordToSummary(session)
+}
+
+func (service *ChatService) listMessageRecords(
+	ctx context.Context,
+	sessionID string,
+) ([]messageRecord, error) {
+	rows, err := service.db.QueryContext(ctx, `
+		SELECT
+			id,
+			role,
+			content_json,
+			message_json,
+			timestamp,
+			created_at
+		FROM chat_messages
+		WHERE session_id = ?
+		ORDER BY timestamp ASC, created_at ASC, id ASC
+	`, sessionID)
+	if err != nil {
+		return nil, fmt.Errorf("list messages: %w", err)
+	}
+	defer rows.Close()
+
+	records := make([]messageRecord, 0)
+	for rows.Next() {
+		var record messageRecord
+		if err := rows.Scan(
+			&record.StorageID,
+			&record.Role,
+			&record.ContentJSON,
+			&record.MessageJSON,
+			&record.Timestamp,
+			&record.CreatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("scan message: %w", err)
+		}
+		message, err := decodeJSONObject(record.MessageJSON)
+		if err != nil {
+			return nil, err
+		}
+		record.Message = message
+		record.MessageID = messageIDFromMap(message)
+		records = append(records, record)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate messages: %w", err)
+	}
+
+	return records, nil
+}
+
+func (service *ChatService) createForkedSession(
+	ctx context.Context,
+	source sessionRecord,
+	messageRecords []messageRecord,
+	forkPointMessageID string,
+) (SessionSummary, error) {
+	now := time.Now().UnixMilli()
+	sessionID := newID()
+	friendlyID := newFriendlyID()
+
+	derivedTitle := deriveTitleFromMessages(messageRecords)
+	totalTokens := countMessageRecordTokens(messageRecords)
+	var lastMessageJSON sql.NullString
+	if len(messageRecords) > 0 {
+		lastMessageJSON = nullableString(messageRecords[len(messageRecords)-1].MessageJSON)
+	}
+
+	transaction, err := service.db.BeginTx(ctx, nil)
+	if err != nil {
+		return SessionSummary{}, fmt.Errorf("begin fork session tx: %w", err)
+	}
+	defer transaction.Rollback()
+
+	if _, err := transaction.ExecContext(ctx, `
+		INSERT INTO chat_sessions(
+			id,
+			user_id,
+			friendly_id,
+			title,
+			derived_title,
+			label,
+			updated_at,
+			created_at,
+			last_message_json,
+			total_tokens,
+			context_tokens,
+			parent_session_id,
+			parent_friendly_id,
+			fork_point_message_id,
+			fork_depth
+		)
+		VALUES (?, ?, ?, NULL, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, sessionID, source.UserID, friendlyID, nullableString(derivedTitle), now, now, lastMessageJSON, totalTokens, source.ContextTokens, source.ID, nullableString(source.FriendlyID), nullableString(forkPointMessageID), source.ForkDepth+1); err != nil {
+		return SessionSummary{}, fmt.Errorf("create fork session: %w", err)
+	}
+
+	for _, messageRecord := range messageRecords {
+		if _, err := transaction.ExecContext(ctx, `
+			INSERT INTO chat_messages(
+				id,
+				session_id,
+				role,
+				content_json,
+				timestamp,
+				message_json,
+				created_at
+			)
+			VALUES (?, ?, ?, ?, ?, ?, ?)
+		`, newID(), sessionID, messageRecord.Role, messageRecord.ContentJSON, messageRecord.Timestamp, messageRecord.MessageJSON, now); err != nil {
+			return SessionSummary{}, fmt.Errorf("copy fork message: %w", err)
+		}
+	}
+
+	if err := transaction.Commit(); err != nil {
+		return SessionSummary{}, fmt.Errorf("commit fork session: %w", err)
+	}
+
+	return SessionSummary{
+		Key:                sessionID,
+		FriendlyID:         friendlyID,
+		DerivedTitle:       derivedTitle,
+		UpdatedAt:          now,
+		LastMessage:        lastMessageFromRecords(messageRecords),
+		TotalTokens:        totalTokens,
+		ContextTokens:      source.ContextTokens,
+		ParentSessionKey:   source.ID,
+		ParentFriendlyID:   source.FriendlyID,
+		ForkPointMessageID: forkPointMessageID,
+		ForkDepth:          source.ForkDepth + 1,
+	}, nil
 }
 
 func (service *ChatService) findSessionByFriendlyID(
@@ -383,6 +604,71 @@ func scanSessionRecord(scanner interface {
 		return sessionRecord{}, fmt.Errorf("scan session: %w", err)
 	}
 	return record, nil
+}
+
+func findMessageRecordIndex(records []messageRecord, messageID string) int {
+	needle := strings.TrimSpace(messageID)
+	for index, record := range records {
+		if record.MessageID == needle {
+			return index
+		}
+	}
+	return -1
+}
+
+func deriveTitleFromMessages(records []messageRecord) string {
+	for _, record := range records {
+		title := deriveTitleFromMessage(record.Message)
+		if title != "" {
+			return title
+		}
+	}
+	return ""
+}
+
+func countMessageRecordTokens(records []messageRecord) int64 {
+	var total int64
+	for _, record := range records {
+		total += approximateMessageTokens(record.Message)
+	}
+	return total
+}
+
+func lastMessageFromRecords(records []messageRecord) map[string]any {
+	if len(records) == 0 {
+		return nil
+	}
+	return records[len(records)-1].Message
+}
+
+func extractAttachmentPayloads(message map[string]any) []AttachmentPayload {
+	content, ok := message["content"].([]any)
+	if !ok {
+		return nil
+	}
+
+	attachments := make([]AttachmentPayload, 0)
+	for _, item := range content {
+		part, ok := item.(map[string]any)
+		if !ok || strings.TrimSpace(stringValueFromMap(part, "type")) != "image" {
+			continue
+		}
+		source, ok := part["source"].(map[string]any)
+		if !ok || strings.TrimSpace(stringValueFromMap(source, "type")) != "base64" {
+			continue
+		}
+		mimeType := strings.TrimSpace(stringValueFromMap(source, "media_type"))
+		content := strings.TrimSpace(stringValueFromMap(source, "data"))
+		if mimeType == "" || content == "" {
+			continue
+		}
+		attachments = append(attachments, AttachmentPayload{
+			MimeType: mimeType,
+			Content:  content,
+		})
+	}
+
+	return attachments
 }
 
 func sessionRecordToSummary(record sessionRecord) (SessionSummary, error) {
