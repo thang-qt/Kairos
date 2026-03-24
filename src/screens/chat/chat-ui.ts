@@ -17,7 +17,7 @@ export function getChatUiState(queryClient: QueryClient): ChatUiState {
   if (cached && typeof cached === 'object') {
     return {
       ...defaultChatUiState,
-        ...(cached as Partial<ChatUiState>),
+      ...(cached as Partial<ChatUiState>),
     }
   }
 

@@ -21,7 +21,10 @@ export function ConversationNavigator({
 }: ConversationNavigatorProps) {
   const [activeTurnId, setActiveTurnId] = useState<string | null>(null)
 
-  const activeTurnIds = useMemo(() => new Set(turns.map((turn) => turn.id)), [turns])
+  const activeTurnIds = useMemo(
+    () => new Set(turns.map((turn) => turn.id)),
+    [turns],
+  )
 
   useEffect(() => {
     if (!activeTurnId || activeTurnIds.has(activeTurnId)) return
@@ -87,39 +90,39 @@ export function ConversationNavigator({
       <div className="flex h-full items-center justify-end pr-4">
         <div className="pointer-events-auto opacity-0 transition-opacity duration-150 ease-out group-hover/nav-rail:opacity-100 group-focus-within/nav-rail:opacity-100 hover:opacity-100">
           <div className="flex flex-col gap-2.5 py-2">
-          {turns.map((turn, index) => {
-            const isActive = turn.id === activeTurnId
+            {turns.map((turn, index) => {
+              const isActive = turn.id === activeTurnId
 
-            return (
-              <div
-                key={turn.id}
-                className="group/nav-item relative flex min-h-6 flex-col items-end justify-center"
-              >
-                <button
-                  type="button"
-                  aria-label={`Jump to user turn ${index + 1}`}
-                  onClick={() => handleTurnClick(turn.id)}
-                  onPointerUp={handleTurnPointerUp}
-                  className={cn(
-                    'block h-4 rounded-full bg-transparent py-[7px] transition-all duration-150 ease-out hover:w-16 focus-visible:w-16 focus-visible:outline-none',
-                    isActive ? 'w-14' : 'w-10',
-                  )}
+              return (
+                <div
+                  key={turn.id}
+                  className="group/nav-item relative flex min-h-6 flex-col items-end justify-center"
                 >
-                  <span
+                  <button
+                    type="button"
+                    aria-label={`Jump to user turn ${index + 1}`}
+                    onClick={() => handleTurnClick(turn.id)}
+                    onPointerUp={handleTurnPointerUp}
                     className={cn(
-                      'block h-px w-full rounded-full bg-primary-300 transition-colors duration-150 ease-out group-hover/nav-item:bg-primary-700 group-focus-within/nav-item:bg-primary-700',
-                      isActive && 'bg-primary-500',
+                      'block h-4 rounded-full bg-transparent py-[7px] transition-all duration-150 ease-out hover:w-16 focus-visible:w-16 focus-visible:outline-none',
+                      isActive ? 'w-14' : 'w-10',
                     )}
-                  />
-                </button>
-                <div className="pointer-events-none absolute right-full top-1/2 mr-3 hidden w-44 -translate-y-1/2 py-1 text-right text-xs text-primary-600 group-hover/nav-item:block group-focus-within/nav-item:block">
-                  <span className="block line-clamp-2 text-pretty">
-                    {turn.preview}
-                  </span>
+                  >
+                    <span
+                      className={cn(
+                        'block h-px w-full rounded-full bg-primary-300 transition-colors duration-150 ease-out group-hover/nav-item:bg-primary-700 group-focus-within/nav-item:bg-primary-700',
+                        isActive && 'bg-primary-500',
+                      )}
+                    />
+                  </button>
+                  <div className="pointer-events-none absolute right-full top-1/2 mr-3 hidden w-44 -translate-y-1/2 py-1 text-right text-xs text-primary-600 group-hover/nav-item:block group-focus-within/nav-item:block">
+                    <span className="block line-clamp-2 text-pretty">
+                      {turn.preview}
+                    </span>
+                  </div>
                 </div>
-              </div>
-            )
-          })}
+              )
+            })}
           </div>
         </div>
       </div>

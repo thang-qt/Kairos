@@ -93,6 +93,17 @@ export type UpdatePreferencesPayload = {
   defaultModelId?: string
 }
 
+export type TestConnectionPayload = {
+  kind: string
+  baseUrl: string
+  apiKey: string
+}
+
+export type TestConnectionResult = {
+  success: boolean
+  message?: string
+}
+
 export type ApiErrorOptions = {
   message: string
   status: number
@@ -212,23 +223,29 @@ export async function updateProvider(
   providerId: string,
   payload: UpdateProviderPayload,
 ): Promise<ProviderRecord> {
-  const response = await fetch(`/api/providers/${encodeURIComponent(providerId)}`, {
-    method: 'PATCH',
-    credentials: 'include',
-    headers: {
-      'Content-Type': 'application/json',
+  const response = await fetch(
+    `/api/providers/${encodeURIComponent(providerId)}`,
+    {
+      method: 'PATCH',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
     },
-    body: JSON.stringify(payload),
-  })
+  )
   const data = await parseJSON<{ provider: ProviderRecord }>(response)
   return data.provider
 }
 
 export async function deleteProvider(providerId: string): Promise<void> {
-  const response = await fetch(`/api/providers/${encodeURIComponent(providerId)}`, {
-    method: 'DELETE',
-    credentials: 'include',
-  })
+  const response = await fetch(
+    `/api/providers/${encodeURIComponent(providerId)}`,
+    {
+      method: 'DELETE',
+      credentials: 'include',
+    },
+  )
   await parseJSON(response)
 }
 
@@ -245,6 +262,33 @@ export async function updatePreferences(
   })
   const data = await parseJSON<{ preferences: UserPreferences }>(response)
   return data.preferences
+}
+
+export async function testConnection(
+  payload: TestConnectionPayload,
+): Promise<TestConnectionResult> {
+  const response = await fetch('/api/providers/test-connection', {
+    method: 'POST',
+    credentials: 'include',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  })
+  return parseJSON<TestConnectionResult>(response)
+}
+
+export async function testProviderConnection(
+  providerId: string,
+): Promise<TestConnectionResult> {
+  const response = await fetch(
+    `/api/providers/${encodeURIComponent(providerId)}/test-connection`,
+    {
+      method: 'POST',
+      credentials: 'include',
+    },
+  )
+  return parseJSON<TestConnectionResult>(response)
 }
 
 export function useCapabilitiesQuery() {

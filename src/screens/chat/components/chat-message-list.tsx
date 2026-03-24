@@ -1,4 +1,11 @@
-import { memo, useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import {
+  memo,
+  useCallback,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import { getToolCallsFromMessage, textFromMessage } from '../utils'
 import { MessageItem } from './message-item'
 import { ConversationNavigator } from './conversation-navigator'
@@ -182,11 +189,12 @@ function ChatMessageListComponent({
     lastUserRef.current = getOrCreateUserTurnRef(messageId).current
   }, [displayMessages, lastUserIndex])
 
-  const handleViewportNodeChange = useCallback(function handleViewportNodeChange(
-    node: HTMLDivElement | null,
-  ) {
-    setViewportNode(node)
-  }, [])
+  const handleViewportNodeChange = useCallback(
+    function handleViewportNodeChange(node: HTMLDivElement | null) {
+      setViewportNode(node)
+    },
+    [],
+  )
 
   const getTurnNode = useCallback(function getTurnNode(turnId: string) {
     return userTurnRefsRef.current.get(turnId)?.current ?? null
@@ -287,7 +295,7 @@ function ChatMessageListComponent({
       >
         {notice && noticePosition === 'start' ? notice : null}
         {empty && !notice ? (
-          emptyState ?? <div aria-hidden></div>
+          (emptyState ?? <div aria-hidden></div>)
         ) : hasGroup ? (
           <>
             {displayMessages
@@ -297,20 +305,22 @@ function ChatMessageListComponent({
               className="flex flex-col space-y-6"
               style={{ minHeight: `${Math.max(0, pinGroupMinHeight - 24)}px` }}
             >
-              {displayMessages.slice(groupStartIndex).map((chatMessage, index) => {
-                const realIndex = groupStartIndex + index
-                const wrapperRef =
-                  realIndex === lastUserIndex ? lastUserRef : undefined
-                const wrapperClassName =
-                  realIndex === lastUserIndex ? 'scroll-mt-0' : undefined
-                const wrapperScrollMarginTop =
-                  realIndex === lastUserIndex ? headerHeight : undefined
-                return renderMessage(chatMessage, realIndex, {
-                  wrapperRef,
-                  wrapperClassName,
-                  wrapperScrollMarginTop,
-                })
-              })}
+              {displayMessages
+                .slice(groupStartIndex)
+                .map((chatMessage, index) => {
+                  const realIndex = groupStartIndex + index
+                  const wrapperRef =
+                    realIndex === lastUserIndex ? lastUserRef : undefined
+                  const wrapperClassName =
+                    realIndex === lastUserIndex ? 'scroll-mt-0' : undefined
+                  const wrapperScrollMarginTop =
+                    realIndex === lastUserIndex ? headerHeight : undefined
+                  return renderMessage(chatMessage, realIndex, {
+                    wrapperRef,
+                    wrapperClassName,
+                    wrapperScrollMarginTop,
+                  })
+                })}
               {showTypingIndicator ? (
                 <div className="py-2">
                   <TypingIndicator />

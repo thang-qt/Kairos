@@ -18,31 +18,32 @@ export const defaultConversationSettings: ConversationSettings = {
   model: '',
 }
 
-export const useConversationSettingsStore =
-  create<ConversationSettingsState>()(
-    persist(
-      (set) => ({
-        conversations: {},
-        updateConversationSettings: (conversationId, updates) =>
-          set((state) => ({
-            conversations: {
-              ...state.conversations,
-              [conversationId]: {
-                ...(state.conversations[conversationId] ?? defaultConversationSettings),
-                ...updates,
-              },
+export const useConversationSettingsStore = create<ConversationSettingsState>()(
+  persist(
+    (set) => ({
+      conversations: {},
+      updateConversationSettings: (conversationId, updates) =>
+        set((state) => ({
+          conversations: {
+            ...state.conversations,
+            [conversationId]: {
+              ...(state.conversations[conversationId] ??
+                defaultConversationSettings),
+              ...updates,
             },
-          })),
-      }),
-      {
-        name: 'kairos-conversation-settings',
-      },
-    ),
-  )
+          },
+        })),
+    }),
+    {
+      name: 'kairos-conversation-settings',
+    },
+  ),
+)
 
 export function useConversationSettings(conversationId: string) {
   const settings = useConversationSettingsStore(
-    (state) => state.conversations[conversationId] ?? defaultConversationSettings,
+    (state) =>
+      state.conversations[conversationId] ?? defaultConversationSettings,
   )
   const updateConversationSettings = useConversationSettingsStore(
     (state) => state.updateConversationSettings,

@@ -53,11 +53,11 @@ function CommandDialogViewport({
   ...props
 }: CommandDialogPrimitive.Viewport.Props) {
   return (
-      <CommandDialogPrimitive.Viewport
-        className={cn(
-          'fixed inset-0 z-50 flex flex-col items-center justify-center px-4 py-[max(--spacing(4),4vh)]',
-          className,
-        )}
+    <CommandDialogPrimitive.Viewport
+      className={cn(
+        'fixed inset-0 z-50 flex flex-col items-center justify-center px-4 py-[max(--spacing(4),4vh)]',
+        className,
+      )}
       data-slot="command-dialog-viewport"
       {...props}
     />
@@ -73,14 +73,14 @@ function CommandDialogPopup({
     <CommandDialogPortal>
       <CommandDialogBackdrop />
       <CommandDialogViewport>
-          <CommandDialogPrimitive.Popup
-            className={cn(
-              '-translate-y-[calc(1.25rem*var(--nested-dialogs))] relative row-start-2 flex max-h-105 min-h-0 w-full min-w-0 max-w-xl scale-[calc(1-0.1*var(--nested-dialogs))] flex-col rounded-2xl border border-primary-200 bg-primary-50 text-primary-900 opacity-[calc(1-0.1*var(--nested-dialogs))] shadow-lg outline-1 outline-primary-950/10 outline transition-[scale,opacity,translate] duration-200 ease-in-out will-change-transform data-nested:data-ending-style:translate-y-8 data-nested:data-starting-style:translate-y-8 data-nested-dialog-open:origin-top data-ending-style:scale-98 data-starting-style:scale-98 data-ending-style:opacity-0 data-starting-style:opacity-0 **:data-[slot=scroll-area-viewport]:data-has-overflow-y:pe-1',
-              className,
-            )}
-            data-slot="command-dialog-popup"
-            {...props}
-          >
+        <CommandDialogPrimitive.Popup
+          className={cn(
+            '-translate-y-[calc(1.25rem*var(--nested-dialogs))] relative row-start-2 flex max-h-105 min-h-0 w-full min-w-0 max-w-xl scale-[calc(1-0.1*var(--nested-dialogs))] flex-col rounded-2xl border border-primary-200 bg-primary-50 text-primary-900 opacity-[calc(1-0.1*var(--nested-dialogs))] shadow-lg outline-1 outline-primary-950/10 outline transition-[scale,opacity,translate] duration-200 ease-in-out will-change-transform data-nested:data-ending-style:translate-y-8 data-nested:data-starting-style:translate-y-8 data-nested-dialog-open:origin-top data-ending-style:scale-98 data-starting-style:scale-98 data-ending-style:opacity-0 data-starting-style:opacity-0 **:data-[slot=scroll-area-viewport]:data-has-overflow-y:pe-1',
+            className,
+          )}
+          data-slot="command-dialog-popup"
+          {...props}
+        >
           {children}
         </CommandDialogPrimitive.Popup>
       </CommandDialogViewport>

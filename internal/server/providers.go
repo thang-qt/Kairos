@@ -553,6 +553,79 @@ func (service *ProviderService) GetPreferences(
 	return preferences, nil
 }
 
+func (service *ProviderService) TestConnection(
+	ctx context.Context,
+	userID string,
+	kind string,
+	baseURL string,
+	apiKey string,
+) error {
+	kind = strings.ToLower(strings.TrimSpace(kind))
+	if kind == "" || kind != "openai_compatible" {
+		return errProviderKindUnsupported
+	}
+
+	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	apiKey = strings.TrimSpace(apiKey)
+
+	if baseURL == "" {
+		return errors.New("base URL is required")
+	}
+	if apiKey == "" {
+		return errors.New("API key is required")
+	}
+
+	driver, ok := service.drivers[kind]
+	if !ok {
+		return errProviderKindUnsupported
+	}
+
+	testProvider := resolvedProvider{
+		Record: ProviderRecord{
+			Kind:  kind,
+			Label: "Test Connection",
+		},
+		BaseURL: baseURL,
+		APIKey:  apiKey,
+	}
+
+	testCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	_, err := driver.ListModels(testCtx, testProvider)
+	if err != nil {
+		return fmt.Errorf("connection test failed: %w", err)
+	}
+
+	return nil
+}
+
+func (service *ProviderService) TestProviderConnection(
+	ctx context.Context,
+	userID string,
+	providerID string,
+) error {
+	provider, err := service.resolveProvider(ctx, userID, providerID)
+	if err != nil {
+		return err
+	}
+
+	driver, ok := service.drivers[provider.Record.Kind]
+	if !ok {
+		return errProviderKindUnsupported
+	}
+
+	testCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	_, err = driver.ListModels(testCtx, provider)
+	if err != nil {
+		return fmt.Errorf("connection test failed: %w", err)
+	}
+
+	return nil
+}
+
 func (service *ProviderService) UpdatePreferences(
 	ctx context.Context,
 	userID string,

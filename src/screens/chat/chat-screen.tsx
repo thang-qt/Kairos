@@ -83,7 +83,8 @@ export function ChatScreen({
   const [isRedirecting, setIsRedirecting] = useState(false)
   const [streamError, setStreamError] = useState<string | null>(null)
   const [rightSidebarOpen, setRightSidebarOpen] = useState(false)
-  const [rightSidebarTab, setRightSidebarTab] = useState<RightSidebarTab>('options')
+  const [rightSidebarTab, setRightSidebarTab] =
+    useState<RightSidebarTab>('options')
   const [restoreScrollTop, setRestoreScrollTop] = useState<number | null>(null)
   const [editingUserTurn, setEditingUserTurn] =
     useState<UserTurnActionState>(null)
@@ -190,7 +191,8 @@ export function ChatScreen({
     !isRecentSession(activeFriendlyId) &&
     sessionsQuery.isSuccess &&
     !sessions.some((session) => session.friendlyId === activeFriendlyId) &&
-    (missingSessionError || (!historyQuery.isFetching && !historyQuery.isSuccess))
+    (missingSessionError ||
+      (!historyQuery.isFetching && !historyQuery.isSuccess))
 
   const refreshHistory = useCallback(() => {
     void historyQuery.refetch()
@@ -198,22 +200,19 @@ export function ChatScreen({
 
   const hideUi = shouldRedirectToNew || isRedirecting
 
-  const finishRun = useCallback(
-    function finishRun(runId: string) {
-      if (!runId) return
-      const timer = pendingRunTimersRef.current.get(runId)
-      if (typeof timer === 'number') {
-        window.clearTimeout(timer)
-      }
-      pendingRunTimersRef.current.delete(runId)
-      pendingRunIdsRef.current.delete(runId)
-      if (pendingRunIdsRef.current.size === 0) {
-        setPendingGeneration(false)
-        setWaitingForResponse(false)
-      }
-    },
-    [],
-  )
+  const finishRun = useCallback(function finishRun(runId: string) {
+    if (!runId) return
+    const timer = pendingRunTimersRef.current.get(runId)
+    if (typeof timer === 'number') {
+      window.clearTimeout(timer)
+    }
+    pendingRunTimersRef.current.delete(runId)
+    pendingRunIdsRef.current.delete(runId)
+    if (pendingRunIdsRef.current.size === 0) {
+      setPendingGeneration(false)
+      setWaitingForResponse(false)
+    }
+  }, [])
 
   const startRun = useCallback(
     function startRun(runId: string) {
@@ -307,7 +306,10 @@ export function ChatScreen({
         attachments: attachmentsPayload,
       })
       .then((payload) => {
-        if (typeof payload.runId === 'string' && payload.runId.trim().length > 0) {
+        if (
+          typeof payload.runId === 'string' &&
+          payload.runId.trim().length > 0
+        ) {
           startRun(payload.runId.trim())
         }
         refreshHistory()
@@ -327,7 +329,9 @@ export function ChatScreen({
         setPendingGeneration(false)
         setWaitingForResponse(false)
         setPinToTop(false)
-        setStreamError(err instanceof Error ? err.message : 'The model request failed.')
+        setStreamError(
+          err instanceof Error ? err.message : 'The model request failed.',
+        )
         throw err
       })
       .finally(() => {
@@ -466,9 +470,33 @@ export function ChatScreen({
     Boolean(backendStatusError) &&
     backendStatusQuery.errorUpdatedAt > backendStatusMountRef.current
   const historyEmpty = !historyLoading && displayMessages.length === 0
+
+  const handleRetryLastMessage = useCallback(() => {
+    const lastUserMessage = [...displayMessages]
+      .reverse()
+      .find((msg) => msg.role === 'user')
+    if (lastUserMessage && Array.isArray(lastUserMessage.content)) {
+      const text = lastUserMessage.content
+        .filter((part) => part.type === 'text')
+        .map((part) => part.text || '')
+        .join('')
+      if (text.trim()) {
+        setStreamError(null)
+        sendMessage(activeSessionKey || '', activeFriendlyId, text, true)
+      }
+    }
+  }, [displayMessages, activeSessionKey, activeFriendlyId])
+
   const backendNotice = useMemo(() => {
     if (streamError) {
-      return <MessageStatus title="Message failed" description={streamError} />
+      return (
+        <MessageStatus
+          title="Message failed"
+          description={streamError}
+          actionLabel="Retry"
+          onAction={handleRetryLastMessage}
+        />
+      )
     }
     if (
       modelsQuery.isSuccess &&
@@ -493,6 +521,7 @@ export function ChatScreen({
   }, [
     backendError,
     handleBackendRefetch,
+    handleRetryLastMessage,
     modelsQuery.data?.models.length,
     modelsQuery.isSuccess,
     showBackendNotice,
@@ -607,13 +636,16 @@ export function ChatScreen({
     ],
   )
 
-  const storeBranchScrollRestore = useCallback(function storeBranchScrollRestore() {
-    if (typeof window === 'undefined') return
-    window.sessionStorage.setItem(
-      BRANCH_SCROLL_RESTORE_KEY,
-      JSON.stringify({ scrollTop: scrollTopRef.current }),
-    )
-  }, [])
+  const storeBranchScrollRestore = useCallback(
+    function storeBranchScrollRestore() {
+      if (typeof window === 'undefined') return
+      window.sessionStorage.setItem(
+        BRANCH_SCROLL_RESTORE_KEY,
+        JSON.stringify({ scrollTop: scrollTopRef.current }),
+      )
+    },
+    [],
+  )
 
   const handleSelectBranch = useCallback(
     function handleSelectBranch(friendlyId: string) {
@@ -785,7 +817,10 @@ export function ChatScreen({
     return {
       friendlyId: parent.friendlyId,
       title:
-        parent.label || parent.title || parent.derivedTitle || parent.friendlyId,
+        parent.label ||
+        parent.title ||
+        parent.derivedTitle ||
+        parent.friendlyId,
       isOrphaned: false,
     }
   }, [activeSession, sessions])
@@ -795,7 +830,10 @@ export function ChatScreen({
 
     function getSessionTitle(session: (typeof sessions)[number]) {
       return (
-        session.label || session.title || session.derivedTitle || session.friendlyId
+        session.label ||
+        session.title ||
+        session.derivedTitle ||
+        session.friendlyId
       )
     }
 
@@ -884,13 +922,7 @@ export function ChatScreen({
     }
 
     return result
-  }, [
-    activeFriendlyId,
-    activeSession,
-    activeSessionKey,
-    activeTitle,
-    sessions,
-  ])
+  }, [activeFriendlyId, activeSession, activeSessionKey, activeTitle, sessions])
 
   return (
     <div className="h-screen bg-surface text-primary-900">
@@ -931,7 +963,9 @@ export function ChatScreen({
                 usedTokens={activeSession?.totalTokens}
                 maxTokens={activeSession?.contextTokens}
                 forkedFrom={forkedFrom}
-                onToggleRightSidebar={() => setRightSidebarOpen((prev) => !prev)}
+                onToggleRightSidebar={() =>
+                  setRightSidebarOpen((prev) => !prev)
+                }
                 rightSidebarOpen={rightSidebarOpen}
               />
             </div>
@@ -984,7 +1018,9 @@ export function ChatScreen({
             onTabChange={setRightSidebarTab}
             onClose={() => setRightSidebarOpen(false)}
             onExport={exportConversation}
-            exportDisabled={isNewChat || historyLoading || displayMessages.length === 0}
+            exportDisabled={
+              isNewChat || historyLoading || displayMessages.length === 0
+            }
             conversationId={activeFriendlyId || 'new'}
             sessions={sessions}
             activeSessionKey={activeSessionKey || resolvedSessionKey}

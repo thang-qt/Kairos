@@ -51,7 +51,10 @@ function ChatContainerShell({
 }: ChatContainerShellProps) {
   return (
     <ScrollAreaRoot
-      className={cn('group/chat-shell relative flex flex-1 min-h-0 flex-col', className)}
+      className={cn(
+        'group/chat-shell relative flex flex-1 min-h-0 flex-col',
+        className,
+      )}
     >
       <ScrollAreaViewport
         className="relative"
@@ -143,13 +146,14 @@ function ChatContainerRoot({
   const [viewportNode, setViewportNode] = React.useState<HTMLDivElement | null>(
     null,
   )
-  const handleViewportRef = React.useCallback(function handleViewportRef(
-    node: HTMLDivElement | null,
-  ) {
-    scrollRef.current = node
-    setViewportNode(node)
-    onViewportNodeChange?.(node)
-  }, [onViewportNodeChange])
+  const handleViewportRef = React.useCallback(
+    function handleViewportRef(node: HTMLDivElement | null) {
+      scrollRef.current = node
+      setViewportNode(node)
+      onViewportNodeChange?.(node)
+    },
+    [onViewportNodeChange],
+  )
 
   // Handle scroll events
   React.useLayoutEffect(() => {

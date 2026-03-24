@@ -123,7 +123,10 @@ function ChatComposerComponent({
                   disabled={disabled}
                   buttonProps={{
                     ...triggerProps,
-                    className: cn('rounded-full shrink-0', triggerProps.className),
+                    className: cn(
+                      'rounded-full shrink-0',
+                      triggerProps.className,
+                    ),
                   }}
                 />
               )}
@@ -145,7 +148,10 @@ function ChatComposerComponent({
                   disabled={submitDisabled || triggerProps.disabled}
                   size="icon-sm"
                   variant="default"
-                  className={cn('rounded-full shrink-0', triggerProps.className)}
+                  className={cn(
+                    'rounded-full shrink-0',
+                    triggerProps.className,
+                  )}
                   aria-label="Send message"
                 >
                   <HugeiconsIcon

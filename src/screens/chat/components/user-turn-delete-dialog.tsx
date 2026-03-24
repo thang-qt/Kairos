@@ -38,7 +38,9 @@ export function UserTurnDeleteDialog({
           </AlertDialogDescription>
           <div className="flex justify-end gap-2">
             <AlertDialogCancel onClick={onCancel}>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={onConfirm}>Delete and branch</AlertDialogAction>
+            <AlertDialogAction onClick={onConfirm}>
+              Delete and branch
+            </AlertDialogAction>
           </div>
         </div>
       </AlertDialogContent>

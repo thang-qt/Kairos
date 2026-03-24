@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { HugeiconsIcon } from '@hugeicons/react'
 import {
   Cancel01Icon,
@@ -6,6 +7,7 @@ import {
   Sun01Icon,
 } from '@hugeicons/core-free-icons'
 import { ProviderSettingsPanel } from './provider-settings-panel'
+import { ModelSettingsPanel } from './model-settings-panel'
 import type { ThemeMode } from '@/hooks/use-chat-settings'
 import {
   DialogClose,
@@ -18,20 +20,6 @@ import { Switch } from '@/components/ui/switch'
 import { Tabs, TabsList, TabsTab } from '@/components/ui/tabs'
 import { useChatSettings } from '@/hooks/use-chat-settings'
 import { Button } from '@/components/ui/button'
-
-type SettingsSectionProps = {
-  title: string
-  children: React.ReactNode
-}
-
-function SettingsSection({ title, children }: SettingsSectionProps) {
-  return (
-    <div className="border-b border-primary-200 py-4 last:border-0">
-      <h3 className="mb-3 text-sm font-medium text-primary-900">{title}</h3>
-      <div className="space-y-3">{children}</div>
-    </div>
-  )
-}
 
 type SettingsRowProps = {
   label: string
@@ -69,11 +57,16 @@ export function SettingsDialog({
   logoutPending = false,
 }: SettingsDialogProps) {
   const { settings, updateSettings } = useChatSettings()
+  const [activeTab, setActiveTab] = useState<
+    'connection' | 'appearance' | 'display'
+  >('connection')
+
   const themeOptions = [
     { value: 'system', label: 'System', icon: ComputerIcon },
     { value: 'light', label: 'Light', icon: Sun01Icon },
     { value: 'dark', label: 'Dark', icon: Moon01Icon },
   ] as const
+
   function applyTheme(theme: ThemeMode) {
     if (typeof document === 'undefined') return
     const root = document.documentElement
@@ -87,8 +80,8 @@ export function SettingsDialog({
 
   return (
     <DialogRoot open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="w-[min(480px,92vw)] max-h-[80vh] overflow-auto">
-        <div className="p-4">
+      <DialogContent className="flex h-[min(640px,85vh)] w-[min(720px,92vw)] flex-col overflow-hidden">
+        <div className="flex flex-1 flex-col overflow-hidden p-4">
           <div className="flex items-start justify-between">
             <div>
               <DialogTitle className="mb-1">Settings</DialogTitle>
@@ -114,103 +107,150 @@ export function SettingsDialog({
             />
           </div>
 
-          <SettingsSection title="Connection">
-            <ProviderSettingsPanel />
-          </SettingsSection>
-
-          <SettingsSection title="Appearance">
-            <SettingsRow label="Theme">
-              <Tabs
-                value={settings.theme}
-                onValueChange={(value) => {
-                  const theme = value as ThemeMode
-                  applyTheme(theme)
-                  updateSettings({ theme })
+          <div className="mt-4 flex min-h-0 flex-1 gap-4">
+            <nav className="flex w-40 shrink-0 flex-col gap-1">
+              <button
+                type="button"
+                onClick={function handleClick() {
+                  setActiveTab('connection')
                 }}
-              >
-                <TabsList
-                  variant="default"
-                  className="gap-2 *:data-[slot=tab-indicator]:duration-0"
-                >
-                  {themeOptions.map((option) => (
-                    <TabsTab key={option.value} value={option.value}>
-                      <HugeiconsIcon
-                        icon={option.icon}
-                        size={20}
-                        strokeWidth={1.5}
-                      />
-                      <span>{option.label}</span>
-                    </TabsTab>
-                  ))}
-                </TabsList>
-              </Tabs>
-            </SettingsRow>
-            <SettingsRow
-              label="Wide mode"
-              description="Use wider chat message area"
-            >
-              <Switch
-                checked={settings.wideMode}
-                onCheckedChange={(checked) =>
-                  updateSettings({ wideMode: checked })
+                className={
+                  activeTab === 'connection'
+                    ? 'rounded-md bg-primary-100 px-3 py-2 text-left text-sm text-primary-900'
+                    : 'rounded-md px-3 py-2 text-left text-sm text-primary-700 hover:bg-primary-50'
                 }
-              />
-            </SettingsRow>
-          </SettingsSection>
+              >
+                Connection
+              </button>
+              <button
+                type="button"
+                onClick={function handleClick() {
+                  setActiveTab('appearance')
+                }}
+                className={
+                  activeTab === 'appearance'
+                    ? 'rounded-md bg-primary-100 px-3 py-2 text-left text-sm text-primary-900'
+                    : 'rounded-md px-3 py-2 text-left text-sm text-primary-700 hover:bg-primary-50'
+                }
+              >
+                Appearance
+              </button>
+              <button
+                type="button"
+                onClick={function handleClick() {
+                  setActiveTab('display')
+                }}
+                className={
+                  activeTab === 'display'
+                    ? 'rounded-md bg-primary-100 px-3 py-2 text-left text-sm text-primary-900'
+                    : 'rounded-md px-3 py-2 text-left text-sm text-primary-700 hover:bg-primary-50'
+                }
+              >
+                Display
+              </button>
+            </nav>
 
-          <SettingsSection title="Display">
-            <SettingsRow label="Show tool messages">
-              <Switch
-                checked={settings.showToolMessages}
-                onCheckedChange={(checked) =>
-                  updateSettings({ showToolMessages: checked })
-                }
-              />
-            </SettingsRow>
-            <SettingsRow label="Show reasoning blocks">
-              <Switch
-                checked={settings.showReasoningBlocks}
-                onCheckedChange={(checked) =>
-                  updateSettings({ showReasoningBlocks: checked })
-                }
-              />
-            </SettingsRow>
-            <SettingsRow
-              label="Conversation navigator"
-              description="Show the right-edge turn rail for jumping between user messages"
-            >
-              <Switch
-                checked={settings.showConversationNavigator}
-                onCheckedChange={(checked) =>
-                  updateSettings({ showConversationNavigator: checked })
-                }
-              />
-            </SettingsRow>
-          </SettingsSection>
+            <div className="min-w-0 flex-1 overflow-y-auto">
+              {activeTab === 'connection' ? (
+                <div className="space-y-6">
+                  <div>
+                    <h3 className="mb-3 text-sm font-medium text-primary-900">
+                      Providers
+                    </h3>
+                    <ProviderSettingsPanel />
+                  </div>
+                  <div>
+                    <h3 className="mb-3 text-sm font-medium text-primary-900">
+                      Default Model
+                    </h3>
+                    <ModelSettingsPanel />
+                  </div>
+                </div>
+              ) : null}
 
-          <SettingsSection title="About">
-            <div className="text-sm text-primary-800">Kairos</div>
-            <div className="flex gap-4 pt-2">
-              <a
-                href="#"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-sm text-primary-600 hover:text-primary-900 hover:underline"
-              >
-                HTTP adapter soon
-              </a>
-              <a
-                href="#"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-sm text-primary-600 hover:text-primary-900 hover:underline"
-              >
-                Mock conversations
-              </a>
+              {activeTab === 'appearance' ? (
+                <div className="space-y-4">
+                  <h3 className="text-sm font-medium text-primary-900">
+                    Appearance
+                  </h3>
+                  <SettingsRow label="Theme">
+                    <Tabs
+                      value={settings.theme}
+                      onValueChange={function handleChange(value) {
+                        const theme = value as ThemeMode
+                        applyTheme(theme)
+                        updateSettings({ theme })
+                      }}
+                    >
+                      <TabsList
+                        variant="default"
+                        className="gap-2 *:data-[slot=tab-indicator]:duration-0"
+                      >
+                        {themeOptions.map((option) => (
+                          <TabsTab key={option.value} value={option.value}>
+                            <HugeiconsIcon
+                              icon={option.icon}
+                              size={20}
+                              strokeWidth={1.5}
+                            />
+                            <span>{option.label}</span>
+                          </TabsTab>
+                        ))}
+                      </TabsList>
+                    </Tabs>
+                  </SettingsRow>
+                  <SettingsRow
+                    label="Wide mode"
+                    description="Use wider chat message area"
+                  >
+                    <Switch
+                      checked={settings.wideMode}
+                      onCheckedChange={function handleChange(checked) {
+                        updateSettings({ wideMode: checked })
+                      }}
+                    />
+                  </SettingsRow>
+                </div>
+              ) : null}
+
+              {activeTab === 'display' ? (
+                <div className="space-y-4">
+                  <h3 className="text-sm font-medium text-primary-900">
+                    Display Options
+                  </h3>
+                  <SettingsRow label="Show tool messages">
+                    <Switch
+                      checked={settings.showToolMessages}
+                      onCheckedChange={function handleChange(checked) {
+                        updateSettings({ showToolMessages: checked })
+                      }}
+                    />
+                  </SettingsRow>
+                  <SettingsRow label="Show reasoning blocks">
+                    <Switch
+                      checked={settings.showReasoningBlocks}
+                      onCheckedChange={function handleChange(checked) {
+                        updateSettings({ showReasoningBlocks: checked })
+                      }}
+                    />
+                  </SettingsRow>
+                  <SettingsRow
+                    label="Conversation navigator"
+                    description="Show the right-edge turn rail for jumping between user messages"
+                  >
+                    <Switch
+                      checked={settings.showConversationNavigator}
+                      onCheckedChange={function handleChange(checked) {
+                        updateSettings({ showConversationNavigator: checked })
+                      }}
+                    />
+                  </SettingsRow>
+                </div>
+              ) : null}
             </div>
-          </SettingsSection>
+          </div>
 
-          <div className="mt-6 flex justify-end">
+          <div className="mt-4 flex justify-end border-t border-primary-200 pt-4">
             {onLogout ? (
               <Button
                 variant="outline"

@@ -67,8 +67,8 @@ function isOrphanBranch(
 }
 
 type TreeNodeItemProps = {
-    node: TreeNode
-    activeSessionKey?: string
+  node: TreeNode
+  activeSessionKey?: string
 }
 
 function TreeNodeItem({ node, activeSessionKey }: TreeNodeItemProps) {
@@ -167,9 +167,7 @@ function BranchTreePanelComponent({
     return relevant
   }, [tree, activeSessionKey, sessions])
 
-  const hasForks = sessions.some(
-    (s) => typeof s.parentSessionKey === 'string',
-  )
+  const hasForks = sessions.some((s) => typeof s.parentSessionKey === 'string')
 
   if (!hasForks) {
     return (

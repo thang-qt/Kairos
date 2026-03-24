@@ -138,7 +138,8 @@ function contentSignatureFromMessage(message: GatewayMessage): string {
       }
       const id = 'id' in part ? String(part.id ?? '') : ''
       const name = 'name' in part ? String(part.name ?? '') : ''
-      const partialJson = 'partialJson' in part ? String(part.partialJson ?? '') : ''
+      const partialJson =
+        'partialJson' in part ? String(part.partialJson ?? '') : ''
       return `toolCall:${id}:${name}:${partialJson.length}`
     })
     .join('|')
@@ -152,7 +153,8 @@ function mergeStreamingHistoryMessages(
 
   const merged = [...serverMessages]
   for (const streamingMessage of streamingMessages) {
-    const runId = (streamingMessage as { __streamRunId?: unknown }).__streamRunId
+    const runId = (streamingMessage as { __streamRunId?: unknown })
+      .__streamRunId
     if (typeof runId !== 'string' || runId.trim().length === 0) continue
 
     const hasMatch = merged.some((serverMessage) => {
@@ -175,7 +177,8 @@ function mergeStreamingHistoryMessages(
       const streamingText = textFromMessage(streamingMessage)
       const serverText = textFromMessage(serverMessage)
       if (streamingText && streamingText !== serverText) {
-        const normalizedStreamingText = normalizeAssistantTextForDedup(streamingText)
+        const normalizedStreamingText =
+          normalizeAssistantTextForDedup(streamingText)
         const normalizedServerText = normalizeAssistantTextForDedup(serverText)
         const textLikelySameResponse =
           normalizedStreamingText.length > 0 &&

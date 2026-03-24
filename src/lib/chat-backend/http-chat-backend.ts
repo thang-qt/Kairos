@@ -283,10 +283,11 @@ async function parseJSON<T>(response: Response): Promise<T> {
   const text = await response.text()
   const data = text ? (JSON.parse(text) as { error?: string } & T) : ({} as T)
   if (!response.ok) {
+    const errorData = data as { error?: string }
     throw new ApiError({
       message:
-        typeof (data as { error?: string }).error === 'string'
-          ? (data as { error?: string }).error
+        typeof errorData.error === 'string'
+          ? errorData.error
           : 'Request failed',
       status: response.status,
     })

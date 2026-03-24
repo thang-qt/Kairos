@@ -117,7 +117,9 @@ export function AttachmentPreview({
             <div className="line-clamp-2 text-primary-900">
               {attachment.file.name}
             </div>
-            <div className="tabular-nums">{formatFileSize(attachment.file.size)}</div>
+            <div className="tabular-nums">
+              {formatFileSize(attachment.file.size)}
+            </div>
           </div>
         </div>
       </PreviewCardPopup>

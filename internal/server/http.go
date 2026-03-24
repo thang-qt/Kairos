@@ -76,6 +76,17 @@ type sessionMutationResponse struct {
 	FriendlyID string `json:"friendlyId"`
 }
 
+type testConnectionRequest struct {
+	Kind    string `json:"kind"`
+	BaseURL string `json:"baseUrl"`
+	APIKey  string `json:"apiKey"`
+}
+
+type testConnectionResponse struct {
+	Success bool   `json:"success"`
+	Message string `json:"message,omitempty"`
+}
+
 type errorResponse struct {
 	Error string `json:"error"`
 }
@@ -228,6 +239,55 @@ func (app *App) handleDeleteProvider(writer http.ResponseWriter, request *http.R
 	}
 
 	writeJSON(writer, http.StatusOK, map[string]any{"ok": true})
+}
+
+func (app *App) handleTestConnection(writer http.ResponseWriter, request *http.Request) {
+	user, ok := app.requireAuthenticatedUser(writer, request)
+	if !ok {
+		return
+	}
+
+	var payload testConnectionRequest
+	if err := decodeJSON(request, &payload); err != nil {
+		writeError(writer, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	err := app.providers.TestConnection(request.Context(), user.ID, payload.Kind, payload.BaseURL, payload.APIKey)
+	if err != nil {
+		writeJSON(writer, http.StatusOK, testConnectionResponse{
+			Success: false,
+			Message: err.Error(),
+		})
+		return
+	}
+
+	writeJSON(writer, http.StatusOK, testConnectionResponse{
+		Success: true,
+		Message: "Connection successful",
+	})
+}
+
+func (app *App) handleTestProviderConnection(writer http.ResponseWriter, request *http.Request) {
+	user, ok := app.requireAuthenticatedUser(writer, request)
+	if !ok {
+		return
+	}
+
+	providerId := request.PathValue("providerId")
+	err := app.providers.TestProviderConnection(request.Context(), user.ID, providerId)
+	if err != nil {
+		writeJSON(writer, http.StatusOK, testConnectionResponse{
+			Success: false,
+			Message: err.Error(),
+		})
+		return
+	}
+
+	writeJSON(writer, http.StatusOK, testConnectionResponse{
+		Success: true,
+		Message: "Connection successful",
+	})
 }
 
 func (app *App) handleListModels(writer http.ResponseWriter, request *http.Request) {

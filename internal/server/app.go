@@ -110,6 +110,8 @@ func (app *App) Handler() http.Handler {
 	mux.HandleFunc("PATCH /api/me/preferences", app.handleUpdatePreferences)
 	mux.HandleFunc("GET /api/providers", app.handleListProviders)
 	mux.HandleFunc("POST /api/providers", app.handleCreateProvider)
+	mux.HandleFunc("POST /api/providers/test-connection", app.handleTestConnection)
+	mux.HandleFunc("POST /api/providers/{providerId}/test-connection", app.handleTestProviderConnection)
 	mux.HandleFunc("PATCH /api/providers/{providerId}", app.handleUpdateProvider)
 	mux.HandleFunc("DELETE /api/providers/{providerId}", app.handleDeleteProvider)
 	mux.HandleFunc("GET /api/models", app.handleListModels)

@@ -39,10 +39,5 @@ export function useChatGenerationGuard({
         finish()
       }, 120000)
     }
-
-  }, [
-    refreshHistory,
-    setWaitingForResponse,
-    waitingForResponse,
-  ])
+  }, [refreshHistory, setWaitingForResponse, waitingForResponse])
 }

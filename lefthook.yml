@@ -2,6 +2,6 @@ pre-commit:
   parallel: true
   commands:
     eslint-kairos:
-      glob: "src/**/*.{js,jsx,ts,tsx}"
-      run: "pnpm exec eslint --fix ."
+      glob: 'src/**/*.{js,jsx,ts,tsx}'
+      run: 'pnpm exec eslint --fix .'
       stage_fixed: true

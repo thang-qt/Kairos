@@ -38,10 +38,7 @@ function ChatHeaderComponent({
   rightSidebarOpen = false,
 }: ChatHeaderProps) {
   return (
-    <div
-      ref={wrapperRef}
-      className="px-4 h-12 flex items-center gap-2"
-    >
+    <div ref={wrapperRef} className="px-4 h-12 flex items-center gap-2">
       {isSidebarCollapsed ? (
         <Button
           size="icon-sm"
@@ -54,9 +51,7 @@ function ChatHeaderComponent({
         </Button>
       ) : null}
       <div className="flex-1 min-w-0 flex items-center gap-2">
-        <span className="text-sm font-medium truncate">
-          {activeTitle}
-        </span>
+        <span className="text-sm font-medium truncate">{activeTitle}</span>
         {forkedFrom?.friendlyId ? (
           <Link
             to="/chat/$sessionKey"
@@ -86,7 +81,11 @@ function ChatHeaderComponent({
             )}
             aria-label="Toggle panel"
           >
-            <HugeiconsIcon icon={MoreVerticalIcon} size={20} strokeWidth={1.5} />
+            <HugeiconsIcon
+              icon={MoreVerticalIcon}
+              size={20}
+              strokeWidth={1.5}
+            />
           </Button>
         ) : null}
       </div>

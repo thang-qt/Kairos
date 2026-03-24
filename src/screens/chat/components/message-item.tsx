@@ -75,14 +75,18 @@ function mapToolCallToToolPart(
 
 function toolResultText(resultMessage: GatewayMessage | undefined): string {
   if (!resultMessage) return ''
-  const content = Array.isArray(resultMessage.content) ? resultMessage.content : []
+  const content = Array.isArray(resultMessage.content)
+    ? resultMessage.content
+    : []
   return content
     .map((part) => (part.type === 'text' ? String(part.text ?? '') : ''))
     .join('')
     .trim()
 }
 
-export function mapStandaloneToolResultToToolPart(message: GatewayMessage): ToolPart {
+export function mapStandaloneToolResultToToolPart(
+  message: GatewayMessage,
+): ToolPart {
   const isError = Boolean(message.isError)
   const text = toolResultText(message)
   const output =
@@ -308,7 +312,10 @@ function MessageItemComponent({
       if (!chunk.trim()) return null
       return (
         <Message key={`text-${index}`}>
-          <MessageContent markdown className="text-primary-900 bg-transparent w-full">
+          <MessageContent
+            markdown
+            className="text-primary-900 bg-transparent w-full"
+          >
             {chunk}
           </MessageContent>
         </Message>
@@ -316,10 +323,15 @@ function MessageItemComponent({
     }
 
     if (!settings.showToolMessages) return null
-    const resultMessage = part.id ? toolResultsByCallId?.get(part.id) : undefined
+    const resultMessage = part.id
+      ? toolResultsByCallId?.get(part.id)
+      : undefined
     const toolPart = mapToolCallToToolPart(part, resultMessage)
     return (
-      <div key={`tool-${part.id || index}`} className="w-full max-w-[900px] mt-1">
+      <div
+        key={`tool-${part.id || index}`}
+        className="w-full max-w-[900px] mt-1"
+      >
         <Tool toolPart={toolPart} defaultOpen={false} />
       </div>
     )
@@ -356,7 +368,10 @@ function MessageItemComponent({
         <Message className="flex-row-reverse">
           <MessageContent
             markdown={false}
-            className={cn('text-primary-900', 'bg-primary-100 px-4 py-2.5 max-w-[85%]')}
+            className={cn(
+              'text-primary-900',
+              'bg-primary-100 px-4 py-2.5 max-w-[85%]',
+            )}
           >
             {text}
           </MessageContent>
@@ -465,14 +480,17 @@ function areMessagesEqual(
   if (
     (prevProps.message.role === 'toolResult' ||
       nextProps.message.role === 'toolResult') &&
-    toolResultSignature(prevProps.message) !== toolResultSignature(nextProps.message)
+    toolResultSignature(prevProps.message) !==
+      toolResultSignature(nextProps.message)
   ) {
     return false
   }
   if (rawTimestamp(prevProps.message) !== rawTimestamp(nextProps.message)) {
     return false
   }
-  if (modelFromMessage(prevProps.message) !== modelFromMessage(nextProps.message)) {
+  if (
+    modelFromMessage(prevProps.message) !== modelFromMessage(nextProps.message)
+  ) {
     return false
   }
   // No need to check settings here as the hook will cause a re-render

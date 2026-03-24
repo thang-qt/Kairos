@@ -139,8 +139,16 @@ function CommandSessionDialog({
             <div className="flex items-center gap-4 text-primary-700">
               <div className="flex items-center gap-2">
                 <span className="inline-flex items-center gap-1 rounded-md border border-primary-200 bg-surface px-2 py-1 text-[11px] font-medium text-primary-700">
-                  <HugeiconsIcon icon={ArrowUp01Icon} size={14} strokeWidth={1.5} />
-                  <HugeiconsIcon icon={ArrowDown01Icon} size={14} strokeWidth={1.5} />
+                  <HugeiconsIcon
+                    icon={ArrowUp01Icon}
+                    size={14}
+                    strokeWidth={1.5}
+                  />
+                  <HugeiconsIcon
+                    icon={ArrowDown01Icon}
+                    size={14}
+                    strokeWidth={1.5}
+                  />
                 </span>
                 <span>Navigate</span>
               </div>

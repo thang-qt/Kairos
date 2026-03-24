@@ -37,9 +37,7 @@ export function AuthFormCard({
   const subtitle = isLogin
     ? 'Sign in to continue your conversations.'
     : 'Get started with Kairos today.'
-  const helper = isLogin
-    ? "Don't have an account?"
-    : 'Already have an account?'
+  const helper = isLogin ? "Don't have an account?" : 'Already have an account?'
   const submitLabel = isLogin
     ? isPending
       ? 'Signing in…'
@@ -132,7 +130,12 @@ export function AuthFormCard({
         ) : null}
 
         <div className="pt-1">
-          <Button className="w-full" disabled={isPending} type="submit" size="lg">
+          <Button
+            className="w-full"
+            disabled={isPending}
+            type="submit"
+            size="lg"
+          >
             {submitLabel}
           </Button>
         </div>

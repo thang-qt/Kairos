@@ -1,4 +1,8 @@
-import { getMessageTimestamp, normalizeSessions, textFromMessage  } from './utils'
+import {
+  getMessageTimestamp,
+  normalizeSessions,
+  textFromMessage,
+} from './utils'
 import type { QueryClient } from '@tanstack/react-query'
 import type { GatewayMessage, HistoryResponse, SessionMeta } from './types'
 import type { ChatStatus } from '@/lib/chat-backend'

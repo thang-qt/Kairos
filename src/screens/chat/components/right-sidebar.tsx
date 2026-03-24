@@ -326,11 +326,7 @@ function RightSidebarComponent({
               className="text-primary-500 hover:bg-primary-100"
               aria-label="Close panel"
             >
-              <HugeiconsIcon
-                icon={Cancel01Icon}
-                size={16}
-                strokeWidth={1.5}
-              />
+              <HugeiconsIcon icon={Cancel01Icon} size={16} strokeWidth={1.5} />
             </Button>
           </div>
 

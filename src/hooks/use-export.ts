@@ -27,9 +27,7 @@ export function useExport({
         currentSessionKey || currentFriendlyId,
       )
       const cached = queryClient.getQueryData<HistoryResponse>(historyKey)
-      const messages = Array.isArray(cached?.messages)
-        ? cached.messages
-        : []
+      const messages = Array.isArray(cached?.messages) ? cached.messages : []
 
       if (messages.length === 0) return
 
@@ -114,9 +112,7 @@ function toMarkdown(messages: Array<GatewayMessage>, title: string): string {
     const label = roleLabel(message.role)
     const model = modelLabel(message)
     const time = formatTimestamp(message)
-    lines.push(
-      '### ' + label + (model ? ` (${model})` : '') + ' — ' + time,
-    )
+    lines.push('### ' + label + (model ? ` (${model})` : '') + ' — ' + time)
     lines.push('')
     lines.push(text)
     lines.push('')

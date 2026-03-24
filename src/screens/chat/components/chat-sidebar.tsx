@@ -51,12 +51,8 @@ function ChatSidebarComponent({
   onSelectSession,
   onActiveSessionDelete,
 }: ChatSidebarProps) {
-  const {
-    settingsOpen,
-    setSettingsOpen,
-    handleOpenSettings,
-    closeSettings,
-  } = useChatSettings()
+  const { settingsOpen, setSettingsOpen, handleOpenSettings, closeSettings } =
+    useChatSettings()
   const { deleteSession } = useDeleteSession()
   const { renameSession } = useRenameSession()
   const transition = {
@@ -127,9 +123,9 @@ function ChatSidebarComponent({
     setDeleteFriendlyId(session.friendlyId)
     setDeleteSessionTitle(
       session.label ||
-      session.title ||
-      session.derivedTitle ||
-      session.friendlyId,
+        session.title ||
+        session.derivedTitle ||
+        session.friendlyId,
     )
     setDeleteDialogOpen(true)
   }
