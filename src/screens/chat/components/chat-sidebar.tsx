@@ -28,7 +28,7 @@ import {
 import { appQueryKeys, logout } from '@/lib/app-api'
 import { cn } from '@/lib/utils'
 import { Button, buttonVariants } from '@/components/ui/button'
-import { WebClawIconBig } from '@/components/icons/webclaw-big'
+import { KairosIconBig } from '@/components/icons/kairos-icon-big'
 
 type ChatSidebarProps = {
   sessions: Array<SessionMeta>
@@ -180,7 +180,7 @@ function ChatSidebarComponent({
                   'w-full pl-1.5 justify-start',
                 )}
               >
-                <WebClawIconBig className="size-5 rounded-sm" />
+                <KairosIconBig className="size-5 rounded-sm" />
                 Kairos
               </Link>
             </motion.div>

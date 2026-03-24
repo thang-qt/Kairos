@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { WebClawIconBig } from '@/components/icons/webclaw-big'
+import { KairosIconBig } from '@/components/icons/kairos-icon-big'
 
 type AuthShellProps = {
   children: ReactNode
@@ -32,7 +32,7 @@ export function AuthShell({ children }: AuthShellProps) {
       {/* Top nav bar */}
       <header className="relative z-10 flex items-center px-6 py-4 sm:px-10">
         <div className="flex items-center gap-2 select-none">
-          <WebClawIconBig className="size-6 rounded-sm" />
+          <KairosIconBig className="size-6 rounded-sm" />
           <span className="font-serif text-lg font-medium text-primary-950">
             Kairos
           </span>
