@@ -508,6 +508,33 @@ export function ChatScreen({
     resolvedConversationModel,
   ])
 
+  const handleStopGeneration = useCallback(async function handleStopGeneration() {
+    if (isNewChat) return
+    const sessionKeyForStop =
+      forcedSessionKey ||
+      resolvedSessionKey ||
+      activeSessionKey ||
+      activeFriendlyId
+    if (!sessionKeyForStop) return
+
+    try {
+      await getChatBackend().stopConversation({
+        sessionKey: sessionKeyForStop,
+        friendlyId: activeFriendlyId,
+      })
+    } catch (error) {
+      setStreamError(
+        error instanceof Error ? error.message : 'Failed to stop response.',
+      )
+    }
+  }, [
+    activeFriendlyId,
+    activeSessionKey,
+    forcedSessionKey,
+    isNewChat,
+    resolvedSessionKey,
+  ])
+
   const backendNotice = useMemo(() => {
     if (streamError) {
       return (
@@ -1023,7 +1050,9 @@ export function ChatScreen({
               />
               <ChatComposer
                 onSubmit={send}
+                onStop={handleStopGeneration}
                 isLoading={sending}
+                canStop={waitingForResponse && !isNewChat}
                 disabled={sending || !hasAvailableModel}
                 wrapperRef={composerRef}
               />

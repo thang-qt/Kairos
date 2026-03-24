@@ -162,6 +162,25 @@ export function createHTTPChatBackend(): ChatBackend {
         throw error
       }
     },
+    async stopConversation(input) {
+      try {
+        const response = await fetch(
+          `/api/sessions/${encodeURIComponent(input.friendlyId || input.sessionKey)}/stop`,
+          {
+            method: 'POST',
+            credentials: 'include',
+          },
+        )
+        await parseJSON(response)
+        return
+      } catch (error) {
+        if (error instanceof ApiError && error.status === 404) {
+          await mockBackend.stopConversation(input)
+          return
+        }
+        throw error
+      }
+    },
     async sendMessage(input) {
       try {
         const response = await fetch(

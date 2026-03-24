@@ -121,6 +121,7 @@ func (app *App) Handler() http.Handler {
 	mux.HandleFunc("DELETE /api/sessions/{friendlyId}", app.handleDeleteSession)
 	mux.HandleFunc("GET /api/sessions/{friendlyId}/history", app.handleSessionHistory)
 	mux.HandleFunc("POST /api/sessions/{friendlyId}/messages", app.handleSendMessage)
+	mux.HandleFunc("POST /api/sessions/{friendlyId}/stop", app.handleStopSessionRuns)
 	mux.HandleFunc("GET /api/sessions/{friendlyId}/events", app.handleSessionEvents)
 
 	return app.withCommonMiddleware(mux)

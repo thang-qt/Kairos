@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"strings"
@@ -25,8 +26,9 @@ type AttachmentPayload struct {
 }
 
 type SendMessageResult struct {
-	RunID      string `json:"runId"`
-	SessionKey string `json:"sessionKey"`
+	RunID              string `json:"runId"`
+	SessionKey         string `json:"sessionKey"`
+	AssistantMessageID string `json:"assistantMessageId"`
 }
 
 type ChatEvent struct {
@@ -39,11 +41,12 @@ type ChatEvent struct {
 }
 
 type runRecord struct {
-	ID        string
-	UserID    string
-	SessionID string
-	Status    string
-	Model     string
+	ID                 string
+	UserID             string
+	SessionID          string
+	Status             string
+	Model              string
+	AssistantMessageID string
 }
 
 type RunBroker struct {
@@ -162,6 +165,9 @@ type ChatRunService struct {
 	chat      *ChatService
 	providers *ProviderService
 	broker    *RunBroker
+	runMu     sync.Mutex
+	runCancels map[string]context.CancelFunc
+	sessionRuns map[string]map[string]struct{}
 }
 
 func NewChatRunService(
@@ -171,10 +177,12 @@ func NewChatRunService(
 	broker *RunBroker,
 ) *ChatRunService {
 	return &ChatRunService{
-		db:        db,
-		chat:      chat,
-		providers: providers,
-		broker:    broker,
+		db:         db,
+		chat:       chat,
+		providers:  providers,
+		broker:     broker,
+		runCancels: make(map[string]context.CancelFunc),
+		sessionRuns: make(map[string]map[string]struct{}),
 	}
 }
 
@@ -200,13 +208,15 @@ func (service *ChatRunService) StartRun(
 	}
 
 	runID := newID()
+	assistantMessageID := newID()
 	model := normalizeModel(input.Model)
 	if err := service.insertRun(ctx, runRecord{
-		ID:        runID,
-		UserID:    userID,
-		SessionID: session.ID,
-		Status:    "running",
-		Model:     model,
+		ID:                 runID,
+		UserID:             userID,
+		SessionID:          session.ID,
+		Status:             "running",
+		Model:              model,
+		AssistantMessageID: assistantMessageID,
 	}, input, now); err != nil {
 		return SendMessageResult{}, err
 	}
@@ -217,16 +227,18 @@ func (service *ChatRunService) StartRun(
 	}
 
 	service.runAsync(runRecord{
-		ID:        runID,
-		UserID:    userID,
-		SessionID: session.ID,
-		Status:    "running",
-		Model:     model,
+		ID:                 runID,
+		UserID:             userID,
+		SessionID:          session.ID,
+		Status:             "running",
+		Model:              model,
+		AssistantMessageID: assistantMessageID,
 	}, session, history.Messages, input)
 
 	return SendMessageResult{
-		RunID:      runID,
-		SessionKey: session.ID,
+		RunID:              runID,
+		SessionKey:         session.ID,
+		AssistantMessageID: assistantMessageID,
 	}, nil
 }
 
@@ -267,6 +279,39 @@ func (service *ChatRunService) ResolveSession(
 	return service.chat.findSessionByFriendlyID(ctx, userID, friendlyID)
 }
 
+func (service *ChatRunService) CancelSessionRuns(
+	ctx context.Context,
+	userID string,
+	friendlyID string,
+) (bool, error) {
+	session, err := service.chat.findSessionByFriendlyID(ctx, userID, friendlyID)
+	if err != nil {
+		return false, err
+	}
+
+	service.runMu.Lock()
+	runIDs := service.sessionRuns[session.ID]
+	if len(runIDs) == 0 {
+		service.runMu.Unlock()
+		return false, nil
+	}
+
+	cancels := make([]context.CancelFunc, 0, len(runIDs))
+	for runID := range runIDs {
+		cancel := service.runCancels[runID]
+		if cancel != nil {
+			cancels = append(cancels, cancel)
+		}
+	}
+	service.runMu.Unlock()
+
+	for _, cancel := range cancels {
+		cancel()
+	}
+
+	return len(cancels) > 0, nil
+}
+
 func (service *ChatRunService) insertRun(
 	ctx context.Context,
 	record runRecord,
@@ -303,104 +348,129 @@ func (service *ChatRunService) runAsync(
 	history []map[string]any,
 	input SendMessageInput,
 ) {
+	ctx, cancel := context.WithCancel(context.Background())
+	service.registerRunCancel(record, cancel)
 	go func() {
-		ctx := context.Background()
-		assistantMessageID := newID()
-		provider, model, _, err := service.providers.ResolveGenerationTarget(ctx, record.UserID, record.Model)
-		if err != nil {
-			service.publishRunError(ctx, record, session, err)
-			return
-		}
-
-		driver := service.providers.drivers[provider.Record.Kind]
-		if driver == nil {
-			service.publishRunError(
-				ctx,
-				record,
-				session,
-				fmt.Errorf("unsupported provider kind: %s", provider.Record.Kind),
-			)
-			return
-		}
-
-		accumulatedText := ""
-		accumulatedThinking := ""
-		modelID := model.ID
-		modelName := firstNonEmpty(model.Name, model.ID)
-		modelDescription := provider.Record.Label
-		result, err := driver.GenerateChatStream(
-			ctx,
-			provider,
-			ChatGenerationRequest{
-				Model:    model.ID,
-				Messages: buildProviderMessages(history),
-			},
-			func(delta ChatGenerationDelta) error {
-				if delta.Thinking != "" {
-					accumulatedThinking += delta.Thinking
-				}
-				if delta.Text != "" {
-					accumulatedText += delta.Text
-				}
-				content := buildAssistantContent(accumulatedThinking, accumulatedText)
-				if len(content) == 0 {
-					return nil
-				}
-				service.broker.Publish(record.SessionID, ChatEvent{
-					RunID:      record.ID,
-					SessionKey: session.ID,
-					FriendlyID: session.FriendlyID,
-					State:      "delta",
-					Message: map[string]any{
-						"id":               assistantMessageID,
-						"role":             "assistant",
-						"model":            modelID,
-						"modelName":        modelName,
-						"modelDescription": modelDescription,
-						"timestamp":        time.Now().UnixMilli(),
-						"content":          content,
-					},
-				})
-				return nil
-			},
-		)
-		if err != nil {
-			service.publishRunError(ctx, record, session, err)
-			return
-		}
-		modelID = firstNonEmpty(result.Model, modelID)
-		modelName = firstNonEmpty(result.ModelName, modelName)
-		modelDescription = firstNonEmpty(result.ModelDescription, modelDescription)
-		accumulatedThinking = firstNonEmpty(result.ThinkingText, accumulatedThinking)
-
-		finalTimestamp := time.Now().UnixMilli()
-		finalMessage := map[string]any{
-			"id":               assistantMessageID,
-			"role":             "assistant",
-			"model":            modelID,
-			"modelName":        modelName,
-			"modelDescription": modelDescription,
-			"timestamp":        finalTimestamp,
-			"content":          buildAssistantContent(accumulatedThinking, result.OutputText),
-		}
-
-		if _, err := service.chat.appendMessage(ctx, session, finalMessage, finalTimestamp); err != nil {
-			service.publishRunError(ctx, record, session, err)
-			return
-		}
-		if err := service.markRunCompleted(ctx, record.ID, finalTimestamp); err != nil {
-			service.publishRunError(ctx, record, session, err)
-			return
-		}
-
-		service.broker.Publish(record.SessionID, ChatEvent{
-			RunID:      record.ID,
-			SessionKey: session.ID,
-			FriendlyID: session.FriendlyID,
-			State:      "final",
-			Message:    finalMessage,
-		})
+		defer service.unregisterRunCancel(record)
+		service.executeRun(ctx, record, session, history, input)
 	}()
+}
+
+func (service *ChatRunService) executeRun(
+	ctx context.Context,
+	record runRecord,
+	session sessionRecord,
+	history []map[string]any,
+	input SendMessageInput,
+) {
+	provider, model, _, err := service.providers.ResolveGenerationTarget(ctx, record.UserID, record.Model)
+	if err != nil {
+		if errors.Is(err, context.Canceled) {
+			service.publishRunAborted(ctx, record, session, nil)
+			return
+		}
+		service.publishRunError(ctx, record, session, err)
+		return
+	}
+
+	driver := service.providers.drivers[provider.Record.Kind]
+	if driver == nil {
+		service.publishRunError(
+			ctx,
+			record,
+			session,
+			fmt.Errorf("unsupported provider kind: %s", provider.Record.Kind),
+		)
+		return
+	}
+
+	accumulatedText := ""
+	accumulatedThinking := ""
+	modelID := model.ID
+	modelName := firstNonEmpty(model.Name, model.ID)
+	modelDescription := provider.Record.Label
+	result, err := driver.GenerateChatStream(
+		ctx,
+		provider,
+		ChatGenerationRequest{
+			Model:    model.ID,
+			Messages: buildProviderMessages(history),
+		},
+		func(delta ChatGenerationDelta) error {
+			if delta.Thinking != "" {
+				accumulatedThinking += delta.Thinking
+			}
+			if delta.Text != "" {
+				accumulatedText += delta.Text
+			}
+			content := buildAssistantContent(accumulatedThinking, accumulatedText)
+			if len(content) == 0 {
+				return nil
+			}
+			service.broker.Publish(
+				record.SessionID,
+				buildRunEvent(
+					record,
+					session,
+					"delta",
+					"",
+					buildAssistantMessage(
+						record.AssistantMessageID,
+						modelID,
+						modelName,
+						modelDescription,
+						time.Now().UnixMilli(),
+						content,
+					),
+				),
+			)
+			return nil
+		},
+	)
+	if err != nil {
+		if errors.Is(err, context.Canceled) {
+			abortedMessage := buildAssistantMessage(
+				record.AssistantMessageID,
+				modelID,
+				modelName,
+				modelDescription,
+				time.Now().UnixMilli(),
+				buildAssistantContent(accumulatedThinking, accumulatedText),
+			)
+			service.publishRunAborted(ctx, record, session, abortedMessage)
+			return
+		}
+		service.publishRunError(ctx, record, session, err)
+		return
+	}
+	modelID = firstNonEmpty(result.Model, modelID)
+	modelName = firstNonEmpty(result.ModelName, modelName)
+	modelDescription = firstNonEmpty(result.ModelDescription, modelDescription)
+	accumulatedThinking = firstNonEmpty(result.ThinkingText, accumulatedThinking)
+
+	finalTimestamp := time.Now().UnixMilli()
+	finalMessage := buildAssistantMessage(
+		record.AssistantMessageID,
+		modelID,
+		modelName,
+		modelDescription,
+		finalTimestamp,
+		buildAssistantContent(accumulatedThinking, result.OutputText),
+	)
+
+	if _, err := service.chat.appendMessage(ctx, session, finalMessage, finalTimestamp); err != nil {
+		service.publishRunError(ctx, record, session, err)
+		return
+	}
+	if err := service.markRunCompleted(ctx, record.ID, finalTimestamp); err != nil {
+		service.publishRunError(ctx, record, session, err)
+		return
+	}
+
+	service.broker.Publish(
+		record.SessionID,
+		buildRunEvent(record, session, "final", "", finalMessage),
+	)
 }
 
 func (service *ChatRunService) publishRunError(
@@ -423,13 +493,36 @@ func (service *ChatRunService) publishRunError(
 		session.FriendlyID,
 		normalizedError,
 	)
-	service.broker.Publish(record.SessionID, ChatEvent{
-		RunID:      record.ID,
-		SessionKey: session.ID,
-		FriendlyID: session.FriendlyID,
-		State:      "error",
-		Error:      normalizedError,
-	})
+	service.broker.Publish(
+		record.SessionID,
+		buildRunEvent(record, session, "error", normalizedError, nil),
+	)
+}
+
+func (service *ChatRunService) publishRunAborted(
+	ctx context.Context,
+	record runRecord,
+	session sessionRecord,
+	message map[string]any,
+) {
+	persistCtx := context.Background()
+	if len(message) > 0 {
+		timestamp, _ := message["timestamp"].(int64)
+		if timestamp == 0 {
+			timestamp = time.Now().UnixMilli()
+			message["timestamp"] = timestamp
+		}
+		if _, err := service.chat.appendMessage(persistCtx, session, message, timestamp); err != nil {
+			log.Printf("kairos: failed to persist aborted run message for run %s: %v", record.ID, err)
+		}
+	}
+	if err := service.markRunAborted(persistCtx, record.ID); err != nil {
+		log.Printf("kairos: failed to persist run abort for run %s: %v", record.ID, err)
+	}
+	service.broker.Publish(
+		record.SessionID,
+		buildRunEvent(record, session, "aborted", "", message),
+	)
 }
 
 func (service *ChatRunService) markRunCompleted(ctx context.Context, runID string, completedAt int64) error {
@@ -452,6 +545,44 @@ func (service *ChatRunService) markRunFailed(ctx context.Context, runID string, 
 		return fmt.Errorf("fail run: %w", err)
 	}
 	return nil
+}
+
+func (service *ChatRunService) markRunAborted(ctx context.Context, runID string) error {
+	if _, err := service.db.ExecContext(ctx, `
+		UPDATE chat_runs
+		SET status = 'aborted', completed_at = ?, error_message = NULL
+		WHERE id = ?
+	`, time.Now().UnixMilli(), runID); err != nil {
+		return fmt.Errorf("abort run: %w", err)
+	}
+	return nil
+}
+
+func (service *ChatRunService) registerRunCancel(
+	record runRecord,
+	cancel context.CancelFunc,
+) {
+	service.runMu.Lock()
+	defer service.runMu.Unlock()
+	service.runCancels[record.ID] = cancel
+	if service.sessionRuns[record.SessionID] == nil {
+		service.sessionRuns[record.SessionID] = make(map[string]struct{})
+	}
+	service.sessionRuns[record.SessionID][record.ID] = struct{}{}
+}
+
+func (service *ChatRunService) unregisterRunCancel(record runRecord) {
+	service.runMu.Lock()
+	defer service.runMu.Unlock()
+	delete(service.runCancels, record.ID)
+	sessionRuns := service.sessionRuns[record.SessionID]
+	if sessionRuns == nil {
+		return
+	}
+	delete(sessionRuns, record.ID)
+	if len(sessionRuns) == 0 {
+		delete(service.sessionRuns, record.SessionID)
+	}
 }
 
 func buildUserMessage(
@@ -510,6 +641,42 @@ func buildAssistantContent(thinking string, text string) []map[string]any {
 		})
 	}
 	return content
+}
+
+func buildAssistantMessage(
+	messageID string,
+	modelID string,
+	modelName string,
+	modelDescription string,
+	timestamp int64,
+	content []map[string]any,
+) map[string]any {
+	return map[string]any{
+		"id":               messageID,
+		"role":             "assistant",
+		"model":            modelID,
+		"modelName":        modelName,
+		"modelDescription": modelDescription,
+		"timestamp":        timestamp,
+		"content":          content,
+	}
+}
+
+func buildRunEvent(
+	record runRecord,
+	session sessionRecord,
+	state string,
+	errorMessage string,
+	message map[string]any,
+) ChatEvent {
+	return ChatEvent{
+		RunID:      record.ID,
+		SessionKey: session.ID,
+		FriendlyID: session.FriendlyID,
+		State:      state,
+		Error:      errorMessage,
+		Message:    message,
+	}
 }
 
 func buildProviderMessages(history []map[string]any) []ProviderMessage {

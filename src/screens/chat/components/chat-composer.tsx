@@ -17,7 +17,9 @@ import { TooltipProvider } from '@/components/ui/tooltip'
 
 type ChatComposerProps = {
   onSubmit: (value: string, helpers: ChatComposerHelpers) => void
+  onStop?: () => void
   isLoading: boolean
+  canStop?: boolean
   disabled: boolean
   wrapperRef?: Ref<HTMLDivElement>
 }
@@ -30,7 +32,9 @@ type ChatComposerHelpers = {
 
 function ChatComposerComponent({
   onSubmit,
+  onStop,
   isLoading,
+  canStop = false,
   disabled,
   wrapperRef,
 }: ChatComposerProps) {
@@ -80,7 +84,7 @@ function ChatComposerComponent({
     [focusPrompt],
   )
   const handleSubmit = useCallback(() => {
-    if (disabled) return
+    if (disabled || canStop) return
     const body = valueRef.current.trim()
     // Allow submit if there's text OR valid attachments
     const validAttachments = attachments.filter((a) => !a.error && a.base64)
@@ -91,7 +95,15 @@ function ChatComposerComponent({
       attachments: validAttachments,
     })
     focusPrompt()
-  }, [disabled, focusPrompt, onSubmit, reset, setComposerValue, attachments])
+  }, [
+    attachments,
+    canStop,
+    disabled,
+    focusPrompt,
+    onSubmit,
+    reset,
+    setComposerValue,
+  ])
   const submitDisabled = disabled
 
   return (
@@ -136,32 +148,56 @@ function ChatComposerComponent({
               inputRef={promptRef}
               className="pl-2 pr-1 flex-1"
             />
-            <PromptInputAction
-              tooltip="Send message"
-              render={(triggerProps) => (
-                <Button
-                  {...triggerProps}
-                  onClick={(event) => {
-                    triggerProps.onClick?.(event)
-                    handleSubmit()
-                  }}
-                  disabled={submitDisabled || triggerProps.disabled}
-                  size="icon-sm"
-                  variant="default"
-                  className={cn(
-                    'rounded-full shrink-0',
-                    triggerProps.className,
-                  )}
-                  aria-label="Send message"
-                >
-                  <HugeiconsIcon
-                    icon={ArrowUp02Icon}
-                    size={20}
-                    strokeWidth={1.5}
-                  />
-                </Button>
-              )}
-            />
+            {canStop && onStop ? (
+              <PromptInputAction
+                tooltip="Stop response"
+                render={(triggerProps) => (
+                  <Button
+                    {...triggerProps}
+                    onClick={(event) => {
+                      triggerProps.onClick?.(event)
+                      onStop()
+                    }}
+                    size="sm"
+                    variant="outline"
+                    className={cn(
+                      'rounded-full shrink-0 px-3',
+                      triggerProps.className,
+                    )}
+                    aria-label="Stop response"
+                  >
+                    Stop
+                  </Button>
+                )}
+              />
+            ) : (
+              <PromptInputAction
+                tooltip="Send message"
+                render={(triggerProps) => (
+                  <Button
+                    {...triggerProps}
+                    onClick={(event) => {
+                      triggerProps.onClick?.(event)
+                      handleSubmit()
+                    }}
+                    disabled={submitDisabled || triggerProps.disabled}
+                    size="icon-sm"
+                    variant="default"
+                    className={cn(
+                      'rounded-full shrink-0',
+                      triggerProps.className,
+                    )}
+                    aria-label="Send message"
+                  >
+                    <HugeiconsIcon
+                      icon={ArrowUp02Icon}
+                      size={20}
+                      strokeWidth={1.5}
+                    />
+                  </Button>
+                )}
+              />
+            )}
           </div>
         </PromptInput>
       </TooltipProvider>

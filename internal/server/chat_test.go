@@ -381,6 +381,7 @@ type fakeProviderDriver struct {
 	models   []ProviderModel
 	thinking string
 	output   string
+	delay    time.Duration
 }
 
 func (driver fakeProviderDriver) Kind() string {
@@ -395,7 +396,7 @@ func (driver fakeProviderDriver) ListModels(
 }
 
 func (driver fakeProviderDriver) GenerateChatStream(
-	_ context.Context,
+	ctx context.Context,
 	_ resolvedProvider,
 	request ChatGenerationRequest,
 	onDelta func(delta ChatGenerationDelta) error,
@@ -408,6 +409,13 @@ func (driver fakeProviderDriver) GenerateChatStream(
 	if err := onDelta(ChatGenerationDelta{Text: driver.output[:12]}); err != nil {
 		return ChatGenerationResult{}, err
 	}
+	if driver.delay > 0 {
+		select {
+		case <-ctx.Done():
+			return ChatGenerationResult{}, ctx.Err()
+		case <-time.After(driver.delay):
+		}
+	}
 	if err := onDelta(ChatGenerationDelta{Text: driver.output[12:]}); err != nil {
 		return ChatGenerationResult{}, err
 	}
@@ -418,6 +426,109 @@ func (driver fakeProviderDriver) GenerateChatStream(
 		ThinkingText:     driver.thinking,
 		OutputText:       driver.output,
 	}, nil
+}
+
+func TestStopSessionRunPublishesAbortedEventAndKeepsPartialAssistantHistory(t *testing.T) {
+	testServer := newTestApp(t, func(config *Config) {
+		config.SystemProviderEnabled = true
+		config.SystemProviderLabel = "Server Default"
+		config.SystemProviderStaticModels = []string{"test-model"}
+	})
+	testServer.app.providers.drivers["openai_compatible"] = fakeProviderDriver{
+		models: []ProviderModel{
+			{
+				ID:            "test-model",
+				Object:        "model",
+				OwnedBy:       "test",
+				ProviderRef:   "system:system-default",
+				ProviderLabel: "Server Default",
+			},
+		},
+		output: "This reply should never finish.",
+		delay:  500 * time.Millisecond,
+	}
+	cookie := signupAndRequireCookie(t, testServer, "stop@example.com")
+
+	createResponse := performJSONRequest(t, testServer.handler, http.MethodPost, "/api/sessions", createSessionRequest{
+		Label: "Stop",
+	}, []*http.Cookie{cookie})
+	assertStatusCode(t, createResponse, http.StatusCreated)
+
+	var created sessionMutationResponse
+	decodeResponseJSON(t, createResponse, &created)
+	userID := userIDFromCookie(t, testServer, cookie)
+
+	eventResult := make(chan []ChatEvent, 1)
+	deltaSeen := make(chan struct{}, 1)
+	streamContext, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() {
+		events := make([]ChatEvent, 0, 2)
+		err := testServer.app.runs.StreamSession(streamContext, userID, created.FriendlyID, func(event ChatEvent) error {
+			events = append(events, event)
+			if event.State == "delta" {
+				select {
+				case deltaSeen <- struct{}{}:
+				default:
+				}
+			}
+			if event.State == "aborted" {
+				eventResult <- events
+				cancel()
+			}
+			return nil
+		})
+		if err != nil && streamContext.Err() == nil {
+			t.Errorf("stream session error = %v", err)
+			eventResult <- nil
+		}
+	}()
+
+	sendResponse := performJSONRequest(t, testServer.handler, http.MethodPost, "/api/sessions/"+created.FriendlyID+"/messages", sendMessageRequest{
+		Message: "Start then stop",
+		Model:   "test-model",
+	}, []*http.Cookie{cookie})
+	assertStatusCode(t, sendResponse, http.StatusOK)
+
+	select {
+	case <-deltaSeen:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for first streamed delta")
+	}
+
+	stopResponse := performJSONRequest(t, testServer.handler, http.MethodPost, "/api/sessions/"+created.FriendlyID+"/stop", nil, []*http.Cookie{cookie})
+	assertStatusCode(t, stopResponse, http.StatusOK)
+
+	select {
+	case events := <-eventResult:
+		if len(events) == 0 {
+			t.Fatal("stream events = empty, want aborted event")
+		}
+		if events[len(events)-1].State != "aborted" {
+			t.Fatalf("final stream state = %q, want aborted", events[len(events)-1].State)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for aborted event")
+	}
+
+	historyResponse := performJSONRequest(t, testServer.handler, http.MethodGet, "/api/sessions/"+created.FriendlyID+"/history", nil, []*http.Cookie{cookie})
+	assertStatusCode(t, historyResponse, http.StatusOK)
+
+	var historyPayload HistoryPayload
+	decodeResponseJSON(t, historyResponse, &historyPayload)
+	if len(historyPayload.Messages) != 2 {
+		t.Fatalf("history message count after stop = %d, want 2", len(historyPayload.Messages))
+	}
+	if role := historyPayload.Messages[0]["role"]; role != "user" {
+		t.Fatalf("first history role after stop = %v, want user", role)
+	}
+	if role := historyPayload.Messages[1]["role"]; role != "assistant" {
+		t.Fatalf("second history role after stop = %v, want assistant", role)
+	}
+	content, ok := historyPayload.Messages[1]["content"].([]any)
+	if !ok || len(content) == 0 {
+		t.Fatalf("assistant content after stop = %T, want partial content", historyPayload.Messages[1]["content"])
+	}
 }
 
 func waitForAssistantThinking(

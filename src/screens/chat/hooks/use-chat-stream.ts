@@ -108,33 +108,6 @@ export function useChatStream({
         }
       }
 
-      if (nextMessage.role === 'assistant') {
-        const previousAssistantIndex = [...messages]
-          .reverse()
-          .findIndex((message) => message.role === 'assistant')
-        if (previousAssistantIndex >= 0) {
-          const targetIndex = messages.length - 1 - previousAssistantIndex
-          const previousAssistant = messages[targetIndex]
-          const previousText = textFromMessage(previousAssistant)
-          const nextText = textFromMessage(nextMessage)
-          const timeGap = Math.abs(
-            getMessageTimestamp(previousAssistant) -
-              getMessageTimestamp(nextMessage),
-          )
-          if (
-            timeGap <= 15000 ||
-            shouldMergeAssistantByText(previousText, nextText)
-          ) {
-            const next = [...messages]
-            next[targetIndex] = mergeStreamMessage(
-              previousAssistant,
-              nextMessage,
-            )
-            return next
-          }
-        }
-      }
-
       return [...messages, nextMessage]
     }
 
@@ -302,25 +275,4 @@ function getMessageId(message: GatewayMessage): string {
 
 function normalizeString(value: unknown): string {
   return typeof value === 'string' ? value.trim() : ''
-}
-
-function shouldMergeAssistantByText(previousText: string, nextText: string): boolean {
-  if (!previousText || !nextText) return false
-  if (previousText === nextText) return true
-
-  const previousNormalized = normalizeAssistantTextForDedup(previousText)
-  const nextNormalized = normalizeAssistantTextForDedup(nextText)
-  if (!previousNormalized || !nextNormalized) return false
-  if (previousNormalized === nextNormalized) return true
-  if (previousNormalized.includes(nextNormalized)) return true
-  if (nextNormalized.includes(previousNormalized)) return true
-  return false
-}
-
-function normalizeAssistantTextForDedup(text: string): string {
-  return text
-    .replace(/\[\[reply_to:[^\]]*\]\]\s*/gi, '')
-    .replace(/<system-reminder>[\s\S]*?<\/system-reminder>/gi, '')
-    .replace(/\s+/g, ' ')
-    .trim()
 }

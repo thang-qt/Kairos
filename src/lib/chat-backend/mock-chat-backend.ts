@@ -759,6 +759,25 @@ export function createMockChatBackend(): ChatBackend {
       saveState(nextState)
       return Promise.resolve()
     },
+    stopConversation(input) {
+      const targetSessionKey = input.sessionKey.trim()
+      const targetFriendlyId = input.friendlyId?.trim() ?? ''
+      for (const [runId, pendingRun] of pendingRuns.entries()) {
+        const matchesSession =
+          pendingRun.sessionKey === targetSessionKey ||
+          (targetFriendlyId.length > 0 &&
+            pendingRun.friendlyId === targetFriendlyId)
+        if (!matchesSession) continue
+        clearPendingRun(runId)
+        emitEvent({
+          runId,
+          sessionKey: pendingRun.sessionKey,
+          friendlyId: pendingRun.friendlyId,
+          state: 'aborted',
+        })
+      }
+      return Promise.resolve()
+    },
     sendMessage(input: ChatSendMessageInput) {
       const { index } = requireConversation(input)
       const userMessage = createUserMessage(input.message, input.attachments)

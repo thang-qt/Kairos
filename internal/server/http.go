@@ -522,6 +522,29 @@ func (app *App) handleSendMessage(writer http.ResponseWriter, request *http.Requ
 	writeJSON(writer, http.StatusOK, result)
 }
 
+func (app *App) handleStopSessionRuns(writer http.ResponseWriter, request *http.Request) {
+	user, ok := app.requireAuthenticatedUser(writer, request)
+	if !ok {
+		return
+	}
+
+	_, err := app.runs.CancelSessionRuns(
+		request.Context(),
+		user.ID,
+		request.PathValue("friendlyId"),
+	)
+	if err != nil {
+		if errors.Is(err, errChatSessionNotFound) {
+			writeError(writer, http.StatusNotFound, err.Error())
+			return
+		}
+		writeError(writer, http.StatusInternalServerError, "failed to stop run")
+		return
+	}
+
+	writeJSON(writer, http.StatusOK, map[string]any{"ok": true})
+}
+
 func (app *App) handleSessionEvents(writer http.ResponseWriter, request *http.Request) {
 	user, ok := app.requireAuthenticatedUser(writer, request)
 	if !ok {

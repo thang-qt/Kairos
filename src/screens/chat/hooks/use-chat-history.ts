@@ -2,7 +2,7 @@ import { useMemo, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
 
 import { chatQueryKeys, fetchHistory } from '../chat-queries'
-import { getMessageTimestamp, textFromMessage } from '../utils'
+import { textFromMessage } from '../utils'
 import type { QueryClient } from '@tanstack/react-query'
 import type { GatewayMessage, HistoryResponse } from '../types'
 
@@ -153,46 +153,11 @@ function mergeStreamingHistoryMessages(
 
   const merged = [...serverMessages]
   for (const streamingMessage of streamingMessages) {
-    const runId = (streamingMessage as { __streamRunId?: unknown })
-      .__streamRunId
-    if (typeof runId !== 'string' || runId.trim().length === 0) continue
-
     const hasMatch = merged.some((serverMessage) => {
-      const serverRunId = (serverMessage as { __streamRunId?: unknown })
-        .__streamRunId
-
-      if (serverMessage.role !== streamingMessage.role) return false
-      const streamingTime = getMessageTimestamp(streamingMessage)
-      const serverTime = getMessageTimestamp(serverMessage)
-      if (Math.abs(streamingTime - serverTime) > 15000) return false
-
-      if (
-        typeof serverRunId === 'string' &&
-        serverRunId.trim().length > 0 &&
-        serverRunId === runId
-      ) {
-        return messageCoversStreamingMessage(serverMessage, streamingMessage)
-      }
-
-      const streamingText = textFromMessage(streamingMessage)
-      const serverText = textFromMessage(serverMessage)
-      if (streamingText && streamingText !== serverText) {
-        const normalizedStreamingText =
-          normalizeAssistantTextForDedup(streamingText)
-        const normalizedServerText = normalizeAssistantTextForDedup(serverText)
-        const textLikelySameResponse =
-          normalizedStreamingText.length > 0 &&
-          normalizedServerText.length > 0 &&
-          (normalizedStreamingText === normalizedServerText ||
-            normalizedStreamingText.includes(normalizedServerText) ||
-            normalizedServerText.includes(normalizedStreamingText))
-
-        if (!textLikelySameResponse && !serverText.startsWith(streamingText)) {
-          return false
-        }
-      }
-
-      return messageCoversStreamingMessage(serverMessage, streamingMessage)
+      return (
+        sameMessageIdentity(serverMessage, streamingMessage) &&
+        messageCoversStreamingMessage(serverMessage, streamingMessage)
+      )
     })
 
     if (!hasMatch) {
@@ -201,6 +166,32 @@ function mergeStreamingHistoryMessages(
   }
 
   return merged
+}
+
+function sameMessageIdentity(
+  leftMessage: GatewayMessage,
+  rightMessage: GatewayMessage,
+): boolean {
+  const leftID = normalizeString((leftMessage as { id?: unknown }).id)
+  const rightID = normalizeString((rightMessage as { id?: unknown }).id)
+  if (leftID && rightID) {
+    return leftID === rightID
+  }
+
+  const leftRunID = normalizeString(
+    (leftMessage as { __streamRunId?: unknown }).__streamRunId,
+  )
+  const rightRunID = normalizeString(
+    (rightMessage as { __streamRunId?: unknown }).__streamRunId,
+  )
+  if (leftRunID && rightRunID) {
+    return (
+      leftRunID === rightRunID &&
+      normalizeString(leftMessage.role) === normalizeString(rightMessage.role)
+    )
+  }
+
+  return false
 }
 
 function messageCoversStreamingMessage(
@@ -232,14 +223,6 @@ function nonTextPartSignatures(message: GatewayMessage): Set<string> {
     }
   }
   return signatures
-}
-
-function normalizeAssistantTextForDedup(text: string): string {
-  return text
-    .replace(/\[\[reply_to:[^\]]*\]\]\s*/gi, '')
-    .replace(/<system-reminder>[\s\S]*?<\/system-reminder>/gi, '')
-    .replace(/\s+/g, ' ')
-    .trim()
 }
 
 function mergeOptimisticHistoryMessages(
@@ -282,4 +265,8 @@ function mergeOptimisticHistoryMessages(
   }
 
   return merged
+}
+
+function normalizeString(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : ''
 }
