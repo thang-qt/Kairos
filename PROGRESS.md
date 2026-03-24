@@ -40,22 +40,23 @@ Build Kairos out from the locked backend architecture by landing vertical slices
   Switch the authenticated HTTP chat backend off the mock send/subscribe path so message sends and stream updates now come from the Go backend while fork/edit/delete remain on the mock runtime for now.
 - Completed:
   Add backend tests for real send persistence, streamed finalization, and stream user scoping, and harden SQLite startup with a busy timeout plus a single open connection.
+- Completed:
+  Land the provider/model slice with env-backed single system provider resolution, encrypted user BYOK provider storage, capability-aware provider and preference APIs, and backend-driven model discovery with static fallback behavior.
+- Completed:
+  Replace the hardcoded frontend model picker with `/api/models` data, resolve per-conversation model selection against backend defaults, and add a minimal provider management panel in the existing settings dialog.
 
 ## Next Task
 
-Start the provider and model-management slice.
+Start the backend-owned branching slice.
 
 Scope of the next slice:
 
-- Add the provider registry abstraction and the first `openai_compatible` driver using the OpenAI Go client.
-- Add env-backed single system provider resolution plus user BYOK provider storage and policy gating.
-- Implement `GET /api/providers`, `POST /api/providers`, `PATCH /api/providers/:providerId`, `DELETE /api/providers/:providerId`, and `GET /api/models`.
-- Resolve model lists from upstream by default, with env-defined allowlists as the locked-down exception.
-- Move hardcoded frontend model data behind backend-driven provider/model APIs.
+- Add real backend fork/edit/delete endpoints for conversations and user turns.
+- Move the remaining mock-only branch semantics into SQLite-backed session/message operations.
+- Keep the existing inline branch navigator and branch tree UI, but switch them to backend data instead of local mock-only state.
 
 Planned slice order after the provider/model slice:
 
-- Branch fork/edit/delete flows on the real backend
 - Title generation
 
 Current branch feature work:

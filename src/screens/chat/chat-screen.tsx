@@ -37,7 +37,10 @@ import { useChatStream } from './hooks/use-chat-stream'
 import { useChatPendingSend } from './hooks/use-chat-pending-send'
 import { useChatGenerationGuard } from './hooks/use-chat-generation-guard'
 import { useChatRedirect } from './hooks/use-chat-redirect'
-import { useConversationSettings } from './conversation-settings'
+import {
+  resolveConversationModelID,
+  useConversationSettings,
+} from './conversation-settings'
 import { RightSidebar } from './components/right-sidebar'
 import type { BranchNavigatorState } from './components/branch-inline-navigator'
 import type { RightSidebarTab } from './components/right-sidebar'
@@ -45,6 +48,7 @@ import type { AttachmentFile } from '@/components/attachment-button'
 import type { ChatComposerHelpers } from './components/chat-composer'
 import { useExport } from '@/hooks/use-export'
 import { useChatSettings } from '@/hooks/use-chat-settings'
+import { useModelsQuery } from '@/lib/app-api'
 import { getChatBackend } from '@/lib/chat-backend'
 import { cn, randomUUID } from '@/lib/utils'
 
@@ -94,6 +98,12 @@ export function ChatScreen({
   const { settings } = useChatSettings()
   const { settings: conversationSettings } = useConversationSettings(
     activeFriendlyId || 'new',
+  )
+  const modelsQuery = useModelsQuery()
+  const resolvedConversationModel = resolveConversationModelID(
+    conversationSettings.model,
+    modelsQuery.data?.models ?? [],
+    modelsQuery.data?.preferences.defaultModelId,
   )
   const pendingRunIdsRef = useRef(new Set<string>())
   const pendingRunTimersRef = useRef(new Map<string, number>())
@@ -288,7 +298,7 @@ export function ChatScreen({
         sessionKey,
         friendlyId,
         message: body,
-        model: conversationSettings.model,
+        model: resolvedConversationModel,
         thinking: conversationSettings.thinkingLevel,
         temperature: conversationSettings.temperature,
         topP: conversationSettings.topP,
@@ -411,7 +421,7 @@ export function ChatScreen({
       queryClient,
       resolvedSessionKey,
       conversationSettings.thinkingLevel,
-      conversationSettings.model,
+      resolvedConversationModel,
       conversationSettings.temperature,
       conversationSettings.topP,
       conversationSettings.maxOutputTokens,
@@ -617,7 +627,7 @@ export function ChatScreen({
           sourceFriendlyId: activeFriendlyId,
           messageId: target.messageId,
           message: normalizedMessage,
-          model: conversationSettings.model,
+          model: resolvedConversationModel,
           thinking: conversationSettings.thinkingLevel,
           temperature: conversationSettings.temperature,
           topP: conversationSettings.topP,
@@ -643,7 +653,7 @@ export function ChatScreen({
       queryClient,
       resolvedSessionKey,
       conversationSettings.thinkingLevel,
-      conversationSettings.model,
+      resolvedConversationModel,
       conversationSettings.temperature,
       conversationSettings.topP,
       conversationSettings.maxOutputTokens,

@@ -7,7 +7,10 @@ import {
   Settings01Icon,
 } from '@hugeicons/core-free-icons'
 import { AnimatePresence, motion } from 'motion/react'
-import { useConversationSettings } from '../conversation-settings'
+import {
+  resolveConversationModelID,
+  useConversationSettings,
+} from '../conversation-settings'
 import { BranchTreePanel } from './branch-tree-panel'
 import type { SessionMeta } from '../types'
 import type { ThinkingLevel } from '@/hooks/use-chat-settings'
@@ -24,7 +27,7 @@ import {
 import { ExportMenu } from '@/components/export-menu'
 import { Input } from '@/components/ui/input'
 import { Tabs, TabsList, TabsTab } from '@/components/ui/tabs'
-import { MOCK_CHAT_MODELS } from '@/hooks/use-chat-settings'
+import { useModelsQuery } from '@/lib/app-api'
 import { cn } from '@/lib/utils'
 import {
   TooltipContent,
@@ -146,16 +149,23 @@ function OptionsPanel({
   exportDisabled?: boolean
 }) {
   const { settings, updateSettings } = useConversationSettings(conversationId)
+  const modelsQuery = useModelsQuery()
   const [query, setQuery] = useState('')
+  const modelOptions = modelsQuery.data?.models ?? []
+  const resolvedModelID = resolveConversationModelID(
+    settings.model,
+    modelOptions,
+    modelsQuery.data?.preferences.defaultModelId,
+  )
   const filteredModels = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase()
-    if (!normalizedQuery) return MOCK_CHAT_MODELS
-    return MOCK_CHAT_MODELS.filter((option) => {
+    if (!normalizedQuery) return modelOptions
+    return modelOptions.filter((option) => {
       const haystack =
-        `${option.id} ${option.name} ${option.owned_by} ${option.description}`.toLowerCase()
+        `${option.id} ${option.name} ${option.owned_by} ${option.description} ${option.providerLabel}`.toLowerCase()
       return haystack.includes(normalizedQuery)
     })
-  }, [query])
+  }, [modelOptions, query])
 
   return (
     <div className="pb-4">
@@ -170,12 +180,16 @@ function OptionsPanel({
             <CommandInput placeholder="Search models" className="text-sm" />
             <CommandPanel className="min-h-0 border-0 bg-transparent shadow-none [clip-path:none] before:hidden">
               {filteredModels.length === 0 ? (
-                <CommandEmpty>No models match this search.</CommandEmpty>
+                <CommandEmpty>
+                  {modelsQuery.isLoading
+                    ? 'Loading models...'
+                    : 'No models match this search.'}
+                </CommandEmpty>
               ) : (
                 <CommandList className="h-64 min-h-0">
                   <CommandCollection>
                     {(option) => {
-                      const isActive = settings.model === option.id
+                      const isActive = resolvedModelID === option.id
                       return (
                         <CommandItem
                           key={option.id}
@@ -196,7 +210,9 @@ function OptionsPanel({
                               </div>
                             ) : null}
                             <div className="line-clamp-2 text-xs text-primary-500">
-                              {option.description || option.owned_by}
+                              {option.description ||
+                                option.providerLabel ||
+                                option.owned_by}
                             </div>
                           </div>
                           {isActive ? (

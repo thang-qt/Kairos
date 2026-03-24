@@ -17,6 +17,7 @@ type App struct {
 	auth       *AuthService
 	chat       *ChatService
 	runs       *ChatRunService
+	providers  *ProviderService
 	capability CapabilitySet
 }
 
@@ -60,6 +61,7 @@ func NewApp(config Config) (*App, error) {
 		return nil, err
 	}
 	chat := NewChatService(db)
+	providers := NewProviderService(db, config)
 	runBroker := NewRunBroker()
 	runs := NewChatRunService(db, chat, runBroker)
 
@@ -69,10 +71,22 @@ func NewApp(config Config) (*App, error) {
 		auth:   auth,
 		chat:   chat,
 		runs:   runs,
+		providers: providers,
 		capability: CapabilitySet{
 			Auth: AuthCapabilities{
 				Enabled:       config.AuthEnabled,
 				SignupEnabled: config.AuthEnabled && config.AllowSignup,
+			},
+			Providers: ProviderCapabilities{
+				SystemProvidersEnabled:   config.SystemProviderEnabled,
+				UserProvidersEnabled:     config.UserProvidersEnabled,
+				CanDisableSystemProvider: config.AllowUserDisableSystem && config.SystemProviderAllowDisable,
+				CanAddCustomBaseURL:      config.AllowUserCustomProviderURL,
+				CanSyncModels:            config.AllowUserModelSync || config.SystemProviderModelSync,
+			},
+			Models: ModelCapabilities{
+				CanSelectModel:     true,
+				DefaultModelLocked: config.LockChatModel,
 			},
 		},
 	}
@@ -92,6 +106,13 @@ func (app *App) Handler() http.Handler {
 	mux.HandleFunc("POST /api/auth/login", app.handleLogin)
 	mux.HandleFunc("POST /api/auth/logout", app.handleLogout)
 	mux.HandleFunc("GET /api/me", app.handleMe)
+	mux.HandleFunc("GET /api/me/preferences", app.handleGetPreferences)
+	mux.HandleFunc("PATCH /api/me/preferences", app.handleUpdatePreferences)
+	mux.HandleFunc("GET /api/providers", app.handleListProviders)
+	mux.HandleFunc("POST /api/providers", app.handleCreateProvider)
+	mux.HandleFunc("PATCH /api/providers/{providerId}", app.handleUpdateProvider)
+	mux.HandleFunc("DELETE /api/providers/{providerId}", app.handleDeleteProvider)
+	mux.HandleFunc("GET /api/models", app.handleListModels)
 	mux.HandleFunc("GET /api/sessions", app.handleListSessions)
 	mux.HandleFunc("POST /api/sessions", app.handleCreateSession)
 	mux.HandleFunc("PATCH /api/sessions/{friendlyId}", app.handleRenameSession)

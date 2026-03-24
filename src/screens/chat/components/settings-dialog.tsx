@@ -5,6 +5,7 @@ import {
   Moon01Icon,
   Sun01Icon,
 } from '@hugeicons/core-free-icons'
+import { ProviderSettingsPanel } from './provider-settings-panel'
 import type { ThemeMode } from '@/hooks/use-chat-settings'
 import {
   DialogClose,
@@ -114,12 +115,7 @@ export function SettingsDialog({
           </div>
 
           <SettingsSection title="Connection">
-            <SettingsRow label="Status">
-              <span className="flex items-center gap-1.5 text-sm text-green-600">
-                <span className="size-2 rounded-full bg-green-500" />
-                Mock backend active
-              </span>
-            </SettingsRow>
+            <ProviderSettingsPanel />
           </SettingsSection>
 
           <SettingsSection title="Appearance">

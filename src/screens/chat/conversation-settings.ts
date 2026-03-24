@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import { MOCK_CHAT_MODELS } from '@/hooks/use-chat-settings'
+import type { ProviderModel } from '@/lib/app-api'
 
 export type ConversationSettings = {
   model: string
@@ -19,7 +19,7 @@ type ConversationSettingsState = {
 }
 
 export const defaultConversationSettings: ConversationSettings = {
-  model: MOCK_CHAT_MODELS[1].id,
+  model: '',
   thinkingLevel: 'medium',
   temperature: 0.7,
   topP: 1,
@@ -62,4 +62,36 @@ export function useConversationSettings(conversationId: string) {
       updateConversationSettings(conversationId, updates)
     },
   }
+}
+
+export function resolveConversationModelID(
+  preferredModelID: string,
+  models: Array<ProviderModel>,
+  defaultModelID?: string,
+) {
+  const normalizedPreferredModelID = preferredModelID.trim()
+  if (
+    normalizedPreferredModelID &&
+    models.some((model) => model.id === normalizedPreferredModelID)
+  ) {
+    return normalizedPreferredModelID
+  }
+
+  const normalizedDefaultModelID = defaultModelID?.trim()
+  if (
+    normalizedDefaultModelID &&
+    models.some((model) => model.id === normalizedDefaultModelID)
+  ) {
+    return normalizedDefaultModelID
+  }
+
+  if (models.length > 0) {
+    return models[0].id
+  }
+
+  if (normalizedPreferredModelID) {
+    return normalizedPreferredModelID
+  }
+
+  return 'kairos-balanced'
 }

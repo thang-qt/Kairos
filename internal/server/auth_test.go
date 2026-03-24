@@ -249,15 +249,20 @@ func newTestApp(t *testing.T, override func(config *Config)) *testApp {
 	t.Helper()
 
 	config := Config{
-		AppEnv:         "test",
-		HTTPAddr:       ":0",
-		DBPath:         filepath.Join(t.TempDir(), "test.db"),
-		CookieName:     "kairos_session",
-		CookieSecure:   false,
-		SessionTTL:     24 * time.Hour,
-		AuthEnabled:    true,
-		AllowSignup:    true,
-		BootstrapAdmin: false,
+		AppEnv:                     "test",
+		HTTPAddr:                   ":0",
+		DBPath:                     filepath.Join(t.TempDir(), "test.db"),
+		CookieName:                 "kairos_session",
+		CookieSecure:               false,
+		SessionTTL:                 24 * time.Hour,
+		AuthEnabled:                true,
+		AllowSignup:                true,
+		BootstrapAdmin:             false,
+		UserProvidersEnabled:       true,
+		AllowUserCustomProviderURL: true,
+		AllowUserDisableSystem:     true,
+		AllowUserModelSync:         true,
+		SystemProviderKind:         "openai_compatible",
 	}
 	if override != nil {
 		override(&config)
