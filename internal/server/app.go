@@ -1,15 +1,32 @@
 package server
 
 import (
+	"bytes"
 	"database/sql"
+	"embed"
 	"fmt"
+	"io/fs"
 	"net/http"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
+	"time"
 
 	_ "modernc.org/sqlite"
 )
+
+//go:embed static
+var embeddedFrontendFiles embed.FS
+
+var frontendFiles = func() fs.FS {
+	subtree, err := fs.Sub(embeddedFrontendFiles, "static")
+	if err != nil {
+		panic(err)
+	}
+
+	return subtree
+}()
 
 type App struct {
 	config     Config
@@ -129,8 +146,104 @@ func (app *App) Handler() http.Handler {
 	mux.HandleFunc("DELETE /api/sessions/{friendlyId}/messages/{messageId}", app.handleDeleteUserMessage)
 	mux.HandleFunc("POST /api/sessions/{friendlyId}/stop", app.handleStopSessionRuns)
 	mux.HandleFunc("GET /api/sessions/{friendlyId}/events", app.handleSessionEvents)
+	mux.Handle("/", app.frontendHandler())
 
 	return app.withCommonMiddleware(mux)
+}
+
+func (app *App) frontendHandler() http.Handler {
+	staticFiles := http.FileServer(http.FS(frontendFiles))
+
+	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.Method != http.MethodGet && request.Method != http.MethodHead {
+			http.NotFound(writer, request)
+			return
+		}
+
+		if target, ok := app.frontendRedirectTarget(request); ok {
+			http.Redirect(writer, request, target, http.StatusFound)
+			return
+		}
+
+		assetPath := strings.TrimPrefix(path.Clean(request.URL.Path), "/")
+		if assetPath == "." || assetPath == "" {
+			serveFrontendIndex(writer, request)
+			return
+		}
+
+		if frontendAssetExists(assetPath) {
+			staticFiles.ServeHTTP(writer, request)
+			return
+		}
+
+		serveFrontendIndex(writer, request)
+	})
+}
+
+func (app *App) frontendRedirectTarget(request *http.Request) (string, bool) {
+	if !app.config.AuthEnabled {
+		return "", false
+	}
+
+	if strings.HasPrefix(request.URL.Path, "/api/") {
+		return "", false
+	}
+
+	user, err := app.auth.CurrentUser(request.Context(), app.sessionTokenFromRequest(request))
+	isAuthenticated := err == nil && user != nil
+
+	switch {
+	case isAuthenticated && isGuestOnlyFrontendRoute(request.URL.Path):
+		return "/new", true
+	case !isAuthenticated && isProtectedFrontendRoute(request.URL.Path):
+		return "/auth", true
+	default:
+		return "", false
+	}
+}
+
+func isProtectedFrontendRoute(pathname string) bool {
+	return pathname == "/new" ||
+		pathname == "/settings" ||
+		strings.HasPrefix(pathname, "/chat/")
+}
+
+func isGuestOnlyFrontendRoute(pathname string) bool {
+	return pathname == "/auth" || pathname == "/signup"
+}
+
+func frontendAssetExists(name string) bool {
+	file, err := frontendFiles.Open(name)
+	if err != nil {
+		return false
+	}
+	defer file.Close()
+
+	info, err := file.Stat()
+	if err != nil {
+		return false
+	}
+
+	return !info.IsDir()
+}
+
+func serveFrontendIndex(writer http.ResponseWriter, request *http.Request) {
+	indexContent, err := fs.ReadFile(frontendFiles, "index.html")
+	if err != nil {
+		http.Error(
+			writer,
+			"frontend assets are not available; run `pnpm build` first",
+			http.StatusServiceUnavailable,
+		)
+		return
+	}
+	http.ServeContent(
+		writer,
+		request,
+		"index.html",
+		time.Time{},
+		bytes.NewReader(indexContent),
+	)
 }
 
 func (app *App) withCommonMiddleware(next http.Handler) http.Handler {

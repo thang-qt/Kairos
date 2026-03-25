@@ -195,6 +195,36 @@ func TestMeRequiresAuthentication(t *testing.T) {
 	}
 }
 
+func TestFrontendProtectedRouteRedirectsGuestToAuth(t *testing.T) {
+	testServer := newTestApp(t, nil)
+
+	request := httptest.NewRequest(http.MethodGet, "/chat/demo", nil)
+	response := httptest.NewRecorder()
+
+	testServer.handler.ServeHTTP(response, request)
+
+	assertStatusCode(t, response, http.StatusFound)
+	if location := response.Header().Get("Location"); location != "/auth" {
+		t.Fatalf("redirect location = %q, want %q", location, "/auth")
+	}
+}
+
+func TestFrontendGuestRouteRedirectsAuthenticatedUserToNew(t *testing.T) {
+	testServer := newTestApp(t, nil)
+	cookie := signupAndRequireCookie(t, testServer, "frontend-redirect@example.com")
+
+	request := httptest.NewRequest(http.MethodGet, "/auth", nil)
+	request.AddCookie(cookie)
+	response := httptest.NewRecorder()
+
+	testServer.handler.ServeHTTP(response, request)
+
+	assertStatusCode(t, response, http.StatusFound)
+	if location := response.Header().Get("Location"); location != "/new" {
+		t.Fatalf("redirect location = %q, want %q", location, "/new")
+	}
+}
+
 func TestBootstrapAdminCanLogin(t *testing.T) {
 	testServer := newTestApp(t, func(config *Config) {
 		config.BootstrapAdmin = true

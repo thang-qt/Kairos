@@ -4,7 +4,8 @@
   "type": "module",
   "packageManager": "pnpm@9.15.4",
   "scripts": {
-    "dev": "vite dev --port 3000",
+    "dev": "node ./scripts/dev.mjs",
+    "dev:frontend": "vite dev --port 3000",
     "dev:backend": "air",
     "build": "vite build",
     "preview": "vite preview",

@@ -1,14 +1,16 @@
 import { URL, fileURLToPath } from 'node:url'
 
-// devtools removed
-import { tanstackStart } from '@tanstack/react-start/plugin/vite'
+import { tanstackRouter } from '@tanstack/router-plugin/vite'
 import viteReact from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
-// nitro plugin removed (tanstackStart handles server runtime)
 import { configDefaults, defineConfig } from 'vitest/config'
 import viteTsConfigPaths from 'vite-tsconfig-paths'
 
 const config = defineConfig({
+  build: {
+    outDir: 'internal/server/static',
+    emptyOutDir: true,
+  },
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),
@@ -23,13 +25,17 @@ const config = defineConfig({
     },
   },
   plugins: [
-    // devtools(),
-    // this is the plugin that enables path aliases
+    tanstackRouter({
+      target: 'react',
+      autoCodeSplitting: true,
+      routesDirectory: './src/routes',
+      generatedRouteTree: './src/routeTree.gen.ts',
+      routeFileIgnorePattern: '.(test|spec).(ts|tsx)$',
+    }),
     viteTsConfigPaths({
       projects: ['./tsconfig.json'],
     }),
     tailwindcss(),
-    tanstackStart(),
     viteReact(),
   ],
   test: {

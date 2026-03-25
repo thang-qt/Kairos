@@ -3,6 +3,8 @@ node_modules
 .DS_Store
 dist
 dist-ssr
+internal/server/static/*
+!internal/server/static/placeholder.txt
 *.local
 count.txt
 .env
