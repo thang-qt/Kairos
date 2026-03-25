@@ -391,9 +391,11 @@ func (service *ChatRunService) executeRun(
 
 	accumulatedText := ""
 	accumulatedThinking := ""
-	modelID := model.ID
-	modelName := firstNonEmpty(model.Name, model.ID)
-	modelDescription := provider.Record.Label
+	displayModel := assistantModelDisplay{
+		ID:          model.ID,
+		Name:        firstNonEmpty(model.Name, model.ID),
+		Description: provider.Record.Label,
+	}
 	minAssistantTimestamp := latestMessageTimestamp(history) + 1
 	result, err := driver.GenerateChatStream(
 		ctx,
@@ -415,52 +417,44 @@ func (service *ChatRunService) executeRun(
 			}
 			service.broker.Publish(
 				record.SessionID,
-				buildRunEvent(
-					record,
-					session,
-					"delta",
-					"",
-					buildAssistantMessage(
-						record.AssistantMessageID,
-						modelID,
-						modelName,
-						modelDescription,
-						time.Now().UnixMilli(),
-						content,
-					),
+					buildRunEvent(
+						record,
+						session,
+						"delta",
+						"",
+						buildAssistantMessage(
+							record.AssistantMessageID,
+							displayModel,
+							time.Now().UnixMilli(),
+							content,
+						),
 				),
 			)
 			return nil
 		},
 	)
-	if err != nil {
-		if errors.Is(err, context.Canceled) {
-			abortedTimestamp := maxInt64(time.Now().UnixMilli(), minAssistantTimestamp)
-			abortedMessage := buildAssistantMessage(
-				record.AssistantMessageID,
-				modelID,
-				modelName,
-				modelDescription,
-				abortedTimestamp,
-				buildAssistantContent(accumulatedThinking, accumulatedText),
-			)
+		if err != nil {
+			if errors.Is(err, context.Canceled) {
+				abortedTimestamp := maxInt64(time.Now().UnixMilli(), minAssistantTimestamp)
+				abortedMessage := buildAssistantMessage(
+					record.AssistantMessageID,
+					displayModel,
+					abortedTimestamp,
+					buildAssistantContent(accumulatedThinking, accumulatedText),
+				)
 			service.publishRunAborted(ctx, record, session, abortedMessage)
 			return
 		}
 		service.publishRunError(ctx, record, session, err)
 		return
 	}
-	modelID = firstNonEmpty(result.Model, modelID)
-	modelName = firstNonEmpty(result.ModelName, modelName)
-	modelDescription = firstNonEmpty(result.ModelDescription, modelDescription)
+	displayModel = displayModel.withProviderResult(result)
 	accumulatedThinking = firstNonEmpty(result.ThinkingText, accumulatedThinking)
 
 	finalTimestamp := maxInt64(time.Now().UnixMilli(), minAssistantTimestamp)
 	finalMessage := buildAssistantMessage(
 		record.AssistantMessageID,
-		modelID,
-		modelName,
-		modelDescription,
+		displayModel,
 		finalTimestamp,
 		buildAssistantContent(accumulatedThinking, result.OutputText),
 	)
@@ -664,21 +658,63 @@ func buildAssistantContent(thinking string, text string) []map[string]any {
 
 func buildAssistantMessage(
 	messageID string,
-	modelID string,
-	modelName string,
-	modelDescription string,
+	displayModel assistantModelDisplay,
 	timestamp int64,
 	content []map[string]any,
 ) map[string]any {
 	return map[string]any{
 		"id":               messageID,
 		"role":             "assistant",
-		"model":            modelID,
-		"modelName":        modelName,
-		"modelDescription": modelDescription,
+		"model":            displayModel.ID,
+		"modelName":        displayModel.Name,
+		"modelDescription": displayModel.Description,
 		"timestamp":        timestamp,
 		"content":          content,
 	}
+}
+
+type assistantModelDisplay struct {
+	ID          string
+	Name        string
+	Description string
+}
+
+func (display assistantModelDisplay) withProviderResult(
+	result ChatGenerationResult,
+) assistantModelDisplay {
+	nextID := firstNonEmpty(result.Model, display.ID)
+	nextName := preferDisplayModelName(result.ModelName, display.Name, nextID)
+	nextDescription := firstNonEmpty(result.ModelDescription, display.Description)
+	return assistantModelDisplay{
+		ID:          nextID,
+		Name:        nextName,
+		Description: nextDescription,
+	}
+}
+
+func preferDisplayModelName(
+	candidate string,
+	current string,
+	modelID string,
+) string {
+	normalizedCandidate := strings.TrimSpace(candidate)
+	normalizedCurrent := strings.TrimSpace(current)
+	normalizedModelID := strings.TrimSpace(modelID)
+
+	if normalizedCandidate == "" {
+		return normalizedCurrent
+	}
+	if normalizedCurrent == "" {
+		return normalizedCandidate
+	}
+	if normalizedModelID == "" {
+		return normalizedCandidate
+	}
+	if normalizedCandidate == normalizedModelID &&
+		normalizedCurrent != normalizedModelID {
+		return normalizedCurrent
+	}
+	return normalizedCandidate
 }
 
 func buildUsageDetails(result ChatGenerationResult) map[string]any {

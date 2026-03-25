@@ -265,25 +265,54 @@ export function modelFromMessage(
   message: GatewayMessage,
   modelLabelById: ReadonlyMap<string, string>,
 ): string | null {
-  const directName = normalizedString(message.modelName)
-  if (directName) return directName
+  const directMetadata = messageModelMetadata(message)
+  const directLabel = displayLabelFromMetadata(directMetadata, modelLabelById)
+  if (directLabel) return directLabel
 
+  const detailsMetadata = detailsModelMetadata(message)
+  return displayLabelFromMetadata(detailsMetadata, modelLabelById)
+}
+
+type MessageModelMetadata = {
+  id: string | null
+  name: string | null
+}
+
+function messageModelMetadata(message: GatewayMessage): MessageModelMetadata {
+  return {
+    id: normalizedString(message.model),
+    name: normalizedString(message.modelName),
+  }
+}
+
+function detailsModelMetadata(message: GatewayMessage): MessageModelMetadata {
   const details = detailsRecord(message.details)
   const detailsModel = detailsRecord(details?.model)
-  const detailsName =
-    normalizedString(details?.modelName) ||
-    normalizedString(detailsModel?.name) ||
-    normalizedString(detailsModel?.label)
-  if (detailsName) return detailsName
-
-  const directModelId = normalizedString(message.model)
-  if (directModelId) {
-    return modelLabelById.get(directModelId) || directModelId
+  return {
+    id: normalizedString(details?.model) || normalizedString(detailsModel?.id),
+    name:
+      normalizedString(details?.modelName) ||
+      normalizedString(detailsModel?.name) ||
+      normalizedString(detailsModel?.label),
   }
+}
 
-  const detailsModelId = normalizedString(details?.model)
-  if (!detailsModelId) return null
-  return modelLabelById.get(detailsModelId) || detailsModelId
+function displayLabelFromMetadata(
+  metadata: MessageModelMetadata,
+  modelLabelById: ReadonlyMap<string, string>,
+): string | null {
+  const labelFromCatalog = catalogModelLabel(metadata.id, modelLabelById)
+  if (!metadata.name) return labelFromCatalog
+  if (!metadata.id || metadata.name !== metadata.id) return metadata.name
+  return labelFromCatalog || metadata.name
+}
+
+function catalogModelLabel(
+  modelId: string | null,
+  modelLabelById: ReadonlyMap<string, string>,
+): string | null {
+  if (!modelId) return null
+  return modelLabelById.get(modelId) || modelId
 }
 
 function MessageItemComponent({

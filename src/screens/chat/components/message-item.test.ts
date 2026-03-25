@@ -69,6 +69,16 @@ describe('modelFromMessage', function () {
     expect(modelFromMessage(message, modelLabelById)).toBe('Kairos Balanced')
   })
 
+  it('falls back to the current model label when modelName is only the raw id', function () {
+    const message: GatewayMessage = {
+      role: 'assistant',
+      model: 'kairos-code',
+      modelName: 'kairos-code',
+    }
+
+    expect(modelFromMessage(message, modelLabelById)).toBe('Kairos Code')
+  })
+
   it('uses nested model metadata before falling back to the id', function () {
     const message: GatewayMessage = {
       role: 'assistant',

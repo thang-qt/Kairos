@@ -309,7 +309,6 @@ func (driver *OpenAICompatibleDriver) GenerateChatStream(
 
 	return ChatGenerationResult{
 		Model:            modelID,
-		ModelName:        fallbackString(modelID, provider.Record.Label),
 		ModelDescription: provider.Record.Label,
 		OutputText:       outputText,
 		PromptTokens:     accumulator.Usage.PromptTokens,

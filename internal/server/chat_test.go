@@ -342,6 +342,7 @@ func TestEditUserMessageCreatesBackendBranchAndRuns(t *testing.T) {
 				ID:            "test-model",
 				Object:        "model",
 				OwnedBy:       "test",
+				Name:          "Test Model",
 				ProviderRef:   "system:system-default",
 				ProviderLabel: "Server Default",
 			},
@@ -566,6 +567,7 @@ func TestSendMessagePersistsHistoryAndStreamsFinalEvent(t *testing.T) {
 				ID:            "test-model",
 				Object:        "model",
 				OwnedBy:       "test",
+				Name:          "Test Model",
 				ProviderRef:   "system:system-default",
 				ProviderLabel: "Server Default",
 			},
@@ -632,6 +634,9 @@ func TestSendMessagePersistsHistoryAndStreamsFinalEvent(t *testing.T) {
 		if usage["totalTokens"] != int64(120) {
 			t.Fatalf("final event usage totalTokens = %v, want 120", usage["totalTokens"])
 		}
+		if finalMessage["modelName"] != "Test Model" {
+			t.Fatalf("final event modelName = %v, want Test Model", finalMessage["modelName"])
+		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("timed out waiting for streamed events")
 	}
@@ -665,6 +670,15 @@ func TestSendMessagePersistsHistoryAndStreamsFinalEvent(t *testing.T) {
 	}
 	if assistantPart["type"] != "text" {
 		t.Fatalf("assistant content part type = %v, want text", assistantPart["type"])
+	}
+	if assistantMessage["model"] != "test-model" {
+		t.Fatalf("assistant model = %v, want test-model", assistantMessage["model"])
+	}
+	if assistantMessage["modelName"] != "Test Model" {
+		t.Fatalf("assistant modelName = %v, want Test Model", assistantMessage["modelName"])
+	}
+	if assistantMessage["modelDescription"] != "Fake test provider" {
+		t.Fatalf("assistant modelDescription = %v, want Fake test provider", assistantMessage["modelDescription"])
 	}
 
 	details, ok := assistantMessage["details"].(map[string]any)
@@ -857,7 +871,6 @@ func (driver fakeProviderDriver) GenerateChatStream(
 	}
 	return ChatGenerationResult{
 		Model:            request.Model,
-		ModelName:        request.Model,
 		ModelDescription: "Fake test provider",
 		ThinkingText:     driver.thinking,
 		OutputText:       driver.output,
