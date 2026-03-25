@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   assistantPartRenderOrder,
   mapStandaloneToolResultToToolPart,
+  modelFromMessage,
 } from './message-item'
 import type { GatewayMessage } from '../types'
 
@@ -49,5 +50,41 @@ describe('mapStandaloneToolResultToToolPart', function () {
       toolCallId: 'functions.read:9',
       errorText: undefined,
     })
+  })
+})
+
+describe('modelFromMessage', function () {
+  it('prefers the explicit model name when present', function () {
+    const message: GatewayMessage = {
+      role: 'assistant',
+      model: 'kairos-balanced',
+      modelName: 'Kairos Balanced',
+    }
+
+    expect(modelFromMessage(message)).toBe('Kairos Balanced')
+  })
+
+  it('uses nested model metadata before falling back to the id', function () {
+    const message: GatewayMessage = {
+      role: 'assistant',
+      model: 'gpt-4.1',
+      details: {
+        model: {
+          id: 'gpt-4.1',
+          name: 'GPT-4.1',
+        },
+      },
+    }
+
+    expect(modelFromMessage(message)).toBe('GPT-4.1')
+  })
+
+  it('maps known model ids to their display labels', function () {
+    const message: GatewayMessage = {
+      role: 'assistant',
+      model: 'kairos-code',
+    }
+
+    expect(modelFromMessage(message)).toBe('Kairos Code')
   })
 })

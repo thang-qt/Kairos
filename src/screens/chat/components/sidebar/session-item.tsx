@@ -56,7 +56,7 @@ function SessionItemComponent({
       )}
     >
       <div className="flex-1 min-w-0">
-        <div className="text-sm font-[450] line-clamp-1 flex items-center gap-1">
+        <div className="flex min-w-0 items-center gap-1 text-sm font-[450]">
           {session.parentSessionKey ? (
             <HugeiconsIcon
               icon={GitBranchIcon}
@@ -65,7 +65,7 @@ function SessionItemComponent({
               className="shrink-0 text-primary-500"
             />
           ) : null}
-          {label}
+          <span className="block min-w-0 flex-1 truncate">{label}</span>
         </div>
       </div>
       <div className="inline-flex items-center">

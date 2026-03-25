@@ -15,7 +15,7 @@ import type { ToolPart } from '@/components/prompt-kit/tool'
 import { Message, MessageContent } from '@/components/prompt-kit/message'
 import { Thinking } from '@/components/prompt-kit/thinking'
 import { Tool } from '@/components/prompt-kit/tool'
-import { useChatSettings } from '@/hooks/use-chat-settings'
+import { getChatModelLabel, useChatSettings  } from '@/hooks/use-chat-settings'
 import { cn } from '@/lib/utils'
 
 type MessageItemProps = {
@@ -247,25 +247,38 @@ function imagesFromMessage(msg: GatewayMessage): Array<ImagePart> {
   return images
 }
 
-function modelFromMessage(message: GatewayMessage): string | null {
-  if (
-    typeof message.modelName === 'string' &&
-    message.modelName.trim().length > 0
-  ) {
-    return message.modelName.trim()
+function normalizedString(value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  const trimmed = value.trim()
+  return trimmed.length > 0 ? trimmed : null
+}
+
+function detailsRecord(
+  value: GatewayMessage['details'] | unknown,
+): Record<string, unknown> | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  return value as Record<string, unknown>
+}
+
+export function modelFromMessage(message: GatewayMessage): string | null {
+  const directName = normalizedString(message.modelName)
+  if (directName) return directName
+
+  const details = detailsRecord(message.details)
+  const detailsModel = detailsRecord(details?.model)
+  const detailsName =
+    normalizedString(details?.modelName) ||
+    normalizedString(detailsModel?.name) ||
+    normalizedString(detailsModel?.label)
+  if (detailsName) return detailsName
+
+  const directModelId = normalizedString(message.model)
+  if (directModelId) {
+    return getChatModelLabel(directModelId)
   }
-  if (typeof message.model === 'string' && message.model.trim().length > 0) {
-    return message.model.trim()
-  }
-  const detailsModel =
-    message.details &&
-    typeof message.details === 'object' &&
-    typeof message.details.model === 'string'
-      ? message.details.model
-      : null
-  return detailsModel && detailsModel.trim().length > 0
-    ? detailsModel.trim()
-    : null
+
+  const detailsModelId = normalizedString(details?.model)
+  return detailsModelId ? getChatModelLabel(detailsModelId) : null
 }
 
 function MessageItemComponent({
