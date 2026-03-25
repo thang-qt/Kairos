@@ -154,24 +154,24 @@ export function CodeBlock({
       )}
     >
       <div
-        className={cn('flex items-center justify-between px-3 pt-2')}
+        className={cn('flex items-center justify-between px-3 py-1')}
         style={{ backgroundColor: headerBg }}
       >
-        <span className="text-xs font-medium text-primary-500">
+        <span className="text-xs leading-none font-medium text-primary-500">
           {displayLanguage}
         </span>
         <Button
           variant="ghost"
           aria-label={ariaLabel ?? 'Copy code'}
-          className="h-auto px-0 text-xs font-medium text-primary-500 hover:text-primary-800 hover:bg-transparent"
+          className="h-auto gap-1 px-0 py-0 text-xs leading-none font-medium text-primary-500 hover:bg-transparent hover:text-primary-800"
           onClick={() => {
             handleCopy().catch(() => {})
           }}
         >
           <HugeiconsIcon
             icon={copied ? Tick02Icon : Copy01Icon}
-            size={14}
-            strokeWidth={1.8}
+            size={20}
+            strokeWidth={1.5}
           />
           {copied ? 'Copied' : 'Copy'}
         </Button>
