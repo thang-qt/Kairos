@@ -271,6 +271,9 @@ func (driver *OpenAICompatibleDriver) GenerateChatStream(
 	params := openai.ChatCompletionNewParams{
 		Messages: buildOpenAIChatMessages(request.Messages),
 		Model:    openai.ChatModel(strings.TrimSpace(request.Model)),
+		StreamOptions: openai.ChatCompletionStreamOptionsParam{
+			IncludeUsage: openai.Bool(true),
+		},
 	}
 
 	stream := client.Chat.Completions.NewStreaming(ctx, params)

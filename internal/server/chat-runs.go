@@ -464,10 +464,22 @@ func (service *ChatRunService) executeRun(
 		finalTimestamp,
 		buildAssistantContent(accumulatedThinking, result.OutputText),
 	)
+	if usageDetails := buildUsageDetails(result); usageDetails != nil {
+		finalMessage["details"] = map[string]any{
+			"usage": usageDetails,
+		}
+	}
 
 	if _, err := service.chat.appendMessage(ctx, session, finalMessage, finalTimestamp); err != nil {
 		service.publishRunError(ctx, record, session, err)
 		return
+	}
+	if result.TotalTokens > 0 {
+		if err := service.chat.UpdateSessionTotalTokens(ctx, session.ID, session.UserID, result.TotalTokens); err != nil {
+			service.publishRunError(ctx, record, session, err)
+			return
+		}
+		session.TotalTokens = result.TotalTokens
 	}
 	if err := service.markRunCompleted(ctx, record.ID, finalTimestamp); err != nil {
 		service.publishRunError(ctx, record, session, err)
@@ -666,6 +678,18 @@ func buildAssistantMessage(
 		"modelDescription": modelDescription,
 		"timestamp":        timestamp,
 		"content":          content,
+	}
+}
+
+func buildUsageDetails(result ChatGenerationResult) map[string]any {
+	if result.PromptTokens <= 0 && result.CompletionTokens <= 0 && result.TotalTokens <= 0 {
+		return nil
+	}
+
+	return map[string]any{
+		"promptTokens":     result.PromptTokens,
+		"completionTokens": result.CompletionTokens,
+		"totalTokens":      result.TotalTokens,
 	}
 }
 

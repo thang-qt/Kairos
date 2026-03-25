@@ -570,7 +570,10 @@ func TestSendMessagePersistsHistoryAndStreamsFinalEvent(t *testing.T) {
 				ProviderLabel: "Server Default",
 			},
 		},
-		output: "This reply came from the provider runtime.",
+		output:           "This reply came from the provider runtime.",
+		promptTokens:     96,
+		completionTokens: 24,
+		totalTokens:      120,
 	}
 	cookie := signupAndRequireCookie(t, testServer, "stream@example.com")
 
@@ -617,6 +620,18 @@ func TestSendMessagePersistsHistoryAndStreamsFinalEvent(t *testing.T) {
 		if events[len(events)-1].State != "final" {
 			t.Fatalf("final stream state = %q, want final", events[len(events)-1].State)
 		}
+		finalMessage := events[len(events)-1].Message
+		details, ok := finalMessage["details"].(map[string]any)
+		if !ok {
+			t.Fatalf("final event details = %T, want map[string]any", finalMessage["details"])
+		}
+		usage, ok := details["usage"].(map[string]any)
+		if !ok {
+			t.Fatalf("final event usage = %T, want map[string]any", details["usage"])
+		}
+		if usage["totalTokens"] != int64(120) {
+			t.Fatalf("final event usage totalTokens = %v, want 120", usage["totalTokens"])
+		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("timed out waiting for streamed events")
 	}
@@ -650,6 +665,36 @@ func TestSendMessagePersistsHistoryAndStreamsFinalEvent(t *testing.T) {
 	}
 	if assistantPart["type"] != "text" {
 		t.Fatalf("assistant content part type = %v, want text", assistantPart["type"])
+	}
+
+	details, ok := assistantMessage["details"].(map[string]any)
+	if !ok {
+		t.Fatalf("assistant details = %T, want map[string]any", assistantMessage["details"])
+	}
+	usage, ok := details["usage"].(map[string]any)
+	if !ok {
+		t.Fatalf("assistant usage = %T, want map[string]any", details["usage"])
+	}
+	if usage["promptTokens"] != float64(96) {
+		t.Fatalf("assistant promptTokens = %v, want 96", usage["promptTokens"])
+	}
+	if usage["completionTokens"] != float64(24) {
+		t.Fatalf("assistant completionTokens = %v, want 24", usage["completionTokens"])
+	}
+	if usage["totalTokens"] != float64(120) {
+		t.Fatalf("assistant totalTokens = %v, want 120", usage["totalTokens"])
+	}
+
+	listResponse := performJSONRequest(t, testServer.handler, http.MethodGet, "/api/sessions", nil, []*http.Cookie{cookie})
+	assertStatusCode(t, listResponse, http.StatusOK)
+
+	var sessionsPayload sessionsResponse
+	decodeResponseJSON(t, listResponse, &sessionsPayload)
+	if len(sessionsPayload.Sessions) != 1 {
+		t.Fatalf("sessions count after send = %d, want 1", len(sessionsPayload.Sessions))
+	}
+	if sessionsPayload.Sessions[0].TotalTokens != 120 {
+		t.Fatalf("session totalTokens = %d, want 120", sessionsPayload.Sessions[0].TotalTokens)
 	}
 }
 
@@ -766,10 +811,13 @@ func waitForRunStatus(t *testing.T, testServer *testApp, runID string, expectedS
 }
 
 type fakeProviderDriver struct {
-	models   []ProviderModel
-	thinking string
-	output   string
-	delay    time.Duration
+	models           []ProviderModel
+	thinking         string
+	output           string
+	delay            time.Duration
+	promptTokens     int64
+	completionTokens int64
+	totalTokens      int64
 }
 
 func (driver fakeProviderDriver) Kind() string {
@@ -813,6 +861,9 @@ func (driver fakeProviderDriver) GenerateChatStream(
 		ModelDescription: "Fake test provider",
 		ThinkingText:     driver.thinking,
 		OutputText:       driver.output,
+		PromptTokens:     driver.promptTokens,
+		CompletionTokens: driver.completionTokens,
+		TotalTokens:      driver.totalTokens,
 	}, nil
 }
 

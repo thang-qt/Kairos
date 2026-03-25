@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 
-import { isSessionNotFound } from './utils'
+import { countConversationTokens, isSessionNotFound } from './utils'
 import { createOptimisticMessage } from './chat-screen-utils'
 import {
   appendHistoryMessage,
@@ -144,6 +144,10 @@ export function ChatScreen({
     sessionsReady: sessionsQuery.isSuccess,
     queryClient,
   })
+  const usedTokens =
+    typeof activeSession?.totalTokens === 'number' && activeSession.totalTokens > 0
+      ? activeSession.totalTokens
+      : countConversationTokens(displayMessages)
 
   const { exportConversation } = useExport({
     currentFriendlyId: activeFriendlyId,
@@ -1013,7 +1017,7 @@ export function ChatScreen({
                 wrapperRef={headerRef}
                 isSidebarCollapsed={isSidebarCollapsed}
                 onOpenSidebar={handleOpenSidebar}
-                usedTokens={activeSession?.totalTokens}
+                usedTokens={usedTokens}
                 maxTokens={
                   activeSession?.contextTokens ??
                   resolvedConversationModelDetails?.contextWindow

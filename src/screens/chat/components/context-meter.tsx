@@ -1,4 +1,4 @@
-import { memo, useMemo } from 'react'
+import { memo } from 'react'
 import {
   PreviewCard,
   PreviewCardPopup,
@@ -12,29 +12,25 @@ type ContextMeterProps = {
   maxTokens?: number
 }
 
-function ContextMeterComponent({ usedTokens, maxTokens }: ContextMeterProps) {
-  const { percentage, usedLabel, leftPercentage } = useMemo(() => {
-    if (
-      typeof usedTokens !== 'number' ||
-      typeof maxTokens !== 'number' ||
-      maxTokens <= 0
-    )
-      return {
-        percentage: 0,
-        usedLabel: '',
-        leftPercentage: 0,
-      }
-    const pct = Math.min((usedTokens / maxTokens) * 100, 100)
-    const fmt = (n: number) =>
-      n >= 1000 ? `${(n / 1000).toFixed(0)}K` : String(n)
-    return {
-      percentage: pct,
-      usedLabel: `${fmt(usedTokens)} / ${fmt(maxTokens)} tokens used`,
-      leftPercentage: Math.max(0, 100 - pct),
-    }
-  }, [usedTokens, maxTokens])
+function formatTokenCount(tokens: number) {
+  if (tokens >= 1000) {
+    return `${(tokens / 1000).toFixed(0)}K`
+  }
 
-  if (usedLabel.length === 0) return null
+  return String(tokens)
+}
+
+function ContextMeterComponent({ usedTokens, maxTokens }: ContextMeterProps) {
+  if (typeof maxTokens !== 'number' || maxTokens <= 0) {
+    return null
+  }
+
+  const normalizedUsedTokens =
+    typeof usedTokens === 'number' && usedTokens > 0 ? usedTokens : 0
+  const percentage = Math.min((normalizedUsedTokens / maxTokens) * 100, 100)
+  const leftPercentage = Math.max(0, 100 - percentage)
+  const compactUsageLabel = `${formatTokenCount(normalizedUsedTokens)} / ${formatTokenCount(maxTokens)}`
+  const usedLabel = `${compactUsageLabel} tokens used`
 
   return (
     <PreviewCard>
@@ -43,8 +39,9 @@ function ContextMeterComponent({ usedTokens, maxTokens }: ContextMeterProps) {
           buttonVariants({ size: 'icon-sm', variant: 'ghost' }),
           'text-primary-800 hover:bg-primary-100',
         )}
+        aria-label={usedLabel}
       >
-        <div className="size-4 text-primary-200">
+        <div className="size-4 shrink-0 text-primary-200">
           <svg
             viewBox="0 0 36 36"
             className="size-4 -rotate-90"
@@ -75,7 +72,7 @@ function ContextMeterComponent({ usedTokens, maxTokens }: ContextMeterProps) {
       </PreviewCardTrigger>
       <PreviewCardPopup align="end" sideOffset={0} className="w-52 px-2 py-1">
         <div className="space-y-0.5 text-xs text-primary-900">
-          <div className="text-primary-950 font-[450]">Context window:</div>
+          <div className="font-medium text-primary-950">Context window:</div>
           <div className="tabular-nums text-primary-700">
             {percentage.toFixed(0)}% used ({leftPercentage.toFixed(0)}% left)
           </div>

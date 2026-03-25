@@ -199,9 +199,12 @@ function mergeSessionMessage(
   messageUpdatedAt: number,
 ): SessionMeta {
   const derivedTitleCandidate = deriveSessionTitle(message)
+  const totalTokens = extractUsageTotalTokens(message)
   return {
     ...session,
     lastMessage: message,
+    totalTokens:
+      typeof totalTokens === 'number' ? totalTokens : session.totalTokens,
     updatedAt:
       typeof session.updatedAt === 'number' &&
       Number.isFinite(session.updatedAt) &&
@@ -213,6 +216,25 @@ function mergeSessionMessage(
         ? session.derivedTitle
         : derivedTitleCandidate || session.derivedTitle,
   }
+}
+
+function extractUsageTotalTokens(
+  message: GatewayMessage,
+): number | undefined {
+  const details = message.details
+  if (!details || typeof details !== 'object') {
+    return undefined
+  }
+
+  const usage =
+    'usage' in details && details.usage && typeof details.usage === 'object'
+      ? details.usage
+      : details
+  const totalTokens = 'totalTokens' in usage ? usage.totalTokens : undefined
+
+  return typeof totalTokens === 'number' && Number.isFinite(totalTokens)
+    ? totalTokens
+    : undefined
 }
 
 function deriveSessionTitle(message: GatewayMessage): string | undefined {

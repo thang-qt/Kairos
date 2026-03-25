@@ -450,6 +450,27 @@ func (service *ChatService) UpdateSessionContextTokens(
 	return nil
 }
 
+func (service *ChatService) UpdateSessionTotalTokens(
+	ctx context.Context,
+	sessionID string,
+	userID string,
+	totalTokens int64,
+) error {
+	if totalTokens <= 0 {
+		return nil
+	}
+
+	if _, err := service.db.ExecContext(ctx, `
+		UPDATE chat_sessions
+		SET total_tokens = ?
+		WHERE id = ? AND user_id = ?
+	`, totalTokens, sessionID, userID); err != nil {
+		return fmt.Errorf("update session total tokens: %w", err)
+	}
+
+	return nil
+}
+
 func (service *ChatService) listMessageRecords(
 	ctx context.Context,
 	sessionID string,

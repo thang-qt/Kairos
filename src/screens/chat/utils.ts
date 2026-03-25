@@ -23,6 +23,24 @@ export function textFromMessage(msg: GatewayMessage): string {
     .trim()
 }
 
+export function countApproximateTokens(text: string): number {
+  const normalized = text.trim()
+  if (!normalized) return 0
+  return Math.max(1, Math.round(normalized.length / 4))
+}
+
+export function countConversationTokens(messages: Array<GatewayMessage>): number {
+  return messages.reduce(function count(total, message) {
+    const parts = Array.isArray(message.content) ? message.content : []
+    const messageText = parts
+      .filter((part) => part.type === 'text')
+      .map((part) => ('text' in part ? String(part.text ?? '') : ''))
+      .join(' ')
+
+    return total + countApproximateTokens(messageText)
+  }, 0)
+}
+
 export function getToolCallsFromMessage(
   msg: GatewayMessage,
 ): Array<ToolCallContent> {
