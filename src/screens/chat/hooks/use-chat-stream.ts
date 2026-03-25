@@ -2,9 +2,9 @@ import { useCallback, useEffect, useEffectEvent, useRef } from 'react'
 
 import { getMessageTimestamp, textFromMessage } from '../utils'
 import {
-  upsertSessionSummary,
   updateHistoryMessages,
   updateSessionLastMessage,
+  upsertSessionSummary,
 } from '../chat-queries'
 import type { QueryClient } from '@tanstack/react-query'
 import type { GatewayMessage, MessageContent } from '../types'
