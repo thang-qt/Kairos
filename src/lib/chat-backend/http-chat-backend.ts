@@ -1,10 +1,5 @@
-import {
-  createMockChatBackend,
-  hydrateMockConversation,
-} from './mock-chat-backend'
 import type {
   ChatBackend,
-  ChatConversation,
   ChatCreateConversationInput,
   ChatDeleteConversationInput,
   ChatHistoryInput,
@@ -22,8 +17,6 @@ type SessionMutationPayload = {
   sessionKey: string
   friendlyId: string
 }
-
-const mockBackend = createMockChatBackend()
 
 export function createHTTPChatBackend(): ChatBackend {
   return {
@@ -55,36 +48,16 @@ export function createHTTPChatBackend(): ChatBackend {
         credentials: 'include',
       })
       const payload = await parseJSON<SessionsPayload>(response)
-      for (const session of payload.sessions) {
-        hydrateMockConversation(session)
-      }
-
-      const mockSessions = await mockBackend.listConversations()
-      return mergeConversations(payload.sessions, mockSessions)
+      return payload.sessions
     },
     async getConversationHistory(input: ChatHistoryInput) {
-      try {
-        const response = await fetch(
-          `/api/sessions/${encodeURIComponent(input.friendlyId)}/history`,
-          {
-            credentials: 'include',
-          },
-        )
-        const history = await parseJSON<HistoryResponse>(response)
-        hydrateMockConversation(
-          {
-            key: history.sessionKey,
-            friendlyId: input.friendlyId,
-          },
-          history,
-        )
-        return history
-      } catch (error) {
-        if (error instanceof ApiError && error.status === 404) {
-          return mockBackend.getConversationHistory(input)
-        }
-        throw error
-      }
+      const response = await fetch(
+        `/api/sessions/${encodeURIComponent(input.friendlyId)}/history`,
+        {
+          credentials: 'include',
+        },
+      )
+      return parseJSON<HistoryResponse>(response)
     },
     async createConversation(input?: ChatCreateConversationInput) {
       const response = await fetch('/api/sessions', {
@@ -97,208 +70,125 @@ export function createHTTPChatBackend(): ChatBackend {
           label: input?.label,
         }),
       })
-      const payload = await parseJSON<SessionMutationPayload>(response)
-      hydrateMockConversation({
-        key: payload.sessionKey,
-        friendlyId: payload.friendlyId,
-        label: input?.label?.trim(),
-        title: input?.label?.trim(),
-        derivedTitle: input?.label?.trim(),
-      })
-      return payload
+      return parseJSON<SessionMutationPayload>(response)
     },
     async renameConversation(input: ChatRenameConversationInput) {
-      try {
-        const response = await fetch(
-          `/api/sessions/${encodeURIComponent(input.friendlyId || input.sessionKey)}`,
-          {
-            method: 'PATCH',
-            credentials: 'include',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              label: input.label,
-            }),
+      const response = await fetch(
+        `/api/sessions/${encodeURIComponent(input.friendlyId || input.sessionKey)}`,
+        {
+          method: 'PATCH',
+          credentials: 'include',
+          headers: {
+            'Content-Type': 'application/json',
           },
-        )
-        const payload = await parseJSON<SessionMutationPayload>(response)
-        hydrateMockConversation({
-          key: payload.sessionKey,
-          friendlyId: payload.friendlyId,
-          label: input.label.trim(),
-          title: input.label.trim(),
-          derivedTitle: input.label.trim(),
-        })
-        return payload
-      } catch (error) {
-        if (error instanceof ApiError && error.status === 404) {
-          return mockBackend.renameConversation(input)
-        }
-        throw error
-      }
+          body: JSON.stringify({
+            label: input.label,
+          }),
+        },
+      )
+      return parseJSON<SessionMutationPayload>(response)
     },
     async pinConversation(input) {
-      try {
-        const response = await fetch(
-          `/api/sessions/${encodeURIComponent(input.friendlyId)}/pin`,
-          {
-            method: 'PATCH',
-            credentials: 'include',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              isPinned: input.isPinned,
-            }),
+      const response = await fetch(
+        `/api/sessions/${encodeURIComponent(input.friendlyId)}/pin`,
+        {
+          method: 'PATCH',
+          credentials: 'include',
+          headers: {
+            'Content-Type': 'application/json',
           },
-        )
-        return parseJSON<ChatConversation>(response)
-      } catch (error) {
-        if (error instanceof ApiError && error.status === 404) {
-          return mockBackend.pinConversation(input)
-        }
-        throw error
-      }
+          body: JSON.stringify({
+            isPinned: input.isPinned,
+          }),
+        },
+      )
+      return parseJSON(response)
     },
     async deleteConversation(input: ChatDeleteConversationInput) {
-      try {
-        const response = await fetch(
-          `/api/sessions/${encodeURIComponent(input.friendlyId || input.sessionKey)}`,
-          {
-            method: 'DELETE',
-            credentials: 'include',
-          },
-        )
-        await parseJSON(response)
-        try {
-          await mockBackend.deleteConversation(input)
-        } catch {
-          // Ignore local mirror misses after the server accepted the deletion.
-        }
-        return
-      } catch (error) {
-        if (error instanceof ApiError && error.status === 404) {
-          await mockBackend.deleteConversation(input)
-          return
-        }
-        throw error
-      }
+      const response = await fetch(
+        `/api/sessions/${encodeURIComponent(input.friendlyId || input.sessionKey)}`,
+        {
+          method: 'DELETE',
+          credentials: 'include',
+        },
+      )
+      await parseJSON(response)
     },
     async stopConversation(input) {
-      try {
-        const response = await fetch(
-          `/api/sessions/${encodeURIComponent(input.friendlyId || input.sessionKey)}/stop`,
-          {
-            method: 'POST',
-            credentials: 'include',
-          },
-        )
-        await parseJSON(response)
-        return
-      } catch (error) {
-        if (error instanceof ApiError && error.status === 404) {
-          await mockBackend.stopConversation(input)
-          return
-        }
-        throw error
-      }
+      const response = await fetch(
+        `/api/sessions/${encodeURIComponent(input.friendlyId || input.sessionKey)}/stop`,
+        {
+          method: 'POST',
+          credentials: 'include',
+        },
+      )
+      await parseJSON(response)
     },
     async sendMessage(input) {
-      try {
-        const response = await fetch(
-          `/api/sessions/${encodeURIComponent(input.friendlyId)}/messages`,
-          {
-            method: 'POST',
-            credentials: 'include',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              message: input.message,
-              model: input.model,
-              idempotencyKey: input.idempotencyKey,
-              attachments: input.attachments,
-            }),
+      const response = await fetch(
+        `/api/sessions/${encodeURIComponent(input.friendlyId)}/messages`,
+        {
+          method: 'POST',
+          credentials: 'include',
+          headers: {
+            'Content-Type': 'application/json',
           },
-        )
-        return await parseJSON(response)
-      } catch (error) {
-        if (error instanceof ApiError && error.status === 404) {
-          return mockBackend.sendMessage(input)
-        }
-        throw error
-      }
-    },
-    forkConversation(input) {
-      return fetchWithFallback(
-        async function forkViaHTTP() {
-          const response = await fetch(
-            `/api/sessions/${encodeURIComponent(input.sourceFriendlyId)}/fork`,
-            {
-              method: 'POST',
-              credentials: 'include',
-              headers: {
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({
-                messageId: input.forkAtMessageId,
-              }),
-            },
-          )
-          return parseJSON<SessionMutationPayload>(response)
-        },
-        function forkViaMock() {
-          return mockBackend.forkConversation(input)
+          body: JSON.stringify({
+            message: input.message,
+            model: input.model,
+            idempotencyKey: input.idempotencyKey,
+            attachments: input.attachments,
+          }),
         },
       )
+      return parseJSON(response)
     },
-    editUserMessage(input) {
-      return fetchWithFallback(
-        async function editViaHTTP() {
-          const response = await fetch(
-            `/api/sessions/${encodeURIComponent(input.sourceFriendlyId)}/messages/${encodeURIComponent(input.messageId)}/edit`,
-            {
-              method: 'POST',
-              credentials: 'include',
-              headers: {
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({
-                message: input.message,
-                model: input.model,
-              }),
-            },
-          )
-          return parseJSON(response)
-        },
-        function editViaMock() {
-          return mockBackend.editUserMessage(input)
+    async forkConversation(input) {
+      const response = await fetch(
+        `/api/sessions/${encodeURIComponent(input.sourceFriendlyId)}/fork`,
+        {
+          method: 'POST',
+          credentials: 'include',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            messageId: input.forkAtMessageId,
+          }),
         },
       )
+      return parseJSON<SessionMutationPayload>(response)
     },
-    deleteUserMessage(input) {
-      return fetchWithFallback(
-        async function deleteViaHTTP() {
-          const response = await fetch(
-            `/api/sessions/${encodeURIComponent(input.sourceFriendlyId)}/messages/${encodeURIComponent(input.messageId)}`,
-            {
-              method: 'DELETE',
-              credentials: 'include',
-            },
-          )
-          return parseJSON<SessionMutationPayload>(response)
-        },
-        function deleteViaMock() {
-          return mockBackend.deleteUserMessage(input)
+    async editUserMessage(input) {
+      const response = await fetch(
+        `/api/sessions/${encodeURIComponent(input.sourceFriendlyId)}/messages/${encodeURIComponent(input.messageId)}/edit`,
+        {
+          method: 'POST',
+          credentials: 'include',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            message: input.message,
+            model: input.model,
+          }),
         },
       )
+      return parseJSON(response)
+    },
+    async deleteUserMessage(input) {
+      const response = await fetch(
+        `/api/sessions/${encodeURIComponent(input.sourceFriendlyId)}/messages/${encodeURIComponent(input.messageId)}`,
+        {
+          method: 'DELETE',
+          credentials: 'include',
+        },
+      )
+      return parseJSON<SessionMutationPayload>(response)
     },
     subscribeToConversation(subscription) {
       const friendlyId = subscription.friendlyId?.trim()
-      if (!friendlyId || typeof window === 'undefined') {
-        return mockBackend.subscribeToConversation(subscription)
-      }
+      if (!friendlyId || typeof window === 'undefined') return function noop() {}
 
       const eventSource = new EventSource(
         `/api/sessions/${encodeURIComponent(friendlyId)}/events`,
@@ -336,58 +226,6 @@ export function createHTTPChatBackend(): ChatBackend {
       }
     },
   }
-}
-
-async function fetchWithFallback<T>(
-  execute: () => Promise<T>,
-  fallback: () => Promise<T>,
-): Promise<T> {
-  try {
-    return await execute()
-  } catch (error) {
-    if (error instanceof ApiError && error.status === 404) {
-      return fallback()
-    }
-    throw error
-  }
-}
-
-function mergeConversations(
-  httpSessions: Array<ChatConversation>,
-  mockSessions: Array<ChatConversation>,
-): Array<ChatConversation> {
-  const byID = new Map<string, ChatConversation>()
-
-  for (const session of mockSessions) {
-    byID.set(conversationID(session), session)
-  }
-
-  for (const session of httpSessions) {
-    const key = conversationID(session)
-    const existing = byID.get(key)
-    if (!existing) {
-      byID.set(key, session)
-      continue
-    }
-
-    const existingUpdatedAt = normalizeUpdatedAt(existing.updatedAt)
-    const sessionUpdatedAt = normalizeUpdatedAt(session.updatedAt)
-    byID.set(key, existingUpdatedAt > sessionUpdatedAt ? existing : session)
-  }
-
-  return [...byID.values()].sort((left, right) => {
-    return (
-      normalizeUpdatedAt(right.updatedAt) - normalizeUpdatedAt(left.updatedAt)
-    )
-  })
-}
-
-function conversationID(session: ChatConversation): string {
-  return session.key || session.friendlyId
-}
-
-function normalizeUpdatedAt(value: number | undefined): number {
-  return typeof value === 'number' && Number.isFinite(value) ? value : 0
 }
 
 async function parseJSON<T>(response: Response): Promise<T> {

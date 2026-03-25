@@ -28,6 +28,7 @@ type ChatMessageListProps = {
   noticePosition?: 'start' | 'end'
   waitingForResponse: boolean
   sessionKey?: string
+  modelLabelById: ReadonlyMap<string, string>
   pinToTop: boolean
   pinGroupMinHeight: number
   headerHeight: number
@@ -53,6 +54,7 @@ function ChatMessageListComponent({
   noticePosition = 'start',
   waitingForResponse,
   sessionKey,
+  modelLabelById,
   pinToTop,
   pinGroupMinHeight,
   headerHeight,
@@ -257,6 +259,7 @@ function ChatMessageListComponent({
         message={chatMessage}
         toolResultsByCallId={hasToolCalls ? toolResultsByCallId : undefined}
         forceActionsVisible={forceActionsVisible}
+        modelLabelById={modelLabelById}
         wrapperRef={wrapperRef}
         wrapperClassName={options?.wrapperClassName}
         wrapperScrollMarginTop={wrapperScrollMarginTop}
@@ -355,6 +358,7 @@ function areChatMessageListEqual(
     prev.noticePosition === next.noticePosition &&
     prev.waitingForResponse === next.waitingForResponse &&
     prev.sessionKey === next.sessionKey &&
+    prev.modelLabelById === next.modelLabelById &&
     prev.pinToTop === next.pinToTop &&
     prev.pinGroupMinHeight === next.pinGroupMinHeight &&
     prev.headerHeight === next.headerHeight &&

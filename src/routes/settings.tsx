@@ -1,6 +1,5 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import type { SettingsTab } from '@/screens/settings/settings-screen'
-import { configureChatBackend } from '@/lib/chat-backend'
 import { requireAuthenticatedUser } from '@/lib/route-auth'
 import { SettingsScreen } from '@/screens/settings/settings-screen'
 
@@ -14,7 +13,6 @@ const SETTINGS_TABS = new Set<SettingsTab>([
 export const Route = createFileRoute('/settings')({
   beforeLoad: async function ensureAuthenticatedRoute({ context }) {
     await requireAuthenticatedUser(context)
-    configureChatBackend('http')
   },
   validateSearch: function validateSearch(search: Record<string, unknown>) {
     const tab =

@@ -6,6 +6,11 @@ import {
 } from './message-item'
 import type { GatewayMessage } from '../types'
 
+const modelLabelById = new Map([
+  ['kairos-code', 'Kairos Code'],
+  ['gpt-4.1', 'GPT-4.1'],
+])
+
 describe('assistantPartRenderOrder', function () {
   it('keeps assistant content order from message parts', function () {
     const message: GatewayMessage = {
@@ -61,7 +66,7 @@ describe('modelFromMessage', function () {
       modelName: 'Kairos Balanced',
     }
 
-    expect(modelFromMessage(message)).toBe('Kairos Balanced')
+    expect(modelFromMessage(message, modelLabelById)).toBe('Kairos Balanced')
   })
 
   it('uses nested model metadata before falling back to the id', function () {
@@ -76,15 +81,15 @@ describe('modelFromMessage', function () {
       },
     }
 
-    expect(modelFromMessage(message)).toBe('GPT-4.1')
+    expect(modelFromMessage(message, modelLabelById)).toBe('GPT-4.1')
   })
 
-  it('maps known model ids to their display labels', function () {
+  it('uses server-loaded model labels before falling back to the id', function () {
     const message: GatewayMessage = {
       role: 'assistant',
       model: 'kairos-code',
     }
 
-    expect(modelFromMessage(message)).toBe('Kairos Code')
+    expect(modelFromMessage(message, modelLabelById)).toBe('Kairos Code')
   })
 })

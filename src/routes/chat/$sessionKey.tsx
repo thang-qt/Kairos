@@ -3,13 +3,11 @@ import { useCallback, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { ChatScreen } from '../../screens/chat/chat-screen'
 import { moveHistoryMessages } from '../../screens/chat/chat-queries'
-import { configureChatBackend } from '@/lib/chat-backend'
 import { requireAuthenticatedUser } from '@/lib/route-auth'
 
 export const Route = createFileRoute('/chat/$sessionKey')({
   beforeLoad: async function ensureAuthenticatedRoute({ context }) {
     await requireAuthenticatedUser(context)
-    configureChatBackend('http')
   },
   component: ChatRoute,
 })

@@ -13,7 +13,7 @@ export type ChatAttachmentPayload = {
 
 export type ChatStatus = {
   ok: boolean
-  mode: 'mock' | 'http'
+  mode: 'http'
   provider: string
   detail?: string
 }

@@ -29,7 +29,7 @@ export function BackendStatusMessage({
         ) : (
           <>
             The current chat backend did not respond. Retry the request or
-            switch to a working backend adapter.
+            check service availability.
           </>
         )
       }

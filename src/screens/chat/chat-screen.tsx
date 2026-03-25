@@ -113,6 +113,14 @@ export function ChatScreen({
       return model.id === resolvedConversationModel
     },
   )
+  const modelLabelById = useMemo(() => {
+    const map = new Map<string, string>()
+    for (const model of modelsQuery.data?.models ?? []) {
+      const normalizedName = model.name?.trim()
+      map.set(model.id, normalizedName || model.id)
+    }
+    return map
+  }, [modelsQuery.data?.models])
   const hasAvailableModel = resolvedConversationModel.trim().length > 0
   const pendingRunIdsRef = useRef(new Set<string>())
   const pendingRunTimersRef = useRef(new Map<string, number>())
@@ -1041,6 +1049,7 @@ export function ChatScreen({
                 noticePosition="end"
                 waitingForResponse={waitingForResponse}
                 sessionKey={activeCanonicalKey}
+                modelLabelById={modelLabelById}
                 pinToTop={pinToTop}
                 pinGroupMinHeight={pinGroupMinHeight}
                 headerHeight={headerHeight}

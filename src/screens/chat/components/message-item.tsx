@@ -15,12 +15,13 @@ import type { ToolPart } from '@/components/prompt-kit/tool'
 import { Message, MessageContent } from '@/components/prompt-kit/message'
 import { Thinking } from '@/components/prompt-kit/thinking'
 import { Tool } from '@/components/prompt-kit/tool'
-import { getChatModelLabel, useChatSettings  } from '@/hooks/use-chat-settings'
+import { useChatSettings } from '@/hooks/use-chat-settings'
 import { cn } from '@/lib/utils'
 
 type MessageItemProps = {
   message: GatewayMessage
   toolResultsByCallId?: Map<string, GatewayMessage>
+  modelLabelById: ReadonlyMap<string, string>
   forceActionsVisible?: boolean
   wrapperRef?: React.RefObject<HTMLDivElement | null>
   wrapperClassName?: string
@@ -260,7 +261,10 @@ function detailsRecord(
   return value as Record<string, unknown>
 }
 
-export function modelFromMessage(message: GatewayMessage): string | null {
+export function modelFromMessage(
+  message: GatewayMessage,
+  modelLabelById: ReadonlyMap<string, string>,
+): string | null {
   const directName = normalizedString(message.modelName)
   if (directName) return directName
 
@@ -274,16 +278,18 @@ export function modelFromMessage(message: GatewayMessage): string | null {
 
   const directModelId = normalizedString(message.model)
   if (directModelId) {
-    return getChatModelLabel(directModelId)
+    return modelLabelById.get(directModelId) || directModelId
   }
 
   const detailsModelId = normalizedString(details?.model)
-  return detailsModelId ? getChatModelLabel(detailsModelId) : null
+  if (!detailsModelId) return null
+  return modelLabelById.get(detailsModelId) || detailsModelId
 }
 
 function MessageItemComponent({
   message,
   toolResultsByCallId,
+  modelLabelById,
   forceActionsVisible = false,
   wrapperRef,
   wrapperClassName,
@@ -302,7 +308,7 @@ function MessageItemComponent({
   const isToolResult = role === 'toolResult'
   const isAssistant = role === 'assistant'
   const timestamp = getMessageTimestamp(message)
-  const model = modelFromMessage(message)
+  const model = modelFromMessage(message, modelLabelById)
   const standaloneToolPart = isToolResult
     ? mapStandaloneToolResultToToolPart(message)
     : null
@@ -501,8 +507,12 @@ function areMessagesEqual(
   if (rawTimestamp(prevProps.message) !== rawTimestamp(nextProps.message)) {
     return false
   }
+  if (prevProps.modelLabelById !== nextProps.modelLabelById) {
+    return false
+  }
   if (
-    modelFromMessage(prevProps.message) !== modelFromMessage(nextProps.message)
+    modelFromMessage(prevProps.message, prevProps.modelLabelById) !==
+    modelFromMessage(nextProps.message, nextProps.modelLabelById)
   ) {
     return false
   }
