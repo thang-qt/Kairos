@@ -45,26 +45,26 @@
   --theme-light-primary-800: oklch(0.45 0.005 80);
   --theme-light-primary-900: oklch(0.35 0.004 80);
   --theme-light-primary-950: oklch(0.25 0.003 80);
-  --theme-light-surface: #fcfbf7;
-  --theme-light-ink: #171717;
+  --theme-light-surface: var(--color-white);
+  --theme-light-ink: var(--color-black);
   --theme-light-atmosphere-glow: color-mix(
     in oklab,
-    var(--theme-light-primary-200) 72%,
+    oklch(0.92 0.008 80) 60%,
     transparent
   );
   --theme-light-atmosphere-grid: color-mix(
     in oklab,
-    var(--theme-light-primary-950) 22%,
+    oklch(0.3 0 80) 100%,
     transparent
   );
   --theme-light-atmosphere-stripe-soft: color-mix(
     in oklab,
-    var(--theme-light-primary-500) 56%,
+    oklch(0.6 0.008 80) 50%,
     transparent
   );
   --theme-light-atmosphere-stripe-strong: color-mix(
     in oklab,
-    var(--theme-light-primary-600) 72%,
+    oklch(0.7 0.006 80) 70%,
     transparent
   );
 
@@ -79,26 +79,26 @@
   --theme-dark-primary-800: oklch(0.83 0.005 80);
   --theme-dark-primary-900: oklch(0.895 0.004 80);
   --theme-dark-primary-950: oklch(0.945 0.003 80);
-  --theme-dark-surface: #111111;
-  --theme-dark-ink: #f4f4f4;
+  --theme-dark-surface: var(--color-black);
+  --theme-dark-ink: var(--color-white);
   --theme-dark-atmosphere-glow: color-mix(
     in oklab,
-    var(--theme-dark-primary-300) 48%,
+    var(--theme-dark-primary-300) 40%,
     transparent
   );
   --theme-dark-atmosphere-grid: color-mix(
     in oklab,
-    var(--theme-dark-primary-900) 18%,
+    var(--theme-dark-primary-900) 12%,
     transparent
   );
   --theme-dark-atmosphere-stripe-soft: color-mix(
     in oklab,
-    var(--theme-dark-primary-600) 48%,
+    var(--theme-dark-primary-600) 40%,
     transparent
   );
   --theme-dark-atmosphere-stripe-strong: color-mix(
     in oklab,
-    var(--theme-dark-primary-800) 64%,
+    var(--theme-dark-primary-800) 52%,
     transparent
   );
 
