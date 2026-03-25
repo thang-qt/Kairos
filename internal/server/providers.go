@@ -30,6 +30,8 @@ var errNoProviderAvailable = errors.New("no enabled provider is available for th
 var errNoModelAvailable = errors.New("no chat model is available for the selected provider")
 var errModelNotAvailable = errors.New("selected chat model is not available")
 
+const providerModelCacheTTL = 15 * time.Minute
+
 type ProviderCapabilities struct {
 	SystemProvidersEnabled   bool `json:"systemProvidersEnabled"`
 	UserProvidersEnabled     bool `json:"userProvidersEnabled"`
@@ -147,6 +149,26 @@ type modelCatalogEntry struct {
 	Name          string
 	Description   string
 	ContextWindow int64
+}
+
+type providerModelCacheRow struct {
+	UserID        string
+	ProviderRef   string
+	ModelID       string
+	Object        string
+	Created       int64
+	OwnedBy       string
+	Name          string
+	Description   string
+	ContextWindow int64
+	FetchedAt     int64
+}
+
+type providerModelCacheStateRow struct {
+	UserID       string
+	ProviderRef  string
+	LastSyncedAt int64
+	ExpiresAt    int64
 }
 
 type ChatGenerationRequest struct {
@@ -318,12 +340,15 @@ func (driver *OpenAICompatibleDriver) GenerateChatStream(
 }
 
 type ProviderService struct {
-	db            *sql.DB
-	config        Config
-	encryptionKey [32]byte
-	drivers       map[string]ProviderDriver
-	system        *systemProvider
-	modelCatalog  *modelCatalog
+	db                   *sql.DB
+	config               Config
+	encryptionKey        [32]byte
+	drivers              map[string]ProviderDriver
+	system               *systemProvider
+	modelCatalog         *modelCatalog
+	modelCacheTTL        time.Duration
+	modelRefreshMu       sync.Mutex
+	refreshingModelUsers map[string]struct{}
 }
 
 type modelCatalog struct {
@@ -344,7 +369,9 @@ func NewProviderService(db *sql.DB, config Config) *ProviderService {
 				httpClient: &http.Client{Timeout: 10 * time.Second},
 			},
 		},
-		modelCatalog: newModelCatalog(),
+		modelCatalog:         newModelCatalog(),
+		modelCacheTTL:        providerModelCacheTTL,
+		refreshingModelUsers: make(map[string]struct{}),
 	}
 	if config.SystemProviderEnabled {
 		service.system = &systemProvider{
@@ -492,6 +519,10 @@ func (service *ProviderService) CreateProvider(
 		return ProviderRecord{}, fmt.Errorf("create user provider: %w", err)
 	}
 
+	if err := service.invalidateProviderModelCache(ctx, userID, "user:"+row.ID); err != nil {
+		return ProviderRecord{}, err
+	}
+
 	return providerRowToRecord(row), nil
 }
 
@@ -542,6 +573,10 @@ func (service *ProviderService) UpdateProvider(
 		return ProviderRecord{}, fmt.Errorf("update user provider: %w", err)
 	}
 
+	if err := service.invalidateProviderModelCache(ctx, userID, "user:"+row.ID); err != nil {
+		return ProviderRecord{}, err
+	}
+
 	return providerRowToRecord(row), nil
 }
 
@@ -568,6 +603,9 @@ func (service *ProviderService) DeleteProvider(
 	}
 	if rowsAffected == 0 {
 		return errProviderNotFound
+	}
+	if err := service.invalidateProviderModelCache(ctx, userID, "user:"+strings.TrimSpace(providerID)); err != nil {
+		return err
 	}
 	return nil
 }
@@ -714,42 +752,38 @@ func (service *ProviderService) ListModels(
 	ctx context.Context,
 	userID string,
 ) ([]ProviderModel, UserPreferences, error) {
-	providers, preferences, err := service.ListProviders(ctx, userID)
+	visibleProviders, preferences, err := service.listVisibleResolvedProviders(ctx, userID)
+	if err != nil {
+		return nil, UserPreferences{}, err
+	}
+	if len(visibleProviders) == 0 {
+		return []ProviderModel{}, preferences, nil
+	}
+
+	visibleModels, cacheComplete, staleCache, err := service.loadCachedModels(
+		ctx,
+		userID,
+		visibleProviders,
+	)
 	if err != nil {
 		return nil, UserPreferences{}, err
 	}
 
-	visibleModels := make([]ProviderModel, 0)
-	seen := make(map[string]struct{})
-	for _, record := range providers {
-		if record.Owner == "system" && !preferences.UseSystemProviders {
-			continue
-		}
-		if !record.Enabled {
-			continue
-		}
-		resolved, err := service.resolveProvider(ctx, userID, record.Ref)
-		if err != nil {
-			continue
-		}
-		driver := service.drivers[resolved.Record.Kind]
-		if driver == nil {
-			continue
-		}
-		models, err := driver.ListModels(ctx, resolved)
-		if err != nil {
-			continue
-		}
-		for _, model := range models {
-			if strings.TrimSpace(model.ID) == "" {
-				continue
+	if !cacheComplete {
+		if refreshErr := service.refreshVisibleProviderModels(ctx, userID, visibleProviders); refreshErr == nil {
+			visibleModels, cacheComplete, staleCache, err = service.loadCachedModels(
+				ctx,
+				userID,
+				visibleProviders,
+			)
+			if err != nil {
+				return nil, UserPreferences{}, err
 			}
-			if _, exists := seen[model.ID]; exists {
-				continue
-			}
-			seen[model.ID] = struct{}{}
-			visibleModels = append(visibleModels, model)
 		}
+	}
+
+	if staleCache {
+		service.refreshVisibleProviderModelsInBackground(userID)
 	}
 
 	if len(visibleModels) == 0 {
@@ -871,6 +905,38 @@ func (service *ProviderService) SyncModelCatalog(ctx context.Context) error {
 	}
 	_, err := service.modelCatalog.load(ctx, true)
 	return err
+}
+
+func (service *ProviderService) SyncModels(
+	ctx context.Context,
+	userID string,
+) ([]ProviderModel, UserPreferences, error) {
+	if err := service.SyncModelCatalog(ctx); err != nil && ctx.Err() == nil {
+		// Keep serving cached metadata if models.dev is temporarily unavailable.
+	}
+
+	visibleProviders, preferences, err := service.listVisibleResolvedProviders(ctx, userID)
+	if err != nil {
+		return nil, UserPreferences{}, err
+	}
+	if len(visibleProviders) == 0 {
+		return []ProviderModel{}, preferences, nil
+	}
+	if err := service.refreshVisibleProviderModels(ctx, userID, visibleProviders); err != nil {
+		return nil, UserPreferences{}, err
+	}
+	visibleModels, _, _, err := service.loadCachedModels(ctx, userID, visibleProviders)
+	if err != nil {
+		return nil, UserPreferences{}, err
+	}
+	if len(visibleModels) == 0 {
+		return []ProviderModel{}, preferences, nil
+	}
+	visibleModels = service.enrichModels(ctx, userID, visibleModels)
+	slices.SortFunc(visibleModels, func(left ProviderModel, right ProviderModel) int {
+		return strings.Compare(left.ID, right.ID)
+	})
+	return visibleModels, preferences, nil
 }
 
 func (service *ProviderService) ResolveGenerationTarget(
@@ -1103,6 +1169,344 @@ func (service *ProviderService) ensureUserPreferences(ctx context.Context, userI
 		ON CONFLICT(user_id) DO NOTHING
 	`, userID, boolAsInt(service.system != nil), now, now); err != nil {
 		return fmt.Errorf("ensure user preferences: %w", err)
+	}
+	return nil
+}
+
+func (service *ProviderService) listVisibleResolvedProviders(
+	ctx context.Context,
+	userID string,
+) ([]resolvedProvider, UserPreferences, error) {
+	providers, preferences, err := service.ListProviders(ctx, userID)
+	if err != nil {
+		return nil, UserPreferences{}, err
+	}
+
+	visibleProviders := make([]resolvedProvider, 0, len(providers))
+	for _, record := range providers {
+		if record.Owner == "system" && !preferences.UseSystemProviders {
+			continue
+		}
+		if !record.Enabled {
+			continue
+		}
+		resolved, resolveErr := service.resolveProvider(ctx, userID, record.Ref)
+		if resolveErr != nil {
+			continue
+		}
+		if service.drivers[resolved.Record.Kind] == nil {
+			continue
+		}
+		visibleProviders = append(visibleProviders, resolved)
+	}
+	return visibleProviders, preferences, nil
+}
+
+func (service *ProviderService) loadCachedModels(
+	ctx context.Context,
+	userID string,
+	visibleProviders []resolvedProvider,
+) ([]ProviderModel, bool, bool, error) {
+	if len(visibleProviders) == 0 {
+		return []ProviderModel{}, true, false, nil
+	}
+
+	now := time.Now().UnixMilli()
+	states, err := service.loadProviderModelCacheStates(ctx, userID, visibleProviders)
+	if err != nil {
+		return nil, false, false, err
+	}
+	modelsByProvider, err := service.loadProviderModelRows(ctx, userID, visibleProviders)
+	if err != nil {
+		return nil, false, false, err
+	}
+
+	cacheComplete := true
+	staleCache := false
+	for _, provider := range visibleProviders {
+		state, ok := states[provider.Record.Ref]
+		if !ok {
+			cacheComplete = false
+			continue
+		}
+		if state.ExpiresAt <= now {
+			staleCache = true
+		}
+	}
+
+	return buildVisibleModels(visibleProviders, modelsByProvider), cacheComplete, staleCache, nil
+}
+
+func (service *ProviderService) loadProviderModelCacheStates(
+	ctx context.Context,
+	userID string,
+	visibleProviders []resolvedProvider,
+) (map[string]providerModelCacheStateRow, error) {
+	states := make(map[string]providerModelCacheStateRow, len(visibleProviders))
+	if len(visibleProviders) == 0 {
+		return states, nil
+	}
+
+	placeholders, args := providerRefQueryArgs(userID, visibleProviders)
+	rows, err := service.db.QueryContext(ctx, `
+		SELECT
+			user_id,
+			provider_ref,
+			last_synced_at,
+			expires_at
+		FROM provider_model_cache_state
+		WHERE user_id = ? AND provider_ref IN (`+placeholders+`)
+	`, args...)
+	if err != nil {
+		return nil, fmt.Errorf("load provider model cache state: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var row providerModelCacheStateRow
+		if scanErr := rows.Scan(
+			&row.UserID,
+			&row.ProviderRef,
+			&row.LastSyncedAt,
+			&row.ExpiresAt,
+		); scanErr != nil {
+			return nil, fmt.Errorf("scan provider model cache state: %w", scanErr)
+		}
+		states[row.ProviderRef] = row
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate provider model cache state: %w", err)
+	}
+
+	return states, nil
+}
+
+func (service *ProviderService) loadProviderModelRows(
+	ctx context.Context,
+	userID string,
+	visibleProviders []resolvedProvider,
+) (map[string][]ProviderModel, error) {
+	modelsByProvider := make(map[string][]ProviderModel, len(visibleProviders))
+	if len(visibleProviders) == 0 {
+		return modelsByProvider, nil
+	}
+
+	placeholders, args := providerRefQueryArgs(userID, visibleProviders)
+	rows, err := service.db.QueryContext(ctx, `
+		SELECT
+			user_id,
+			provider_ref,
+			model_id,
+			object,
+			created,
+			owned_by,
+			name,
+			description,
+			context_window,
+			fetched_at
+		FROM provider_models
+		WHERE user_id = ? AND provider_ref IN (`+placeholders+`)
+		ORDER BY provider_ref ASC, model_id ASC
+	`, args...)
+	if err != nil {
+		return nil, fmt.Errorf("load provider models: %w", err)
+	}
+	defer rows.Close()
+
+	providersByRef := make(map[string]resolvedProvider, len(visibleProviders))
+	for _, provider := range visibleProviders {
+		providersByRef[provider.Record.Ref] = provider
+	}
+
+	for rows.Next() {
+		var row providerModelCacheRow
+		if scanErr := rows.Scan(
+			&row.UserID,
+			&row.ProviderRef,
+			&row.ModelID,
+			&row.Object,
+			&row.Created,
+			&row.OwnedBy,
+			&row.Name,
+			&row.Description,
+			&row.ContextWindow,
+			&row.FetchedAt,
+		); scanErr != nil {
+			return nil, fmt.Errorf("scan provider models: %w", scanErr)
+		}
+		provider, ok := providersByRef[row.ProviderRef]
+		if !ok {
+			continue
+		}
+		modelsByProvider[row.ProviderRef] = append(
+			modelsByProvider[row.ProviderRef],
+			ProviderModel{
+				ID:            strings.TrimSpace(row.ModelID),
+				Object:        defaultModelObject(row.Object),
+				Created:       row.Created,
+				OwnedBy:       strings.TrimSpace(row.OwnedBy),
+				Name:          strings.TrimSpace(row.Name),
+				Description:   strings.TrimSpace(row.Description),
+				ContextWindow: maxInt64(row.ContextWindow, 0),
+				ProviderRef:   provider.Record.Ref,
+				ProviderLabel: provider.Record.Label,
+			},
+		)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate provider models: %w", err)
+	}
+
+	return modelsByProvider, nil
+}
+
+func (service *ProviderService) refreshVisibleProviderModels(
+	ctx context.Context,
+	userID string,
+	visibleProviders []resolvedProvider,
+) error {
+	type providerModelsSnapshot struct {
+		Provider resolvedProvider
+		Models   []ProviderModel
+	}
+
+	snapshots := make([]providerModelsSnapshot, 0, len(visibleProviders))
+	for _, provider := range visibleProviders {
+		driver := service.drivers[provider.Record.Kind]
+		if driver == nil {
+			continue
+		}
+
+		models, err := driver.ListModels(ctx, provider)
+		if err != nil {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			continue
+		}
+
+		normalizedModels := make([]ProviderModel, 0, len(models))
+		for _, model := range models {
+			normalizedModel := normalizeProviderModel(model, provider.Record)
+			if normalizedModel.ID == "" {
+				continue
+			}
+			normalizedModels = append(normalizedModels, normalizedModel)
+		}
+		snapshots = append(snapshots, providerModelsSnapshot{
+			Provider: provider,
+			Models:   normalizedModels,
+		})
+	}
+
+	if len(snapshots) == 0 {
+		return nil
+	}
+
+	now := time.Now().UnixMilli()
+	expiresAt := now + service.modelCacheTTL.Milliseconds()
+	tx, err := service.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin provider model refresh: %w", err)
+	}
+
+	for _, snapshot := range snapshots {
+		if _, execErr := tx.ExecContext(ctx, `
+			DELETE FROM provider_models
+			WHERE user_id = ? AND provider_ref = ?
+		`, userID, snapshot.Provider.Record.Ref); execErr != nil {
+			tx.Rollback()
+			return fmt.Errorf("clear provider models: %w", execErr)
+		}
+
+		for _, model := range snapshot.Models {
+			if _, execErr := tx.ExecContext(ctx, `
+				INSERT INTO provider_models(
+					user_id,
+					provider_ref,
+					model_id,
+					object,
+					created,
+					owned_by,
+					name,
+					description,
+					context_window,
+					fetched_at
+				)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			`, userID, snapshot.Provider.Record.Ref, model.ID, defaultModelObject(model.Object), model.Created, strings.TrimSpace(model.OwnedBy), strings.TrimSpace(model.Name), strings.TrimSpace(model.Description), maxInt64(model.ContextWindow, 0), now); execErr != nil {
+				tx.Rollback()
+				return fmt.Errorf("insert provider model: %w", execErr)
+			}
+		}
+
+		if _, execErr := tx.ExecContext(ctx, `
+			INSERT INTO provider_model_cache_state(
+				user_id,
+				provider_ref,
+				last_synced_at,
+				expires_at
+			)
+			VALUES (?, ?, ?, ?)
+			ON CONFLICT(user_id, provider_ref) DO UPDATE SET
+				last_synced_at = excluded.last_synced_at,
+				expires_at = excluded.expires_at
+		`, userID, snapshot.Provider.Record.Ref, now, expiresAt); execErr != nil {
+			tx.Rollback()
+			return fmt.Errorf("upsert provider model cache state: %w", execErr)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit provider model refresh: %w", err)
+	}
+
+	return nil
+}
+
+func (service *ProviderService) refreshVisibleProviderModelsInBackground(userID string) {
+	service.modelRefreshMu.Lock()
+	if _, alreadyRefreshing := service.refreshingModelUsers[userID]; alreadyRefreshing {
+		service.modelRefreshMu.Unlock()
+		return
+	}
+	service.refreshingModelUsers[userID] = struct{}{}
+	service.modelRefreshMu.Unlock()
+
+	go func() {
+		defer func() {
+			service.modelRefreshMu.Lock()
+			delete(service.refreshingModelUsers, userID)
+			service.modelRefreshMu.Unlock()
+		}()
+
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		visibleProviders, _, err := service.listVisibleResolvedProviders(ctx, userID)
+		if err != nil || len(visibleProviders) == 0 {
+			return
+		}
+		_ = service.refreshVisibleProviderModels(ctx, userID, visibleProviders)
+	}()
+}
+
+func (service *ProviderService) invalidateProviderModelCache(
+	ctx context.Context,
+	userID string,
+	providerRef string,
+) error {
+	if _, err := service.db.ExecContext(ctx, `
+		DELETE FROM provider_models
+		WHERE user_id = ? AND provider_ref = ?
+	`, userID, strings.TrimSpace(providerRef)); err != nil {
+		return fmt.Errorf("delete provider models: %w", err)
+	}
+	if _, err := service.db.ExecContext(ctx, `
+		DELETE FROM provider_model_cache_state
+		WHERE user_id = ? AND provider_ref = ?
+	`, userID, strings.TrimSpace(providerRef)); err != nil {
+		return fmt.Errorf("delete provider model cache state: %w", err)
 	}
 	return nil
 }
@@ -1455,6 +1859,65 @@ func stringValue(value any) string {
 		return ""
 	}
 	return typed
+}
+
+func providerRefQueryArgs(
+	userID string,
+	visibleProviders []resolvedProvider,
+) (string, []any) {
+	placeholders := make([]string, 0, len(visibleProviders))
+	args := make([]any, 0, len(visibleProviders)+1)
+	args = append(args, userID)
+	for _, provider := range visibleProviders {
+		placeholders = append(placeholders, "?")
+		args = append(args, provider.Record.Ref)
+	}
+	return strings.Join(placeholders, ", "), args
+}
+
+func buildVisibleModels(
+	visibleProviders []resolvedProvider,
+	modelsByProvider map[string][]ProviderModel,
+) []ProviderModel {
+	visibleModels := make([]ProviderModel, 0)
+	seen := make(map[string]struct{})
+	for _, provider := range visibleProviders {
+		models := modelsByProvider[provider.Record.Ref]
+		for _, model := range models {
+			normalizedID := strings.TrimSpace(model.ID)
+			if normalizedID == "" {
+				continue
+			}
+			if _, exists := seen[normalizedID]; exists {
+				continue
+			}
+			seen[normalizedID] = struct{}{}
+			visibleModels = append(visibleModels, normalizeProviderModel(model, provider.Record))
+		}
+	}
+	return visibleModels
+}
+
+func normalizeProviderModel(model ProviderModel, provider ProviderRecord) ProviderModel {
+	model.ID = strings.TrimSpace(model.ID)
+	model.Object = defaultModelObject(model.Object)
+	model.OwnedBy = strings.TrimSpace(model.OwnedBy)
+	model.Name = strings.TrimSpace(model.Name)
+	model.Description = strings.TrimSpace(model.Description)
+	model.ContextWindow = maxInt64(model.ContextWindow, 0)
+	model.ProviderRef = provider.Ref
+	model.ProviderLabel = provider.Label
+	if model.OwnedBy == "" {
+		model.OwnedBy = provider.Label
+	}
+	return model
+}
+
+func defaultModelObject(value string) string {
+	if strings.TrimSpace(value) == "" {
+		return "model"
+	}
+	return strings.TrimSpace(value)
 }
 
 func catalogInt64Value(value any) int64 {

@@ -270,7 +270,8 @@ export function ModelMetadataPanel() {
             <h3 className="text-sm text-primary-900">Model metadata</h3>
             <p className="text-pretty text-xs text-primary-500">
               Review and override model names, descriptions, and context window
-              values. Catalog sync uses `models.dev` when available.
+              values. Refreshing models also updates catalog metadata when
+              `models.dev` is available.
             </p>
           </div>
           <Button
@@ -281,7 +282,7 @@ export function ModelMetadataPanel() {
             }}
             disabled={syncModelsMutation.isPending}
           >
-            Sync catalog
+            {syncModelsMutation.isPending ? 'Refreshing...' : 'Refresh models'}
           </Button>
         </div>
 

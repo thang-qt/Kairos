@@ -14,6 +14,7 @@ import type {
 import {
   ApiError,
   appQueryKeys,
+  syncModels,
   updatePreferences,
 } from '@/lib/app-api'
 import { Button } from '@/components/ui/button'
@@ -105,6 +106,7 @@ export function ChatModelSelector({
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [defaultErrorMessage, setDefaultErrorMessage] = useState('')
+  const [syncErrorMessage, setSyncErrorMessage] = useState('')
 
   const selectedModel =
     models.find(function matchModel(model) {
@@ -132,6 +134,7 @@ export function ChatModelSelector({
     mutationFn: updatePreferences,
     onSuccess: async function handleSuccess(preferences) {
       setDefaultErrorMessage('')
+      setSyncErrorMessage('')
       queryClient.setQueryData(appQueryKeys.preferences, preferences)
       queryClient.setQueryData(
         appQueryKeys.models,
@@ -158,11 +161,26 @@ export function ChatModelSelector({
     },
   })
 
+  const syncModelsMutation = useMutation({
+    mutationFn: syncModels,
+    onSuccess: function handleSuccess(payload) {
+      setSyncErrorMessage('')
+      queryClient.setQueryData(appQueryKeys.models, payload)
+      queryClient.setQueryData(appQueryKeys.preferences, payload.preferences)
+    },
+    onError: function handleError(error) {
+      setSyncErrorMessage(
+        mutationErrorMessage(error, 'Failed to refresh models.'),
+      )
+    },
+  })
+
   function handleOpenChange(nextOpen: boolean) {
     setOpen(nextOpen)
     if (!nextOpen) {
       setQuery('')
       setDefaultErrorMessage('')
+      setSyncErrorMessage('')
     }
   }
 
@@ -178,6 +196,11 @@ export function ChatModelSelector({
     void updatePreferencesMutation.mutateAsync({
       defaultModelId: modelId,
     })
+  }
+
+  function handleRefreshModels() {
+    setSyncErrorMessage('')
+    void syncModelsMutation.mutateAsync()
   }
 
   const triggerDisabled = loading || !canSelectModel || models.length === 0
@@ -317,6 +340,8 @@ export function ChatModelSelector({
             <div className="mb-2 text-xs text-red-600">
               {defaultErrorMessage}
             </div>
+          ) : syncErrorMessage ? (
+            <div className="mb-2 text-xs text-red-600">{syncErrorMessage}</div>
           ) : null}
           <div className="flex items-center justify-between gap-3">
             <div className="min-w-0 text-xs text-primary-500">
@@ -326,25 +351,40 @@ export function ChatModelSelector({
                   ? 'Used by default for new chats.'
                   : 'Selection applies to this chat only.'}
             </div>
-            {selectedModel &&
-            !isSelectedModelDefault &&
-            !defaultModelLocked ? (
+            <div className="flex items-center gap-1.5">
               <Button
                 size="sm"
                 variant="ghost"
-                disabled={updatePreferencesMutation.isPending}
+                disabled={syncModelsMutation.isPending}
                 onClick={function handleClick(event) {
                   event.preventDefault()
                   event.stopPropagation()
-                  handleMakeDefault(selectedModel.id)
+                  handleRefreshModels()
                 }}
                 className="shrink-0 rounded-md px-2.5"
               >
-                {updatePreferencesMutation.isPending
-                  ? 'Saving...'
-                  : 'Make Default'}
+                {syncModelsMutation.isPending ? 'Refreshing...' : 'Refresh'}
               </Button>
-            ) : null}
+              {selectedModel &&
+              !isSelectedModelDefault &&
+              !defaultModelLocked ? (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  disabled={updatePreferencesMutation.isPending}
+                  onClick={function handleClick(event) {
+                    event.preventDefault()
+                    event.stopPropagation()
+                    handleMakeDefault(selectedModel.id)
+                  }}
+                  className="shrink-0 rounded-md px-2.5"
+                >
+                  {updatePreferencesMutation.isPending
+                    ? 'Saving...'
+                    : 'Make Default'}
+                </Button>
+              ) : null}
+            </div>
           </div>
         </div>
       </MenuContent>

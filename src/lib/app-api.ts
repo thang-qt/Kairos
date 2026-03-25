@@ -369,8 +369,9 @@ export function useModelsQuery() {
   return useQuery({
     queryKey: appQueryKeys.models,
     queryFn: fetchModels,
-    staleTime: 1000 * 30,
+    staleTime: 1000 * 60 * 15,
     retry: false,
+    refetchOnWindowFocus: false,
   })
 }
 

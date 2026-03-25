@@ -1,10 +1,56 @@
 package server
 
 import (
+	"context"
 	"net/http"
+	"sync"
 	"testing"
 	"time"
 )
+
+type countingProviderDriver struct {
+	mu     sync.Mutex
+	models []ProviderModel
+	calls  int
+}
+
+func (driver *countingProviderDriver) Kind() string {
+	return "openai_compatible"
+}
+
+func (driver *countingProviderDriver) ListModels(
+	_ context.Context,
+	_ resolvedProvider,
+) ([]ProviderModel, error) {
+	driver.mu.Lock()
+	defer driver.mu.Unlock()
+
+	driver.calls++
+	return append([]ProviderModel(nil), driver.models...), nil
+}
+
+func (driver *countingProviderDriver) GenerateChatStream(
+	_ context.Context,
+	_ resolvedProvider,
+	_ ChatGenerationRequest,
+	_ func(delta ChatGenerationDelta) error,
+) (ChatGenerationResult, error) {
+	return ChatGenerationResult{}, nil
+}
+
+func (driver *countingProviderDriver) setModels(models []ProviderModel) {
+	driver.mu.Lock()
+	defer driver.mu.Unlock()
+
+	driver.models = append([]ProviderModel(nil), models...)
+}
+
+func (driver *countingProviderDriver) callCount() int {
+	driver.mu.Lock()
+	defer driver.mu.Unlock()
+
+	return driver.calls
+}
 
 func TestCreateListUpdateAndDeleteProvider(t *testing.T) {
 	testServer := newTestApp(t, nil)
@@ -166,6 +212,106 @@ func TestModelListAppliesCatalogAndUserMetadata(t *testing.T) {
 	decodeResponseJSON(t, response, &persisted)
 	if persisted.Models[0].Name != updatedName {
 		t.Fatalf("persisted model name = %q, want %q", persisted.Models[0].Name, updatedName)
+	}
+}
+
+func TestModelListUsesPersistedProviderModelsCache(t *testing.T) {
+	driver := &countingProviderDriver{
+		models: []ProviderModel{
+			{
+				ID:      "gpt-4.1-mini",
+				Object:  "model",
+				OwnedBy: "Server Default",
+			},
+		},
+	}
+	testServer := newTestApp(t, func(config *Config) {
+		config.SystemProviderEnabled = true
+		config.SystemProviderLabel = "Server Default"
+	})
+	testServer.app.providers.drivers["openai_compatible"] = driver
+
+	cookie := signupAndRequireCookie(t, testServer, "cached-models@example.com")
+
+	firstResponse := performJSONRequest(t, testServer.handler, http.MethodGet, "/api/models", nil, []*http.Cookie{cookie})
+	assertStatusCode(t, firstResponse, http.StatusOK)
+
+	var firstPayload modelsResponse
+	decodeResponseJSON(t, firstResponse, &firstPayload)
+	if len(firstPayload.Models) != 1 || firstPayload.Models[0].ID != "gpt-4.1-mini" {
+		t.Fatalf("first payload models = %#v, want cached system model", firstPayload.Models)
+	}
+	if driver.callCount() != 1 {
+		t.Fatalf("driver calls after first load = %d, want 1", driver.callCount())
+	}
+
+	secondResponse := performJSONRequest(t, testServer.handler, http.MethodGet, "/api/models", nil, []*http.Cookie{cookie})
+	assertStatusCode(t, secondResponse, http.StatusOK)
+
+	var secondPayload modelsResponse
+	decodeResponseJSON(t, secondResponse, &secondPayload)
+	if len(secondPayload.Models) != 1 || secondPayload.Models[0].ID != "gpt-4.1-mini" {
+		t.Fatalf("second payload models = %#v, want cached system model", secondPayload.Models)
+	}
+	if driver.callCount() != 1 {
+		t.Fatalf("driver calls after cached load = %d, want 1", driver.callCount())
+	}
+}
+
+func TestManualModelSyncRefreshesPersistedProviderModels(t *testing.T) {
+	driver := &countingProviderDriver{
+		models: []ProviderModel{
+			{
+				ID:      "gpt-4.1-mini",
+				Object:  "model",
+				OwnedBy: "Server Default",
+			},
+		},
+	}
+	testServer := newTestApp(t, func(config *Config) {
+		config.SystemProviderEnabled = true
+		config.SystemProviderLabel = "Server Default"
+	})
+	testServer.app.providers.drivers["openai_compatible"] = driver
+
+	cookie := signupAndRequireCookie(t, testServer, "manual-model-sync@example.com")
+
+	initialResponse := performJSONRequest(t, testServer.handler, http.MethodGet, "/api/models", nil, []*http.Cookie{cookie})
+	assertStatusCode(t, initialResponse, http.StatusOK)
+	if driver.callCount() != 1 {
+		t.Fatalf("driver calls after initial load = %d, want 1", driver.callCount())
+	}
+
+	driver.setModels([]ProviderModel{
+		{
+			ID:      "gpt-5-thinking",
+			Object:  "model",
+			OwnedBy: "Server Default",
+		},
+	})
+
+	syncResponse := performJSONRequest(t, testServer.handler, http.MethodPost, "/api/models/sync", nil, []*http.Cookie{cookie})
+	assertStatusCode(t, syncResponse, http.StatusOK)
+
+	var syncPayload modelsResponse
+	decodeResponseJSON(t, syncResponse, &syncPayload)
+	if len(syncPayload.Models) != 1 || syncPayload.Models[0].ID != "gpt-5-thinking" {
+		t.Fatalf("sync payload models = %#v, want refreshed model", syncPayload.Models)
+	}
+	if driver.callCount() != 2 {
+		t.Fatalf("driver calls after manual sync = %d, want 2", driver.callCount())
+	}
+
+	cachedResponse := performJSONRequest(t, testServer.handler, http.MethodGet, "/api/models", nil, []*http.Cookie{cookie})
+	assertStatusCode(t, cachedResponse, http.StatusOK)
+
+	var cachedPayload modelsResponse
+	decodeResponseJSON(t, cachedResponse, &cachedPayload)
+	if len(cachedPayload.Models) != 1 || cachedPayload.Models[0].ID != "gpt-5-thinking" {
+		t.Fatalf("cached payload models = %#v, want refreshed cached model", cachedPayload.Models)
+	}
+	if driver.callCount() != 2 {
+		t.Fatalf("driver calls after cached reload = %d, want 2", driver.callCount())
 	}
 }
 

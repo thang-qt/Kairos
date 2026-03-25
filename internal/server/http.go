@@ -185,12 +185,7 @@ func (app *App) handleSyncModels(writer http.ResponseWriter, request *http.Reque
 		return
 	}
 
-	if err := app.providers.SyncModelCatalog(request.Context()); err != nil {
-		writeError(writer, http.StatusBadGateway, err.Error())
-		return
-	}
-
-	models, preferences, err := app.providers.ListModels(request.Context(), user.ID)
+	models, preferences, err := app.providers.SyncModels(request.Context(), user.ID)
 	if err != nil {
 		writeError(writer, http.StatusInternalServerError, "failed to load models")
 		return
