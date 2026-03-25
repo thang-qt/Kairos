@@ -7,6 +7,8 @@ import {
   SidebarLeft01Icon,
 } from '@hugeicons/core-free-icons'
 import { ContextMeter } from './context-meter'
+import { ChatModelSelector } from './chat-model-selector'
+import type { ProviderModel } from '@/lib/app-api'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 
@@ -24,6 +26,13 @@ type ChatHeaderProps = {
   }
   onToggleRightSidebar?: () => void
   rightSidebarOpen?: boolean
+  models: Array<ProviderModel>
+  selectedModelId: string
+  defaultModelId?: string
+  modelsLoading?: boolean
+  canSelectModel?: boolean
+  defaultModelLocked?: boolean
+  onSelectModel: (modelId: string) => void
 }
 
 function ChatHeaderComponent({
@@ -36,6 +45,13 @@ function ChatHeaderComponent({
   forkedFrom,
   onToggleRightSidebar,
   rightSidebarOpen = false,
+  models,
+  selectedModelId,
+  defaultModelId,
+  modelsLoading = false,
+  canSelectModel = true,
+  defaultModelLocked = false,
+  onSelectModel,
 }: ChatHeaderProps) {
   return (
     <div ref={wrapperRef} className="px-4 h-12 flex items-center gap-2">
@@ -50,8 +66,10 @@ function ChatHeaderComponent({
           <HugeiconsIcon icon={SidebarLeft01Icon} size={18} strokeWidth={1.6} />
         </Button>
       ) : null}
-      <div className="flex-1 min-w-0 flex items-center gap-2">
-        <span className="text-sm font-medium truncate">{activeTitle}</span>
+      <div className="flex min-w-0 flex-1 items-center gap-2">
+        <span className="min-w-0 flex-1 truncate text-sm font-medium">
+          {activeTitle}
+        </span>
         {forkedFrom?.friendlyId ? (
           <Link
             to="/chat/$sessionKey"
@@ -67,6 +85,18 @@ function ChatHeaderComponent({
             <span className="truncate max-w-[120px]">{forkedFrom.title}</span>
           </span>
         ) : null}
+        <ChatModelSelector
+          models={models}
+          selectedModelId={selectedModelId}
+          defaultModelId={defaultModelId}
+          loading={modelsLoading}
+          canSelectModel={canSelectModel}
+          defaultModelLocked={defaultModelLocked}
+          onSelectModel={onSelectModel}
+          side="bottom"
+          align="start"
+          className="max-w-[220px] shrink-0 sm:max-w-[280px]"
+        />
       </div>
       <div className="flex items-center gap-2 shrink-0">
         <ContextMeter usedTokens={usedTokens} maxTokens={maxTokens} />

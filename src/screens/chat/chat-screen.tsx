@@ -99,7 +99,10 @@ export function ChatScreen({
     () => hasPendingSend() || hasPendingGeneration(),
   )
   const { settings } = useChatSettings()
-  const { settings: conversationSettings } = useConversationSettings(
+  const {
+    settings: conversationSettings,
+    updateSettings: updateConversationSettings,
+  } = useConversationSettings(
     activeFriendlyId || 'new',
   )
   const modelsQuery = useModelsQuery()
@@ -123,6 +126,12 @@ export function ChatScreen({
     }
     return map
   }, [models])
+  const handleSelectConversationModel = useCallback(
+    function handleSelectConversationModel(modelId: string) {
+      updateConversationSettings({ model: modelId })
+    },
+    [updateConversationSettings],
+  )
   const hasAvailableModel = resolvedConversationModel.trim().length > 0
   const pendingRunIdsRef = useRef(new Set<string>())
   const pendingRunTimersRef = useRef(new Map<string, number>())
@@ -1037,6 +1046,15 @@ export function ChatScreen({
                   setRightSidebarOpen((prev) => !prev)
                 }
                 rightSidebarOpen={rightSidebarOpen}
+                models={models}
+                selectedModelId={resolvedConversationModel}
+                defaultModelId={defaultModelId}
+                modelsLoading={modelsQuery.isLoading}
+                canSelectModel={modelsQuery.data?.capabilities.canSelectModel}
+                defaultModelLocked={
+                  modelsQuery.data?.capabilities.defaultModelLocked
+                }
+                onSelectModel={handleSelectConversationModel}
               />
             </div>
           </div>
@@ -1094,7 +1112,6 @@ export function ChatScreen({
             exportDisabled={
               isNewChat || historyLoading || displayMessages.length === 0
             }
-            conversationId={activeFriendlyId || 'new'}
             sessions={sessions}
             activeSessionKey={activeSessionKey || resolvedSessionKey}
           />

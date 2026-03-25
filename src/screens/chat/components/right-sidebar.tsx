@@ -8,27 +8,13 @@ import {
   PinIcon,
 } from '@hugeicons/core-free-icons'
 import { AnimatePresence, motion } from 'motion/react'
-import {
-  resolveConversationModelID,
-  useConversationSettings,
-} from '../conversation-settings'
 import { usePinSession } from '../hooks/use-pin-session'
 import { useRenameSession } from '../hooks/use-rename-session'
 import { BranchTreePanel } from './branch-tree-panel'
 import { SessionRenameDialog } from './sidebar/session-rename-dialog'
 import type { SessionMeta } from '../types'
 import { Button } from '@/components/ui/button'
-import {
-  Command,
-  CommandCollection,
-  CommandEmpty,
-  CommandInput,
-  CommandItem,
-  CommandList,
-  CommandPanel,
-} from '@/components/ui/command'
 import { ExportMenu } from '@/components/export-menu'
-import { useModelsQuery } from '@/lib/app-api'
 import { cn } from '@/lib/utils'
 import {
   TooltipContent,
@@ -49,7 +35,6 @@ type RightSidebarProps = {
   onClose: () => void
   onExport: (format: ExportFormat) => void
   exportDisabled?: boolean
-  conversationId: string
   sessions: Array<SessionMeta>
   activeSessionKey?: string
 }
@@ -136,37 +121,17 @@ function SidebarTabs({
 }
 
 function OptionsPanel({
-  conversationId,
   activeSession,
   onExport,
   exportDisabled = false,
 }: {
-  conversationId: string
   activeSession?: SessionMeta
   onExport: (format: ExportFormat) => void
   exportDisabled?: boolean
 }) {
-  const { settings, updateSettings } = useConversationSettings(conversationId)
   const { pinSession } = usePinSession()
   const { renameSession } = useRenameSession()
-  const modelsQuery = useModelsQuery()
-  const [query, setQuery] = useState('')
   const [renameDialogOpen, setRenameDialogOpen] = useState(false)
-  const modelOptions = modelsQuery.data?.models ?? []
-  const resolvedModelID = resolveConversationModelID(
-    settings.model,
-    modelOptions,
-    modelsQuery.data?.preferences.defaultModelId,
-  )
-  const filteredModels = useMemo(() => {
-    const normalizedQuery = query.trim().toLowerCase()
-    if (!normalizedQuery) return modelOptions
-    return modelOptions.filter((option) => {
-      const haystack =
-        `${option.id} ${option.name} ${option.owned_by} ${option.description} ${option.providerLabel}`.toLowerCase()
-      return haystack.includes(normalizedQuery)
-    })
-  }, [modelOptions, query])
   const sessionTitle =
     activeSession?.label ||
     activeSession?.title ||
@@ -196,68 +161,6 @@ function OptionsPanel({
 
   return (
     <div className="pb-4">
-      <PanelSection title="Model">
-        <div className="overflow-hidden rounded-lg border border-primary-200 bg-primary-50/60">
-          <Command
-            items={filteredModels}
-            value={query}
-            onValueChange={setQuery}
-            mode="none"
-          >
-            <CommandInput placeholder="Search models" className="text-sm" />
-            <CommandPanel className="min-h-0 border-0 bg-transparent shadow-none [clip-path:none] before:hidden">
-              {filteredModels.length === 0 ? (
-                <CommandEmpty>
-                  {modelsQuery.isLoading
-                    ? 'Loading models...'
-                    : 'No models match this search.'}
-                </CommandEmpty>
-              ) : (
-                <CommandList className="h-64 min-h-0">
-                  <CommandCollection>
-                    {(option) => {
-                      const isActive = resolvedModelID === option.id
-                      return (
-                        <CommandItem
-                          key={option.id}
-                          value={`${option.id} ${option.name || ''} ${option.description || ''}`}
-                          onClick={() => updateSettings({ model: option.id })}
-                          className={cn(
-                            'min-w-0 items-start gap-3 rounded-md px-3 py-2',
-                            isActive && 'bg-primary-100 text-primary-900',
-                          )}
-                        >
-                          <div className="min-w-0 flex-1 overflow-hidden">
-                            <div className="truncate font-mono text-xs text-primary-800">
-                              {option.id}
-                            </div>
-                            {option.name ? (
-                              <div className="truncate text-sm text-primary-900">
-                                {option.name}
-                              </div>
-                            ) : null}
-                            <div className="line-clamp-2 text-xs text-primary-500">
-                              {option.description ||
-                                option.providerLabel ||
-                                option.owned_by}
-                            </div>
-                          </div>
-                          {isActive ? (
-                            <span className="shrink-0 pt-0.5 text-[11px] text-primary-500">
-                              current
-                            </span>
-                          ) : null}
-                        </CommandItem>
-                      )
-                    }}
-                  </CommandCollection>
-                </CommandList>
-              )}
-            </CommandPanel>
-          </Command>
-        </div>
-      </PanelSection>
-
       <PanelSection title="Conversation">
         <SettingsRow
           label="Rename conversation"
@@ -317,7 +220,6 @@ function RightSidebarComponent({
   onClose,
   onExport,
   exportDisabled = false,
-  conversationId,
   sessions,
   activeSessionKey,
 }: RightSidebarProps) {
@@ -370,22 +272,21 @@ function RightSidebarComponent({
                 </Button>
               </div>
 
-              <div className="min-h-0 flex-1 overflow-y-auto px-1">
-                {activeTab === 'options' ? (
-                  <OptionsPanel
-                    conversationId={conversationId}
-                    activeSession={activeSession}
-                    onExport={onExport}
-                    exportDisabled={exportDisabled}
-                  />
-                ) : null}
-                {activeTab === 'branches' ? (
-                  <BranchTreePanel
-                    sessions={sessions}
-                    activeSessionKey={activeSessionKey}
-                  />
-                ) : null}
-              </div>
+          <div className="min-h-0 flex-1 overflow-y-auto px-1">
+            {activeTab === 'options' ? (
+              <OptionsPanel
+                activeSession={activeSession}
+                onExport={onExport}
+                exportDisabled={exportDisabled}
+              />
+            ) : null}
+            {activeTab === 'branches' ? (
+              <BranchTreePanel
+                sessions={sessions}
+                activeSessionKey={activeSessionKey}
+              />
+            ) : null}
+          </div>
             </motion.aside>
           </>
         ) : null}
@@ -417,12 +318,11 @@ function RightSidebarComponent({
           </div>
 
           <div className="min-h-0 flex-1 overflow-y-auto px-1">
-              {activeTab === 'options' ? (
-                <OptionsPanel
-                  conversationId={conversationId}
-                  activeSession={activeSession}
-                  onExport={onExport}
-                  exportDisabled={exportDisabled}
+            {activeTab === 'options' ? (
+              <OptionsPanel
+                activeSession={activeSession}
+                onExport={onExport}
+                exportDisabled={exportDisabled}
                 />
             ) : null}
             {activeTab === 'branches' ? (

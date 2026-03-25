@@ -9,7 +9,6 @@ import {
   useModelsQuery,
   useProvidersQuery,
 } from '@/lib/app-api'
-import { ModelSettingsPanel } from '@/screens/chat/components/model-settings-panel'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
@@ -265,10 +264,6 @@ export function ModelMetadataPanel() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <ModelSettingsPanel />
-      </div>
-
       <div className="space-y-3">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0 flex-1">

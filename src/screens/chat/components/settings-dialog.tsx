@@ -4,7 +4,6 @@ import {
   Cancel01Icon,
 } from '@hugeicons/core-free-icons'
 import { ProviderSettingsPanel } from './provider-settings-panel'
-import { ModelSettingsPanel } from './model-settings-panel'
 import {
   DialogClose,
   DialogContent,
@@ -137,12 +136,6 @@ export function SettingsDialog({
                       Providers
                     </h3>
                     <ProviderSettingsPanel />
-                  </div>
-                  <div>
-                    <h3 className="mb-3 text-sm font-medium text-primary-900">
-                      Default Model
-                    </h3>
-                    <ModelSettingsPanel />
                   </div>
                 </div>
               ) : null}
