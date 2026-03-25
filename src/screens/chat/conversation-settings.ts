@@ -12,6 +12,10 @@ type ConversationSettingsState = {
     conversationId: string,
     updates: Partial<ConversationSettings>,
   ) => void
+  copyConversationSettings: (
+    sourceConversationId: string,
+    targetConversationId: string,
+  ) => void
 }
 
 export const defaultConversationSettings: ConversationSettings = {
@@ -33,6 +37,21 @@ export const useConversationSettingsStore = create<ConversationSettingsState>()(
             },
           },
         })),
+      copyConversationSettings: (sourceConversationId, targetConversationId) =>
+        set((state) => {
+          const sourceSettings =
+            state.conversations[sourceConversationId] ??
+            defaultConversationSettings
+
+          return {
+            conversations: {
+              ...state.conversations,
+              [targetConversationId]: {
+                ...sourceSettings,
+              },
+            },
+          }
+        }),
     }),
     {
       name: 'kairos-conversation-settings',
@@ -55,6 +74,15 @@ export function useConversationSettings(conversationId: string) {
       updateConversationSettings(conversationId, updates)
     },
   }
+}
+
+export function copyConversationSettings(
+  sourceConversationId: string,
+  targetConversationId: string,
+) {
+  useConversationSettingsStore
+    .getState()
+    .copyConversationSettings(sourceConversationId, targetConversationId)
 }
 
 export function resolveConversationModelID(

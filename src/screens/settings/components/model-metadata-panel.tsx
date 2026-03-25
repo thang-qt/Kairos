@@ -1,4 +1,6 @@
 import { useMemo, useState } from 'react'
+import { HugeiconsIcon } from '@hugeicons/react'
+import { ArrowDown01Icon } from '@hugeicons/core-free-icons'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import type { ProviderModel } from '@/lib/app-api'
 import {
@@ -6,11 +8,19 @@ import {
   appQueryKeys,
   syncModels,
   updateModelMetadata,
+  updatePreferences,
   useModelsQuery,
   useProvidersQuery,
 } from '@/lib/app-api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import {
+  MenuContent,
+  MenuItem,
+  MenuRoot,
+  MenuTrigger,
+} from '@/components/ui/menu'
+import { Switch } from '@/components/ui/switch'
 import { cn } from '@/lib/utils'
 
 function mutationErrorMessage(error: unknown, fallback: string) {
@@ -34,6 +44,167 @@ function formatContextWindow(value?: number) {
     return `${Math.round(value / 1_000)}K`
   }
   return String(value)
+}
+
+function modelDisplayName(model?: ProviderModel) {
+  if (!model) return 'Select a model'
+  return model.name?.trim() || model.id
+}
+
+type TitleModelPickerProps = {
+  models: Array<ProviderModel>
+  selectedModelId?: string
+  disabled?: boolean
+  loading?: boolean
+  onSelectModel: (modelId: string) => void
+}
+
+function TitleModelPicker({
+  models,
+  selectedModelId,
+  disabled = false,
+  loading = false,
+  onSelectModel,
+}: TitleModelPickerProps) {
+  const [open, setOpen] = useState(false)
+  const [query, setQuery] = useState('')
+
+  const selectedModel =
+    models.find(function matchModel(model) {
+      return model.id === selectedModelId
+    }) ?? null
+
+  const filteredModels = useMemo(
+    function filterModels() {
+      const normalizedQuery = query.trim().toLowerCase()
+      if (!normalizedQuery) return models
+      return models.filter(function matchesModel(model) {
+        return [
+          model.id,
+          model.name,
+          model.description,
+          model.providerLabel,
+          model.owned_by,
+        ]
+          .filter(Boolean)
+          .join(' ')
+          .toLowerCase()
+          .includes(normalizedQuery)
+      })
+    },
+    [models, query],
+  )
+
+  return (
+    <MenuRoot
+      open={open}
+      onOpenChange={function handleOpenChange(nextOpen) {
+        setOpen(nextOpen)
+        if (!nextOpen) {
+          setQuery('')
+        }
+      }}
+    >
+      <MenuTrigger
+        type="button"
+        disabled={disabled || loading || models.length === 0}
+        className={cn(
+          'flex w-full items-center justify-between gap-2 rounded-lg border border-primary-200 bg-surface px-3 py-2 text-left text-sm text-primary-900 transition-colors hover:bg-primary-50 disabled:opacity-50',
+        )}
+      >
+        <span className="min-w-0">
+          <span className="block truncate">
+            {loading
+              ? 'Loading models...'
+              : modelDisplayName(selectedModel ?? undefined)}
+          </span>
+          <span className="block truncate text-xs text-primary-500 tabular-nums">
+            {selectedModel
+              ? selectedModel.providerLabel ||
+                selectedModel.owned_by ||
+                selectedModel.id
+              : 'No model selected'}
+          </span>
+        </span>
+        <HugeiconsIcon
+          icon={ArrowDown01Icon}
+          size={20}
+          strokeWidth={1.5}
+          className="shrink-0 text-primary-600"
+        />
+      </MenuTrigger>
+
+      <MenuContent
+        align="start"
+        className="w-[min(28rem,calc(100vw-2rem))] rounded-xl p-0"
+      >
+        <div className="border-b border-primary-200 px-3 py-3">
+          <Input
+            nativeInput
+            value={query}
+            onChange={function handleChange(
+              event: React.ChangeEvent<HTMLInputElement>,
+            ) {
+              setQuery(event.target.value)
+            }}
+            onKeyDown={function handleKeyDown(event) {
+              event.stopPropagation()
+            }}
+            placeholder="Search models"
+          />
+        </div>
+
+        <div className="max-h-72 overflow-y-auto px-2 py-2">
+          {filteredModels.length === 0 ? (
+            <div className="rounded-lg border border-primary-200 px-3 py-6 text-center text-sm text-primary-500">
+              No models match this search.
+            </div>
+          ) : (
+            <div className="space-y-1">
+              {filteredModels.map(function renderModel(model) {
+                const isSelected = model.id === selectedModel?.id
+                return (
+                  <MenuItem
+                    key={model.id}
+                    onClick={function handleClick() {
+                      onSelectModel(model.id)
+                      setOpen(false)
+                      setQuery('')
+                    }}
+                    className={cn(
+                      'flex items-start justify-between gap-3 rounded-lg px-3 py-2',
+                      isSelected && 'bg-primary-100',
+                    )}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-sm text-primary-900">
+                        {modelDisplayName(model)}
+                      </div>
+                      <div className="truncate text-xs text-primary-500 tabular-nums">
+                        {model.providerLabel || model.owned_by || model.id}
+                        {' · '}
+                        {model.id}
+                      </div>
+                      {model.description ? (
+                        <div className="line-clamp-1 text-xs text-primary-500">
+                          {model.description}
+                        </div>
+                      ) : null}
+                    </div>
+                    {isSelected ? (
+                      <span className="shrink-0 text-[11px] text-primary-700">
+                        Selected
+                      </span>
+                    ) : null}
+                  </MenuItem>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      </MenuContent>
+    </MenuRoot>
+  )
 }
 
 type ModelMetadataEditorProps = {
@@ -105,10 +276,7 @@ function ModelMetadataEditor({
       </div>
 
       <div className="space-y-1.5">
-        <label
-          className="text-xs text-primary-500"
-          htmlFor="model-description"
-        >
+        <label className="text-xs text-primary-500" htmlFor="model-description">
           Description
         </label>
         <textarea
@@ -173,7 +341,9 @@ export function ModelMetadataPanel() {
   const [errorMessage, setErrorMessage] = useState('')
 
   const models = modelsQuery.data?.models ?? []
-  const defaultModelId = modelsQuery.data?.preferences.defaultModelId
+  const preferences = modelsQuery.data?.preferences
+  const defaultModelId = preferences?.defaultModelId
+  const titleGenerationModelId = preferences?.titleGenerationModelId
 
   const filteredModels = useMemo(
     function filterModels() {
@@ -239,6 +409,57 @@ export function ModelMetadataPanel() {
     },
   })
 
+  const updatePreferencesMutation = useMutation({
+    mutationFn: updatePreferences,
+    onSuccess: async function handleSuccess() {
+      setErrorMessage('')
+      await refreshModels()
+    },
+    onError: function handleError(error) {
+      setErrorMessage(
+        mutationErrorMessage(
+          error,
+          'Failed to update title generation settings.',
+        ),
+      )
+    },
+  })
+
+  function resolveInitialTitleModelId() {
+    const normalizedConfiguredId = titleGenerationModelId?.trim()
+    if (normalizedConfiguredId) {
+      return normalizedConfiguredId
+    }
+
+    const normalizedDefaultModelId = defaultModelId?.trim()
+    if (normalizedDefaultModelId) {
+      return normalizedDefaultModelId
+    }
+
+    return models[0]?.id ?? ''
+  }
+
+  function handleAutoGenerateTitleChange(checked: boolean) {
+    void updatePreferencesMutation.mutateAsync({
+      autoGenerateTitle: checked,
+    })
+  }
+
+  function handleUseSeparateTitleModelChange(checked: boolean) {
+    void updatePreferencesMutation.mutateAsync({
+      useSeparateTitleModel: checked,
+      titleGenerationModelId: checked
+        ? resolveInitialTitleModelId()
+        : titleGenerationModelId,
+    })
+  }
+
+  function handleTitleGenerationModelChange(modelId: string) {
+    void updatePreferencesMutation.mutateAsync({
+      titleGenerationModelId: modelId,
+    })
+  }
+
   async function handleSaveModelMetadata(payload: {
     modelId: string
     name: string
@@ -264,6 +485,72 @@ export function ModelMetadataPanel() {
 
   return (
     <div className="space-y-6">
+      <div className="space-y-3 rounded-xl border border-primary-200 bg-surface p-4">
+        <div className="space-y-1">
+          <h3 className="text-sm text-primary-900">Title generation</h3>
+          <p className="text-pretty text-xs text-primary-500">
+            Generate a conversation title after the first user turn. By default,
+            Kairos uses the current chat model.
+          </p>
+        </div>
+
+        <div className="space-y-3">
+          <div className="flex items-center justify-between gap-3 rounded-lg border border-primary-200 px-3 py-2">
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-sm text-primary-900">
+                Enable auto-generated titles
+              </div>
+              <div className="text-xs text-primary-500">
+                Runs once for new chats when the first user message is saved.
+              </div>
+            </div>
+            <Switch
+              checked={preferences?.autoGenerateTitle ?? false}
+              disabled={updatePreferencesMutation.isPending}
+              onCheckedChange={handleAutoGenerateTitleChange}
+            />
+          </div>
+
+          <div className="space-y-3 rounded-lg border border-primary-200 px-3 py-3">
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-sm text-primary-900">
+                  Use a different title model
+                </div>
+                <div className="text-xs text-primary-500">
+                  If disabled, title generation uses the model selected for the
+                  chat itself.
+                </div>
+              </div>
+              <Switch
+                checked={preferences?.useSeparateTitleModel ?? false}
+                disabled={
+                  updatePreferencesMutation.isPending ||
+                  !(preferences?.autoGenerateTitle ?? false) ||
+                  models.length === 0
+                }
+                onCheckedChange={handleUseSeparateTitleModelChange}
+              />
+            </div>
+
+            {(preferences?.useSeparateTitleModel ?? false) ? (
+              <div className="space-y-1.5">
+                <label className="text-xs text-primary-500">
+                  Title generation model
+                </label>
+                <TitleModelPicker
+                  models={models}
+                  selectedModelId={titleGenerationModelId}
+                  disabled={updatePreferencesMutation.isPending}
+                  loading={modelsQuery.isLoading}
+                  onSelectModel={handleTitleGenerationModelChange}
+                />
+              </div>
+            ) : null}
+          </div>
+        </div>
+      </div>
+
       <div className="space-y-3">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0 flex-1">

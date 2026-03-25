@@ -32,12 +32,13 @@ type SendMessageResult struct {
 }
 
 type ChatEvent struct {
-	RunID      string         `json:"runId,omitempty"`
-	SessionKey string         `json:"sessionKey,omitempty"`
-	FriendlyID string         `json:"friendlyId,omitempty"`
-	State      string         `json:"state,omitempty"`
-	Error      string         `json:"error,omitempty"`
-	Message    map[string]any `json:"message,omitempty"`
+	RunID      string          `json:"runId,omitempty"`
+	SessionKey string          `json:"sessionKey,omitempty"`
+	FriendlyID string          `json:"friendlyId,omitempty"`
+	State      string          `json:"state,omitempty"`
+	Error      string          `json:"error,omitempty"`
+	Message    map[string]any  `json:"message,omitempty"`
+	Session    *SessionSummary `json:"session,omitempty"`
 }
 
 type runRecord struct {
@@ -195,6 +196,23 @@ func (service *ChatRunService) StartRun(
 	if err != nil {
 		return SendMessageResult{}, err
 	}
+	shouldGenerateTitle := shouldAutoGenerateSessionTitle(session)
+	titlePreferences := UserPreferences{}
+	autoGenerateTitleEnabled := false
+	if shouldGenerateTitle {
+		preferences, preferencesErr := service.providers.GetPreferences(ctx, session.UserID)
+		if preferencesErr == nil {
+			titlePreferences = preferences
+			autoGenerateTitleEnabled = preferences.AutoGenerateTitle
+		} else {
+			log.Printf(
+				"kairos: failed to load title preferences for session %s (%s): %v",
+				session.ID,
+				session.FriendlyID,
+				preferencesErr,
+			)
+		}
+	}
 
 	userMessage, _, err := buildUserMessage(input.Message, input.Attachments)
 	if err != nil {
@@ -203,7 +221,15 @@ func (service *ChatRunService) StartRun(
 
 	now := time.Now().UnixMilli()
 	userMessage["timestamp"] = now
-	if _, err := service.chat.appendMessage(ctx, session, userMessage, now); err != nil {
+	if _, err := service.chat.appendMessageWithOptions(
+		ctx,
+		session,
+		userMessage,
+		now,
+		appendMessageOptions{
+			SkipDerivedTitle: shouldGenerateTitle && autoGenerateTitleEnabled,
+		},
+	); err != nil {
 		return SendMessageResult{}, err
 	}
 
@@ -226,6 +252,10 @@ func (service *ChatRunService) StartRun(
 		return SendMessageResult{}, err
 	}
 
+	if shouldGenerateTitle && autoGenerateTitleEnabled {
+		service.maybeGenerateSessionTitle(session, input, userMessage, titlePreferences)
+	}
+
 	service.runAsync(runRecord{
 		ID:                 runID,
 		UserID:             userID,
@@ -240,6 +270,144 @@ func (service *ChatRunService) StartRun(
 		SessionKey:         session.ID,
 		AssistantMessageID: assistantMessageID,
 	}, nil
+}
+
+func shouldAutoGenerateSessionTitle(session sessionRecord) bool {
+	if nullStringValue(session.Title) != "" || nullStringValue(session.Label) != "" {
+		return false
+	}
+	if session.LastMessageJSON.Valid && strings.TrimSpace(session.LastMessageJSON.String) != "" {
+		return false
+	}
+	return true
+}
+
+func (service *ChatRunService) maybeGenerateSessionTitle(
+	session sessionRecord,
+	input SendMessageInput,
+	userMessage map[string]any,
+	preferences UserPreferences,
+) {
+	go func() {
+		titleCtx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
+		defer cancel()
+
+		if err := service.generateSessionTitle(
+			titleCtx,
+			session,
+			input,
+			userMessage,
+			preferences,
+		); err != nil {
+			fallbackTitle := deriveTitleFromMessage(userMessage)
+			if fallbackTitle != "" {
+				summary, updated, fallbackErr := service.chat.UpdateSessionTitleIfEmpty(
+					context.Background(),
+					session.ID,
+					session.UserID,
+					fallbackTitle,
+				)
+				if fallbackErr != nil {
+					log.Printf(
+						"kairos: title fallback failed for session %s (%s): %v",
+						session.ID,
+						session.FriendlyID,
+						fallbackErr,
+					)
+				} else if updated {
+					service.publishTitleUpdated(session.ID, summary)
+				}
+			}
+			log.Printf(
+				"kairos: title generation failed for session %s (%s): %v",
+				session.ID,
+				session.FriendlyID,
+				err,
+			)
+		}
+	}()
+}
+
+func (service *ChatRunService) generateSessionTitle(
+	ctx context.Context,
+	session sessionRecord,
+	input SendMessageInput,
+	userMessage map[string]any,
+	preferences UserPreferences,
+) error {
+	if !preferences.AutoGenerateTitle {
+		return nil
+	}
+
+	requestedModel := strings.TrimSpace(input.Model)
+	if preferences.UseSeparateTitleModel {
+		if overrideModel := strings.TrimSpace(preferences.TitleGenerationModelID); overrideModel != "" {
+			requestedModel = overrideModel
+		}
+	}
+
+	provider, model, _, err := service.providers.ResolveGenerationTarget(
+		ctx,
+		session.UserID,
+		requestedModel,
+	)
+	if err != nil && preferences.UseSeparateTitleModel && strings.TrimSpace(preferences.TitleGenerationModelID) != "" {
+		provider, model, _, err = service.providers.ResolveGenerationTarget(
+			ctx,
+			session.UserID,
+			strings.TrimSpace(input.Model),
+		)
+	}
+	if err != nil {
+		return err
+	}
+
+	driver := service.providers.drivers[provider.Record.Kind]
+	if driver == nil {
+		return fmt.Errorf("unsupported provider kind: %s", provider.Record.Kind)
+	}
+
+	requestMessages := buildTitleGenerationMessages(userMessage)
+	if len(requestMessages) == 0 {
+		return nil
+	}
+
+	result, err := driver.GenerateChatStream(
+		ctx,
+		provider,
+		ChatGenerationRequest{
+			Model:    model.ID,
+			Messages: requestMessages,
+		},
+		func(delta ChatGenerationDelta) error {
+			return nil
+		},
+	)
+	if err != nil {
+		return err
+	}
+
+	title := normalizeGeneratedSessionTitle(result.OutputText)
+	if title == "" {
+		title = deriveTitleFromMessage(userMessage)
+	}
+	if title == "" {
+		return nil
+	}
+
+	summary, updated, err := service.chat.UpdateSessionTitleIfEmpty(
+		ctx,
+		session.ID,
+		session.UserID,
+		title,
+	)
+	if err != nil {
+		return err
+	}
+	if updated {
+		service.publishTitleUpdated(session.ID, summary)
+	}
+	return nil
 }
 
 func (service *ChatRunService) StreamSession(
@@ -417,31 +585,31 @@ func (service *ChatRunService) executeRun(
 			}
 			service.broker.Publish(
 				record.SessionID,
-					buildRunEvent(
-						record,
-						session,
-						"delta",
-						"",
-						buildAssistantMessage(
-							record.AssistantMessageID,
-							displayModel,
-							time.Now().UnixMilli(),
-							content,
-						),
+				buildRunEvent(
+					record,
+					session,
+					"delta",
+					"",
+					buildAssistantMessage(
+						record.AssistantMessageID,
+						displayModel,
+						time.Now().UnixMilli(),
+						content,
+					),
 				),
 			)
 			return nil
 		},
 	)
-		if err != nil {
-			if errors.Is(err, context.Canceled) {
-				abortedTimestamp := maxInt64(time.Now().UnixMilli(), minAssistantTimestamp)
-				abortedMessage := buildAssistantMessage(
-					record.AssistantMessageID,
-					displayModel,
-					abortedTimestamp,
-					buildAssistantContent(accumulatedThinking, accumulatedText),
-				)
+	if err != nil {
+		if errors.Is(err, context.Canceled) {
+			abortedTimestamp := maxInt64(time.Now().UnixMilli(), minAssistantTimestamp)
+			abortedMessage := buildAssistantMessage(
+				record.AssistantMessageID,
+				displayModel,
+				abortedTimestamp,
+				buildAssistantContent(accumulatedThinking, accumulatedText),
+			)
 			service.publishRunAborted(ctx, record, session, abortedMessage)
 			return
 		}
@@ -746,6 +914,62 @@ func buildRunEvent(
 	}
 }
 
+func (service *ChatRunService) publishTitleUpdated(
+	sessionID string,
+	session SessionSummary,
+) {
+	service.broker.Publish(
+		sessionID,
+		ChatEvent{
+			SessionKey: session.Key,
+			FriendlyID: session.FriendlyID,
+			State:      "title",
+			Session:    &session,
+		},
+	)
+}
+
+func buildTitleGenerationMessages(userMessage map[string]any) []ProviderMessage {
+	userParts := extractProviderMessageParts(userMessage["content"])
+	if len(userParts) == 0 {
+		return nil
+	}
+
+	return []ProviderMessage{
+		{
+			Role: "system",
+			Parts: []ProviderMessagePart{
+				{
+					Type: "text",
+					Text: "Generate a concise title for this chat based on the first user turn. Return plain text only. Do not use markdown, headings, bullet points, or quotes. Use sentence case and keep it under 6 words.",
+				},
+			},
+		},
+		{
+			Role:  "user",
+			Parts: userParts,
+		},
+	}
+}
+
+func normalizeGeneratedSessionTitle(value string) string {
+	normalized := strings.TrimSpace(value)
+	if normalized == "" {
+		return ""
+	}
+	normalized = strings.Split(normalized, "\n")[0]
+	normalized = strings.TrimSpace(normalized)
+	normalized = strings.TrimLeft(normalized, "#*- ")
+	normalized = strings.Trim(normalized, "`\"' ")
+	normalized = strings.TrimSpace(normalized)
+	normalized = strings.TrimRight(normalized, ".!?:;")
+	normalized = strings.Join(strings.Fields(normalized), " ")
+	if len(normalized) > 80 {
+		normalized = strings.TrimSpace(normalized[:80])
+	}
+	return normalized
+}
+
 func buildProviderMessages(history []map[string]any) []ProviderMessage {
 	messages := make([]ProviderMessage, 0, len(history))
 	for _, message := range history {
@@ -766,17 +990,14 @@ func buildProviderMessages(history []map[string]any) []ProviderMessage {
 }
 
 func extractProviderMessageParts(value any) []ProviderMessagePart {
-	items, ok := value.([]any)
-	if !ok {
+	items := normalizeContentItems(value)
+	if len(items) == 0 {
 		return nil
 	}
 
 	parts := make([]ProviderMessagePart, 0, len(items))
 	for _, item := range items {
-		part, ok := item.(map[string]any)
-		if !ok {
-			continue
-		}
+		part := item
 		switch strings.TrimSpace(stringValueFromMap(part, "type")) {
 		case "text":
 			if text := strings.TrimSpace(stringValueFromMap(part, "text")); text != "" {
@@ -806,6 +1027,25 @@ func extractProviderMessageParts(value any) []ProviderMessagePart {
 		}
 	}
 	return parts
+}
+
+func normalizeContentItems(value any) []map[string]any {
+	switch typed := value.(type) {
+	case []map[string]any:
+		return typed
+	case []any:
+		items := make([]map[string]any, 0, len(typed))
+		for _, item := range typed {
+			part, ok := item.(map[string]any)
+			if !ok {
+				continue
+			}
+			items = append(items, part)
+		}
+		return items
+	default:
+		return nil
+	}
 }
 
 func firstNonEmpty(values ...string) string {

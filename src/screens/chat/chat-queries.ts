@@ -1,8 +1,4 @@
-import {
-  getMessageTimestamp,
-  normalizeSessions,
-  textFromMessage,
-} from './utils'
+import { getMessageTimestamp, normalizeSessions } from './utils'
 import type { QueryClient } from '@tanstack/react-query'
 import type { GatewayMessage, HistoryResponse, SessionMeta } from './types'
 import type { ChatStatus } from '@/lib/chat-backend'
@@ -193,12 +189,41 @@ export function updateSessionLastMessage(
   )
 }
 
+export function upsertSessionSummary(
+  queryClient: QueryClient,
+  session: SessionMeta,
+) {
+  queryClient.setQueryData(
+    chatQueryKeys.sessions,
+    function update(currentSessions: unknown) {
+      const sessions = Array.isArray(currentSessions)
+        ? (currentSessions as Array<SessionMeta>)
+        : []
+      const matchedIndex = sessions.findIndex((currentSession) => {
+        return (
+          currentSession.key === session.key ||
+          currentSession.friendlyId === session.friendlyId
+        )
+      })
+      if (matchedIndex < 0) {
+        return sortSessionsByUpdatedAt([session, ...sessions])
+      }
+
+      const nextSessions = [...sessions]
+      nextSessions[matchedIndex] = {
+        ...nextSessions[matchedIndex],
+        ...session,
+      }
+      return sortSessionsByUpdatedAt(nextSessions)
+    },
+  )
+}
+
 function mergeSessionMessage(
   session: SessionMeta,
   message: GatewayMessage,
   messageUpdatedAt: number,
 ): SessionMeta {
-  const derivedTitleCandidate = deriveSessionTitle(message)
   const totalTokens = extractUsageTotalTokens(message)
   return {
     ...session,
@@ -211,16 +236,10 @@ function mergeSessionMessage(
       session.updatedAt > messageUpdatedAt
         ? session.updatedAt
         : messageUpdatedAt,
-    derivedTitle:
-      session.label || session.title || session.derivedTitle
-        ? session.derivedTitle
-        : derivedTitleCandidate || session.derivedTitle,
   }
 }
 
-function extractUsageTotalTokens(
-  message: GatewayMessage,
-): number | undefined {
+function extractUsageTotalTokens(message: GatewayMessage): number | undefined {
   const details = message.details
   if (!details || typeof details !== 'object') {
     return undefined
@@ -235,13 +254,6 @@ function extractUsageTotalTokens(
   return typeof totalTokens === 'number' && Number.isFinite(totalTokens)
     ? totalTokens
     : undefined
-}
-
-function deriveSessionTitle(message: GatewayMessage): string | undefined {
-  if (message.role !== 'user') return undefined
-  const text = textFromMessage(message).replace(/\s+/g, ' ').trim()
-  if (!text) return undefined
-  return text.slice(0, 48)
 }
 
 function sortSessionsByUpdatedAt(

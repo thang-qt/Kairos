@@ -34,6 +34,9 @@ export type AuthPayload = {
 export type UserPreferences = {
   useSystemProviders: boolean
   defaultModelId?: string
+  autoGenerateTitle: boolean
+  useSeparateTitleModel: boolean
+  titleGenerationModelId?: string
 }
 
 export type ProviderRecord = {
@@ -105,6 +108,9 @@ export type UpdateProviderPayload = {
 export type UpdatePreferencesPayload = {
   useSystemProviders?: boolean
   defaultModelId?: string
+  autoGenerateTitle?: boolean
+  useSeparateTitleModel?: boolean
+  titleGenerationModelId?: string
 }
 
 export type TestConnectionPayload = {

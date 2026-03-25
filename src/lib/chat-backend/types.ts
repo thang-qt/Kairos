@@ -105,9 +105,10 @@ export type ChatEvent = {
   runId?: string
   sessionKey?: string
   friendlyId?: string
-  state?: 'delta' | 'final' | 'error' | 'aborted'
+  state?: 'delta' | 'final' | 'error' | 'aborted' | 'title'
   error?: string
   message?: GatewayMessage
+  session?: SessionMeta
 }
 
 export type ChatSubscription = {

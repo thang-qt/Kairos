@@ -149,6 +149,69 @@ func TestModelListReturnsEmptyArrayWhenNoModelsAvailable(t *testing.T) {
 	}
 }
 
+func TestPreferencesPersistTitleGenerationSettings(t *testing.T) {
+	testServer := newTestApp(t, func(config *Config) {
+		config.SystemProviderEnabled = true
+		config.SystemProviderLabel = "Server Default"
+		config.SystemProviderStaticModels = []string{"chat-model", "title-model"}
+	})
+	cookie := signupAndRequireCookie(t, testServer, "preferences-title@example.com")
+
+	updateResponse := performJSONRequest(
+		t,
+		testServer.handler,
+		http.MethodPatch,
+		"/api/me/preferences",
+		UpdateUserPreferencesInput{
+			AutoGenerateTitle:      boolPointer(true),
+			UseSeparateTitleModel:  boolPointer(true),
+			TitleGenerationModelID: stringPointer("title-model"),
+		},
+		[]*http.Cookie{cookie},
+	)
+	assertStatusCode(t, updateResponse, http.StatusOK)
+
+	var updated preferencesResponse
+	decodeResponseJSON(t, updateResponse, &updated)
+	if !updated.Preferences.AutoGenerateTitle {
+		t.Fatal("autoGenerateTitle = false, want true")
+	}
+	if !updated.Preferences.UseSeparateTitleModel {
+		t.Fatal("useSeparateTitleModel = false, want true")
+	}
+	if updated.Preferences.TitleGenerationModelID != "title-model" {
+		t.Fatalf(
+			"titleGenerationModelId = %q, want title-model",
+			updated.Preferences.TitleGenerationModelID,
+		)
+	}
+
+	getResponse := performJSONRequest(
+		t,
+		testServer.handler,
+		http.MethodGet,
+		"/api/me/preferences",
+		nil,
+		[]*http.Cookie{cookie},
+	)
+	assertStatusCode(t, getResponse, http.StatusOK)
+
+	var loaded preferencesResponse
+	decodeResponseJSON(t, getResponse, &loaded)
+	if !loaded.Preferences.AutoGenerateTitle {
+		t.Fatal("loaded autoGenerateTitle = false, want true")
+	}
+	if !loaded.Preferences.UseSeparateTitleModel {
+		t.Fatal("loaded useSeparateTitleModel = false, want true")
+	}
+	if loaded.Preferences.TitleGenerationModelID != "title-model" {
+		t.Fatalf(
+			"loaded titleGenerationModelId = %q, want title-model",
+			loaded.Preferences.TitleGenerationModelID,
+		)
+	}
+}
+
 func TestModelListAppliesCatalogAndUserMetadata(t *testing.T) {
 	testServer := newTestApp(t, func(config *Config) {
 		config.SystemProviderEnabled = true
@@ -316,5 +379,9 @@ func TestManualModelSyncRefreshesPersistedProviderModels(t *testing.T) {
 }
 
 func stringPointer(value string) *string {
+	return &value
+}
+
+func boolPointer(value bool) *bool {
 	return &value
 }

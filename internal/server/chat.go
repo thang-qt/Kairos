@@ -70,6 +70,10 @@ type messageRecord struct {
 	Message     map[string]any
 }
 
+type appendMessageOptions struct {
+	SkipDerivedTitle bool
+}
+
 func NewChatService(db *sql.DB) *ChatService {
 	return &ChatService{db: db}
 }
@@ -369,6 +373,22 @@ func (service *ChatService) appendMessage(
 	message map[string]any,
 	timestamp int64,
 ) (SessionSummary, error) {
+	return service.appendMessageWithOptions(
+		ctx,
+		session,
+		message,
+		timestamp,
+		appendMessageOptions{},
+	)
+}
+
+func (service *ChatService) appendMessageWithOptions(
+	ctx context.Context,
+	session sessionRecord,
+	message map[string]any,
+	timestamp int64,
+	options appendMessageOptions,
+) (SessionSummary, error) {
 	messageJSON, err := json.Marshal(message)
 	if err != nil {
 		return SessionSummary{}, fmt.Errorf("encode message: %w", err)
@@ -382,7 +402,7 @@ func (service *ChatService) appendMessage(
 	now := time.Now().UnixMilli()
 	totalTokens := session.TotalTokens + approximateMessageTokens(message)
 	derivedTitle := nullStringValue(session.DerivedTitle)
-	if derivedTitle == "" {
+	if derivedTitle == "" && !options.SkipDerivedTitle {
 		derivedTitle = deriveTitleFromMessage(message)
 	}
 
@@ -469,6 +489,49 @@ func (service *ChatService) UpdateSessionTotalTokens(
 	}
 
 	return nil
+}
+
+func (service *ChatService) UpdateSessionTitleIfEmpty(
+	ctx context.Context,
+	sessionID string,
+	userID string,
+	title string,
+) (SessionSummary, bool, error) {
+	normalizedTitle := strings.TrimSpace(title)
+	if normalizedTitle == "" {
+		return SessionSummary{}, false, nil
+	}
+
+	result, err := service.db.ExecContext(ctx, `
+		UPDATE chat_sessions
+		SET title = ?
+		WHERE
+			id = ? AND
+			user_id = ? AND
+			COALESCE(NULLIF(title, ''), '') = '' AND
+			COALESCE(NULLIF(label, ''), '') = ''
+	`, normalizedTitle, sessionID, userID)
+	if err != nil {
+		return SessionSummary{}, false, fmt.Errorf("update session title: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return SessionSummary{}, false, fmt.Errorf("session title rows affected: %w", err)
+	}
+	if rowsAffected == 0 {
+		return SessionSummary{}, false, nil
+	}
+
+	record, err := service.findSessionByID(ctx, userID, sessionID)
+	if err != nil {
+		return SessionSummary{}, false, err
+	}
+	summary, err := sessionRecordToSummary(record)
+	if err != nil {
+		return SessionSummary{}, false, err
+	}
+	return summary, true, nil
 }
 
 func (service *ChatService) listMessageRecords(
@@ -609,6 +672,23 @@ func (service *ChatService) findSessionByFriendlyID(
 	userID string,
 	friendlyID string,
 ) (sessionRecord, error) {
+	return service.findSession(ctx, userID, "friendly_id", strings.TrimSpace(friendlyID))
+}
+
+func (service *ChatService) findSessionByID(
+	ctx context.Context,
+	userID string,
+	sessionID string,
+) (sessionRecord, error) {
+	return service.findSession(ctx, userID, "id", strings.TrimSpace(sessionID))
+}
+
+func (service *ChatService) findSession(
+	ctx context.Context,
+	userID string,
+	field string,
+	value string,
+) (sessionRecord, error) {
 	var record sessionRecord
 	err := service.db.QueryRowContext(ctx, `
 		SELECT
@@ -628,8 +708,8 @@ func (service *ChatService) findSessionByFriendlyID(
 			fork_point_message_id,
 			fork_depth
 		FROM chat_sessions
-		WHERE user_id = ? AND friendly_id = ?
-	`, userID, strings.TrimSpace(friendlyID)).Scan(
+		WHERE user_id = ? AND `+field+` = ?
+	`, userID, value).Scan(
 		&record.ID,
 		&record.UserID,
 		&record.FriendlyID,

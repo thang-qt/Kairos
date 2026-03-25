@@ -46,8 +46,11 @@ type ModelCapabilities struct {
 }
 
 type UserPreferences struct {
-	UseSystemProviders bool   `json:"useSystemProviders"`
-	DefaultModelID     string `json:"defaultModelId,omitempty"`
+	UseSystemProviders     bool   `json:"useSystemProviders"`
+	DefaultModelID         string `json:"defaultModelId,omitempty"`
+	AutoGenerateTitle      bool   `json:"autoGenerateTitle"`
+	UseSeparateTitleModel  bool   `json:"useSeparateTitleModel"`
+	TitleGenerationModelID string `json:"titleGenerationModelId,omitempty"`
 }
 
 type ProviderRecord struct {
@@ -92,8 +95,11 @@ type UpdateProviderInput struct {
 }
 
 type UpdateUserPreferencesInput struct {
-	UseSystemProviders *bool   `json:"useSystemProviders"`
-	DefaultModelID     *string `json:"defaultModelId"`
+	UseSystemProviders     *bool   `json:"useSystemProviders"`
+	DefaultModelID         *string `json:"defaultModelId"`
+	AutoGenerateTitle      *bool   `json:"autoGenerateTitle"`
+	UseSeparateTitleModel  *bool   `json:"useSeparateTitleModel"`
+	TitleGenerationModelID *string `json:"titleGenerationModelId"`
 }
 
 type UpdateModelMetadataInput struct {
@@ -620,15 +626,28 @@ func (service *ProviderService) GetPreferences(
 
 	var preferences UserPreferences
 	var defaultModel sql.NullString
+	var titleGenerationModelID sql.NullString
 	err := service.db.QueryRowContext(ctx, `
-		SELECT use_system_providers, default_model_id
+		SELECT
+			use_system_providers,
+			default_model_id,
+			auto_generate_title,
+			use_separate_title_model,
+			title_generation_model_id
 		FROM user_preferences
 		WHERE user_id = ?
-	`, userID).Scan(&preferences.UseSystemProviders, &defaultModel)
+	`, userID).Scan(
+		&preferences.UseSystemProviders,
+		&defaultModel,
+		&preferences.AutoGenerateTitle,
+		&preferences.UseSeparateTitleModel,
+		&titleGenerationModelID,
+	)
 	if err != nil {
 		return UserPreferences{}, fmt.Errorf("load user preferences: %w", err)
 	}
 	preferences.DefaultModelID = nullStringValue(defaultModel)
+	preferences.TitleGenerationModelID = nullStringValue(titleGenerationModelID)
 	if service.system == nil {
 		preferences.UseSystemProviders = false
 	}
@@ -736,13 +755,36 @@ func (service *ProviderService) UpdatePreferences(
 		}
 		preferences.DefaultModelID = strings.TrimSpace(*input.DefaultModelID)
 	}
+	if input.AutoGenerateTitle != nil {
+		preferences.AutoGenerateTitle = *input.AutoGenerateTitle
+	}
+	if input.UseSeparateTitleModel != nil {
+		preferences.UseSeparateTitleModel = *input.UseSeparateTitleModel
+	}
+	if input.TitleGenerationModelID != nil {
+		preferences.TitleGenerationModelID = strings.TrimSpace(*input.TitleGenerationModelID)
+	}
 
 	now := time.Now().UnixMilli()
 	if _, err := service.db.ExecContext(ctx, `
 		UPDATE user_preferences
-		SET use_system_providers = ?, default_model_id = ?, updated_at = ?
+		SET
+			use_system_providers = ?,
+			default_model_id = ?,
+			auto_generate_title = ?,
+			use_separate_title_model = ?,
+			title_generation_model_id = ?,
+			updated_at = ?
 		WHERE user_id = ?
-	`, boolAsInt(preferences.UseSystemProviders), nullableString(preferences.DefaultModelID), now, userID); err != nil {
+	`,
+		boolAsInt(preferences.UseSystemProviders),
+		nullableString(preferences.DefaultModelID),
+		boolAsInt(preferences.AutoGenerateTitle),
+		boolAsInt(preferences.UseSeparateTitleModel),
+		nullableString(preferences.TitleGenerationModelID),
+		now,
+		userID,
+	); err != nil {
 		return UserPreferences{}, fmt.Errorf("update user preferences: %w", err)
 	}
 	return preferences, nil

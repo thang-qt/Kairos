@@ -2,6 +2,7 @@ import { useCallback, useEffect, useEffectEvent, useRef } from 'react'
 
 import { getMessageTimestamp, textFromMessage } from '../utils'
 import {
+  upsertSessionSummary,
   updateHistoryMessages,
   updateSessionLastMessage,
 } from '../chat-queries'
@@ -52,6 +53,10 @@ export function useChatStream({
       payloadState === 'aborted'
     ) {
       refreshHistoryRef.current()
+    }
+
+    if (payload.session && typeof payload.session === 'object') {
+      upsertSessionSummary(queryClient, payload.session)
     }
 
     if (!payload.message || typeof payload.message !== 'object') {

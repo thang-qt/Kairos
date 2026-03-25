@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"net/http"
 	"strings"
@@ -828,7 +829,10 @@ type fakeProviderDriver struct {
 	models           []ProviderModel
 	thinking         string
 	output           string
+	titleOutput      string
+	outputsByModel   map[string]string
 	delay            time.Duration
+	titleDelay       time.Duration
 	promptTokens     int64
 	completionTokens int64
 	totalTokens      int64
@@ -851,33 +855,363 @@ func (driver fakeProviderDriver) GenerateChatStream(
 	request ChatGenerationRequest,
 	onDelta func(delta ChatGenerationDelta) error,
 ) (ChatGenerationResult, error) {
-	if driver.thinking != "" {
+	isTitleRequest :=
+		len(request.Messages) > 0 &&
+			strings.TrimSpace(request.Messages[0].Role) == "system"
+	output := driver.output
+	if isTitleRequest && driver.titleOutput != "" {
+		output = driver.titleOutput
+	} else if modelOutput, ok := driver.outputsByModel[strings.TrimSpace(request.Model)]; ok {
+		output = modelOutput
+	}
+
+	if driver.thinking != "" && !isTitleRequest {
 		if err := onDelta(ChatGenerationDelta{Thinking: driver.thinking}); err != nil {
 			return ChatGenerationResult{}, err
 		}
 	}
-	if err := onDelta(ChatGenerationDelta{Text: driver.output[:12]}); err != nil {
-		return ChatGenerationResult{}, err
+	outputParts := splitFakeProviderOutput(output)
+	for _, part := range outputParts {
+		if err := onDelta(ChatGenerationDelta{Text: part}); err != nil {
+			return ChatGenerationResult{}, err
+		}
 	}
-	if driver.delay > 0 {
+	delay := driver.delay
+	if isTitleRequest && driver.titleDelay > 0 {
+		delay = driver.titleDelay
+	}
+	if delay > 0 {
 		select {
 		case <-ctx.Done():
 			return ChatGenerationResult{}, ctx.Err()
-		case <-time.After(driver.delay):
+		case <-time.After(delay):
 		}
-	}
-	if err := onDelta(ChatGenerationDelta{Text: driver.output[12:]}); err != nil {
-		return ChatGenerationResult{}, err
 	}
 	return ChatGenerationResult{
 		Model:            request.Model,
 		ModelDescription: "Fake test provider",
 		ThinkingText:     driver.thinking,
-		OutputText:       driver.output,
+		OutputText:       output,
 		PromptTokens:     driver.promptTokens,
 		CompletionTokens: driver.completionTokens,
 		TotalTokens:      driver.totalTokens,
 	}, nil
+}
+
+func splitFakeProviderOutput(output string) []string {
+	if len(output) <= 12 {
+		if output == "" {
+			return nil
+		}
+		return []string{output}
+	}
+	return []string{output[:12], output[12:]}
+}
+
+func TestSendMessageAutoGeneratesSessionTitleFromFirstTurn(t *testing.T) {
+	testServer := newTestApp(t, func(config *Config) {
+		config.SystemProviderEnabled = true
+		config.SystemProviderLabel = "Server Default"
+		config.SystemProviderStaticModels = []string{"chat-model"}
+	})
+	testServer.app.providers.drivers["openai_compatible"] = fakeProviderDriver{
+		models: []ProviderModel{
+			{
+				ID:            "chat-model",
+				Object:        "model",
+				OwnedBy:       "test",
+				Name:          "Chat Model",
+				ProviderRef:   "system:system-default",
+				ProviderLabel: "Server Default",
+			},
+		},
+		output:      "Assistant answer from the main model.",
+		titleOutput: "### Weekly roadmap review",
+	}
+	cookie := signupAndRequireCookie(t, testServer, "auto-title@example.com")
+
+	preferencesResponse := performJSONRequest(
+		t,
+		testServer.handler,
+		http.MethodPatch,
+		"/api/me/preferences",
+		UpdateUserPreferencesInput{
+			AutoGenerateTitle: boolPointer(true),
+		},
+		[]*http.Cookie{cookie},
+	)
+	assertStatusCode(t, preferencesResponse, http.StatusOK)
+
+	createResponse := performJSONRequest(t, testServer.handler, http.MethodPost, "/api/sessions", createSessionRequest{}, []*http.Cookie{cookie})
+	assertStatusCode(t, createResponse, http.StatusCreated)
+
+	var created sessionMutationResponse
+	decodeResponseJSON(t, createResponse, &created)
+
+	sendResponse := performJSONRequest(t, testServer.handler, http.MethodPost, "/api/sessions/"+created.FriendlyID+"/messages", sendMessageRequest{
+		Message: "Let's prepare the weekly roadmap review agenda",
+		Model:   "chat-model",
+	}, []*http.Cookie{cookie})
+	assertStatusCode(t, sendResponse, http.StatusOK)
+
+	var sendPayload SendMessageResult
+	decodeResponseJSON(t, sendResponse, &sendPayload)
+	waitForRunStatus(t, testServer, sendPayload.RunID, "completed")
+	waitForSessionTitle(t, testServer, created.SessionKey, "Weekly roadmap review")
+}
+
+func TestSendMessageDoesNotExposeDerivedTitleBeforeGeneratedTitleArrives(t *testing.T) {
+	testServer := newTestApp(t, func(config *Config) {
+		config.SystemProviderEnabled = true
+		config.SystemProviderLabel = "Server Default"
+		config.SystemProviderStaticModels = []string{"chat-model"}
+	})
+	testServer.app.providers.drivers["openai_compatible"] = fakeProviderDriver{
+		models: []ProviderModel{
+			{
+				ID:            "chat-model",
+				Object:        "model",
+				OwnedBy:       "test",
+				Name:          "Chat Model",
+				ProviderRef:   "system:system-default",
+				ProviderLabel: "Server Default",
+			},
+		},
+		output:      "Assistant answer from the main model.",
+		titleOutput: "Weekly roadmap review",
+		titleDelay:  500 * time.Millisecond,
+	}
+	cookie := signupAndRequireCookie(t, testServer, "delayed-title@example.com")
+
+	preferencesResponse := performJSONRequest(
+		t,
+		testServer.handler,
+		http.MethodPatch,
+		"/api/me/preferences",
+		UpdateUserPreferencesInput{
+			AutoGenerateTitle: boolPointer(true),
+		},
+		[]*http.Cookie{cookie},
+	)
+	assertStatusCode(t, preferencesResponse, http.StatusOK)
+
+	createResponse := performJSONRequest(t, testServer.handler, http.MethodPost, "/api/sessions", createSessionRequest{}, []*http.Cookie{cookie})
+	assertStatusCode(t, createResponse, http.StatusCreated)
+
+	var created sessionMutationResponse
+	decodeResponseJSON(t, createResponse, &created)
+
+	sendResponse := performJSONRequest(t, testServer.handler, http.MethodPost, "/api/sessions/"+created.FriendlyID+"/messages", sendMessageRequest{
+		Message: "Let's prepare the weekly roadmap review agenda",
+		Model:   "chat-model",
+	}, []*http.Cookie{cookie})
+	assertStatusCode(t, sendResponse, http.StatusOK)
+
+	listResponse := performJSONRequest(t, testServer.handler, http.MethodGet, "/api/sessions", nil, []*http.Cookie{cookie})
+	assertStatusCode(t, listResponse, http.StatusOK)
+
+	var sessionsPayload sessionsResponse
+	decodeResponseJSON(t, listResponse, &sessionsPayload)
+	if len(sessionsPayload.Sessions) != 1 {
+		t.Fatalf("sessions count = %d, want 1", len(sessionsPayload.Sessions))
+	}
+	if sessionsPayload.Sessions[0].Title != "" {
+		t.Fatalf("session title = %q, want empty before generation completes", sessionsPayload.Sessions[0].Title)
+	}
+	if sessionsPayload.Sessions[0].DerivedTitle != "" {
+		t.Fatalf("session derivedTitle = %q, want empty before generation completes", sessionsPayload.Sessions[0].DerivedTitle)
+	}
+
+	waitForSessionTitle(t, testServer, created.SessionKey, "Weekly roadmap review")
+}
+
+func TestSendMessagePublishesTitleEvent(t *testing.T) {
+	testServer := newTestApp(t, func(config *Config) {
+		config.SystemProviderEnabled = true
+		config.SystemProviderLabel = "Server Default"
+		config.SystemProviderStaticModels = []string{"chat-model"}
+	})
+	testServer.app.providers.drivers["openai_compatible"] = fakeProviderDriver{
+		models: []ProviderModel{
+			{
+				ID:            "chat-model",
+				Object:        "model",
+				OwnedBy:       "test",
+				Name:          "Chat Model",
+				ProviderRef:   "system:system-default",
+				ProviderLabel: "Server Default",
+			},
+		},
+		output:      "Assistant answer from the main model.",
+		titleOutput: "Weekly roadmap review",
+	}
+	cookie := signupAndRequireCookie(t, testServer, "title-event@example.com")
+
+	preferencesResponse := performJSONRequest(
+		t,
+		testServer.handler,
+		http.MethodPatch,
+		"/api/me/preferences",
+		UpdateUserPreferencesInput{
+			AutoGenerateTitle: boolPointer(true),
+		},
+		[]*http.Cookie{cookie},
+	)
+	assertStatusCode(t, preferencesResponse, http.StatusOK)
+
+	createResponse := performJSONRequest(t, testServer.handler, http.MethodPost, "/api/sessions", createSessionRequest{}, []*http.Cookie{cookie})
+	assertStatusCode(t, createResponse, http.StatusCreated)
+
+	var created sessionMutationResponse
+	decodeResponseJSON(t, createResponse, &created)
+	userID := userIDFromCookie(t, testServer, cookie)
+
+	titleEventResult := make(chan ChatEvent, 1)
+	streamContext, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() {
+		err := testServer.app.runs.StreamSession(streamContext, userID, created.FriendlyID, func(event ChatEvent) error {
+			if event.State == "title" {
+				titleEventResult <- event
+				cancel()
+			}
+			return nil
+		})
+		if err != nil && streamContext.Err() == nil {
+			t.Errorf("stream session error = %v", err)
+		}
+	}()
+
+	sendResponse := performJSONRequest(t, testServer.handler, http.MethodPost, "/api/sessions/"+created.FriendlyID+"/messages", sendMessageRequest{
+		Message: "Let's prepare the weekly roadmap review agenda",
+		Model:   "chat-model",
+	}, []*http.Cookie{cookie})
+	assertStatusCode(t, sendResponse, http.StatusOK)
+
+	select {
+	case event := <-titleEventResult:
+		if event.State != "title" {
+			t.Fatalf("title event state = %q, want title", event.State)
+		}
+		if event.Session == nil {
+			t.Fatal("title event session = nil, want populated summary")
+		}
+		if event.Session.Title != "Weekly roadmap review" {
+			t.Fatalf(
+				"title event session title = %q, want %q",
+				event.Session.Title,
+				"Weekly roadmap review",
+			)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for title event")
+	}
+}
+
+func TestSendMessageUsesSeparateTitleModelWhenConfigured(t *testing.T) {
+	testServer := newTestApp(t, func(config *Config) {
+		config.SystemProviderEnabled = true
+		config.SystemProviderLabel = "Server Default"
+		config.SystemProviderStaticModels = []string{"chat-model", "title-model"}
+	})
+	testServer.app.providers.drivers["openai_compatible"] = fakeProviderDriver{
+		models: []ProviderModel{
+			{
+				ID:            "chat-model",
+				Object:        "model",
+				OwnedBy:       "test",
+				Name:          "Chat Model",
+				ProviderRef:   "system:system-default",
+				ProviderLabel: "Server Default",
+			},
+			{
+				ID:            "title-model",
+				Object:        "model",
+				OwnedBy:       "test",
+				Name:          "Title Model",
+				ProviderRef:   "system:system-default",
+				ProviderLabel: "Server Default",
+			},
+		},
+		outputsByModel: map[string]string{
+			"chat-model":  "Assistant answer from chat model.",
+			"title-model": "Priority bugs triage",
+		},
+	}
+	cookie := signupAndRequireCookie(t, testServer, "separate-title-model@example.com")
+
+	preferencesResponse := performJSONRequest(
+		t,
+		testServer.handler,
+		http.MethodPatch,
+		"/api/me/preferences",
+		UpdateUserPreferencesInput{
+			AutoGenerateTitle:      boolPointer(true),
+			UseSeparateTitleModel:  boolPointer(true),
+			TitleGenerationModelID: stringPointer("title-model"),
+		},
+		[]*http.Cookie{cookie},
+	)
+	assertStatusCode(t, preferencesResponse, http.StatusOK)
+
+	createResponse := performJSONRequest(t, testServer.handler, http.MethodPost, "/api/sessions", createSessionRequest{}, []*http.Cookie{cookie})
+	assertStatusCode(t, createResponse, http.StatusCreated)
+
+	var created sessionMutationResponse
+	decodeResponseJSON(t, createResponse, &created)
+
+	sendResponse := performJSONRequest(t, testServer.handler, http.MethodPost, "/api/sessions/"+created.FriendlyID+"/messages", sendMessageRequest{
+		Message: "We need to triage the current priority bugs",
+		Model:   "chat-model",
+	}, []*http.Cookie{cookie})
+	assertStatusCode(t, sendResponse, http.StatusOK)
+
+	var sendPayload SendMessageResult
+	decodeResponseJSON(t, sendResponse, &sendPayload)
+	waitForRunStatus(t, testServer, sendPayload.RunID, "completed")
+	waitForSessionTitle(t, testServer, created.SessionKey, "Priority bugs triage")
+
+	historyResponse := performJSONRequest(t, testServer.handler, http.MethodGet, "/api/sessions/"+created.FriendlyID+"/history", nil, []*http.Cookie{cookie})
+	assertStatusCode(t, historyResponse, http.StatusOK)
+
+	var historyPayload HistoryPayload
+	decodeResponseJSON(t, historyResponse, &historyPayload)
+	assistantMessage := findHistoryMessageByRole(historyPayload.Messages, "assistant")
+	if assistantMessage == nil {
+		t.Fatal("assistant message missing from history")
+	}
+	if textContentFromMessage(assistantMessage) != "Assistant answer from chat model." {
+		t.Fatalf(
+			"assistant message text = %q, want %q",
+			textContentFromMessage(assistantMessage),
+			"Assistant answer from chat model.",
+		)
+	}
+}
+
+func waitForSessionTitle(
+	t *testing.T,
+	testServer *testApp,
+	sessionKey string,
+	expectedTitle string,
+) {
+	t.Helper()
+
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		var title sql.NullString
+		err := testServer.app.db.QueryRow(`
+			SELECT title
+			FROM chat_sessions
+			WHERE id = ?
+		`, sessionKey).Scan(&title)
+		if err == nil && strings.TrimSpace(title.String) == expectedTitle {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	t.Fatalf("timed out waiting for session %s title %q", sessionKey, expectedTitle)
 }
 
 func TestStopSessionRunPublishesAbortedEventAndKeepsPartialAssistantHistory(t *testing.T) {

@@ -45,6 +45,13 @@ export function useChatSessions({
     return sessions.some((session) => session.friendlyId === activeFriendlyId)
   }, [activeFriendlyId, forcedSessionKey, isNewChat, sessions])
   const activeSessionKey = activeSession?.key ?? ''
+  const hasActiveTitle = useMemo(() => {
+    return Boolean(
+      activeSession?.label ||
+      activeSession?.title ||
+      activeSession?.derivedTitle,
+    )
+  }, [activeSession])
   const activeTitle = useMemo(() => {
     if (activeSession) {
       return (
@@ -66,6 +73,7 @@ export function useChatSessions({
     activeSession,
     activeExists,
     activeSessionKey,
+    hasActiveTitle,
     activeTitle,
     sessionsError,
   }

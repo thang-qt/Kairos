@@ -39,6 +39,7 @@ import { useChatPendingSend } from './hooks/use-chat-pending-send'
 import { useChatGenerationGuard } from './hooks/use-chat-generation-guard'
 import { useChatRedirect } from './hooks/use-chat-redirect'
 import {
+  copyConversationSettings,
   resolveConversationModelID,
   useConversationSettings,
 } from './conversation-settings'
@@ -102,9 +103,7 @@ export function ChatScreen({
   const {
     settings: conversationSettings,
     updateSettings: updateConversationSettings,
-  } = useConversationSettings(
-    activeFriendlyId || 'new',
-  )
+  } = useConversationSettings(activeFriendlyId || 'new')
   const modelsQuery = useModelsQuery()
   const models = modelsQuery.data?.models ?? []
   const defaultModelId = modelsQuery.data?.preferences.defaultModelId
@@ -143,6 +142,7 @@ export function ChatScreen({
     activeSession,
     activeExists,
     activeSessionKey,
+    hasActiveTitle,
     activeTitle,
     sessionsError,
   } = useChatSessions({ activeFriendlyId, isNewChat, forcedSessionKey })
@@ -164,7 +164,8 @@ export function ChatScreen({
     queryClient,
   })
   const usedTokens =
-    typeof activeSession?.totalTokens === 'number' && activeSession.totalTokens > 0
+    typeof activeSession?.totalTokens === 'number' &&
+    activeSession.totalTokens > 0
       ? activeSession.totalTokens
       : countConversationTokens(displayMessages)
 
@@ -343,6 +344,7 @@ export function ChatScreen({
           startRun(payload.runId.trim())
         }
         refreshHistory()
+        void queryClient.invalidateQueries({ queryKey: chatQueryKeys.sessions })
       })
       .catch((err) => {
         if (optimisticClientId) {
@@ -407,6 +409,7 @@ export function ChatScreen({
 
         createSessionForMessage()
           .then(({ sessionKey, friendlyId }) => {
+            copyConversationSettings(activeFriendlyId || 'new', friendlyId)
             setRecentSession(friendlyId)
             stashPendingSend({
               sessionKey,
@@ -536,32 +539,35 @@ export function ChatScreen({
     resolvedConversationModel,
   ])
 
-  const handleStopGeneration = useCallback(async function handleStopGeneration() {
-    if (isNewChat) return
-    const sessionKeyForStop =
-      forcedSessionKey ||
-      resolvedSessionKey ||
-      activeSessionKey ||
-      activeFriendlyId
-    if (!sessionKeyForStop) return
+  const handleStopGeneration = useCallback(
+    async function handleStopGeneration() {
+      if (isNewChat) return
+      const sessionKeyForStop =
+        forcedSessionKey ||
+        resolvedSessionKey ||
+        activeSessionKey ||
+        activeFriendlyId
+      if (!sessionKeyForStop) return
 
-    try {
-      await getChatBackend().stopConversation({
-        sessionKey: sessionKeyForStop,
-        friendlyId: activeFriendlyId,
-      })
-    } catch (error) {
-      setStreamError(
-        error instanceof Error ? error.message : 'Failed to stop response.',
-      )
-    }
-  }, [
-    activeFriendlyId,
-    activeSessionKey,
-    forcedSessionKey,
-    isNewChat,
-    resolvedSessionKey,
-  ])
+      try {
+        await getChatBackend().stopConversation({
+          sessionKey: sessionKeyForStop,
+          friendlyId: activeFriendlyId,
+        })
+      } catch (error) {
+        setStreamError(
+          error instanceof Error ? error.message : 'Failed to stop response.',
+        )
+      }
+    },
+    [
+      activeFriendlyId,
+      activeSessionKey,
+      forcedSessionKey,
+      isNewChat,
+      resolvedSessionKey,
+    ],
+  )
 
   const backendNotice = useMemo(() => {
     if (streamError) {
@@ -574,11 +580,7 @@ export function ChatScreen({
         />
       )
     }
-    if (
-      modelsQuery.isSuccess &&
-      models.length === 0 &&
-      !backendError
-    ) {
+    if (modelsQuery.isSuccess && models.length === 0 && !backendError) {
       return (
         <MessageStatus
           title="No chat model available"
@@ -641,6 +643,9 @@ export function ChatScreen({
         (state === 'final' || state === 'error' || state === 'aborted')
       ) {
         finishAllRuns()
+      }
+      if (state === 'final' || state === 'error' || state === 'aborted') {
+        void queryClient.invalidateQueries({ queryKey: chatQueryKeys.sessions })
       }
       if (state === 'error') {
         setStreamError(streamErrorMessage || 'The model request failed.')
@@ -1032,7 +1037,8 @@ export function ChatScreen({
           >
             <div className="pointer-events-auto">
               <ChatHeader
-                activeTitle={activeTitle}
+                activeTitle={isNewChat ? 'New conversation' : activeTitle}
+                showActiveTitle={isNewChat || hasActiveTitle}
                 wrapperRef={headerRef}
                 isSidebarCollapsed={isSidebarCollapsed}
                 onOpenSidebar={handleOpenSidebar}

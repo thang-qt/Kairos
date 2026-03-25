@@ -14,6 +14,7 @@ import { cn } from '@/lib/utils'
 
 type ChatHeaderProps = {
   activeTitle: string
+  showActiveTitle?: boolean
   wrapperRef?: React.Ref<HTMLDivElement>
   isSidebarCollapsed?: boolean
   onOpenSidebar?: () => void
@@ -37,6 +38,7 @@ type ChatHeaderProps = {
 
 function ChatHeaderComponent({
   activeTitle,
+  showActiveTitle = true,
   wrapperRef,
   isSidebarCollapsed = false,
   onOpenSidebar,
@@ -67,9 +69,13 @@ function ChatHeaderComponent({
         </Button>
       ) : null}
       <div className="flex min-w-0 flex-1 items-center gap-2">
-        <span className="min-w-0 flex-1 truncate text-sm font-medium">
-          {activeTitle}
-        </span>
+        {showActiveTitle ? (
+          <span className="min-w-0 flex-1 truncate text-sm font-medium">
+            {activeTitle}
+          </span>
+        ) : (
+          <div className="flex-1" />
+        )}
         {forkedFrom?.friendlyId ? (
           <Link
             to="/chat/$sessionKey"
