@@ -753,7 +753,7 @@ func (service *ProviderService) ListModels(
 	}
 
 	if len(visibleModels) == 0 {
-		return nil, preferences, nil
+		return []ProviderModel{}, preferences, nil
 	}
 	visibleModels = service.enrichModels(ctx, userID, visibleModels)
 	slices.SortFunc(visibleModels, func(left ProviderModel, right ProviderModel) int {

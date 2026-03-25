@@ -86,6 +86,23 @@ func TestModelListUsesSystemProviderStaticModels(t *testing.T) {
 	}
 }
 
+func TestModelListReturnsEmptyArrayWhenNoModelsAvailable(t *testing.T) {
+	testServer := newTestApp(t, nil)
+	cookie := signupAndRequireCookie(t, testServer, "empty-models@example.com")
+
+	response := performJSONRequest(t, testServer.handler, http.MethodGet, "/api/models", nil, []*http.Cookie{cookie})
+	assertStatusCode(t, response, http.StatusOK)
+
+	var payload modelsResponse
+	decodeResponseJSON(t, response, &payload)
+	if payload.Models == nil {
+		t.Fatal("models = nil, want empty array")
+	}
+	if len(payload.Models) != 0 {
+		t.Fatalf("models count = %d, want 0", len(payload.Models))
+	}
+}
+
 func TestModelListAppliesCatalogAndUserMetadata(t *testing.T) {
 	testServer := newTestApp(t, func(config *Config) {
 		config.SystemProviderEnabled = true

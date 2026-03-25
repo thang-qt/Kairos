@@ -103,24 +103,26 @@ export function ChatScreen({
     activeFriendlyId || 'new',
   )
   const modelsQuery = useModelsQuery()
+  const models = modelsQuery.data?.models ?? []
+  const defaultModelId = modelsQuery.data?.preferences.defaultModelId
   const resolvedConversationModel = resolveConversationModelID(
     conversationSettings.model,
-    modelsQuery.data?.models ?? [],
-    modelsQuery.data?.preferences.defaultModelId,
+    models,
+    defaultModelId,
   )
-  const resolvedConversationModelDetails = (modelsQuery.data?.models ?? []).find(
+  const resolvedConversationModelDetails = models.find(
     function matchResolvedModel(model) {
       return model.id === resolvedConversationModel
     },
   )
   const modelLabelById = useMemo(() => {
     const map = new Map<string, string>()
-    for (const model of modelsQuery.data?.models ?? []) {
+    for (const model of models) {
       const normalizedName = model.name?.trim()
       map.set(model.id, normalizedName || model.id)
     }
     return map
-  }, [modelsQuery.data?.models])
+  }, [models])
   const hasAvailableModel = resolvedConversationModel.trim().length > 0
   const pendingRunIdsRef = useRef(new Set<string>())
   const pendingRunTimersRef = useRef(new Map<string, number>())
@@ -565,7 +567,7 @@ export function ChatScreen({
     }
     if (
       modelsQuery.isSuccess &&
-      modelsQuery.data.models.length === 0 &&
+      models.length === 0 &&
       !backendError
     ) {
       return (
@@ -587,7 +589,7 @@ export function ChatScreen({
     backendError,
     handleBackendRefetch,
     handleRetryLastMessage,
-    modelsQuery.data?.models.length,
+    models.length,
     modelsQuery.isSuccess,
     showBackendNotice,
     streamError,

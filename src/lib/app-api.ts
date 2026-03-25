@@ -71,6 +71,13 @@ export type ModelsPayload = {
   capabilities: AppCapabilities['models']
 }
 
+function normalizeModelsPayload(payload: ModelsPayload): ModelsPayload {
+  return {
+    ...payload,
+    models: Array.isArray(payload.models) ? payload.models : [],
+  }
+}
+
 export type UpdateModelMetadataPayload = {
   modelId: string
   name?: string
@@ -200,7 +207,8 @@ export async function fetchModels(): Promise<ModelsPayload> {
   const response = await fetch('/api/models', {
     credentials: 'include',
   })
-  return parseJSON<ModelsPayload>(response)
+  const data = await parseJSON<ModelsPayload>(response)
+  return normalizeModelsPayload(data)
 }
 
 export async function syncModels(): Promise<ModelsPayload> {
@@ -208,7 +216,8 @@ export async function syncModels(): Promise<ModelsPayload> {
     method: 'POST',
     credentials: 'include',
   })
-  return parseJSON<ModelsPayload>(response)
+  const data = await parseJSON<ModelsPayload>(response)
+  return normalizeModelsPayload(data)
 }
 
 export async function fetchPreferences(): Promise<UserPreferences> {

@@ -1,5 +1,6 @@
 import { HugeiconsIcon } from '@hugeicons/react'
 import {
+  Logout01Icon,
   PencilEdit02Icon,
   Search01Icon,
   Settings01Icon,
@@ -7,6 +8,7 @@ import {
 } from '@hugeicons/core-free-icons'
 import { AnimatePresence, motion } from 'motion/react'
 import { memo, useState } from 'react'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate } from '@tanstack/react-router'
 import { useDeleteSession } from '../hooks/use-delete-session'
 import { useRenameSession } from '../hooks/use-rename-session'
@@ -22,6 +24,7 @@ import {
   TooltipRoot,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
+import { appQueryKeys, isUnauthorizedError, logout } from '@/lib/app-api'
 import { cn } from '@/lib/utils'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { KairosIconBig } from '@/components/icons/kairos-icon-big'
@@ -47,6 +50,7 @@ function ChatSidebarComponent({
   onSelectSession,
   onActiveSessionDelete,
 }: ChatSidebarProps) {
+  const queryClient = useQueryClient()
   const { deleteSession } = useDeleteSession()
   const { renameSession } = useRenameSession()
   const transition = {
@@ -65,6 +69,24 @@ function ChatSidebarComponent({
   const [deleteSessionTitle, setDeleteSessionTitle] = useState('')
   const [searchDialogOpen, setSearchDialogOpen] = useState(false)
   const navigate = useNavigate()
+
+  async function handleLoggedOut() {
+    queryClient.removeQueries({ queryKey: ['chat'] })
+    queryClient.removeQueries({ queryKey: appQueryKeys.me })
+    queryClient.removeQueries({ queryKey: appQueryKeys.providers })
+    queryClient.removeQueries({ queryKey: appQueryKeys.models })
+    queryClient.removeQueries({ queryKey: appQueryKeys.preferences })
+    await navigate({ to: '/auth', replace: true })
+  }
+
+  const logoutMutation = useMutation({
+    mutationFn: logout,
+    onSuccess: handleLoggedOut,
+    onError: async function handleLogoutError(error) {
+      if (!isUnauthorizedError(error)) return
+      await handleLoggedOut()
+    },
+  })
 
   useSessionShortcuts({
     onNewSession: onCreateSession,
@@ -306,41 +328,69 @@ function ChatSidebarComponent({
       </div>
 
       <div className="px-2 py-3 border-t border-primary-200 bg-primary-100">
-        <motion.div
-          layout
-          transition={{ layout: transition }}
-          className="w-full"
-        >
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={function handleOpenSettings() {
-              void navigate({ to: '/settings' })
-            }}
-            title={isCollapsed ? 'Settings' : undefined}
-            className="w-full justify-start pl-1.5"
+        <TooltipProvider>
+          <motion.div
+            layout
+            transition={{ layout: transition }}
+            className="flex w-full items-center gap-1"
           >
-            <HugeiconsIcon
-              icon={Settings01Icon}
-              size={20}
-              strokeWidth={1.5}
-              className="min-w-5"
-            />
-            <AnimatePresence initial={false} mode="wait">
-              {!isCollapsed && (
-                <motion.span
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  transition={transition}
-                  className="overflow-hidden whitespace-nowrap"
-                >
-                  Settings
-                </motion.span>
-              )}
-            </AnimatePresence>
-          </Button>
-        </motion.div>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={function handleOpenSettings() {
+                void navigate({ to: '/settings' })
+              }}
+              title={isCollapsed ? 'Settings' : undefined}
+              className="min-w-0 flex-1 justify-start pl-1.5"
+            >
+              <HugeiconsIcon
+                icon={Settings01Icon}
+                size={20}
+                strokeWidth={1.5}
+                className="min-w-5"
+              />
+              <AnimatePresence initial={false} mode="wait">
+                {!isCollapsed && (
+                  <motion.span
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    transition={transition}
+                    className="overflow-hidden whitespace-nowrap"
+                  >
+                    Settings
+                  </motion.span>
+                )}
+              </AnimatePresence>
+            </Button>
+
+            <TooltipRoot>
+              <TooltipTrigger
+                render={
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label="Log out"
+                    disabled={logoutMutation.isPending}
+                    onClick={function handleLogout() {
+                      logoutMutation.mutate()
+                    }}
+                    className="text-primary-700 hover:bg-primary-200 hover:text-primary-950"
+                  >
+                    <HugeiconsIcon
+                      icon={Logout01Icon}
+                      size={20}
+                      strokeWidth={1.5}
+                    />
+                  </Button>
+                }
+              />
+              <TooltipContent side="top">
+                {logoutMutation.isPending ? 'Signing out...' : 'Log out'}
+              </TooltipContent>
+            </TooltipRoot>
+          </motion.div>
+        </TooltipProvider>
       </div>
 
       <SessionRenameDialog
