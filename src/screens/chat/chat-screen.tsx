@@ -283,6 +283,10 @@ export function ChatScreen({
     }
   }, [finishAllRuns])
 
+  useEffect(() => {
+    setStreamError(null)
+  }, [activeFriendlyId, forcedSessionKey, isNewChat])
+
   function sendMessage(
     sessionKey: string,
     friendlyId: string,
@@ -476,6 +480,7 @@ export function ChatScreen({
   )
 
   const startNewChat = useCallback(() => {
+    setStreamError(null)
     setWaitingForResponse(false)
     setPinToTop(false)
     clearHistoryMessages(queryClient, 'new', 'new')

@@ -179,6 +179,15 @@ function ChatMessageListComponent({
   const hasGroup = pinToTop && groupStartIndex >= 0
   const shouldShowConversationNavigator =
     showConversationNavigator && conversationTurns.length >= 2
+  const endScrollAnchorStyle = useMemo<React.CSSProperties>(
+    function getEndScrollAnchorStyle() {
+      return {
+        paddingTop:
+          'calc(var(--chat-composer-height, 0px) + env(safe-area-inset-bottom, 0px) + 16px)',
+      }
+    },
+    [],
+  )
 
   useLayoutEffect(() => {
     if (typeof lastUserIndex !== 'number') {
@@ -228,7 +237,13 @@ function ChatMessageListComponent({
     if (anchorRef.current) {
       anchorRef.current.scrollIntoView({ behavior: 'auto', block: 'end' })
     }
-  }, [loading, displayMessages.length, sessionKey, pinToTop, lastUserIndex])
+  }, [
+    loading,
+    displayMessages.length,
+    sessionKey,
+    pinToTop,
+    lastUserIndex,
+  ])
 
   function renderMessage(
     chatMessage: GatewayMessage,
@@ -271,6 +286,12 @@ function ChatMessageListComponent({
       />
     )
   }
+
+  const pinnedEndNotice =
+    hasGroup && notice && noticePosition === 'end' ? notice : null
+  const trailingNotice = !hasGroup && notice && noticePosition === 'end'
+    ? notice
+    : null
 
   return (
     <ChatContainerRoot
@@ -329,6 +350,7 @@ function ChatMessageListComponent({
                   <TypingIndicator />
                 </div>
               ) : null}
+              {pinnedEndNotice}
             </div>
           </>
         ) : (
@@ -336,9 +358,10 @@ function ChatMessageListComponent({
             renderMessage(chatMessage, index),
           )
         )}
-        {notice && noticePosition === 'end' ? notice : null}
+        {trailingNotice}
         <ChatContainerScrollAnchor
           ref={anchorRef as React.RefObject<HTMLDivElement>}
+          style={endScrollAnchorStyle}
         />
       </ChatContainerContent>
     </ChatContainerRoot>
