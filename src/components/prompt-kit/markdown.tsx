@@ -1,4 +1,6 @@
 import { memo } from 'react'
+import { math } from '@streamdown/math'
+import 'katex/dist/katex.min.css'
 import { Streamdown } from 'streamdown'
 import { CodeBlock } from './code-block'
 import { cn } from '@/lib/utils'
@@ -143,6 +145,8 @@ const INITIAL_COMPONENTS: Record<string, React.ComponentType<any>> = {
   },
 }
 
+const STREAMDOWN_PLUGINS = { math }
+
 function MarkdownComponent({
   children,
   className,
@@ -152,6 +156,7 @@ function MarkdownComponent({
     <Streamdown
       className={cn('flex flex-col gap-2', className)}
       components={components}
+      plugins={STREAMDOWN_PLUGINS}
     >
       {children}
     </Streamdown>
