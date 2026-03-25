@@ -1,9 +1,10 @@
-import { memo } from 'react'
+import { Children, isValidElement, memo } from 'react'
 import { math } from '@streamdown/math'
 import 'katex/dist/katex.min.css'
 import { Streamdown } from 'streamdown'
 import { CodeBlock } from './code-block'
 import { cn } from '@/lib/utils'
+import type { ComponentProps, ReactNode } from 'react'
 
 export type MarkdownProps = {
   children: string
@@ -18,29 +19,41 @@ function extractLanguage(className?: string): string {
   return match ? match[1] : 'text'
 }
 
+function textFromNode(node: ReactNode): string {
+  if (typeof node === 'string') return node
+  if (typeof node === 'number') return String(node)
+  if (Array.isArray(node)) return node.map(textFromNode).join('')
+  if (isValidElement<{ children?: ReactNode }>(node)) {
+    return textFromNode(node.props.children)
+  }
+  return ''
+}
+
+function codePropsFromPreChildren(children: ReactNode): ComponentProps<'code'> | null {
+  const child = Children.toArray(children)[0]
+  if (!isValidElement<ComponentProps<'code'>>(child)) return null
+  return child.props
+}
+
 const INITIAL_COMPONENTS: Record<string, React.ComponentType<any>> = {
-  code: function CodeComponent({ className, children }) {
-    const isInline = !className?.includes('language-')
-
-    if (isInline) {
-      return (
-        <code className="rounded bg-primary-100 px-1.5 py-1 text-sm font-mono text-primary-900 border border-primary-200">
-          {children}
-        </code>
-      )
-    }
-
-    const language = extractLanguage(className)
+  code: function CodeComponent({ children }) {
     return (
-      <CodeBlock
-        content={String(children ?? '')}
-        language={language}
-        className="w-full"
-      />
+      <code className="rounded border border-primary-200 bg-primary-100 px-1.5 py-1 font-mono text-sm text-primary-900">
+        {children}
+      </code>
     )
   },
   pre: function PreComponent({ children }) {
-    return <>{children}</>
+    const codeProps = codePropsFromPreChildren(children)
+    if (!codeProps) return <pre>{children}</pre>
+
+    return (
+      <CodeBlock
+        content={textFromNode(codeProps.children)}
+        language={extractLanguage(codeProps.className)}
+        className="w-full"
+      />
+    )
   },
   h1: function H1Component({ children }) {
     return (
