@@ -1,8 +1,7 @@
-import { Navigate, createFileRoute, useNavigate } from '@tanstack/react-router'
+import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import type { SettingsTab } from '@/screens/settings/settings-screen'
-import { FullScreenMessage } from '@/components/full-screen-message'
-import { isUnauthorizedError, useCurrentUserQuery } from '@/lib/app-api'
 import { configureChatBackend } from '@/lib/chat-backend'
+import { requireAuthenticatedUser } from '@/lib/route-auth'
 import { SettingsScreen } from '@/screens/settings/settings-screen'
 
 const SETTINGS_TABS = new Set<SettingsTab>([
@@ -13,6 +12,10 @@ const SETTINGS_TABS = new Set<SettingsTab>([
 ])
 
 export const Route = createFileRoute('/settings')({
+  beforeLoad: async function ensureAuthenticatedRoute({ context }) {
+    await requireAuthenticatedUser(context)
+    configureChatBackend('http')
+  },
   validateSearch: function validateSearch(search: Record<string, unknown>) {
     const tab =
       typeof search.tab === 'string' && SETTINGS_TABS.has(search.tab as SettingsTab)
@@ -24,39 +27,8 @@ export const Route = createFileRoute('/settings')({
 })
 
 function SettingsRoute() {
-  const currentUserQuery = useCurrentUserQuery()
   const navigate = useNavigate()
   const search = Route.useSearch()
-
-  if (currentUserQuery.isPending) {
-    return (
-      <FullScreenMessage
-        title="Checking session"
-        detail="Loading the authenticated app shell before opening settings."
-      />
-    )
-  }
-
-  if (currentUserQuery.error) {
-    if (isUnauthorizedError(currentUserQuery.error)) {
-      configureChatBackend('mock')
-      return <Navigate replace to="/auth" />
-    }
-
-    return (
-      <FullScreenMessage
-        title="Session check failed"
-        detail={
-          currentUserQuery.error instanceof Error
-            ? currentUserQuery.error.message
-            : 'Failed to validate the current session.'
-        }
-        tone="error"
-      />
-    )
-  }
-
-  configureChatBackend('http')
 
   return (
     <SettingsScreen

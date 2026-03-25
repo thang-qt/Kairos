@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query'
+import { queryOptions, useQuery } from '@tanstack/react-query'
 
 export type AppCapabilities = {
   auth: {
@@ -321,8 +321,8 @@ export async function testProviderConnection(
   return parseJSON<TestConnectionResult>(response)
 }
 
-export function useCapabilitiesQuery() {
-  return useQuery({
+export function getCapabilitiesQueryOptions() {
+  return queryOptions({
     queryKey: appQueryKeys.capabilities,
     queryFn: fetchAppCapabilities,
     staleTime: 1000 * 60 * 5,
@@ -330,13 +330,21 @@ export function useCapabilitiesQuery() {
   })
 }
 
-export function useCurrentUserQuery() {
-  return useQuery({
+export function getCurrentUserQueryOptions() {
+  return queryOptions({
     queryKey: appQueryKeys.me,
     queryFn: fetchCurrentUser,
     staleTime: 1000 * 60,
     retry: false,
   })
+}
+
+export function useCapabilitiesQuery() {
+  return useQuery(getCapabilitiesQueryOptions())
+}
+
+export function useCurrentUserQuery() {
+  return useQuery(getCurrentUserQueryOptions())
 }
 
 export function useProvidersQuery() {

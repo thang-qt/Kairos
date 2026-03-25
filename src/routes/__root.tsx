@@ -2,11 +2,16 @@ import {
   HeadContent,
   Outlet,
   Scripts,
-  createRootRoute,
+  createRootRouteWithContext,
 } from '@tanstack/react-router'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { QueryClientProvider } from '@tanstack/react-query'
 
 import appCss from '../styles.css?url'
+import { appQueryClient } from '@/lib/query-client'
+
+type RouterContext = {
+  queryClient: typeof appQueryClient
+}
 
 const themeScript = `
 (() => {
@@ -64,7 +69,7 @@ const themeScript = `
 })()
 `
 
-export const Route = createRootRoute({
+export const Route = createRootRouteWithContext<RouterContext>()({
   head: () => ({
     meta: [
       {
@@ -116,11 +121,9 @@ export const Route = createRootRoute({
   notFoundComponent: RootNotFound,
 })
 
-const queryClient = new QueryClient()
-
 function RootLayout() {
   return (
-    <QueryClientProvider client={queryClient}>
+    <QueryClientProvider client={appQueryClient}>
       <Outlet />
     </QueryClientProvider>
   )

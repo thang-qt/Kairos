@@ -1,16 +1,16 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Navigate, useNavigate } from '@tanstack/react-router'
+import { HugeiconsIcon } from '@hugeicons/react'
+import { Loading03Icon } from '@hugeicons/core-free-icons'
 import { useState } from 'react'
 
 import { AuthFormCard } from './components/auth-form-card'
 import { AuthShell } from './components/auth-shell'
 import {
   appQueryKeys,
-  isUnauthorizedError,
   login,
   signup,
   useCapabilitiesQuery,
-  useCurrentUserQuery,
 } from '@/lib/app-api'
 import { FullScreenMessage } from '@/components/full-screen-message'
 
@@ -18,11 +18,28 @@ type AuthScreenProps = {
   mode?: 'login' | 'signup'
 }
 
+function AuthLoadingScreen() {
+  return (
+    <AuthShell>
+      <div className="flex min-h-[26rem] items-center justify-center">
+        <div className="flex size-12 items-center justify-center rounded-full border border-primary-200 bg-primary-50/80 text-primary-700 shadow-sm backdrop-blur-sm">
+          <HugeiconsIcon
+            icon={Loading03Icon}
+            size={20}
+            strokeWidth={1.5}
+            className="animate-spin"
+          />
+          <span className="sr-only">Loading authentication state</span>
+        </div>
+      </div>
+    </AuthShell>
+  )
+}
+
 export function AuthScreen({ mode = 'login' }: AuthScreenProps) {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const capabilitiesQuery = useCapabilitiesQuery()
-  const currentUserQuery = useCurrentUserQuery()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [passwordConfirmation, setPasswordConfirmation] = useState('')
@@ -43,13 +60,8 @@ export function AuthScreen({ mode = 'login' }: AuthScreenProps) {
     },
   })
 
-  if (capabilitiesQuery.isPending || currentUserQuery.isPending) {
-    return (
-      <FullScreenMessage
-        title="Checking access"
-        detail="Loading the current app policy and session."
-      />
-    )
+  if (capabilitiesQuery.isPending) {
+    return <AuthLoadingScreen />
   }
 
   if (capabilitiesQuery.error) {
@@ -71,24 +83,6 @@ export function AuthScreen({ mode = 'login' }: AuthScreenProps) {
       <FullScreenMessage
         title="Authentication disabled"
         detail="This environment has auth turned off, so the new app shell is not available through the browser login flow."
-      />
-    )
-  }
-
-  if (currentUserQuery.data) {
-    return <Navigate to="/new" replace />
-  }
-
-  if (!isUnauthorizedError(currentUserQuery.error)) {
-    return (
-      <FullScreenMessage
-        title="Session lookup failed"
-        detail={
-          currentUserQuery.error instanceof Error
-            ? currentUserQuery.error.message
-            : 'Failed to resolve the current session.'
-        }
-        tone="error"
       />
     )
   }
