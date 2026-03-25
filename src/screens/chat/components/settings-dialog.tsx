@@ -2,13 +2,9 @@ import { useState } from 'react'
 import { HugeiconsIcon } from '@hugeicons/react'
 import {
   Cancel01Icon,
-  ComputerIcon,
-  Moon01Icon,
-  Sun01Icon,
 } from '@hugeicons/core-free-icons'
 import { ProviderSettingsPanel } from './provider-settings-panel'
 import { ModelSettingsPanel } from './model-settings-panel'
-import type { ThemeMode } from '@/hooks/use-chat-settings'
 import {
   DialogClose,
   DialogContent,
@@ -17,7 +13,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Switch } from '@/components/ui/switch'
-import { Tabs, TabsList, TabsTab } from '@/components/ui/tabs'
+import { AppearanceSettingsControls } from '@/components/appearance-settings-controls'
 import { useChatSettings } from '@/hooks/use-chat-settings'
 import { Button } from '@/components/ui/button'
 
@@ -60,23 +56,6 @@ export function SettingsDialog({
   const [activeTab, setActiveTab] = useState<
     'connection' | 'appearance' | 'display'
   >('connection')
-
-  const themeOptions = [
-    { value: 'system', label: 'System', icon: ComputerIcon },
-    { value: 'light', label: 'Light', icon: Sun01Icon },
-    { value: 'dark', label: 'Dark', icon: Moon01Icon },
-  ] as const
-
-  function applyTheme(theme: ThemeMode) {
-    if (typeof document === 'undefined') return
-    const root = document.documentElement
-    const media = window.matchMedia('(prefers-color-scheme: dark)')
-    root.classList.remove('light', 'dark', 'system')
-    root.classList.add(theme)
-    if (theme === 'system' && media.matches) {
-      root.classList.add('dark')
-    }
-  }
 
   return (
     <DialogRoot open={open} onOpenChange={onOpenChange}>
@@ -173,43 +152,7 @@ export function SettingsDialog({
                   <h3 className="text-sm font-medium text-primary-900">
                     Appearance
                   </h3>
-                  <SettingsRow label="Theme">
-                    <Tabs
-                      value={settings.theme}
-                      onValueChange={function handleChange(value) {
-                        const theme = value as ThemeMode
-                        applyTheme(theme)
-                        updateSettings({ theme })
-                      }}
-                    >
-                      <TabsList
-                        variant="default"
-                        className="gap-2 *:data-[slot=tab-indicator]:duration-0"
-                      >
-                        {themeOptions.map((option) => (
-                          <TabsTab key={option.value} value={option.value}>
-                            <HugeiconsIcon
-                              icon={option.icon}
-                              size={20}
-                              strokeWidth={1.5}
-                            />
-                            <span>{option.label}</span>
-                          </TabsTab>
-                        ))}
-                      </TabsList>
-                    </Tabs>
-                  </SettingsRow>
-                  <SettingsRow
-                    label="Wide mode"
-                    description="Use wider chat message area"
-                  >
-                    <Switch
-                      checked={settings.wideMode}
-                      onCheckedChange={function handleChange(checked) {
-                        updateSettings({ wideMode: checked })
-                      }}
-                    />
-                  </SettingsRow>
+                  <AppearanceSettingsControls />
                 </div>
               ) : null}
 

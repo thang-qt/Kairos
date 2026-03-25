@@ -14,7 +14,7 @@ export function AuthShell({ children }: AuthShellProps) {
         className="pointer-events-none absolute inset-0"
         style={{
           background:
-            'radial-gradient(ellipse 80% 60% at 50% -10%, oklch(0.92 0.008 80 / 0.6) 0%, transparent 70%)',
+            'radial-gradient(ellipse 80% 60% at 50% -10%, var(--theme-atmosphere-glow) 0%, transparent 70%)',
         }}
       />
 
@@ -24,7 +24,7 @@ export function AuthShell({ children }: AuthShellProps) {
         className="pointer-events-none absolute inset-0 opacity-[0.03]"
         style={{
           backgroundImage:
-            'linear-gradient(oklch(0.3 0 80) 1px, transparent 1px), linear-gradient(90deg, oklch(0.3 0 80) 1px, transparent 1px)',
+            'linear-gradient(var(--theme-atmosphere-grid) 1px, transparent 1px), linear-gradient(90deg, var(--theme-atmosphere-grid) 1px, transparent 1px)',
           backgroundSize: '32px 32px',
         }}
       />
@@ -50,7 +50,7 @@ export function AuthShell({ children }: AuthShellProps) {
               className="h-0.5 w-full"
               style={{
                 background:
-                  'linear-gradient(90deg, transparent 0%, oklch(0.6 0.008 80 / 0.5) 30%, oklch(0.7 0.006 80 / 0.7) 50%, oklch(0.6 0.008 80 / 0.5) 70%, transparent 100%)',
+                  'linear-gradient(90deg, transparent 0%, var(--theme-atmosphere-stripe-soft) 30%, var(--theme-atmosphere-stripe-strong) 50%, var(--theme-atmosphere-stripe-soft) 70%, transparent 100%)',
               }}
             />
 

@@ -11,20 +11,20 @@
 @theme {
   --color-transparent: transparent;
   --color-current: currentColor;
-  --color-surface: var(--color-white);
-  --color-ink: var(--color-black);
+  --color-surface: var(--theme-surface);
+  --color-ink: var(--theme-ink);
 
-  --color-primary-50: oklch(0.992 0.002 80);
-  --color-primary-100: oklch(0.9821 0 89.88);
-  --color-primary-200: oklch(0.9461 0 89.88);
-  --color-primary-300: oklch(0.95 0.004 80);
-  --color-primary-400: oklch(0.875 0.005 80);
-  --color-primary-500: oklch(0.785 0.006 80);
-  --color-primary-600: oklch(0.67 0.007 80);
-  --color-primary-700: oklch(0.56 0.006 80);
-  --color-primary-800: oklch(0.45 0.005 80);
-  --color-primary-900: oklch(0.35 0.004 80);
-  --color-primary-950: oklch(0.25 0.003 80);
+  --color-primary-50: var(--theme-primary-50);
+  --color-primary-100: var(--theme-primary-100);
+  --color-primary-200: var(--theme-primary-200);
+  --color-primary-300: var(--theme-primary-300);
+  --color-primary-400: var(--theme-primary-400);
+  --color-primary-500: var(--theme-primary-500);
+  --color-primary-600: var(--theme-primary-600);
+  --color-primary-700: var(--theme-primary-700);
+  --color-primary-800: var(--theme-primary-800);
+  --color-primary-900: var(--theme-primary-900);
+  --color-primary-950: var(--theme-primary-950);
   --font-sans:
     -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu',
     'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
@@ -32,49 +32,508 @@
   --font-mono: 'JetBrains Mono', monospace;
 }
 
-.dark {
-  color-scheme: dark;
-  --color-primary-50: oklch(0.1244 0 89.88);
-  --color-primary-100: oklch(0.1584 0 89.88);
-  --color-primary-200: oklch(0.2078 0 89.88);
-  --color-primary-300: oklch(0.3 0.006 80);
-  --color-primary-400: oklch(0.4 0.006 80);
-  --color-primary-500: oklch(0.52 0.006 80);
-  --color-primary-600: oklch(0.65 0.006 80);
-  --color-primary-700: oklch(0.73 0.006 80);
-  --color-primary-800: oklch(0.83 0.005 80);
-  --color-primary-900: oklch(0.895 0.004 80);
-  --color-primary-950: oklch(0.945 0.003 80);
+:root,
+.theme-default {
+  --theme-light-primary-50: oklch(0.992 0.002 80);
+  --theme-light-primary-100: oklch(0.9821 0 89.88);
+  --theme-light-primary-200: oklch(0.9461 0 89.88);
+  --theme-light-primary-300: oklch(0.95 0.004 80);
+  --theme-light-primary-400: oklch(0.875 0.005 80);
+  --theme-light-primary-500: oklch(0.785 0.006 80);
+  --theme-light-primary-600: oklch(0.67 0.007 80);
+  --theme-light-primary-700: oklch(0.56 0.006 80);
+  --theme-light-primary-800: oklch(0.45 0.005 80);
+  --theme-light-primary-900: oklch(0.35 0.004 80);
+  --theme-light-primary-950: oklch(0.25 0.003 80);
+  --theme-light-surface: #fcfbf7;
+  --theme-light-ink: #171717;
+  --theme-light-atmosphere-glow: color-mix(
+    in oklab,
+    var(--theme-light-primary-200) 72%,
+    transparent
+  );
+  --theme-light-atmosphere-grid: color-mix(
+    in oklab,
+    var(--theme-light-primary-950) 22%,
+    transparent
+  );
+  --theme-light-atmosphere-stripe-soft: color-mix(
+    in oklab,
+    var(--theme-light-primary-500) 56%,
+    transparent
+  );
+  --theme-light-atmosphere-stripe-strong: color-mix(
+    in oklab,
+    var(--theme-light-primary-600) 72%,
+    transparent
+  );
 
-  --color-surface: var(--color-black);
-  --color-ink: var(--color-white);
+  --theme-dark-primary-50: oklch(0.1244 0 89.88);
+  --theme-dark-primary-100: oklch(0.1584 0 89.88);
+  --theme-dark-primary-200: oklch(0.2078 0 89.88);
+  --theme-dark-primary-300: oklch(0.3 0.006 80);
+  --theme-dark-primary-400: oklch(0.4 0.006 80);
+  --theme-dark-primary-500: oklch(0.52 0.006 80);
+  --theme-dark-primary-600: oklch(0.65 0.006 80);
+  --theme-dark-primary-700: oklch(0.73 0.006 80);
+  --theme-dark-primary-800: oklch(0.83 0.005 80);
+  --theme-dark-primary-900: oklch(0.895 0.004 80);
+  --theme-dark-primary-950: oklch(0.945 0.003 80);
+  --theme-dark-surface: #111111;
+  --theme-dark-ink: #f4f4f4;
+  --theme-dark-atmosphere-glow: color-mix(
+    in oklab,
+    var(--theme-dark-primary-300) 48%,
+    transparent
+  );
+  --theme-dark-atmosphere-grid: color-mix(
+    in oklab,
+    var(--theme-dark-primary-900) 18%,
+    transparent
+  );
+  --theme-dark-atmosphere-stripe-soft: color-mix(
+    in oklab,
+    var(--theme-dark-primary-600) 48%,
+    transparent
+  );
+  --theme-dark-atmosphere-stripe-strong: color-mix(
+    in oklab,
+    var(--theme-dark-primary-800) 64%,
+    transparent
+  );
+
+  --theme-primary-50: var(--theme-light-primary-50);
+  --theme-primary-100: var(--theme-light-primary-100);
+  --theme-primary-200: var(--theme-light-primary-200);
+  --theme-primary-300: var(--theme-light-primary-300);
+  --theme-primary-400: var(--theme-light-primary-400);
+  --theme-primary-500: var(--theme-light-primary-500);
+  --theme-primary-600: var(--theme-light-primary-600);
+  --theme-primary-700: var(--theme-light-primary-700);
+  --theme-primary-800: var(--theme-light-primary-800);
+  --theme-primary-900: var(--theme-light-primary-900);
+  --theme-primary-950: var(--theme-light-primary-950);
+  --theme-surface: var(--theme-light-surface);
+  --theme-ink: var(--theme-light-ink);
+  --theme-atmosphere-glow: var(--theme-light-atmosphere-glow);
+  --theme-atmosphere-grid: var(--theme-light-atmosphere-grid);
+  --theme-atmosphere-stripe-soft: var(--theme-light-atmosphere-stripe-soft);
+  --theme-atmosphere-stripe-strong: var(--theme-light-atmosphere-stripe-strong);
 }
 
-.light {
-  color-scheme: light;
+.theme-harvest {
+  --theme-light-primary-50: #fcf4df;
+  --theme-light-primary-100: #f5e5c0;
+  --theme-light-primary-200: #ecd2a2;
+  --theme-light-primary-300: #d9ba82;
+  --theme-light-primary-400: #c49f63;
+  --theme-light-primary-500: #ae8752;
+  --theme-light-primary-600: #8d6944;
+  --theme-light-primary-700: #73543a;
+  --theme-light-primary-800: #5b4333;
+  --theme-light-primary-900: #47352d;
+  --theme-light-primary-950: #34271f;
+  --theme-light-surface: #fbf1de;
+  --theme-light-ink: #34271f;
+  --theme-light-atmosphere-glow: color-mix(
+    in oklab,
+    #e0a94e 30%,
+    transparent
+  );
+  --theme-light-atmosphere-grid: color-mix(
+    in oklab,
+    #73543a 18%,
+    transparent
+  );
+  --theme-light-atmosphere-stripe-soft: color-mix(
+    in oklab,
+    #c98a33 34%,
+    transparent
+  );
+  --theme-light-atmosphere-stripe-strong: color-mix(
+    in oklab,
+    #9d6125 52%,
+    transparent
+  );
+
+  --theme-dark-primary-50: #171311;
+  --theme-dark-primary-100: #201917;
+  --theme-dark-primary-200: #2b211d;
+  --theme-dark-primary-300: #3a2d26;
+  --theme-dark-primary-400: #513d33;
+  --theme-dark-primary-500: #6a5040;
+  --theme-dark-primary-600: #8b674f;
+  --theme-dark-primary-700: #b48966;
+  --theme-dark-primary-800: #d5b188;
+  --theme-dark-primary-900: #ebd3b0;
+  --theme-dark-primary-950: #f6ead5;
+  --theme-dark-surface: #241b18;
+  --theme-dark-ink: #ebd3b0;
+  --theme-dark-atmosphere-glow: color-mix(
+    in oklab,
+    #d89238 36%,
+    transparent
+  );
+  --theme-dark-atmosphere-grid: color-mix(
+    in oklab,
+    #ebd3b0 14%,
+    transparent
+  );
+  --theme-dark-atmosphere-stripe-soft: color-mix(
+    in oklab,
+    #c47d2d 42%,
+    transparent
+  );
+  --theme-dark-atmosphere-stripe-strong: color-mix(
+    in oklab,
+    #f0b15a 54%,
+    transparent
+  );
 }
 
+.theme-mist {
+  --theme-light-primary-50: #f3f6fb;
+  --theme-light-primary-100: #e8edf6;
+  --theme-light-primary-200: #dbe3f0;
+  --theme-light-primary-300: #c8d2e4;
+  --theme-light-primary-400: #aebcd6;
+  --theme-light-primary-500: #93a5c4;
+  --theme-light-primary-600: #7487a7;
+  --theme-light-primary-700: #5e708d;
+  --theme-light-primary-800: #4c5b73;
+  --theme-light-primary-900: #3d485d;
+  --theme-light-primary-950: #2e3747;
+  --theme-light-surface: #f3f6fb;
+  --theme-light-ink: #2e3747;
+  --theme-light-atmosphere-glow: color-mix(
+    in oklab,
+    #93b2f0 34%,
+    transparent
+  );
+  --theme-light-atmosphere-grid: color-mix(
+    in oklab,
+    #5e708d 16%,
+    transparent
+  );
+  --theme-light-atmosphere-stripe-soft: color-mix(
+    in oklab,
+    #76a2ec 34%,
+    transparent
+  );
+  --theme-light-atmosphere-stripe-strong: color-mix(
+    in oklab,
+    #567fe0 48%,
+    transparent
+  );
+
+  --theme-dark-primary-50: #10141b;
+  --theme-dark-primary-100: #161c24;
+  --theme-dark-primary-200: #1d2530;
+  --theme-dark-primary-300: #273242;
+  --theme-dark-primary-400: #334258;
+  --theme-dark-primary-500: #43556f;
+  --theme-dark-primary-600: #5d7496;
+  --theme-dark-primary-700: #87a0c2;
+  --theme-dark-primary-800: #afc0dc;
+  --theme-dark-primary-900: #d4def0;
+  --theme-dark-primary-950: #ebf1fb;
+  --theme-dark-surface: #111720;
+  --theme-dark-ink: #d4def0;
+  --theme-dark-atmosphere-glow: color-mix(
+    in oklab,
+    #729ae6 30%,
+    transparent
+  );
+  --theme-dark-atmosphere-grid: color-mix(
+    in oklab,
+    #d4def0 14%,
+    transparent
+  );
+  --theme-dark-atmosphere-stripe-soft: color-mix(
+    in oklab,
+    #69a0f2 36%,
+    transparent
+  );
+  --theme-dark-atmosphere-stripe-strong: color-mix(
+    in oklab,
+    #8fb4ff 50%,
+    transparent
+  );
+}
+
+.theme-canopy {
+  --theme-light-primary-50: #f3f3e6;
+  --theme-light-primary-100: #e7e9d6;
+  --theme-light-primary-200: #d9ddc3;
+  --theme-light-primary-300: #c4ccb1;
+  --theme-light-primary-400: #a5b68f;
+  --theme-light-primary-500: #8d9d78;
+  --theme-light-primary-600: #748262;
+  --theme-light-primary-700: #5f6950;
+  --theme-light-primary-800: #4e5644;
+  --theme-light-primary-900: #3f4638;
+  --theme-light-primary-950: #31352b;
+  --theme-light-surface: #f1f0e3;
+  --theme-light-ink: #31352b;
+  --theme-light-atmosphere-glow: color-mix(
+    in oklab,
+    #95b476 30%,
+    transparent
+  );
+  --theme-light-atmosphere-grid: color-mix(
+    in oklab,
+    #5f6950 17%,
+    transparent
+  );
+  --theme-light-atmosphere-stripe-soft: color-mix(
+    in oklab,
+    #7ca86b 34%,
+    transparent
+  );
+  --theme-light-atmosphere-stripe-strong: color-mix(
+    in oklab,
+    #63805a 48%,
+    transparent
+  );
+
+  --theme-dark-primary-50: #151a17;
+  --theme-dark-primary-100: #1d2420;
+  --theme-dark-primary-200: #273029;
+  --theme-dark-primary-300: #334038;
+  --theme-dark-primary-400: #435247;
+  --theme-dark-primary-500: #55675a;
+  --theme-dark-primary-600: #6f856d;
+  --theme-dark-primary-700: #9eb196;
+  --theme-dark-primary-800: #c0cbb0;
+  --theme-dark-primary-900: #dde1cf;
+  --theme-dark-primary-950: #edf0e3;
+  --theme-dark-surface: #18201c;
+  --theme-dark-ink: #dde1cf;
+  --theme-dark-atmosphere-glow: color-mix(
+    in oklab,
+    #78a88b 28%,
+    transparent
+  );
+  --theme-dark-atmosphere-grid: color-mix(
+    in oklab,
+    #dde1cf 14%,
+    transparent
+  );
+  --theme-dark-atmosphere-stripe-soft: color-mix(
+    in oklab,
+    #7fb87f 34%,
+    transparent
+  );
+  --theme-dark-atmosphere-stripe-strong: color-mix(
+    in oklab,
+    #9ac287 48%,
+    transparent
+  );
+}
+
+.theme-ember {
+  --theme-light-primary-50: #fcf1ec;
+  --theme-light-primary-100: #f7e0d7;
+  --theme-light-primary-200: #efc7b7;
+  --theme-light-primary-300: #e1a58e;
+  --theme-light-primary-400: #cf8166;
+  --theme-light-primary-500: #bb654e;
+  --theme-light-primary-600: #965141;
+  --theme-light-primary-700: #794238;
+  --theme-light-primary-800: #61362f;
+  --theme-light-primary-900: #4c2b28;
+  --theme-light-primary-950: #381f20;
+  --theme-light-surface: #fbefea;
+  --theme-light-ink: #381f20;
+  --theme-light-atmosphere-glow: color-mix(
+    in oklab,
+    #df7f56 30%,
+    transparent
+  );
+  --theme-light-atmosphere-grid: color-mix(
+    in oklab,
+    #794238 18%,
+    transparent
+  );
+  --theme-light-atmosphere-stripe-soft: color-mix(
+    in oklab,
+    #d06d46 34%,
+    transparent
+  );
+  --theme-light-atmosphere-stripe-strong: color-mix(
+    in oklab,
+    #a54f36 48%,
+    transparent
+  );
+
+  --theme-dark-primary-50: #180f12;
+  --theme-dark-primary-100: #221419;
+  --theme-dark-primary-200: #311d22;
+  --theme-dark-primary-300: #44282c;
+  --theme-dark-primary-400: #5f3638;
+  --theme-dark-primary-500: #7e4944;
+  --theme-dark-primary-600: #a05f52;
+  --theme-dark-primary-700: #cb8368;
+  --theme-dark-primary-800: #e1ab92;
+  --theme-dark-primary-900: #f0d1c3;
+  --theme-dark-primary-950: #faece7;
+  --theme-dark-surface: #1d1216;
+  --theme-dark-ink: #f0d1c3;
+  --theme-dark-atmosphere-glow: color-mix(
+    in oklab,
+    #d97150 30%,
+    transparent
+  );
+  --theme-dark-atmosphere-grid: color-mix(
+    in oklab,
+    #f0d1c3 13%,
+    transparent
+  );
+  --theme-dark-atmosphere-stripe-soft: color-mix(
+    in oklab,
+    #cf6645 36%,
+    transparent
+  );
+  --theme-dark-atmosphere-stripe-strong: color-mix(
+    in oklab,
+    #f18e68 48%,
+    transparent
+  );
+}
+
+.theme-tide {
+  --theme-light-primary-50: #eef6f8;
+  --theme-light-primary-100: #ddebef;
+  --theme-light-primary-200: #c5dce3;
+  --theme-light-primary-300: #a5c4cf;
+  --theme-light-primary-400: #81aab9;
+  --theme-light-primary-500: #648f9f;
+  --theme-light-primary-600: #4f7282;
+  --theme-light-primary-700: #405c69;
+  --theme-light-primary-800: #334954;
+  --theme-light-primary-900: #293a43;
+  --theme-light-primary-950: #1d2b31;
+  --theme-light-surface: #eef5f7;
+  --theme-light-ink: #1d2b31;
+  --theme-light-atmosphere-glow: color-mix(
+    in oklab,
+    #67b2c8 28%,
+    transparent
+  );
+  --theme-light-atmosphere-grid: color-mix(
+    in oklab,
+    #405c69 17%,
+    transparent
+  );
+  --theme-light-atmosphere-stripe-soft: color-mix(
+    in oklab,
+    #5a9fb6 34%,
+    transparent
+  );
+  --theme-light-atmosphere-stripe-strong: color-mix(
+    in oklab,
+    #3d7e93 48%,
+    transparent
+  );
+
+  --theme-dark-primary-50: #0f161a;
+  --theme-dark-primary-100: #162026;
+  --theme-dark-primary-200: #1e2b33;
+  --theme-dark-primary-300: #293944;
+  --theme-dark-primary-400: #38505d;
+  --theme-dark-primary-500: #4a6878;
+  --theme-dark-primary-600: #628899;
+  --theme-dark-primary-700: #89aeba;
+  --theme-dark-primary-800: #b4cdd5;
+  --theme-dark-primary-900: #d9e9ed;
+  --theme-dark-primary-950: #eff7f9;
+  --theme-dark-surface: #111a1f;
+  --theme-dark-ink: #d9e9ed;
+  --theme-dark-atmosphere-glow: color-mix(
+    in oklab,
+    #5ca8c0 28%,
+    transparent
+  );
+  --theme-dark-atmosphere-grid: color-mix(
+    in oklab,
+    #d9e9ed 13%,
+    transparent
+  );
+  --theme-dark-atmosphere-stripe-soft: color-mix(
+    in oklab,
+    #5babc4 36%,
+    transparent
+  );
+  --theme-dark-atmosphere-stripe-strong: color-mix(
+    in oklab,
+    #88c6d6 48%,
+    transparent
+  );
+}
+
+.light,
 .system {
   color-scheme: light;
+  --theme-primary-50: var(--theme-light-primary-50);
+  --theme-primary-100: var(--theme-light-primary-100);
+  --theme-primary-200: var(--theme-light-primary-200);
+  --theme-primary-300: var(--theme-light-primary-300);
+  --theme-primary-400: var(--theme-light-primary-400);
+  --theme-primary-500: var(--theme-light-primary-500);
+  --theme-primary-600: var(--theme-light-primary-600);
+  --theme-primary-700: var(--theme-light-primary-700);
+  --theme-primary-800: var(--theme-light-primary-800);
+  --theme-primary-900: var(--theme-light-primary-900);
+  --theme-primary-950: var(--theme-light-primary-950);
+  --theme-surface: var(--theme-light-surface);
+  --theme-ink: var(--theme-light-ink);
+  --theme-atmosphere-glow: var(--theme-light-atmosphere-glow);
+  --theme-atmosphere-grid: var(--theme-light-atmosphere-grid);
+  --theme-atmosphere-stripe-soft: var(--theme-light-atmosphere-stripe-soft);
+  --theme-atmosphere-stripe-strong: var(--theme-light-atmosphere-stripe-strong);
+}
+
+.dark {
+  color-scheme: dark;
+  --theme-primary-50: var(--theme-dark-primary-50);
+  --theme-primary-100: var(--theme-dark-primary-100);
+  --theme-primary-200: var(--theme-dark-primary-200);
+  --theme-primary-300: var(--theme-dark-primary-300);
+  --theme-primary-400: var(--theme-dark-primary-400);
+  --theme-primary-500: var(--theme-dark-primary-500);
+  --theme-primary-600: var(--theme-dark-primary-600);
+  --theme-primary-700: var(--theme-dark-primary-700);
+  --theme-primary-800: var(--theme-dark-primary-800);
+  --theme-primary-900: var(--theme-dark-primary-900);
+  --theme-primary-950: var(--theme-dark-primary-950);
+  --theme-surface: var(--theme-dark-surface);
+  --theme-ink: var(--theme-dark-ink);
+  --theme-atmosphere-glow: var(--theme-dark-atmosphere-glow);
+  --theme-atmosphere-grid: var(--theme-dark-atmosphere-grid);
+  --theme-atmosphere-stripe-soft: var(--theme-dark-atmosphere-stripe-soft);
+  --theme-atmosphere-stripe-strong: var(--theme-dark-atmosphere-stripe-strong);
 }
 
 @media (prefers-color-scheme: dark) {
   .system {
     color-scheme: dark;
-    --color-primary-50: oklch(0.1244 0 89.88);
-    --color-primary-100: oklch(0.1584 0 89.88);
-    --color-primary-200: oklch(0.2078 0 89.88);
-    --color-primary-300: oklch(0.3 0.006 80);
-    --color-primary-400: oklch(0.4 0.006 80);
-    --color-primary-500: oklch(0.52 0.006 80);
-    --color-primary-600: oklch(0.65 0.006 80);
-    --color-primary-700: oklch(0.73 0.006 80);
-    --color-primary-800: oklch(0.83 0.005 80);
-    --color-primary-900: oklch(0.895 0.004 80);
-    --color-primary-950: oklch(0.945 0.003 80);
-    --color-surface: var(--color-black);
-    --color-ink: var(--color-white);
-    --color-surface-deep: oklch(0.18 0 0);
+    --theme-primary-50: var(--theme-dark-primary-50);
+    --theme-primary-100: var(--theme-dark-primary-100);
+    --theme-primary-200: var(--theme-dark-primary-200);
+    --theme-primary-300: var(--theme-dark-primary-300);
+    --theme-primary-400: var(--theme-dark-primary-400);
+    --theme-primary-500: var(--theme-dark-primary-500);
+    --theme-primary-600: var(--theme-dark-primary-600);
+    --theme-primary-700: var(--theme-dark-primary-700);
+    --theme-primary-800: var(--theme-dark-primary-800);
+    --theme-primary-900: var(--theme-dark-primary-900);
+    --theme-primary-950: var(--theme-dark-primary-950);
+    --theme-surface: var(--theme-dark-surface);
+    --theme-ink: var(--theme-dark-ink);
+    --theme-atmosphere-glow: var(--theme-dark-atmosphere-glow);
+    --theme-atmosphere-grid: var(--theme-dark-atmosphere-grid);
+    --theme-atmosphere-stripe-soft: var(--theme-dark-atmosphere-stripe-soft);
+    --theme-atmosphere-stripe-strong: var(--theme-dark-atmosphere-stripe-strong);
   }
 }
 
