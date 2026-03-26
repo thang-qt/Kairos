@@ -178,8 +178,13 @@ type providerModelCacheStateRow struct {
 }
 
 type ChatGenerationRequest struct {
-	Model    string
-	Messages []ProviderMessage
+	Model           string
+	SystemPrompt    string
+	ReasoningEffort string
+	Temperature     *float64
+	TopP            *float64
+	MaxOutputTokens *int64
+	Messages        []ProviderMessage
 }
 
 type ChatGenerationDelta struct {
@@ -303,16 +308,38 @@ func (driver *OpenAICompatibleDriver) GenerateChatStream(
 			IncludeUsage: openai.Bool(true),
 		},
 	}
+	if normalizedReasoningEffort := normalizeOpenAIReasoningEffort(request.ReasoningEffort); normalizedReasoningEffort != "" {
+		params.ReasoningEffort = normalizedReasoningEffort
+	}
+	if request.Temperature != nil {
+		params.Temperature = openai.Float(*request.Temperature)
+	}
+	if request.TopP != nil {
+		params.TopP = openai.Float(*request.TopP)
+	}
+	if request.MaxOutputTokens != nil {
+		params.MaxCompletionTokens = openai.Int(*request.MaxOutputTokens)
+	}
 
 	stream := client.Chat.Completions.NewStreaming(ctx, params)
 	defer stream.Close()
 
 	accumulator := openai.ChatCompletionAccumulator{}
+	accumulatedThinking := ""
 	for stream.Next() {
 		chunk := stream.Current()
 		accumulator.AddChunk(chunk)
 		if len(chunk.Choices) == 0 {
 			continue
+		}
+		if reasoningDelta := extractChatCompletionReasoningDelta(chunk); reasoningDelta != "" {
+			accumulatedThinking = mergeOpenAIStreamText(
+				accumulatedThinking,
+				reasoningDelta,
+			)
+			if err := onDelta(ChatGenerationDelta{Thinking: reasoningDelta}); err != nil {
+				return ChatGenerationResult{}, err
+			}
 		}
 		delta := chunk.Choices[0].Delta.Content
 		if delta == "" {
@@ -338,6 +365,7 @@ func (driver *OpenAICompatibleDriver) GenerateChatStream(
 	return ChatGenerationResult{
 		Model:            modelID,
 		ModelDescription: provider.Record.Label,
+		ThinkingText:     strings.TrimSpace(accumulatedThinking),
 		OutputText:       outputText,
 		PromptTokens:     accumulator.Usage.PromptTokens,
 		CompletionTokens: accumulator.Usage.CompletionTokens,
@@ -2017,6 +2045,76 @@ func (driver *OpenAICompatibleDriver) requestOptions(provider resolvedProvider) 
 		options = append(options, option.WithBaseURL(baseURL))
 	}
 	return options
+}
+
+func normalizeOpenAIReasoningEffort(value string) openai.ReasoningEffort {
+	switch strings.TrimSpace(strings.ToLower(value)) {
+	case "low":
+		return openai.ReasoningEffortLow
+	case "medium":
+		return openai.ReasoningEffortMedium
+	case "high":
+		return openai.ReasoningEffortHigh
+	default:
+		return ""
+	}
+}
+
+func extractChatCompletionReasoningDelta(chunk openai.ChatCompletionChunk) string {
+	if len(chunk.Choices) == 0 {
+		return ""
+	}
+	return extractReasoningContentFromRawJSON(
+		chunk.Choices[0].Delta.JSON.ExtraFields["reasoning_content"].Raw(),
+	)
+}
+
+func extractReasoningContentFromRawJSON(raw string) string {
+	normalizedRaw := strings.TrimSpace(raw)
+	if normalizedRaw == "" {
+		return ""
+	}
+
+	var text string
+	if err := json.Unmarshal([]byte(normalizedRaw), &text); err == nil {
+		return text
+	}
+
+	var textParts []string
+	if err := json.Unmarshal([]byte(normalizedRaw), &textParts); err == nil {
+		return strings.Join(textParts, "")
+	}
+
+	var contentParts []map[string]any
+	if err := json.Unmarshal([]byte(normalizedRaw), &contentParts); err == nil {
+		fragments := make([]string, 0, len(contentParts))
+		for _, part := range contentParts {
+			textValue, _ := part["text"].(string)
+			textValue = strings.TrimSpace(textValue)
+			if textValue != "" {
+				fragments = append(fragments, textValue)
+			}
+		}
+		return strings.Join(fragments, "")
+	}
+
+	return ""
+}
+
+func mergeOpenAIStreamText(current string, next string) string {
+	if next == "" {
+		return current
+	}
+	if current == "" {
+		return next
+	}
+	if strings.HasPrefix(next, current) {
+		return next
+	}
+	if strings.HasSuffix(current, next) {
+		return current
+	}
+	return current + next
 }
 
 func buildOpenAIChatMessages(messages []ProviderMessage) []openai.ChatCompletionMessageParamUnion {

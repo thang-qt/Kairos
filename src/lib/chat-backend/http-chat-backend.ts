@@ -136,6 +136,11 @@ export function createHTTPChatBackend(): ChatBackend {
           body: JSON.stringify({
             message: input.message,
             model: input.model,
+            systemPrompt: input.systemPrompt,
+            thinking: input.thinking,
+            temperature: input.temperature,
+            topP: input.topP,
+            maxOutputTokens: input.maxOutputTokens,
             idempotencyKey: input.idempotencyKey,
             attachments: input.attachments,
           }),
@@ -171,6 +176,11 @@ export function createHTTPChatBackend(): ChatBackend {
           body: JSON.stringify({
             message: input.message,
             model: input.model,
+            systemPrompt: input.systemPrompt,
+            thinking: input.thinking,
+            temperature: input.temperature,
+            topP: input.topP,
+            maxOutputTokens: input.maxOutputTokens,
           }),
         },
       )
@@ -188,7 +198,8 @@ export function createHTTPChatBackend(): ChatBackend {
     },
     subscribeToConversation(subscription) {
       const friendlyId = subscription.friendlyId?.trim()
-      if (!friendlyId || typeof window === 'undefined') return function noop() {}
+      if (!friendlyId || typeof window === 'undefined')
+        return function noop() {}
 
       const eventSource = new EventSource(
         `/api/sessions/${encodeURIComponent(friendlyId)}/events`,

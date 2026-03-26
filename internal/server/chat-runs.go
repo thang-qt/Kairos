@@ -13,11 +13,16 @@ import (
 )
 
 type SendMessageInput struct {
-	FriendlyID     string              `json:"-"`
-	Message        string              `json:"message"`
-	Model          string              `json:"model"`
-	IdempotencyKey string              `json:"idempotencyKey"`
-	Attachments    []AttachmentPayload `json:"attachments"`
+	FriendlyID      string              `json:"-"`
+	Message         string              `json:"message"`
+	Model           string              `json:"model"`
+	SystemPrompt    string              `json:"systemPrompt"`
+	Thinking        string              `json:"thinking"`
+	Temperature     *float64            `json:"temperature"`
+	TopP            *float64            `json:"topP"`
+	MaxOutputTokens *int64              `json:"maxOutputTokens"`
+	IdempotencyKey  string              `json:"idempotencyKey"`
+	Attachments     []AttachmentPayload `json:"attachments"`
 }
 
 type AttachmentPayload struct {
@@ -569,8 +574,13 @@ func (service *ChatRunService) executeRun(
 		ctx,
 		provider,
 		ChatGenerationRequest{
-			Model:    model.ID,
-			Messages: buildProviderMessages(history),
+			Model:           model.ID,
+			SystemPrompt:    input.SystemPrompt,
+			ReasoningEffort: input.Thinking,
+			Temperature:     input.Temperature,
+			TopP:            input.TopP,
+			MaxOutputTokens: input.MaxOutputTokens,
+			Messages:        buildProviderMessages(history, input.SystemPrompt),
 		},
 		func(delta ChatGenerationDelta) error {
 			if delta.Thinking != "" {
@@ -970,8 +980,22 @@ func normalizeGeneratedSessionTitle(value string) string {
 	return normalized
 }
 
-func buildProviderMessages(history []map[string]any) []ProviderMessage {
-	messages := make([]ProviderMessage, 0, len(history))
+func buildProviderMessages(
+	history []map[string]any,
+	systemPrompt string,
+) []ProviderMessage {
+	messages := make([]ProviderMessage, 0, len(history)+1)
+	if normalizedSystemPrompt := strings.TrimSpace(systemPrompt); normalizedSystemPrompt != "" {
+		messages = append(messages, ProviderMessage{
+			Role: "system",
+			Parts: []ProviderMessagePart{
+				{
+					Type: "text",
+					Text: normalizedSystemPrompt,
+				},
+			},
+		})
+	}
 	for _, message := range history {
 		role := strings.TrimSpace(stringValueFromMap(message, "role"))
 		if role == "" {

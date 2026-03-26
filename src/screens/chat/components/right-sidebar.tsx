@@ -6,13 +6,17 @@ import {
   GitBranchIcon,
   Pen01Icon,
   PinIcon,
+  Settings02Icon,
 } from '@hugeicons/core-free-icons'
 import { AnimatePresence, motion } from 'motion/react'
 import { usePinSession } from '../hooks/use-pin-session'
 import { useRenameSession } from '../hooks/use-rename-session'
 import { BranchTreePanel } from './branch-tree-panel'
+import { ModelSettingsPanel } from './model-settings-panel'
 import { SessionRenameDialog } from './sidebar/session-rename-dialog'
 import type { SessionMeta } from '../types'
+import type { ConversationSettings } from '../conversation-settings'
+import type { ProviderModel } from '@/lib/app-api'
 import { Button } from '@/components/ui/button'
 import { ExportMenu } from '@/components/export-menu'
 import { cn } from '@/lib/utils'
@@ -25,7 +29,16 @@ import {
 
 type ExportFormat = 'markdown' | 'json' | 'text'
 
-export type RightSidebarTab = 'options' | 'branches'
+export type RightSidebarTab = 'options' | 'model' | 'branches'
+export type RightSidebarModelSettings = Pick<
+  ConversationSettings,
+  | 'model'
+  | 'systemPrompt'
+  | 'temperature'
+  | 'topP'
+  | 'maxOutputTokens'
+  | 'thinkingLevel'
+>
 
 type RightSidebarProps = {
   isOpen: boolean
@@ -37,6 +50,14 @@ type RightSidebarProps = {
   exportDisabled?: boolean
   sessions: Array<SessionMeta>
   activeSessionKey?: string
+  models: Array<ProviderModel>
+  selectedModelId: string
+  defaultModelId?: string
+  modelsLoading?: boolean
+  canSelectModel?: boolean
+  defaultModelLocked?: boolean
+  modelSettings: RightSidebarModelSettings
+  onModelSettingsChange: (updates: Partial<RightSidebarModelSettings>) => void
 }
 
 const TABS = [
@@ -44,6 +65,11 @@ const TABS = [
     id: 'options' as const,
     label: 'Options',
     icon: FilterHorizontalIcon,
+  },
+  {
+    id: 'model' as const,
+    label: 'Model',
+    icon: Settings02Icon,
   },
   {
     id: 'branches' as const,
@@ -98,24 +124,28 @@ function SidebarTabs({
 }) {
   return (
     <div className="flex items-center gap-1">
-      {TABS.map((tab) => (
-        <TooltipProvider key={tab.id}>
-          <TooltipRoot>
-            <TooltipTrigger
-              type="button"
-              onClick={() => onTabChange(tab.id)}
-              className={cn(
-                'inline-flex size-8 items-center justify-center rounded-md text-primary-600 transition-colors hover:bg-primary-100 hover:text-primary-900',
-                activeTab === tab.id && 'bg-primary-200 text-primary-900',
-              )}
-              aria-label={tab.label}
-            >
-              <HugeiconsIcon icon={tab.icon} size={20} strokeWidth={1.5} />
-            </TooltipTrigger>
-            <TooltipContent side="bottom">{tab.label}</TooltipContent>
-          </TooltipRoot>
-        </TooltipProvider>
-      ))}
+      {TABS.map(function renderTab(tab) {
+        return (
+          <TooltipProvider key={tab.id}>
+            <TooltipRoot>
+              <TooltipTrigger
+                type="button"
+                onClick={function handleClick() {
+                  onTabChange(tab.id)
+                }}
+                className={cn(
+                  'inline-flex size-8 items-center justify-center rounded-md text-primary-600 transition-colors hover:bg-primary-100 hover:text-primary-900',
+                  activeTab === tab.id && 'bg-primary-200 text-primary-900',
+                )}
+                aria-label={tab.label}
+              >
+                <HugeiconsIcon icon={tab.icon} size={20} strokeWidth={1.5} />
+              </TooltipTrigger>
+              <TooltipContent side="bottom">{tab.label}</TooltipContent>
+            </TooltipRoot>
+          </TooltipProvider>
+        )
+      })}
     </div>
   )
 }
@@ -212,6 +242,68 @@ function OptionsPanel({
   )
 }
 
+function SidebarBody({
+  activeTab,
+  activeSession,
+  activeSessionKey,
+  canSelectModel,
+  defaultModelId,
+  defaultModelLocked,
+  exportDisabled,
+  modelSettings,
+  models,
+  modelsLoading,
+  onExport,
+  onModelSettingsChange,
+  selectedModelId,
+  sessions,
+}: {
+  activeTab: RightSidebarTab
+  activeSession?: SessionMeta
+  activeSessionKey?: string
+  canSelectModel: boolean
+  defaultModelId?: string
+  defaultModelLocked: boolean
+  exportDisabled: boolean
+  modelSettings: RightSidebarModelSettings
+  models: Array<ProviderModel>
+  modelsLoading: boolean
+  onExport: (format: ExportFormat) => void
+  onModelSettingsChange: (updates: Partial<RightSidebarModelSettings>) => void
+  selectedModelId: string
+  sessions: Array<SessionMeta>
+}) {
+  return (
+    <div className="min-h-0 flex-1 overflow-y-auto px-1">
+      {activeTab === 'options' ? (
+        <OptionsPanel
+          activeSession={activeSession}
+          onExport={onExport}
+          exportDisabled={exportDisabled}
+        />
+      ) : null}
+      {activeTab === 'model' ? (
+        <ModelSettingsPanel
+          models={models}
+          selectedModelId={selectedModelId}
+          defaultModelId={defaultModelId}
+          loading={modelsLoading}
+          canSelectModel={canSelectModel}
+          defaultModelLocked={defaultModelLocked}
+          value={modelSettings}
+          onChange={onModelSettingsChange}
+        />
+      ) : null}
+      {activeTab === 'branches' ? (
+        <BranchTreePanel
+          sessions={sessions}
+          activeSessionKey={activeSessionKey}
+        />
+      ) : null}
+    </div>
+  )
+}
+
 function RightSidebarComponent({
   isOpen,
   isMobile = false,
@@ -222,6 +314,14 @@ function RightSidebarComponent({
   exportDisabled = false,
   sessions,
   activeSessionKey,
+  models,
+  selectedModelId,
+  defaultModelId,
+  modelsLoading = false,
+  canSelectModel = true,
+  defaultModelLocked = false,
+  modelSettings,
+  onModelSettingsChange,
 }: RightSidebarProps) {
   const activeSession = useMemo(
     function findActiveSession() {
@@ -272,21 +372,22 @@ function RightSidebarComponent({
                 </Button>
               </div>
 
-          <div className="min-h-0 flex-1 overflow-y-auto px-1">
-            {activeTab === 'options' ? (
-              <OptionsPanel
+              <SidebarBody
+                activeTab={activeTab}
                 activeSession={activeSession}
-                onExport={onExport}
-                exportDisabled={exportDisabled}
-              />
-            ) : null}
-            {activeTab === 'branches' ? (
-              <BranchTreePanel
-                sessions={sessions}
                 activeSessionKey={activeSessionKey}
+                canSelectModel={canSelectModel}
+                defaultModelId={defaultModelId}
+                defaultModelLocked={defaultModelLocked}
+                exportDisabled={exportDisabled}
+                modelSettings={modelSettings}
+                models={models}
+                modelsLoading={modelsLoading}
+                onExport={onExport}
+                onModelSettingsChange={onModelSettingsChange}
+                selectedModelId={selectedModelId}
+                sessions={sessions}
               />
-            ) : null}
-          </div>
             </motion.aside>
           </>
         ) : null}
@@ -317,21 +418,22 @@ function RightSidebarComponent({
             </Button>
           </div>
 
-          <div className="min-h-0 flex-1 overflow-y-auto px-1">
-            {activeTab === 'options' ? (
-              <OptionsPanel
-                activeSession={activeSession}
-                onExport={onExport}
-                exportDisabled={exportDisabled}
-                />
-            ) : null}
-            {activeTab === 'branches' ? (
-              <BranchTreePanel
-                sessions={sessions}
-                activeSessionKey={activeSessionKey}
-              />
-            ) : null}
-          </div>
+          <SidebarBody
+            activeTab={activeTab}
+            activeSession={activeSession}
+            activeSessionKey={activeSessionKey}
+            canSelectModel={canSelectModel}
+            defaultModelId={defaultModelId}
+            defaultModelLocked={defaultModelLocked}
+            exportDisabled={exportDisabled}
+            modelSettings={modelSettings}
+            models={models}
+            modelsLoading={modelsLoading}
+            onExport={onExport}
+            onModelSettingsChange={onModelSettingsChange}
+            selectedModelId={selectedModelId}
+            sessions={sessions}
+          />
         </motion.aside>
       ) : null}
     </AnimatePresence>

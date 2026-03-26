@@ -78,7 +78,7 @@ export function useChatStream({
       typeof payload.runId === 'string' ? payload.runId : undefined
     const nextMessage: GatewayMessage = {
       ...payload.message,
-      __streamRunId: streamRunId,
+      __streamRunId: payloadState === 'delta' ? streamRunId : null,
     }
 
     function upsert(messages: Array<GatewayMessage>) {
@@ -187,7 +187,9 @@ function mergeStreamMessage(
   const previousContent = Array.isArray(previousMessage.content)
     ? previousMessage.content
     : []
-  const nextContent = Array.isArray(nextMessage.content) ? nextMessage.content : []
+  const nextContent = Array.isArray(nextMessage.content)
+    ? nextMessage.content
+    : []
 
   if (previousContent.length === 0) {
     return nextMessage
@@ -257,14 +259,18 @@ function findStreamMessageIndex(
 ): number {
   const targetId = getMessageId(targetMessage)
   if (targetId) {
-    const byId = messages.findIndex((message) => getMessageId(message) === targetId)
+    const byId = messages.findIndex(
+      (message) => getMessageId(message) === targetId,
+    )
     if (byId >= 0) return byId
   }
 
   const targetRole = normalizeString(targetMessage.role)
   let index = -1
   messages.forEach((message, currentIndex) => {
-    const runId = normalizeString((message as { __streamRunId?: unknown }).__streamRunId)
+    const runId = normalizeString(
+      (message as { __streamRunId?: unknown }).__streamRunId,
+    )
     if (!runId || runId !== streamRunId) return
     if (normalizeString(message.role) !== targetRole) return
     index = currentIndex

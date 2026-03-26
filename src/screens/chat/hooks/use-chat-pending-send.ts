@@ -29,6 +29,11 @@ type UseChatPendingSendInput = {
     body: string,
     skipOptimistic: boolean,
     model?: string,
+    systemPrompt?: string,
+    thinking?: string,
+    temperature?: number,
+    topP?: number,
+    maxOutputTokens?: number,
     attachments?: Array<AttachmentFile>,
   ) => void
 }
@@ -109,6 +114,11 @@ export function useChatPendingSend({
       pending.message,
       true,
       pending.model,
+      pending.systemPrompt,
+      pending.thinking,
+      pending.temperature,
+      pending.topP,
+      pending.maxOutputTokens,
       pending.attachments,
     )
   }, [

@@ -1,9 +1,16 @@
+import { useMemo } from 'react'
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import type { ProviderModel } from '@/lib/app-api'
+import type { ThinkingLevel } from '@/hooks/use-chat-settings'
 
 export type ConversationSettings = {
   model: string
+  systemPrompt: string
+  temperature: string
+  topP: string
+  maxOutputTokens: string
+  thinkingLevel: ThinkingLevel
 }
 
 type ConversationSettingsState = {
@@ -20,6 +27,11 @@ type ConversationSettingsState = {
 
 export const defaultConversationSettings: ConversationSettings = {
   model: '',
+  systemPrompt: '',
+  temperature: '',
+  topP: '',
+  maxOutputTokens: '',
+  thinkingLevel: 'high',
 }
 
 export const useConversationSettingsStore = create<ConversationSettingsState>()(
@@ -39,9 +51,11 @@ export const useConversationSettingsStore = create<ConversationSettingsState>()(
         })),
       copyConversationSettings: (sourceConversationId, targetConversationId) =>
         set((state) => {
-          const sourceSettings =
-            state.conversations[sourceConversationId] ??
-            defaultConversationSettings
+          const sourceSettings = {
+            ...defaultConversationSettings,
+            ...(state.conversations[sourceConversationId] ??
+              defaultConversationSettings),
+          }
 
           return {
             conversations: {
@@ -60,9 +74,17 @@ export const useConversationSettingsStore = create<ConversationSettingsState>()(
 )
 
 export function useConversationSettings(conversationId: string) {
-  const settings = useConversationSettingsStore(
-    (state) =>
-      state.conversations[conversationId] ?? defaultConversationSettings,
+  const storedSettings = useConversationSettingsStore(
+    (state) => state.conversations[conversationId],
+  )
+  const settings = useMemo(
+    function buildSettings() {
+      return {
+        ...defaultConversationSettings,
+        ...storedSettings,
+      }
+    },
+    [storedSettings],
   )
   const updateConversationSettings = useConversationSettingsStore(
     (state) => state.updateConversationSettings,
@@ -111,4 +133,31 @@ export function resolveConversationModelID(
   }
 
   return ''
+}
+
+export function normalizeConversationTextSetting(value: string): string {
+  return value.trim()
+}
+
+export function parseConversationNumberSetting(
+  value: string,
+  {
+    max,
+    min,
+    round = false,
+  }: {
+    min: number
+    max: number
+    round?: boolean
+  },
+): number | undefined {
+  const normalizedValue = value.trim()
+  if (normalizedValue.length === 0) return undefined
+
+  const parsedValue = Number(normalizedValue)
+  if (!Number.isFinite(parsedValue)) return undefined
+  if (parsedValue < min || parsedValue > max) return undefined
+  if (round && !Number.isInteger(parsedValue)) return undefined
+
+  return parsedValue
 }

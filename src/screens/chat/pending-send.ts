@@ -6,6 +6,11 @@ export type PendingSendPayload = {
   friendlyId: string
   message: string
   model?: string
+  systemPrompt?: string
+  thinking?: string
+  temperature?: number
+  topP?: number
+  maxOutputTokens?: number
   optimisticMessage: GatewayMessage
   attachments?: Array<AttachmentFile>
 }

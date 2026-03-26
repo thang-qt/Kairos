@@ -40,6 +40,8 @@ import { useChatGenerationGuard } from './hooks/use-chat-generation-guard'
 import { useChatRedirect } from './hooks/use-chat-redirect'
 import {
   copyConversationSettings,
+  normalizeConversationTextSetting,
+  parseConversationNumberSetting,
   resolveConversationModelID,
   useConversationSettings,
 } from './conversation-settings'
@@ -130,6 +132,32 @@ export function ChatScreen({
       updateConversationSettings({ model: modelId })
     },
     [updateConversationSettings],
+  )
+  const resolvedSystemPrompt = normalizeConversationTextSetting(
+    conversationSettings.systemPrompt,
+  )
+  const resolvedThinkingLevel = conversationSettings.thinkingLevel
+  const resolvedTemperature = parseConversationNumberSetting(
+    conversationSettings.temperature,
+    {
+      min: 0,
+      max: 2,
+    },
+  )
+  const resolvedTopP = parseConversationNumberSetting(
+    conversationSettings.topP,
+    {
+      min: 0,
+      max: 1,
+    },
+  )
+  const resolvedMaxOutputTokens = parseConversationNumberSetting(
+    conversationSettings.maxOutputTokens,
+    {
+      min: 1,
+      max: Number.MAX_SAFE_INTEGER,
+      round: true,
+    },
   )
   const hasAvailableModel = resolvedConversationModel.trim().length > 0
   const pendingRunIdsRef = useRef(new Set<string>())
@@ -293,6 +321,11 @@ export function ChatScreen({
     body: string,
     skipOptimistic = false,
     modelOverride?: string,
+    systemPromptOverride?: string,
+    thinkingOverride?: string,
+    temperatureOverride?: number,
+    topPOverride?: number,
+    maxOutputTokensOverride?: number,
     attachments?: Array<AttachmentFile>,
   ) {
     let optimisticClientId = ''
@@ -331,12 +364,32 @@ export function ChatScreen({
 
     const backend = getChatBackend()
     const model = modelOverride?.trim() || resolvedConversationModel
+    const systemPrompt =
+      systemPromptOverride !== undefined
+        ? systemPromptOverride
+        : resolvedSystemPrompt
+    const thinking =
+      thinkingOverride !== undefined ? thinkingOverride : resolvedThinkingLevel
+    const temperature =
+      temperatureOverride !== undefined
+        ? temperatureOverride
+        : resolvedTemperature
+    const topP = topPOverride !== undefined ? topPOverride : resolvedTopP
+    const maxOutputTokens =
+      maxOutputTokensOverride !== undefined
+        ? maxOutputTokensOverride
+        : resolvedMaxOutputTokens
     void backend
       .sendMessage({
         sessionKey,
         friendlyId,
         message: body,
         model,
+        systemPrompt,
+        thinking,
+        temperature,
+        topP,
+        maxOutputTokens,
         idempotencyKey: randomUUID(),
         attachments: attachmentsPayload,
       })
@@ -420,6 +473,11 @@ export function ChatScreen({
               friendlyId,
               message: body,
               model: resolvedConversationModel,
+              systemPrompt: resolvedSystemPrompt,
+              thinking: resolvedThinkingLevel,
+              temperature: resolvedTemperature,
+              topP: resolvedTopP,
+              maxOutputTokens: resolvedMaxOutputTokens,
               optimisticMessage,
               attachments,
             })
@@ -461,6 +519,11 @@ export function ChatScreen({
         body,
         false,
         resolvedConversationModel,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
         attachments,
       )
     },
@@ -474,8 +537,13 @@ export function ChatScreen({
       navigate,
       onSessionResolved,
       queryClient,
+      resolvedMaxOutputTokens,
       resolvedSessionKey,
       resolvedConversationModel,
+      resolvedSystemPrompt,
+      resolvedTemperature,
+      resolvedThinkingLevel,
+      resolvedTopP,
     ],
   )
 
@@ -534,6 +602,11 @@ export function ChatScreen({
           text,
           true,
           resolvedConversationModel,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
         )
       }
     }
@@ -542,6 +615,11 @@ export function ChatScreen({
     activeSessionKey,
     displayMessages,
     resolvedConversationModel,
+    resolvedMaxOutputTokens,
+    resolvedSystemPrompt,
+    resolvedTemperature,
+    resolvedThinkingLevel,
+    resolvedTopP,
   ])
 
   const handleStopGeneration = useCallback(
@@ -779,6 +857,11 @@ export function ChatScreen({
           messageId: target.messageId,
           message: normalizedMessage,
           model: resolvedConversationModel,
+          systemPrompt: resolvedSystemPrompt,
+          thinking: resolvedThinkingLevel,
+          temperature: resolvedTemperature,
+          topP: resolvedTopP,
+          maxOutputTokens: resolvedMaxOutputTokens,
         })
         startRun(result.runId)
         await queryClient.invalidateQueries({
@@ -800,6 +883,11 @@ export function ChatScreen({
       queryClient,
       resolvedSessionKey,
       resolvedConversationModel,
+      resolvedMaxOutputTokens,
+      resolvedSystemPrompt,
+      resolvedTemperature,
+      resolvedThinkingLevel,
+      resolvedTopP,
       startRun,
       storeBranchScrollRestore,
     ],
@@ -1125,6 +1213,16 @@ export function ChatScreen({
             }
             sessions={sessions}
             activeSessionKey={activeSessionKey || resolvedSessionKey}
+            models={models}
+            selectedModelId={resolvedConversationModel}
+            defaultModelId={defaultModelId}
+            modelsLoading={modelsQuery.isLoading}
+            canSelectModel={modelsQuery.data?.capabilities.canSelectModel}
+            defaultModelLocked={
+              modelsQuery.data?.capabilities.defaultModelLocked
+            }
+            modelSettings={conversationSettings}
+            onModelSettingsChange={updateConversationSettings}
           />
         )}
         <UserTurnEditDialog

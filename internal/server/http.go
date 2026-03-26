@@ -69,10 +69,15 @@ type preferencesResponse struct {
 }
 
 type sendMessageRequest struct {
-	Message        string              `json:"message"`
-	Model          string              `json:"model"`
-	IdempotencyKey string              `json:"idempotencyKey"`
-	Attachments    []AttachmentPayload `json:"attachments"`
+	Message         string              `json:"message"`
+	Model           string              `json:"model"`
+	SystemPrompt    string              `json:"systemPrompt"`
+	Thinking        string              `json:"thinking"`
+	Temperature     *float64            `json:"temperature"`
+	TopP            *float64            `json:"topP"`
+	MaxOutputTokens *int64              `json:"maxOutputTokens"`
+	IdempotencyKey  string              `json:"idempotencyKey"`
+	Attachments     []AttachmentPayload `json:"attachments"`
 }
 
 type forkSessionRequest struct {
@@ -590,11 +595,16 @@ func (app *App) handleSendMessage(writer http.ResponseWriter, request *http.Requ
 	}
 
 	result, err := app.runs.StartRun(request.Context(), user.ID, SendMessageInput{
-		FriendlyID:     request.PathValue("friendlyId"),
-		Message:        payload.Message,
-		Model:          payload.Model,
-		IdempotencyKey: payload.IdempotencyKey,
-		Attachments:    payload.Attachments,
+		FriendlyID:      request.PathValue("friendlyId"),
+		Message:         payload.Message,
+		Model:           payload.Model,
+		SystemPrompt:    payload.SystemPrompt,
+		Thinking:        payload.Thinking,
+		Temperature:     payload.Temperature,
+		TopP:            payload.TopP,
+		MaxOutputTokens: payload.MaxOutputTokens,
+		IdempotencyKey:  payload.IdempotencyKey,
+		Attachments:     payload.Attachments,
 	})
 	if err != nil {
 		switch {
@@ -677,10 +687,15 @@ func (app *App) handleEditUserMessage(writer http.ResponseWriter, request *http.
 	}
 
 	result, err := app.runs.StartRun(request.Context(), user.ID, SendMessageInput{
-		FriendlyID:  session.FriendlyID,
-		Message:     payload.Message,
-		Model:       payload.Model,
-		Attachments: attachments,
+		FriendlyID:      session.FriendlyID,
+		Message:         payload.Message,
+		Model:           payload.Model,
+		SystemPrompt:    payload.SystemPrompt,
+		Thinking:        payload.Thinking,
+		Temperature:     payload.Temperature,
+		TopP:            payload.TopP,
+		MaxOutputTokens: payload.MaxOutputTokens,
+		Attachments:     attachments,
 	})
 	if err != nil {
 		switch {

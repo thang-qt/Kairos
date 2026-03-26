@@ -778,6 +778,82 @@ func TestSendMessageIncludesProviderThinkingWhenAvailable(t *testing.T) {
 	}
 }
 
+func TestSendMessagePassesModelSettingsToProvider(t *testing.T) {
+	var capturedRequest ChatGenerationRequest
+
+	testServer := newTestApp(t, func(config *Config) {
+		config.SystemProviderEnabled = true
+		config.SystemProviderLabel = "Server Default"
+		config.SystemProviderStaticModels = []string{"test-model"}
+	})
+	testServer.app.providers.drivers["openai_compatible"] = fakeProviderDriver{
+		models: []ProviderModel{
+			{
+				ID:            "test-model",
+				Object:        "model",
+				OwnedBy:       "test",
+				ProviderRef:   "system:system-default",
+				ProviderLabel: "Server Default",
+			},
+		},
+		output:      "Configured output.",
+		requestSink: &capturedRequest,
+	}
+	cookie := signupAndRequireCookie(t, testServer, "settings@example.com")
+
+	createResponse := performJSONRequest(t, testServer.handler, http.MethodPost, "/api/sessions", createSessionRequest{
+		Label: "Settings",
+	}, []*http.Cookie{cookie})
+	assertStatusCode(t, createResponse, http.StatusCreated)
+
+	var created sessionMutationResponse
+	decodeResponseJSON(t, createResponse, &created)
+
+	temperature := 0.4
+	topP := 0.85
+	maxOutputTokens := int64(512)
+	sendResponse := performJSONRequest(t, testServer.handler, http.MethodPost, "/api/sessions/"+created.FriendlyID+"/messages", sendMessageRequest{
+		Message:         "Use the configured settings",
+		Model:           "test-model",
+		SystemPrompt:    "You are terse and precise.",
+		Thinking:        "high",
+		Temperature:     &temperature,
+		TopP:            &topP,
+		MaxOutputTokens: &maxOutputTokens,
+	}, []*http.Cookie{cookie})
+	assertStatusCode(t, sendResponse, http.StatusOK)
+
+	waitForAssistantMessage(t, testServer, cookie, created.FriendlyID)
+
+	if capturedRequest.Model != "test-model" {
+		t.Fatalf("request model = %q, want test-model", capturedRequest.Model)
+	}
+	if capturedRequest.SystemPrompt != "You are terse and precise." {
+		t.Fatalf("request system prompt = %q, want configured system prompt", capturedRequest.SystemPrompt)
+	}
+	if capturedRequest.ReasoningEffort != "high" {
+		t.Fatalf("request reasoning effort = %q, want high", capturedRequest.ReasoningEffort)
+	}
+	if capturedRequest.Temperature == nil || *capturedRequest.Temperature != temperature {
+		t.Fatalf("request temperature = %v, want %v", capturedRequest.Temperature, temperature)
+	}
+	if capturedRequest.TopP == nil || *capturedRequest.TopP != topP {
+		t.Fatalf("request topP = %v, want %v", capturedRequest.TopP, topP)
+	}
+	if capturedRequest.MaxOutputTokens == nil || *capturedRequest.MaxOutputTokens != maxOutputTokens {
+		t.Fatalf("request max output tokens = %v, want %v", capturedRequest.MaxOutputTokens, maxOutputTokens)
+	}
+	if len(capturedRequest.Messages) < 2 {
+		t.Fatalf("request messages length = %d, want system + user", len(capturedRequest.Messages))
+	}
+	if capturedRequest.Messages[0].Role != "system" {
+		t.Fatalf("first request message role = %q, want system", capturedRequest.Messages[0].Role)
+	}
+	if capturedRequest.Messages[0].Parts[0].Text != "You are terse and precise." {
+		t.Fatalf("first request message text = %q, want configured system prompt", capturedRequest.Messages[0].Parts[0].Text)
+	}
+}
+
 func TestSessionEventsAreUserScoped(t *testing.T) {
 	testServer := newTestApp(t, nil)
 	ownerCookie := signupAndRequireCookie(t, testServer, "event-owner@example.com")
@@ -831,6 +907,7 @@ type fakeProviderDriver struct {
 	output           string
 	titleOutput      string
 	outputsByModel   map[string]string
+	requestSink      *ChatGenerationRequest
 	delay            time.Duration
 	titleDelay       time.Duration
 	promptTokens     int64
@@ -869,6 +946,9 @@ func (driver fakeProviderDriver) GenerateChatStream(
 		if err := onDelta(ChatGenerationDelta{Thinking: driver.thinking}); err != nil {
 			return ChatGenerationResult{}, err
 		}
+	}
+	if driver.requestSink != nil {
+		*driver.requestSink = request
 	}
 	outputParts := splitFakeProviderOutput(output)
 	for _, part := range outputParts {
@@ -1355,6 +1435,30 @@ func waitForAssistantThinking(
 	}
 
 	t.Fatalf("timed out waiting for assistant thinking in history for %s", friendlyID)
+}
+
+func waitForAssistantMessage(
+	t *testing.T,
+	testServer *testApp,
+	cookie *http.Cookie,
+	friendlyID string,
+) {
+	t.Helper()
+
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		historyResponse := performJSONRequest(t, testServer.handler, http.MethodGet, "/api/sessions/"+friendlyID+"/history", nil, []*http.Cookie{cookie})
+		assertStatusCode(t, historyResponse, http.StatusOK)
+
+		var historyPayload HistoryPayload
+		decodeResponseJSON(t, historyResponse, &historyPayload)
+		if findHistoryMessageByRole(historyPayload.Messages, "assistant") != nil {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	t.Fatalf("timed out waiting for assistant message in history for %s", friendlyID)
 }
 
 func findHistoryMessageByRole(messages []map[string]any, role string) map[string]any {

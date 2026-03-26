@@ -28,6 +28,7 @@ export type ChatSendMessageInput = {
   friendlyId: string
   message: string
   model?: string
+  systemPrompt?: string
   thinking?: string
   temperature?: number
   topP?: number
@@ -74,6 +75,7 @@ export type ChatEditUserMessageInput = {
   messageId: string
   message: string
   model?: string
+  systemPrompt?: string
   thinking?: string
   temperature?: number
   topP?: number

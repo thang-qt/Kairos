@@ -2,6 +2,7 @@
 
 import { HugeiconsIcon } from '@hugeicons/react'
 import { ArrowDown01Icon } from '@hugeicons/core-free-icons'
+import { Markdown } from './markdown'
 import {
   Collapsible,
   CollapsiblePanel,
@@ -35,9 +36,9 @@ function Thinking({ content }: ThinkingProps) {
         </CollapsibleTrigger>
         <CollapsiblePanel>
           <div className="pb-2 pt-0.5">
-            <p className="text-sm text-primary-600 whitespace-pre-wrap">
+            <Markdown className="text-sm text-primary-600 [&_p]:text-primary-600 [&_ul]:text-primary-600 [&_ol]:text-primary-600 [&_li]:text-primary-600 [&_blockquote]:text-primary-600 [&_strong]:text-primary-700 [&_em]:text-primary-600 [&_code]:text-primary-700">
               {content}
-            </p>
+            </Markdown>
           </div>
         </CollapsiblePanel>
       </Collapsible>
