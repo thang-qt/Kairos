@@ -123,6 +123,8 @@ func (app *App) Handler() http.Handler {
 	mux.HandleFunc("POST /api/auth/login", app.handleLogin)
 	mux.HandleFunc("POST /api/auth/logout", app.handleLogout)
 	mux.HandleFunc("GET /api/me", app.handleMe)
+	mux.HandleFunc("PATCH /api/me/email", app.handleChangeEmail)
+	mux.HandleFunc("PATCH /api/me/password", app.handleChangePassword)
 	mux.HandleFunc("GET /api/me/preferences", app.handleGetPreferences)
 	mux.HandleFunc("PATCH /api/me/preferences", app.handleUpdatePreferences)
 	mux.HandleFunc("GET /api/providers", app.handleListProviders)

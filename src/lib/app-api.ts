@@ -31,6 +31,16 @@ export type AuthPayload = {
   password: string
 }
 
+export type ChangeEmailPayload = {
+  newEmail: string
+  currentPassword: string
+}
+
+export type ChangePasswordPayload = {
+  currentPassword: string
+  newPassword: string
+}
+
 export type UserPreferences = {
   useSystemProviders: boolean
   defaultModelId?: string
@@ -197,6 +207,37 @@ export async function logout(): Promise<void> {
   const response = await fetch('/api/auth/logout', {
     method: 'POST',
     credentials: 'include',
+  })
+
+  await parseJSON(response)
+}
+
+export async function changeEmail(
+  payload: ChangeEmailPayload,
+): Promise<AppUser> {
+  const response = await fetch('/api/me/email', {
+    method: 'PATCH',
+    credentials: 'include',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  })
+
+  const data = await parseJSON<{ user: AppUser }>(response)
+  return data.user
+}
+
+export async function changePassword(
+  payload: ChangePasswordPayload,
+): Promise<void> {
+  const response = await fetch('/api/me/password', {
+    method: 'PATCH',
+    credentials: 'include',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
   })
 
   await parseJSON(response)

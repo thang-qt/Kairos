@@ -275,6 +275,121 @@ func TestCurrentUserRejectsExpiredSession(t *testing.T) {
 	}
 }
 
+func TestChangeEmailHTTPFlow(t *testing.T) {
+	testServer := newTestApp(t, nil)
+	cookie := signupAndRequireCookie(t, testServer, "change-email@example.com")
+
+	response := performJSONRequest(
+		t,
+		testServer.handler,
+		http.MethodPatch,
+		"/api/me/email",
+		changeEmailRequest{
+			NewEmail:        "updated-email@example.com",
+			CurrentPassword: "tracepass123",
+		},
+		[]*http.Cookie{cookie},
+	)
+	assertStatusCode(t, response, http.StatusOK)
+
+	var payload sessionResponse
+	decodeResponseJSON(t, response, &payload)
+	if payload.User == nil {
+		t.Fatal("updated user = nil, want populated user")
+	}
+	if payload.User.Email != "updated-email@example.com" {
+		t.Fatalf("updated email = %q, want %q", payload.User.Email, "updated-email@example.com")
+	}
+
+	loginResponse := performJSONRequest(t, testServer.handler, http.MethodPost, "/api/auth/login", authRequest{
+		Email:    "updated-email@example.com",
+		Password: "tracepass123",
+	}, nil)
+	assertStatusCode(t, loginResponse, http.StatusOK)
+}
+
+func TestChangeEmailRejectsDuplicateEmail(t *testing.T) {
+	testServer := newTestApp(t, nil)
+	cookie := signupAndRequireCookie(t, testServer, "primary@example.com")
+	_ = signupAndRequireCookie(t, testServer, "secondary@example.com")
+
+	response := performJSONRequest(
+		t,
+		testServer.handler,
+		http.MethodPatch,
+		"/api/me/email",
+		changeEmailRequest{
+			NewEmail:        "SECONDARY@example.com",
+			CurrentPassword: "tracepass123",
+		},
+		[]*http.Cookie{cookie},
+	)
+	assertStatusCode(t, response, http.StatusBadRequest)
+
+	var payload errorResponse
+	decodeResponseJSON(t, response, &payload)
+	if payload.Error != "email is already in use" {
+		t.Fatalf("change email error = %q, want %q", payload.Error, "email is already in use")
+	}
+}
+
+func TestChangePasswordInvalidatesOtherSessions(t *testing.T) {
+	testServer := newTestApp(t, nil)
+	cookie := signupAndRequireCookie(t, testServer, "change-password@example.com")
+
+	secondLogin := performJSONRequest(t, testServer.handler, http.MethodPost, "/api/auth/login", authRequest{
+		Email:    "change-password@example.com",
+		Password: "tracepass123",
+	}, nil)
+	assertStatusCode(t, secondLogin, http.StatusOK)
+	secondCookie := requireSessionCookie(t, secondLogin)
+
+	changeResponse := performJSONRequest(
+		t,
+		testServer.handler,
+		http.MethodPatch,
+		"/api/me/password",
+		changePasswordRequest{
+			CurrentPassword: "tracepass123",
+			NewPassword:     "tracepass456",
+		},
+		[]*http.Cookie{cookie},
+	)
+	assertStatusCode(t, changeResponse, http.StatusOK)
+
+	currentSessionResponse := performJSONRequest(
+		t,
+		testServer.handler,
+		http.MethodGet,
+		"/api/me",
+		nil,
+		[]*http.Cookie{cookie},
+	)
+	assertStatusCode(t, currentSessionResponse, http.StatusOK)
+
+	otherSessionResponse := performJSONRequest(
+		t,
+		testServer.handler,
+		http.MethodGet,
+		"/api/me",
+		nil,
+		[]*http.Cookie{secondCookie},
+	)
+	assertStatusCode(t, otherSessionResponse, http.StatusUnauthorized)
+
+	oldPasswordLogin := performJSONRequest(t, testServer.handler, http.MethodPost, "/api/auth/login", authRequest{
+		Email:    "change-password@example.com",
+		Password: "tracepass123",
+	}, nil)
+	assertStatusCode(t, oldPasswordLogin, http.StatusUnauthorized)
+
+	newPasswordLogin := performJSONRequest(t, testServer.handler, http.MethodPost, "/api/auth/login", authRequest{
+		Email:    "change-password@example.com",
+		Password: "tracepass456",
+	}, nil)
+	assertStatusCode(t, newPasswordLogin, http.StatusOK)
+}
+
 func newTestApp(t *testing.T, override func(config *Config)) *testApp {
 	t.Helper()
 

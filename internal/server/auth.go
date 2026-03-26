@@ -19,6 +19,7 @@ var errInvalidCredentials = errors.New("invalid credentials")
 var errSignupDisabled = errors.New("signup is disabled")
 var errAuthDisabled = errors.New("authentication is disabled")
 var errSessionNotFound = errors.New("session not found")
+var errUserNotFound = errors.New("user not found")
 
 type User struct {
 	ID         string `json:"id"`
@@ -264,6 +265,152 @@ func (service *AuthService) Logout(ctx context.Context, token string) error {
 
 	_, err := service.db.ExecContext(ctx, `DELETE FROM auth_sessions WHERE token_hash = ?`, hashToken(token))
 	return err
+}
+
+func (service *AuthService) ChangeEmail(
+	ctx context.Context,
+	userID string,
+	currentPassword string,
+	nextEmail string,
+) (*User, error) {
+	normalizedEmail := normalizeEmail(nextEmail)
+	if !strings.Contains(normalizedEmail, "@") || len(normalizedEmail) < 3 {
+		return nil, errors.New("enter a valid email address")
+	}
+
+	type userRow struct {
+		Email        string
+		PasswordHash string
+		Role         string
+		CreatedAt    int64
+		DisabledAt   sql.NullInt64
+	}
+
+	var row userRow
+	err := service.db.QueryRowContext(ctx, `
+		SELECT email, password_hash, role, created_at, disabled_at
+		FROM users
+		WHERE id = ?
+	`, userID).Scan(
+		&row.Email,
+		&row.PasswordHash,
+		&row.Role,
+		&row.CreatedAt,
+		&row.DisabledAt,
+	)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, errUserNotFound
+		}
+		return nil, err
+	}
+
+	if row.DisabledAt.Valid {
+		return nil, errors.New("account is disabled")
+	}
+	if !verifyPassword(currentPassword, row.PasswordHash) {
+		return nil, errInvalidCredentials
+	}
+	if row.Email == normalizedEmail {
+		return nil, errors.New("email is unchanged")
+	}
+
+	now := time.Now().Unix()
+	_, err = service.db.ExecContext(ctx, `
+		UPDATE users
+		SET email = ?, updated_at = ?
+		WHERE id = ?
+	`, normalizedEmail, now, userID)
+	if err != nil {
+		if strings.Contains(strings.ToLower(err.Error()), "unique") {
+			return nil, errors.New("email is already in use")
+		}
+		return nil, err
+	}
+
+	user := &User{
+		ID:        userID,
+		Email:     normalizedEmail,
+		Role:      row.Role,
+		CreatedAt: row.CreatedAt,
+	}
+	if row.DisabledAt.Valid {
+		user.DisabledAt = &row.DisabledAt.Int64
+	}
+
+	return user, nil
+}
+
+func (service *AuthService) ChangePassword(
+	ctx context.Context,
+	userID string,
+	currentPassword string,
+	nextPassword string,
+	currentToken string,
+) error {
+	var existingHash string
+	var disabledAt sql.NullInt64
+	err := service.db.QueryRowContext(ctx, `
+		SELECT password_hash, disabled_at
+		FROM users
+		WHERE id = ?
+	`, userID).Scan(&existingHash, &disabledAt)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return errUserNotFound
+		}
+		return err
+	}
+
+	if disabledAt.Valid {
+		return errors.New("account is disabled")
+	}
+	if !verifyPassword(currentPassword, existingHash) {
+		return errInvalidCredentials
+	}
+	if currentPassword == nextPassword {
+		return errors.New("new password must be different")
+	}
+
+	nextHash, err := hashPassword(nextPassword)
+	if err != nil {
+		return err
+	}
+
+	now := time.Now().Unix()
+	transaction, err := service.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+
+	if _, err := transaction.ExecContext(ctx, `
+		UPDATE users
+		SET password_hash = ?, updated_at = ?
+		WHERE id = ?
+	`, nextHash, now, userID); err != nil {
+		_ = transaction.Rollback()
+		return err
+	}
+
+	if strings.TrimSpace(currentToken) != "" {
+		if _, err := transaction.ExecContext(ctx, `
+			DELETE FROM auth_sessions
+			WHERE user_id = ? AND token_hash != ?
+		`, userID, hashToken(currentToken)); err != nil {
+			_ = transaction.Rollback()
+			return err
+		}
+	} else {
+		if _, err := transaction.ExecContext(ctx, `
+			DELETE FROM auth_sessions
+			WHERE user_id = ?
+		`, userID); err != nil {
+			_ = transaction.Rollback()
+			return err
+		}
+	}
+
+	return transaction.Commit()
 }
 
 type RequestMeta struct {

@@ -7,12 +7,18 @@ import {
 import { ModelMetadataPanel } from './components/model-metadata-panel'
 import { AppearanceSettingsPanel } from './components/appearance-settings-panel'
 import { DisplaySettingsPanel } from './components/display-settings-panel'
+import { AccountSettingsPanel } from './components/account-settings-panel'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { ProviderSettingsPanel } from '@/screens/chat/components/provider-settings-panel'
 import { KairosIconBig } from '@/components/icons/kairos-icon-big'
 import { cn } from '@/lib/utils'
 
-export type SettingsTab = 'models' | 'providers' | 'appearance' | 'display'
+export type SettingsTab =
+  | 'account'
+  | 'models'
+  | 'providers'
+  | 'appearance'
+  | 'display'
 
 type SettingsScreenProps = {
   activeTab: SettingsTab
@@ -23,6 +29,10 @@ const SETTINGS_TABS: Array<{
   id: SettingsTab
   label: string
 }> = [
+  {
+    id: 'account',
+    label: 'Account',
+  },
   {
     id: 'models',
     label: 'Models',
@@ -42,6 +52,9 @@ const SETTINGS_TABS: Array<{
 ]
 
 function renderTabPanel(activeTab: SettingsTab) {
+  if (activeTab === 'account') {
+    return <AccountSettingsPanel />
+  }
   if (activeTab === 'models') {
     return <ModelMetadataPanel />
   }

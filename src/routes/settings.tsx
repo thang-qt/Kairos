@@ -4,6 +4,7 @@ import { requireAuthenticatedUser } from '@/lib/route-auth'
 import { SettingsScreen } from '@/screens/settings/settings-screen'
 
 const SETTINGS_TABS = new Set<SettingsTab>([
+  'account',
   'models',
   'providers',
   'appearance',
@@ -18,7 +19,7 @@ export const Route = createFileRoute('/settings')({
     const tab =
       typeof search.tab === 'string' && SETTINGS_TABS.has(search.tab as SettingsTab)
         ? (search.tab as SettingsTab)
-        : 'models'
+        : 'account'
     return { tab }
   },
   component: SettingsRoute,

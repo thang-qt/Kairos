@@ -33,6 +33,16 @@ type authRequest struct {
 	Password string `json:"password"`
 }
 
+type changeEmailRequest struct {
+	NewEmail        string `json:"newEmail"`
+	CurrentPassword string `json:"currentPassword"`
+}
+
+type changePasswordRequest struct {
+	CurrentPassword string `json:"currentPassword"`
+	NewPassword     string `json:"newPassword"`
+}
+
 type authResponse struct {
 	User *User `json:"user"`
 }
@@ -446,6 +456,73 @@ func (app *App) handleMe(writer http.ResponseWriter, request *http.Request) {
 	}
 
 	writeJSON(writer, http.StatusOK, sessionResponse{User: user})
+}
+
+func (app *App) handleChangeEmail(writer http.ResponseWriter, request *http.Request) {
+	user, ok := app.requireAuthenticatedUser(writer, request)
+	if !ok {
+		return
+	}
+
+	var payload changeEmailRequest
+	if err := decodeJSON(request, &payload); err != nil {
+		writeError(writer, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	updatedUser, err := app.auth.ChangeEmail(
+		request.Context(),
+		user.ID,
+		payload.CurrentPassword,
+		payload.NewEmail,
+	)
+	if err != nil {
+		status := http.StatusBadRequest
+		switch {
+		case errors.Is(err, errInvalidCredentials):
+			status = http.StatusUnauthorized
+		case errors.Is(err, errSessionNotFound), errors.Is(err, errUserNotFound):
+			status = http.StatusUnauthorized
+		}
+		writeError(writer, status, err.Error())
+		return
+	}
+
+	writeJSON(writer, http.StatusOK, sessionResponse{User: updatedUser})
+}
+
+func (app *App) handleChangePassword(writer http.ResponseWriter, request *http.Request) {
+	user, ok := app.requireAuthenticatedUser(writer, request)
+	if !ok {
+		return
+	}
+
+	var payload changePasswordRequest
+	if err := decodeJSON(request, &payload); err != nil {
+		writeError(writer, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	err := app.auth.ChangePassword(
+		request.Context(),
+		user.ID,
+		payload.CurrentPassword,
+		payload.NewPassword,
+		app.sessionTokenFromRequest(request),
+	)
+	if err != nil {
+		status := http.StatusBadRequest
+		switch {
+		case errors.Is(err, errInvalidCredentials):
+			status = http.StatusUnauthorized
+		case errors.Is(err, errSessionNotFound), errors.Is(err, errUserNotFound):
+			status = http.StatusUnauthorized
+		}
+		writeError(writer, status, err.Error())
+		return
+	}
+
+	writeJSON(writer, http.StatusOK, map[string]any{"ok": true})
 }
 
 func (app *App) handleListSessions(writer http.ResponseWriter, request *http.Request) {
