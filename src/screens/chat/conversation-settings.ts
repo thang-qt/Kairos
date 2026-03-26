@@ -112,7 +112,9 @@ export function resolveConversationModelID(
   models: Array<ProviderModel>,
   defaultModelID?: string,
 ) {
-  const normalizedPreferredModelID = preferredModelID.trim()
+  const normalizedPreferredModelID = normalizeConversationStringValue(
+    preferredModelID,
+  )
   if (
     normalizedPreferredModelID &&
     models.some((model) => model.id === normalizedPreferredModelID)
@@ -120,7 +122,9 @@ export function resolveConversationModelID(
     return normalizedPreferredModelID
   }
 
-  const normalizedDefaultModelID = defaultModelID?.trim()
+  const normalizedDefaultModelID = normalizeConversationStringValue(
+    defaultModelID,
+  )
   if (
     normalizedDefaultModelID &&
     models.some((model) => model.id === normalizedDefaultModelID)
@@ -136,11 +140,11 @@ export function resolveConversationModelID(
 }
 
 export function normalizeConversationTextSetting(value: string): string {
-  return value.trim()
+  return normalizeConversationStringValue(value)
 }
 
 export function parseConversationNumberSetting(
-  value: string,
+  value: string | number | null | undefined,
   {
     max,
     min,
@@ -151,7 +155,7 @@ export function parseConversationNumberSetting(
     round?: boolean
   },
 ): number | undefined {
-  const normalizedValue = value.trim()
+  const normalizedValue = normalizeConversationStringValue(value)
   if (normalizedValue.length === 0) return undefined
 
   const parsedValue = Number(normalizedValue)
@@ -160,4 +164,16 @@ export function parseConversationNumberSetting(
   if (round && !Number.isInteger(parsedValue)) return undefined
 
   return parsedValue
+}
+
+function normalizeConversationStringValue(
+  value: string | number | null | undefined,
+) {
+  if (typeof value === 'string') {
+    return value.trim()
+  }
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return String(value)
+  }
+  return ''
 }

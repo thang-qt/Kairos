@@ -78,6 +78,35 @@ function InlineMessage({ tone, message }: InlineMessageProps) {
   )
 }
 
+function readInputValue(value: unknown) {
+  if (typeof value === 'string') {
+    return value
+  }
+  if (
+    value &&
+    typeof value === 'object' &&
+    'currentTarget' in value &&
+    value.currentTarget &&
+    typeof value.currentTarget === 'object' &&
+    'value' in value.currentTarget &&
+    typeof value.currentTarget.value === 'string'
+  ) {
+    return value.currentTarget.value
+  }
+  if (
+    value &&
+    typeof value === 'object' &&
+    'target' in value &&
+    value.target &&
+    typeof value.target === 'object' &&
+    'value' in value.target &&
+    typeof value.target.value === 'string'
+  ) {
+    return value.target.value
+  }
+  return ''
+}
+
 export function AccountSettingsPanel() {
   const queryClient = useQueryClient()
   const currentUserQuery = useCurrentUserQuery()
@@ -156,7 +185,7 @@ export function AccountSettingsPanel() {
             event.preventDefault()
             setEmailMessage(null)
 
-            const trimmedEmail = nextEmail.trim()
+            const trimmedEmail = readInputValue(nextEmail).trim()
             if (!trimmedEmail) {
               setEmailMessage({
                 tone: 'error',
@@ -164,7 +193,7 @@ export function AccountSettingsPanel() {
               })
               return
             }
-            if (!emailPassword) {
+            if (!readInputValue(emailPassword)) {
               setEmailMessage({
                 tone: 'error',
                 message: 'Enter your current password.',
@@ -189,7 +218,7 @@ export function AccountSettingsPanel() {
                 placeholder={currentEmail || 'name@example.com'}
                 value={nextEmail}
                 onChange={function handleChange(event: ChangeEvent<HTMLInputElement>) {
-                  setNextEmail(event.target.value)
+                  setNextEmail(readInputValue(event))
                 }}
               />
             </div>
@@ -205,7 +234,7 @@ export function AccountSettingsPanel() {
                 autoComplete="current-password"
                 value={emailPassword}
                 onChange={function handleChange(event: ChangeEvent<HTMLInputElement>) {
-                  setEmailPassword(event.target.value)
+                  setEmailPassword(readInputValue(event))
                 }}
               />
             </div>
@@ -231,21 +260,23 @@ export function AccountSettingsPanel() {
             event.preventDefault()
             setPasswordMessage(null)
 
-            if (!currentPassword) {
+            if (!readInputValue(currentPassword)) {
               setPasswordMessage({
                 tone: 'error',
                 message: 'Enter your current password.',
               })
               return
             }
-            if (!newPassword) {
+            const normalizedNewPassword = readInputValue(newPassword)
+            const normalizedConfirmPassword = readInputValue(confirmPassword)
+            if (!normalizedNewPassword) {
               setPasswordMessage({
                 tone: 'error',
                 message: 'Enter a new password.',
               })
               return
             }
-            if (newPassword !== confirmPassword) {
+            if (normalizedNewPassword !== normalizedConfirmPassword) {
               setPasswordMessage({
                 tone: 'error',
                 message: 'New passwords do not match.',
@@ -254,8 +285,8 @@ export function AccountSettingsPanel() {
             }
 
             passwordMutation.mutate({
-              currentPassword,
-              newPassword,
+              currentPassword: readInputValue(currentPassword),
+              newPassword: normalizedNewPassword,
             })
           }}
         >
@@ -272,7 +303,7 @@ export function AccountSettingsPanel() {
                 autoComplete="current-password"
                 value={currentPassword}
                 onChange={function handleChange(event: ChangeEvent<HTMLInputElement>) {
-                  setCurrentPassword(event.target.value)
+                  setCurrentPassword(readInputValue(event))
                 }}
               />
             </div>
@@ -285,7 +316,7 @@ export function AccountSettingsPanel() {
                 autoComplete="new-password"
                 value={newPassword}
                 onChange={function handleChange(event: ChangeEvent<HTMLInputElement>) {
-                  setNewPassword(event.target.value)
+                  setNewPassword(readInputValue(event))
                 }}
               />
             </div>
@@ -301,7 +332,7 @@ export function AccountSettingsPanel() {
                 autoComplete="new-password"
                 value={confirmPassword}
                 onChange={function handleChange(event: ChangeEvent<HTMLInputElement>) {
-                  setConfirmPassword(event.target.value)
+                  setConfirmPassword(readInputValue(event))
                 }}
               />
             </div>
