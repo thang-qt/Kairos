@@ -34,17 +34,19 @@ function TooltipTrigger({ className, ...props }: TooltipTriggerProps) {
 type TooltipContentProps = {
   className?: string
   side?: 'top' | 'bottom' | 'left' | 'right'
+  align?: 'start' | 'center' | 'end'
   children: React.ReactNode
 }
 
 function TooltipContent({
   className,
   side = 'top',
+  align = 'center',
   children,
 }: TooltipContentProps) {
   return (
     <Tooltip.Portal>
-      <Tooltip.Positioner side={side}>
+      <Tooltip.Positioner side={side} align={align}>
         <Tooltip.Popup
           className={cn(
             'rounded-md border border-primary-900 bg-primary-950 px-2 py-1 text-xs text-primary-50 shadow-sm',

@@ -99,17 +99,7 @@ function mergeSessionLists(
     mergedByID.set(key, mergeSession(session, cached))
   }
 
-  return [...mergedByID.values()].sort(function sortByUpdatedAt(left, right) {
-    const leftUpdatedAt =
-      typeof left.updatedAt === 'number' && Number.isFinite(left.updatedAt)
-        ? left.updatedAt
-        : 0
-    const rightUpdatedAt =
-      typeof right.updatedAt === 'number' && Number.isFinite(right.updatedAt)
-        ? right.updatedAt
-        : 0
-    return rightUpdatedAt - leftUpdatedAt
-  })
+  return [...mergedByID.values()].sort(sortSessions)
 }
 
 function mergeSession(serverSession: SessionMeta, cachedSession: SessionMeta) {
@@ -127,6 +117,10 @@ function mergeSession(serverSession: SessionMeta, cachedSession: SessionMeta) {
 
   return {
     ...serverSession,
+    isPinned:
+      typeof serverSession.isPinned === 'boolean'
+        ? serverSession.isPinned
+        : cachedSession.isPinned,
     updatedAt: preferCached ? cachedUpdatedAt : serverUpdatedAt,
     lastMessage:
       serverSession.lastMessage ??
@@ -136,6 +130,24 @@ function mergeSession(serverSession: SessionMeta, cachedSession: SessionMeta) {
     title: serverSession.title || cachedSession.title,
     derivedTitle: serverSession.derivedTitle || cachedSession.derivedTitle,
   } satisfies SessionMeta
+}
+
+function sortSessions(left: SessionMeta, right: SessionMeta): number {
+  const leftPinned = left.isPinned === true
+  const rightPinned = right.isPinned === true
+  if (leftPinned !== rightPinned) {
+    return leftPinned ? -1 : 1
+  }
+
+  const leftUpdatedAt =
+    typeof left.updatedAt === 'number' && Number.isFinite(left.updatedAt)
+      ? left.updatedAt
+      : 0
+  const rightUpdatedAt =
+    typeof right.updatedAt === 'number' && Number.isFinite(right.updatedAt)
+      ? right.updatedAt
+      : 0
+  return rightUpdatedAt - leftUpdatedAt
 }
 
 function sessionIdentity(session: SessionMeta): string {

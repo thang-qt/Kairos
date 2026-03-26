@@ -1,4 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
+import {
+  TooltipContent,
+  TooltipProvider,
+  TooltipRoot,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 
 export type ConversationNavigatorTurn = {
@@ -11,6 +17,11 @@ type ConversationNavigatorProps = {
   headerHeight: number
   scrollElement: HTMLDivElement | null
   getTurnNode: (turnId: string) => HTMLDivElement | null
+}
+
+function truncatePreview(preview: string, maxLength: number): string {
+  if (preview.length <= maxLength) return preview
+  return `${preview.slice(0, maxLength).trimEnd()}...`
 }
 
 export function ConversationNavigator({
@@ -88,41 +99,55 @@ export function ConversationNavigator({
       style={{ top: `${headerHeight}px` }}
     >
       <div className="flex h-full items-center justify-end pr-4">
-        <div className="pointer-events-auto opacity-0 transition-opacity duration-150 ease-out group-hover/nav-rail:opacity-100 group-focus-within/nav-rail:opacity-100 hover:opacity-100">
-          <div className="flex flex-col gap-2.5 py-2">
-            {turns.map((turn, index) => {
-              const isActive = turn.id === activeTurnId
+        <div className="pointer-events-auto overflow-visible py-2 opacity-0 transition-opacity duration-150 ease-out group-hover/nav-rail:opacity-100 group-focus-within/nav-rail:opacity-100 hover:opacity-100">
+          <div className="max-h-[75vh] overflow-y-auto overflow-x-visible">
+            <div className="flex flex-col gap-2.5">
+              <TooltipProvider>
+                {turns.map((turn, index) => {
+                  const isActive = turn.id === activeTurnId
+                  const preview = truncatePreview(turn.preview, 140)
 
-              return (
-                <div
-                  key={turn.id}
-                  className="group/nav-item relative flex min-h-6 flex-col items-end justify-center"
-                >
-                  <button
-                    type="button"
-                    aria-label={`Jump to user turn ${index + 1}`}
-                    onClick={() => handleTurnClick(turn.id)}
-                    onPointerUp={handleTurnPointerUp}
-                    className={cn(
-                      'block h-4 rounded-full bg-transparent py-[7px] transition-all duration-150 ease-out hover:w-16 focus-visible:w-16 focus-visible:outline-none',
-                      isActive ? 'w-14' : 'w-10',
-                    )}
-                  >
-                    <span
-                      className={cn(
-                        'block h-px w-full rounded-full bg-primary-300 transition-colors duration-150 ease-out group-hover/nav-item:bg-primary-700 group-focus-within/nav-item:bg-primary-700',
-                        isActive && 'bg-primary-500',
-                      )}
-                    />
-                  </button>
-                  <div className="pointer-events-none absolute right-full top-1/2 mr-3 hidden w-44 -translate-y-1/2 py-1 text-right text-xs text-primary-600 group-hover/nav-item:block group-focus-within/nav-item:block">
-                    <span className="block line-clamp-2 text-pretty">
-                      {turn.preview}
-                    </span>
-                  </div>
-                </div>
-              )
-            })}
+                  return (
+                    <TooltipRoot key={turn.id}>
+                      <div className="group/nav-item relative flex min-h-6 flex-col items-end justify-center">
+                        <TooltipTrigger
+                          render={
+                            <button
+                              type="button"
+                              aria-label={`Jump to user turn ${index + 1}`}
+                              onClick={function handleClick() {
+                                handleTurnClick(turn.id)
+                              }}
+                              onPointerUp={handleTurnPointerUp}
+                              className={cn(
+                                'block h-4 rounded-full bg-transparent py-[7px] transition-all duration-150 ease-out hover:w-16 focus-visible:w-16 focus-visible:outline-none',
+                                isActive ? 'w-14' : 'w-10',
+                              )}
+                            >
+                              <span
+                                className={cn(
+                                  'block h-px w-full rounded-full bg-primary-300 transition-colors duration-150 ease-out group-hover/nav-item:bg-primary-700 group-focus-within/nav-item:bg-primary-700',
+                                  isActive && 'bg-primary-500',
+                                )}
+                              />
+                            </button>
+                          }
+                        />
+                        <TooltipContent
+                          side="left"
+                          align="start"
+                          className="max-w-44 border-primary-200 bg-primary-50 text-right text-primary-800"
+                        >
+                          <span className="block break-words text-pretty">
+                            {preview}
+                          </span>
+                        </TooltipContent>
+                      </div>
+                    </TooltipRoot>
+                  )
+                })}
+              </TooltipProvider>
+            </div>
           </div>
         </div>
       </div>
