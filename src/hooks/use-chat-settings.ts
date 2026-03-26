@@ -53,6 +53,7 @@ export type ChatSettings = {
   showToolMessages: boolean
   showReasoningBlocks: boolean
   showConversationNavigator: boolean
+  showSidebarSectionCounts: boolean
   themeMode: ThemeMode
   themePalette: ThemePalette
   wideMode: boolean
@@ -77,6 +78,7 @@ const DEFAULT_CHAT_SETTINGS: ChatSettings = {
   showToolMessages: true,
   showReasoningBlocks: true,
   showConversationNavigator: true,
+  showSidebarSectionCounts: false,
   themeMode: 'system',
   themePalette: 'default',
   wideMode: true,
@@ -137,6 +139,10 @@ function normalizeChatSettings(value: unknown): ChatSettings {
       record?.showConversationNavigator,
       DEFAULT_CHAT_SETTINGS.showConversationNavigator,
     ),
+    showSidebarSectionCounts: booleanOrDefault(
+      record?.showSidebarSectionCounts,
+      DEFAULT_CHAT_SETTINGS.showSidebarSectionCounts,
+    ),
     themeMode,
     themePalette,
     wideMode: booleanOrDefault(record?.wideMode, DEFAULT_CHAT_SETTINGS.wideMode),
@@ -192,7 +198,7 @@ export const useChatSettingsStore = create<ChatSettingsState>()(
     }),
     {
       name: 'chat-settings',
-      version: 3,
+      version: 4,
       migrate: (persistedState) => {
         const state = objectRecord(persistedState)
         return {

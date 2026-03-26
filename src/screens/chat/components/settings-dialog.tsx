@@ -181,6 +181,17 @@ export function SettingsDialog({
                       }}
                     />
                   </SettingsRow>
+                  <SettingsRow
+                    label="Sidebar section counts"
+                    description="Show the number of conversations in each sidebar group"
+                  >
+                    <Switch
+                      checked={settings.showSidebarSectionCounts}
+                      onCheckedChange={function handleChange(checked) {
+                        updateSettings({ showSidebarSectionCounts: checked })
+                      }}
+                    />
+                  </SettingsRow>
                 </div>
               ) : null}
             </div>
