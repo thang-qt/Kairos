@@ -3,6 +3,7 @@ module github.com/thang/kairos
 go 1.24.0
 
 require (
+	github.com/openai/openai-go/v3 v3.29.0
 	golang.org/x/crypto v0.39.0
 	modernc.org/sqlite v1.39.1
 )
@@ -12,7 +13,6 @@ require (
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/ncruces/go-strftime v0.1.9 // indirect
-	github.com/openai/openai-go/v3 v3.29.0 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/tidwall/gjson v1.18.0 // indirect
 	github.com/tidwall/match v1.1.1 // indirect
