@@ -15,7 +15,7 @@ import type { ToolPart } from '@/components/prompt-kit/tool'
 import { Message, MessageContent } from '@/components/prompt-kit/message'
 import { Thinking } from '@/components/prompt-kit/thinking'
 import { Tool } from '@/components/prompt-kit/tool'
-import { useChatSettings } from '@/hooks/use-chat-settings'
+import { useChatSettingsStore } from '@/hooks/use-chat-settings'
 import { cn } from '@/lib/utils'
 
 type MessageItemProps = {
@@ -329,7 +329,12 @@ function MessageItemComponent({
   branchState,
   onSelectBranch,
 }: MessageItemProps) {
-  const { settings } = useChatSettings()
+  const showReasoningBlocks = useChatSettingsStore(
+    (state) => state.settings.showReasoningBlocks,
+  )
+  const showToolMessages = useChatSettingsStore(
+    (state) => state.settings.showToolMessages,
+  )
   const role = message.role || 'assistant'
   const text = textFromMessage(message)
   const images = imagesFromMessage(message)
@@ -347,7 +352,7 @@ function MessageItemComponent({
   function renderAssistantPart(part: MessageContentPart, index: number) {
     if (part.type === 'thinking') {
       const thinking = String(part.thinking ?? '')
-      if (!thinking || !settings.showReasoningBlocks) return null
+      if (!thinking || !showReasoningBlocks) return null
       return (
         <div key={`thinking-${index}`} className="w-full max-w-[900px]">
           <Thinking content={thinking} />
@@ -370,7 +375,7 @@ function MessageItemComponent({
       )
     }
 
-    if (!settings.showToolMessages) return null
+    if (!showToolMessages) return null
     const resultMessage = part.id
       ? toolResultsByCallId?.get(part.id)
       : undefined
@@ -390,8 +395,15 @@ function MessageItemComponent({
       ref={wrapperRef}
       style={
         typeof wrapperScrollMarginTop === 'number'
-          ? { scrollMarginTop: `${wrapperScrollMarginTop}px` }
-          : undefined
+          ? {
+              scrollMarginTop: `${wrapperScrollMarginTop}px`,
+              contentVisibility: 'auto',
+              containIntrinsicSize: '240px',
+            }
+          : {
+              contentVisibility: 'auto',
+              containIntrinsicSize: '240px',
+            }
       }
       className={cn(
         'group flex flex-col gap-0.5',
@@ -426,7 +438,7 @@ function MessageItemComponent({
         </Message>
       )}
 
-      {isToolResult && settings.showToolMessages && standaloneToolPart && (
+      {isToolResult && showToolMessages && standaloneToolPart && (
         <div className="w-full max-w-[900px] mt-2 flex flex-col gap-3">
           <Tool toolPart={standaloneToolPart} defaultOpen={false} />
         </div>

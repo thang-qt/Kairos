@@ -17,7 +17,7 @@ import {
   ChatContainerScrollAnchor,
 } from '@/components/prompt-kit/chat-container'
 import { TypingIndicator } from '@/components/prompt-kit/typing-indicator'
-import { useChatSettings } from '@/hooks/use-chat-settings'
+import { useChatSettingsStore } from '@/hooks/use-chat-settings'
 
 type ChatMessageListProps = {
   messages: Array<GatewayMessage>
@@ -70,7 +70,10 @@ function ChatMessageListComponent({
   onRestoreScrollTopApplied,
   showConversationNavigator = false,
 }: ChatMessageListProps) {
-  const { settings } = useChatSettings()
+  const showToolMessages = useChatSettingsStore(
+    (state) => state.settings.showToolMessages,
+  )
+  const wideMode = useChatSettingsStore((state) => state.settings.wideMode)
   const anchorRef = useRef<HTMLDivElement | null>(null)
   const lastUserRef = useRef<HTMLDivElement | null>(null)
   const [viewportNode, setViewportNode] = useState<HTMLDivElement | null>(null)
@@ -85,44 +88,6 @@ function ChatMessageListComponent({
     pendingRestoreSessionKeyRef.current = sessionKey
   }
 
-  const linkedToolCallIds = useMemo(() => {
-    const ids = new Set<string>()
-    for (const message of messages) {
-      if (message.role !== 'assistant') continue
-      const toolCalls = getToolCallsFromMessage(message)
-      for (const toolCall of toolCalls) {
-        const toolCallId =
-          typeof toolCall.id === 'string' ? toolCall.id.trim() : ''
-        if (!toolCallId) continue
-        ids.add(toolCallId)
-      }
-    }
-    return ids
-  }, [messages])
-
-  const displayMessages = useMemo(() => {
-    return messages.filter((msg) => {
-      if (msg.role !== 'toolResult') return true
-      if (!settings.showToolMessages) return true
-      const toolCallId =
-        typeof msg.toolCallId === 'string' ? msg.toolCallId.trim() : ''
-      if (!toolCallId) return true
-      return !linkedToolCallIds.has(toolCallId)
-    })
-  }, [linkedToolCallIds, messages, settings.showToolMessages])
-
-  const toolResultsByCallId = useMemo(() => {
-    const map = new Map<string, GatewayMessage>()
-    for (const message of messages) {
-      if (message.role !== 'toolResult') continue
-      const toolCallId = message.toolCallId
-      if (typeof toolCallId === 'string' && toolCallId.trim().length > 0) {
-        map.set(toolCallId, message)
-      }
-    }
-    return map
-  }, [messages])
-
   function getMessageKey(message: GatewayMessage, index: number): string {
     return String(message.__optimisticId || (message as any).id || index)
   }
@@ -135,41 +100,85 @@ function ChatMessageListComponent({
     return nextRef
   }
 
-  const conversationTurns = useMemo(() => {
-    const activeIds = new Set<string>()
-    const turns: Array<{ id: string; preview: string }> = []
+  const {
+    displayMessages,
+    toolResultsByCallId,
+    conversationTurns,
+    lastAssistantIndex,
+    lastUserIndex,
+  } = useMemo(() => {
+    const linkedToolCallIds = new Set<string>()
+    const nextToolResultsByCallId = new Map<string, GatewayMessage>()
 
-    for (const [index, message] of displayMessages.entries()) {
-      if (message.role !== 'user') continue
-      const messageId = getMessageKey(message, index)
-      activeIds.add(messageId)
-      getOrCreateUserTurnRef(messageId)
-      const previewText = textFromMessage(message).replace(/\s+/g, ' ').trim()
-      turns.push({
-        id: messageId,
-        preview: previewText || 'Attachment',
-      })
-    }
+    for (const message of messages) {
+      if (message.role === 'assistant') {
+        const toolCalls = getToolCallsFromMessage(message)
+        for (const toolCall of toolCalls) {
+          const toolCallId =
+            typeof toolCall.id === 'string' ? toolCall.id.trim() : ''
+          if (!toolCallId) continue
+          linkedToolCallIds.add(toolCallId)
+        }
+        continue
+      }
 
-    for (const existingId of userTurnRefsRef.current.keys()) {
-      if (!activeIds.has(existingId)) {
-        userTurnRefsRef.current.delete(existingId)
+      if (message.role !== 'toolResult') continue
+      const toolCallId = message.toolCallId
+      if (typeof toolCallId === 'string' && toolCallId.trim().length > 0) {
+        nextToolResultsByCallId.set(toolCallId, message)
       }
     }
 
-    return turns
-  }, [displayMessages])
+    const nextDisplayMessages: Array<GatewayMessage> = []
+    const activeIds = new Set<string>()
+    const nextConversationTurns: Array<{ id: string; preview: string }> = []
+    let nextLastAssistantIndex: number | undefined
+    let nextLastUserIndex: number | undefined
 
-  const lastAssistantIndex = displayMessages
-    .map((message, index) => ({ message, index }))
-    .filter(({ message }) => message.role !== 'user')
-    .map(({ index }) => index)
-    .pop()
-  const lastUserIndex = displayMessages
-    .map((message, index) => ({ message, index }))
-    .filter(({ message }) => message.role === 'user')
-    .map(({ index }) => index)
-    .pop()
+    for (const message of messages) {
+      if (message.role === 'toolResult' && showToolMessages) {
+        const toolCallId =
+          typeof message.toolCallId === 'string' ? message.toolCallId.trim() : ''
+        if (toolCallId && linkedToolCallIds.has(toolCallId)) {
+          continue
+        }
+      }
+
+      nextDisplayMessages.push(message)
+      const index = nextDisplayMessages.length - 1
+
+      if (message.role === 'user') {
+        const messageId = getMessageKey(message, index)
+        activeIds.add(messageId)
+        getOrCreateUserTurnRef(messageId)
+        if (showConversationNavigator) {
+          const previewText = textFromMessage(message).replace(/\s+/g, ' ').trim()
+          nextConversationTurns.push({
+            id: messageId,
+            preview: previewText || 'Attachment',
+          })
+        }
+        nextLastUserIndex = index
+        continue
+      }
+
+      nextLastAssistantIndex = index
+    }
+
+    for (const existingId of [...userTurnRefsRef.current.keys()]) {
+      if (activeIds.has(existingId)) continue
+      userTurnRefsRef.current.delete(existingId)
+    }
+
+    return {
+      displayMessages: nextDisplayMessages,
+      toolResultsByCallId: nextToolResultsByCallId,
+      conversationTurns: nextConversationTurns,
+      lastAssistantIndex: nextLastAssistantIndex,
+      lastUserIndex: nextLastUserIndex,
+    }
+  }, [messages, showConversationNavigator, showToolMessages])
+
   const showTypingIndicator =
     waitingForResponse &&
     (typeof lastUserIndex !== 'number' ||
@@ -237,13 +246,7 @@ function ChatMessageListComponent({
     if (anchorRef.current) {
       anchorRef.current.scrollIntoView({ behavior: 'auto', block: 'end' })
     }
-  }, [
-    loading,
-    displayMessages.length,
-    sessionKey,
-    pinToTop,
-    lastUserIndex,
-  ])
+  }, [loading, displayMessages, sessionKey, pinToTop, lastUserIndex])
 
   function renderMessage(
     chatMessage: GatewayMessage,
@@ -287,6 +290,56 @@ function ChatMessageListComponent({
     )
   }
 
+  const renderedMessages = useMemo(() => {
+    const flat = displayMessages.map(function renderFlatMessage(chatMessage, index) {
+      return renderMessage(chatMessage, index)
+    })
+
+    if (!hasGroup) {
+      return {
+        flat,
+        beforeGroup: null,
+        group: null,
+      }
+    }
+
+    return {
+      flat,
+      beforeGroup: displayMessages
+        .slice(0, groupStartIndex)
+        .map(function renderLeadingMessage(chatMessage, index) {
+          return renderMessage(chatMessage, index)
+        }),
+      group: displayMessages
+        .slice(groupStartIndex)
+        .map(function renderGroupedMessage(chatMessage, index) {
+          const realIndex = groupStartIndex + index
+          const wrapperClassName =
+            realIndex === lastUserIndex ? 'scroll-mt-0' : undefined
+          const wrapperScrollMarginTop =
+            realIndex === lastUserIndex ? headerHeight : undefined
+          return renderMessage(chatMessage, realIndex, {
+            wrapperClassName,
+            wrapperScrollMarginTop,
+          })
+        }),
+    }
+  }, [
+    branchNavigators,
+    displayMessages,
+    groupStartIndex,
+    hasGroup,
+    headerHeight,
+    lastAssistantIndex,
+    lastUserIndex,
+    modelLabelById,
+    onDeleteUserTurn,
+    onEditUserTurn,
+    onFork,
+    onSelectBranch,
+    toolResultsByCallId,
+  ])
+
   const pinnedEndNotice =
     hasGroup && notice && noticePosition === 'end' ? notice : null
   const trailingNotice = !hasGroup && notice && noticePosition === 'end'
@@ -315,36 +368,19 @@ function ChatMessageListComponent({
       <ChatContainerContent
         className="pt-14"
         style={contentStyle}
-        wide={settings.wideMode}
+        wide={wideMode}
       >
         {notice && noticePosition === 'start' ? notice : null}
         {empty && !notice ? (
           (emptyState ?? <div aria-hidden></div>)
         ) : hasGroup ? (
           <>
-            {displayMessages
-              .slice(0, groupStartIndex)
-              .map((chatMessage, index) => renderMessage(chatMessage, index))}
+            {renderedMessages.beforeGroup}
             <div
               className="flex flex-col space-y-6"
               style={{ minHeight: `${Math.max(0, pinGroupMinHeight - 24)}px` }}
             >
-              {displayMessages
-                .slice(groupStartIndex)
-                .map((chatMessage, index) => {
-                  const realIndex = groupStartIndex + index
-                  const wrapperRef =
-                    realIndex === lastUserIndex ? lastUserRef : undefined
-                  const wrapperClassName =
-                    realIndex === lastUserIndex ? 'scroll-mt-0' : undefined
-                  const wrapperScrollMarginTop =
-                    realIndex === lastUserIndex ? headerHeight : undefined
-                  return renderMessage(chatMessage, realIndex, {
-                    wrapperRef,
-                    wrapperClassName,
-                    wrapperScrollMarginTop,
-                  })
-                })}
+              {renderedMessages.group}
               {showTypingIndicator ? (
                 <div className="py-2">
                   <TypingIndicator />
@@ -354,9 +390,7 @@ function ChatMessageListComponent({
             </div>
           </>
         ) : (
-          displayMessages.map((chatMessage, index) =>
-            renderMessage(chatMessage, index),
-          )
+          renderedMessages.flat
         )}
         {trailingNotice}
         <ChatContainerScrollAnchor

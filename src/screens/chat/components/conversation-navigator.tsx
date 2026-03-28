@@ -19,6 +19,8 @@ type ConversationNavigatorProps = {
   getTurnNode: (turnId: string) => HTMLDivElement | null
 }
 
+const MAX_VISIBLE_TURNS = 12
+
 function truncatePreview(preview: string, maxLength: number): string {
   if (preview.length <= maxLength) return preview
   return `${preview.slice(0, maxLength).trimEnd()}...`
@@ -41,6 +43,24 @@ export function ConversationNavigator({
     if (!activeTurnId || activeTurnIds.has(activeTurnId)) return
     setActiveTurnId(turns[0]?.id ?? null)
   }, [activeTurnId, activeTurnIds, turns])
+
+  const visibleTurns = useMemo(() => {
+    if (turns.length <= MAX_VISIBLE_TURNS) return turns
+
+    const activeIndex = turns.findIndex((turn) => turn.id === activeTurnId)
+    if (activeIndex < 0) {
+      return turns.slice(Math.max(0, turns.length - MAX_VISIBLE_TURNS))
+    }
+
+    const halfWindow = Math.floor(MAX_VISIBLE_TURNS / 2)
+    const maxStart = Math.max(0, turns.length - MAX_VISIBLE_TURNS)
+    const start = Math.min(
+      maxStart,
+      Math.max(0, activeIndex - halfWindow),
+    )
+
+    return turns.slice(start, start + MAX_VISIBLE_TURNS)
+  }, [activeTurnId, turns])
 
   useEffect(() => {
     if (!scrollElement || turns.length === 0) {
@@ -95,17 +115,20 @@ export function ConversationNavigator({
 
   return (
     <div
-      className="group/nav-rail absolute right-0 bottom-0 z-20 hidden w-32 md:block"
+      className="group/nav-rail pointer-events-none absolute right-4 bottom-0 z-20 hidden w-28 md:block"
       style={{ top: `${headerHeight}px` }}
     >
-      <div className="flex h-full items-center justify-end pr-4">
+      <div className="flex h-full items-center justify-end">
         <div className="pointer-events-auto overflow-visible py-2 opacity-0 transition-opacity duration-150 ease-out group-hover/nav-rail:opacity-100 group-focus-within/nav-rail:opacity-100 hover:opacity-100">
-          <div className="max-h-[75vh] overflow-y-auto overflow-x-visible">
+          <div className="overflow-x-visible">
             <div className="flex flex-col gap-2.5">
               <TooltipProvider>
-                {turns.map((turn, index) => {
+                {visibleTurns.map((turn) => {
                   const isActive = turn.id === activeTurnId
                   const preview = truncatePreview(turn.preview, 140)
+                  const turnIndex = turns.findIndex(
+                    (candidate) => candidate.id === turn.id,
+                  )
 
                   return (
                     <TooltipRoot key={turn.id}>
@@ -114,7 +137,7 @@ export function ConversationNavigator({
                           render={
                             <button
                               type="button"
-                              aria-label={`Jump to user turn ${index + 1}`}
+                              aria-label={`Jump to user turn ${turnIndex + 1}`}
                               onClick={function handleClick() {
                                 handleTurnClick(turn.id)
                               }}

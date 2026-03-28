@@ -6,7 +6,7 @@ import { memo, useCallback, useMemo } from 'react'
 import { usePinSession } from '../../hooks/use-pin-session'
 import { SessionItem } from './session-item'
 import type { SessionMeta } from '../../types'
-import { useChatSettings } from '@/hooks/use-chat-settings'
+import { useChatSettingsStore } from '@/hooks/use-chat-settings'
 import {
   Collapsible,
   CollapsiblePanel,
@@ -34,6 +34,11 @@ type SessionGroup = {
   sessions: Array<SessionMeta>
 }
 
+type GroupedSessions = {
+  pinned: Array<SessionMeta>
+  unpinned: Array<SessionGroup>
+}
+
 export const SidebarSessions = memo(function SidebarSessions({
   sessions,
   activeFriendlyId,
@@ -43,23 +48,15 @@ export const SidebarSessions = memo(function SidebarSessions({
   onDelete,
 }: SidebarSessionsProps) {
   const { pinSession } = usePinSession()
-  const { settings } = useChatSettings()
-
-  const pinnedSessions = useMemo(
-    () => sessions.filter((session) => session.isPinned === true),
-    [sessions],
+  const showSidebarSectionCounts = useChatSettingsStore(
+    (state) => state.settings.showSidebarSectionCounts,
   )
 
-  const unpinnedSessions = useMemo(
-    () => sessions.filter((session) => session.isPinned !== true),
-    [sessions],
-  )
-
-  const unpinnedGroups = useMemo(
-    function groupUnpinnedSessions() {
-      return buildSessionGroups(unpinnedSessions)
+  const groupedSessions = useMemo(
+    function groupSessions() {
+      return buildSessionGroups(sessions)
     },
-    [unpinnedSessions],
+    [sessions],
   )
 
   const handleTogglePin = useCallback(
@@ -78,14 +75,14 @@ export const SidebarSessions = memo(function SidebarSessions({
       <ScrollAreaRoot className="flex-1 min-h-0">
         <ScrollAreaViewport className="min-h-0">
           <div className="flex flex-col gap-2 px-2">
-            {pinnedSessions.length > 0 ? (
+            {groupedSessions.pinned.length > 0 ? (
               <SessionSection
                 label="Pinned"
                 defaultOpen={defaultOpen}
-                count={pinnedSessions.length}
-                showCount={settings.showSidebarSectionCounts}
+                count={groupedSessions.pinned.length}
+                showCount={showSidebarSectionCounts}
               >
-                {pinnedSessions.map(function renderPinnedSession(session) {
+                {groupedSessions.pinned.map(function renderPinnedSession(session) {
                   return (
                     <SessionItem
                       key={session.key}
@@ -102,14 +99,14 @@ export const SidebarSessions = memo(function SidebarSessions({
               </SessionSection>
             ) : null}
 
-            {unpinnedGroups.map(function renderGroup(group) {
+            {groupedSessions.unpinned.map(function renderGroup(group) {
               return (
                 <SessionSection
                   key={group.id}
                   label={group.label}
                   defaultOpen={defaultOpen}
                   count={group.sessions.length}
-                  showCount={settings.showSidebarSectionCounts}
+                  showCount={showSidebarSectionCounts}
                 >
                   {group.sessions.map(function renderSession(session) {
                     return (
@@ -201,7 +198,7 @@ function SessionSection({
   )
 }
 
-function buildSessionGroups(sessions: Array<SessionMeta>): Array<SessionGroup> {
+function buildSessionGroups(sessions: Array<SessionMeta>): GroupedSessions {
   const now = new Date()
   const startOfToday = new Date(
     now.getFullYear(),
@@ -213,68 +210,64 @@ function buildSessionGroups(sessions: Array<SessionMeta>): Array<SessionGroup> {
   const startOfLast7Days = startOfToday - oneDayInMs * 7
   const startOfLast30Days = startOfToday - oneDayInMs * 30
 
-  const groups: Array<SessionGroup> = []
+  const grouped = {
+    pinned: [] as Array<SessionMeta>,
+    today: [] as Array<SessionMeta>,
+    yesterday: [] as Array<SessionMeta>,
+    last7Days: [] as Array<SessionMeta>,
+    last30Days: [] as Array<SessionMeta>,
+    older: [] as Array<SessionMeta>,
+  }
 
-  appendSessionGroup(groups, 'today', 'Today', function isToday(session) {
+  for (const session of sessions) {
+    if (session.isPinned === true) {
+      grouped.pinned.push(session)
+      continue
+    }
+
     const updatedAt = normalizeUpdatedAt(session.updatedAt)
-    return updatedAt >= startOfToday
-  }, sessions)
+    if (updatedAt >= startOfToday) {
+      grouped.today.push(session)
+      continue
+    }
+    if (updatedAt >= startOfYesterday) {
+      grouped.yesterday.push(session)
+      continue
+    }
+    if (updatedAt >= startOfLast7Days) {
+      grouped.last7Days.push(session)
+      continue
+    }
+    if (updatedAt >= startOfLast30Days) {
+      grouped.last30Days.push(session)
+      continue
+    }
+    grouped.older.push(session)
+  }
 
-  appendSessionGroup(
-    groups,
-    'yesterday',
-    'Yesterday',
-    function isYesterday(session) {
-      const updatedAt = normalizeUpdatedAt(session.updatedAt)
-      return updatedAt >= startOfYesterday && updatedAt < startOfToday
-    },
-    sessions,
-  )
-
-  appendSessionGroup(
-    groups,
-    'last-7-days',
-    'Last 7 Days',
-    function isLast7Days(session) {
-      const updatedAt = normalizeUpdatedAt(session.updatedAt)
-      return updatedAt >= startOfLast7Days && updatedAt < startOfYesterday
-    },
-    sessions,
-  )
-
-  appendSessionGroup(
-    groups,
-    'last-30-days',
-    'Last 30 Days',
-    function isLast30Days(session) {
-      const updatedAt = normalizeUpdatedAt(session.updatedAt)
-      return updatedAt >= startOfLast30Days && updatedAt < startOfLast7Days
-    },
-    sessions,
-  )
-
-  appendSessionGroup(groups, 'older', 'Older', function isOlder(session) {
-    const updatedAt = normalizeUpdatedAt(session.updatedAt)
-    return updatedAt < startOfLast30Days
-  }, sessions)
-
-  return groups
+  return {
+    pinned: grouped.pinned,
+    unpinned: [
+      createSessionGroup('today', 'Today', grouped.today),
+      createSessionGroup('yesterday', 'Yesterday', grouped.yesterday),
+      createSessionGroup('last-7-days', 'Last 7 Days', grouped.last7Days),
+      createSessionGroup('last-30-days', 'Last 30 Days', grouped.last30Days),
+      createSessionGroup('older', 'Older', grouped.older),
+    ].filter((group): group is SessionGroup => group !== null),
+  }
 }
 
-function appendSessionGroup(
-  groups: Array<SessionGroup>,
+function createSessionGroup(
   id: string,
   label: string,
-  predicate: (session: SessionMeta) => boolean,
   sessions: Array<SessionMeta>,
-) {
-  const matchingSessions = sessions.filter(predicate)
-  if (matchingSessions.length === 0) return
-  groups.push({
+): SessionGroup | null {
+  if (sessions.length === 0) return null
+  return {
     id,
     label,
-    sessions: matchingSessions,
-  })
+    sessions,
+  }
 }
 
 function normalizeUpdatedAt(updatedAt: number | undefined): number {

@@ -303,28 +303,30 @@ function ChatSidebarComponent({
       />
 
       <div className="flex-1 min-h-0 overflow-hidden">
-        <AnimatePresence initial={false}>
-          {!isCollapsed && (
-            <motion.div
-              key="content"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={transition}
-              className="pt-0 flex flex-col w-full min-h-0 h-full"
-            >
-              <div className="flex-1 min-h-0">
-                <SidebarSessions
-                  sessions={sessions}
-                  activeFriendlyId={activeFriendlyId}
-                  onSelect={onSelectSession}
-                  onRename={handleOpenRename}
-                  onDelete={handleOpenDelete}
-                />
-              </div>
-            </motion.div>
+        <motion.div
+          key="content"
+          initial={false}
+          animate={{
+            opacity: isCollapsed ? 0 : 1,
+            visibility: isCollapsed ? 'hidden' : 'visible',
+          }}
+          transition={transition}
+          aria-hidden={isCollapsed}
+          className={cn(
+            'pt-0 flex flex-col w-full min-h-0 h-full',
+            isCollapsed && 'pointer-events-none',
           )}
-        </AnimatePresence>
+        >
+          <div className="flex-1 min-h-0">
+            <SidebarSessions
+              sessions={sessions}
+              activeFriendlyId={activeFriendlyId}
+              onSelect={onSelectSession}
+              onRename={handleOpenRename}
+              onDelete={handleOpenDelete}
+            />
+          </div>
+        </motion.div>
       </div>
 
       <div className="px-2 py-3 border-t border-primary-200 bg-primary-100">

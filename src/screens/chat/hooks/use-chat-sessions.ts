@@ -99,7 +99,11 @@ function mergeSessionLists(
     mergedByID.set(key, mergeSession(session, cached))
   }
 
-  return [...mergedByID.values()].sort(sortSessions)
+  const nextSessions = [...mergedByID.values()].sort(sortSessions)
+  if (sameSessionList(nextSessions, cachedSessions)) {
+    return cachedSessions
+  }
+  return nextSessions
 }
 
 function mergeSession(serverSession: SessionMeta, cachedSession: SessionMeta) {
@@ -115,7 +119,7 @@ function mergeSession(serverSession: SessionMeta, cachedSession: SessionMeta) {
       : 0
   const preferCached = cachedUpdatedAt > serverUpdatedAt
 
-  return {
+  const nextSession = {
     ...serverSession,
     isPinned:
       typeof serverSession.isPinned === 'boolean'
@@ -130,6 +134,12 @@ function mergeSession(serverSession: SessionMeta, cachedSession: SessionMeta) {
     title: serverSession.title || cachedSession.title,
     derivedTitle: serverSession.derivedTitle || cachedSession.derivedTitle,
   } satisfies SessionMeta
+
+  if (sameSession(nextSession, cachedSession)) {
+    return cachedSession
+  }
+
+  return nextSession
 }
 
 function sortSessions(left: SessionMeta, right: SessionMeta): number {
@@ -152,4 +162,36 @@ function sortSessions(left: SessionMeta, right: SessionMeta): number {
 
 function sessionIdentity(session: SessionMeta): string {
   return session.key || session.friendlyId
+}
+
+function sameSessionList(
+  leftSessions: Array<SessionMeta>,
+  rightSessions: Array<SessionMeta>,
+): boolean {
+  if (leftSessions === rightSessions) return true
+  if (leftSessions.length !== rightSessions.length) return false
+  for (let index = 0; index < leftSessions.length; index += 1) {
+    if (leftSessions[index] !== rightSessions[index]) {
+      return false
+    }
+  }
+  return true
+}
+
+function sameSession(left: SessionMeta, right: SessionMeta): boolean {
+  return (
+    left.key === right.key &&
+    left.friendlyId === right.friendlyId &&
+    left.label === right.label &&
+    left.title === right.title &&
+    left.derivedTitle === right.derivedTitle &&
+    left.updatedAt === right.updatedAt &&
+    left.lastMessage === right.lastMessage &&
+    left.isPinned === right.isPinned &&
+    left.parentSessionKey === right.parentSessionKey &&
+    left.parentFriendlyId === right.parentFriendlyId &&
+    left.forkPointMessageId === right.forkPointMessageId &&
+    left.totalTokens === right.totalTokens &&
+    left.contextTokens === right.contextTokens
+  )
 }

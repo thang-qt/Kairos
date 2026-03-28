@@ -1,4 +1,4 @@
-import { useMemo, useRef } from 'react'
+import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 
 import { chatQueryKeys, fetchHistory } from '../chat-queries'
@@ -83,24 +83,10 @@ export function useChatHistory({
     gcTime: 1000 * 60 * 10,
   })
 
-  const stableHistorySignatureRef = useRef('')
-  const stableHistoryMessagesRef = useRef<Array<GatewayMessage>>([])
   const historyMessages = useMemo(() => {
-    const messages = Array.isArray(historyQuery.data?.messages)
+    return Array.isArray(historyQuery.data?.messages)
       ? historyQuery.data.messages
       : []
-    const last = messages.at(-1)
-    const lastId = typeof last?.id === 'string' ? last.id : ''
-    const lastRole = typeof last?.role === 'string' ? last.role : ''
-    const lastText = last ? textFromMessage(last) : ''
-    const lastContentSignature = last ? contentSignatureFromMessage(last) : ''
-    const signature = `${messages.length}:${lastRole}:${lastId}:${lastText.slice(-32)}:${lastContentSignature}`
-    if (signature === stableHistorySignatureRef.current) {
-      return stableHistoryMessagesRef.current
-    }
-    stableHistorySignatureRef.current = signature
-    stableHistoryMessagesRef.current = messages
-    return messages
   }, [historyQuery.data?.messages])
 
   const historyError =
@@ -124,25 +110,6 @@ export function useChatHistory({
     activeCanonicalKey,
     sessionKeyForHistory,
   }
-}
-
-function contentSignatureFromMessage(message: GatewayMessage): string {
-  const content = Array.isArray(message.content) ? message.content : []
-  return content
-    .map((part) => {
-      if (part.type === 'text') {
-        return `text:${String(part.text ?? '').length}`
-      }
-      if (part.type === 'thinking') {
-        return `thinking:${String(part.thinking ?? '').length}`
-      }
-      const id = 'id' in part ? String(part.id ?? '') : ''
-      const name = 'name' in part ? String(part.name ?? '') : ''
-      const partialJson =
-        'partialJson' in part ? String(part.partialJson ?? '') : ''
-      return `toolCall:${id}:${name}:${partialJson.length}`
-    })
-    .join('|')
 }
 
 function mergeStreamingHistoryMessages(

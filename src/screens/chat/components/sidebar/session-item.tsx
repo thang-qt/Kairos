@@ -46,6 +46,10 @@ function SessionItemComponent({
       to="/chat/$sessionKey"
       params={{ sessionKey: session.friendlyId }}
       onClick={onSelect}
+      style={{
+        contentVisibility: 'auto',
+        containIntrinsicSize: '32px',
+      }}
       className={cn(
         'group inline-flex items-center justify-between',
         'w-full text-left pl-1.5 pr-0.5 h-8 rounded-lg transition-colors duration-0',
