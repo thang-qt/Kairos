@@ -74,7 +74,9 @@ export function AppShell({
                 'linear-gradient(to bottom, var(--color-surface), transparent)',
             }}
           >
-            <div className="pointer-events-auto">{header}</div>
+            <div className="pointer-events-auto bg-primary-50/88 backdrop-blur-sm lg:bg-transparent lg:backdrop-blur-none">
+              {header}
+            </div>
           </div>
 
           {children}
