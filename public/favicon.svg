@@ -1,6 +1,4 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="84" height="84" viewBox="0 0 84 84" fill="none">
-  <!-- Rounded square: primary-950 in dark palette = oklch(0.25 0.003 80) -->
-  <rect x="8" y="8" width="50" height="50" rx="11" fill="oklch(0.25 0.003 80)" />
-  <!-- Circle centred at square's bottom-right corner; r=24 → extends to 82, within 84×84 viewBox -->
-  <circle cx="58" cy="58" r="24" fill="oklch(0.52 0.006 80)" />
+  <rect x="8" y="8" width="50" height="50" rx="11" fill="#151312" />
+  <circle cx="58" cy="58" r="24" fill="#7d7872" />
 </svg>

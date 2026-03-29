@@ -5,11 +5,30 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Kairos</title>
     <meta name="description" content="A focused AI chat app." />
+    <meta name="application-name" content="Kairos" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="Kairos" />
+    <meta
+      name="theme-color"
+      content="#f5f4ef"
+      media="(prefers-color-scheme: light)"
+      data-theme-color-mode="light"
+    />
+    <meta
+      name="theme-color"
+      content="#151312"
+      media="(prefers-color-scheme: dark)"
+      data-theme-color-mode="dark"
+    />
+    <meta name="theme-color" content="#f5f4ef" data-theme-color-mode="current" />
     <meta property="og:image" content="/cover.jpg" />
     <meta property="og:image:type" content="image/jpeg" />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:image" content="/cover.jpg" />
+    <link rel="manifest" href="/manifest.json" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <script>
       ;(() => {
         try {
@@ -65,6 +84,26 @@
             if (themeMode === 'system' && media.matches) {
               root.classList.add('dark')
             }
+            updateThemeColorMeta()
+          }
+
+          function updateThemeColorMeta() {
+            const styles = getComputedStyle(root)
+            const lightSurface = styles
+              .getPropertyValue('--theme-light-surface')
+              .trim()
+            const darkSurface = styles.getPropertyValue('--theme-dark-surface').trim()
+            const currentSurface = styles.getPropertyValue('--theme-surface').trim()
+
+            document
+              .querySelector('[data-theme-color-mode="light"]')
+              ?.setAttribute('content', lightSurface)
+            document
+              .querySelector('[data-theme-color-mode="dark"]')
+              ?.setAttribute('content', darkSurface)
+            document
+              .querySelector('[data-theme-color-mode="current"]')
+              ?.setAttribute('content', currentSurface)
           }
 
           apply()

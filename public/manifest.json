@@ -1,15 +1,35 @@
 {
   "short_name": "Kairos",
   "name": "Kairos",
+  "id": "/",
   "icons": [
     {
-      "src": "favicon.svg",
+      "src": "/pwa-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/pwa-maskable-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/pwa-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    },
+    {
+      "src": "/favicon.svg",
       "sizes": "any",
       "type": "image/svg+xml"
     }
   ],
-  "start_url": ".",
+  "start_url": "/",
+  "scope": "/",
   "display": "standalone",
-  "theme_color": "#000000",
-  "background_color": "#ffffff"
+  "orientation": "portrait",
+  "theme_color": "#f5f4ef",
+  "background_color": "#f5f4ef",
+  "description": "A focused AI chat app."
 }

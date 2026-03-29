@@ -176,6 +176,24 @@ export function applyThemeSettingsToDocument(settings: {
   ) {
     root.classList.add('dark')
   }
+  updateThemeColorMeta(root)
+}
+
+function updateThemeColorMeta(root: HTMLElement) {
+  const styles = getComputedStyle(root)
+  const lightSurface = styles.getPropertyValue('--theme-light-surface').trim()
+  const darkSurface = styles.getPropertyValue('--theme-dark-surface').trim()
+  const currentSurface = styles.getPropertyValue('--theme-surface').trim()
+
+  document
+    .querySelector('[data-theme-color-mode="light"]')
+    ?.setAttribute('content', lightSurface)
+  document
+    .querySelector('[data-theme-color-mode="dark"]')
+    ?.setAttribute('content', darkSurface)
+  document
+    .querySelector('[data-theme-color-mode="current"]')
+    ?.setAttribute('content', currentSurface)
 }
 
 export const useChatSettingsStore = create<ChatSettingsState>()(
