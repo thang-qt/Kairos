@@ -50,11 +50,12 @@ import type { BranchNavigatorState } from './components/branch-inline-navigator'
 import type { RightSidebarTab } from './components/right-sidebar'
 import type { AttachmentFile } from '@/components/attachment-button'
 import type { ChatComposerHelpers } from './components/chat-composer'
+import { AppShell } from '@/components/app-shell'
 import { useExport } from '@/hooks/use-export'
 import { useChatSettings } from '@/hooks/use-chat-settings'
 import { useModelsQuery } from '@/lib/app-api'
 import { getChatBackend } from '@/lib/chat-backend'
-import { cn, randomUUID } from '@/lib/utils'
+import { randomUUID } from '@/lib/utils'
 
 type ChatScreenProps = {
   activeFriendlyId: string
@@ -1099,108 +1100,39 @@ export function ChatScreen({
   }, [activeFriendlyId, activeSession, activeSessionKey, activeTitle, sessions])
 
   return (
-    <div className="h-screen bg-surface text-primary-900">
-      <div
-        className={cn(
-          'h-full overflow-hidden',
-          isMobile ? 'relative' : 'grid grid-cols-[auto_1fr_auto]',
-        )}
-      >
-        {hideUi ? null : isMobile ? (
-          <div
-            className={cn(
-              'fixed inset-y-0 left-0 z-50 w-[300px] transition-transform duration-200',
-              isSidebarCollapsed ? '-translate-x-full' : 'translate-x-0',
-            )}
-          >
-            {sidebar}
-          </div>
-        ) : (
-          sidebar
-        )}
-
-        <main className="flex h-full min-h-0 flex-col relative" ref={mainRef}>
-          <div
-            className="absolute top-0 left-0 right-0 z-10 pointer-events-none"
-            style={{
-              height: 80,
-              background:
-                'linear-gradient(to bottom, var(--color-surface), transparent)',
-            }}
-          >
-            <div className="pointer-events-auto">
-              <ChatHeader
-                activeTitle={isNewChat ? 'New conversation' : activeTitle}
-                showActiveTitle={isNewChat || hasActiveTitle}
-                wrapperRef={headerRef}
-                isSidebarCollapsed={isSidebarCollapsed}
-                onOpenSidebar={handleOpenSidebar}
-                usedTokens={usedTokens}
-                maxTokens={
-                  activeSession?.contextTokens ??
-                  resolvedConversationModelDetails?.contextWindow
-                }
-                forkedFrom={forkedFrom}
-                onToggleRightSidebar={() =>
-                  setRightSidebarOpen((prev) => !prev)
-                }
-                rightSidebarOpen={rightSidebarOpen}
-                models={models}
-                selectedModelId={resolvedConversationModel}
-                defaultModelId={defaultModelId}
-                modelsLoading={modelsQuery.isLoading}
-                canSelectModel={modelsQuery.data?.capabilities.canSelectModel}
-                defaultModelLocked={
-                  modelsQuery.data?.capabilities.defaultModelLocked
-                }
-                onSelectModel={handleSelectConversationModel}
-              />
-            </div>
-          </div>
-
-          {hideUi ? null : (
-            <>
-              <ChatMessageList
-                messages={displayMessages}
-                loading={historyLoading}
-                empty={historyEmpty}
-                notice={backendNotice}
-                noticePosition="end"
-                waitingForResponse={waitingForResponse}
-                sessionKey={activeCanonicalKey}
-                modelLabelById={modelLabelById}
-                pinToTop={pinToTop}
-                pinGroupMinHeight={pinGroupMinHeight}
-                headerHeight={headerHeight}
-                contentStyle={stableContentStyle}
-                onFork={handleForkMessage}
-                onEditUserTurn={handleOpenEditUserTurn}
-                onDeleteUserTurn={handleOpenDeleteUserTurn}
-                branchNavigators={branchNavigators}
-                onSelectBranch={handleSelectBranch}
-                onScrollTopChange={handleScrollTopChange}
-                restoreScrollTop={restoreScrollTop}
-                restoreKey={activeFriendlyId}
-                onRestoreScrollTopApplied={handleRestoreScrollTopApplied}
-                showConversationNavigator={
-                  settings.showConversationNavigator &&
-                  !isMobile &&
-                  !rightSidebarOpen
-                }
-              />
-              <ChatComposer
-                onSubmit={send}
-                onStop={handleStopGeneration}
-                isLoading={sending}
-                canStop={waitingForResponse && !isNewChat}
-                disabled={sending || !hasAvailableModel}
-                wrapperRef={composerRef}
-              />
-            </>
-          )}
-        </main>
-
-        {hideUi ? null : (
+    <AppShell
+      isMobile={isMobile}
+      isSidebarCollapsed={isSidebarCollapsed}
+      onCloseSidebar={handleToggleSidebarCollapse}
+      sidebar={sidebar}
+      mainRef={mainRef}
+      hideChrome={hideUi}
+      header={
+        <ChatHeader
+          activeTitle={isNewChat ? 'New conversation' : activeTitle}
+          showActiveTitle={isNewChat || hasActiveTitle}
+          wrapperRef={headerRef}
+          isSidebarCollapsed={isSidebarCollapsed}
+          onOpenSidebar={handleOpenSidebar}
+          usedTokens={usedTokens}
+          maxTokens={
+            activeSession?.contextTokens ??
+            resolvedConversationModelDetails?.contextWindow
+          }
+          forkedFrom={forkedFrom}
+          onToggleRightSidebar={() => setRightSidebarOpen((prev) => !prev)}
+          rightSidebarOpen={rightSidebarOpen}
+          models={models}
+          selectedModelId={resolvedConversationModel}
+          defaultModelId={defaultModelId}
+          modelsLoading={modelsQuery.isLoading}
+          canSelectModel={modelsQuery.data?.capabilities.canSelectModel}
+          defaultModelLocked={modelsQuery.data?.capabilities.defaultModelLocked}
+          onSelectModel={handleSelectConversationModel}
+        />
+      }
+      rightSidebar={
+        hideUi ? null : (
           <RightSidebar
             isOpen={rightSidebarOpen}
             isMobile={isMobile}
@@ -1224,34 +1156,76 @@ export function ChatScreen({
             modelSettings={conversationSettings}
             onModelSettingsChange={updateConversationSettings}
           />
-        )}
-        <UserTurnEditDialog
-          open={editingUserTurn !== null}
-          onOpenChange={function handleOpenChange(open) {
-            if (!open) {
-              setEditingUserTurn(null)
+        )
+      }
+    >
+      {hideUi ? null : (
+        <>
+          <ChatMessageList
+            messages={displayMessages}
+            loading={historyLoading}
+            empty={historyEmpty}
+            notice={backendNotice}
+            noticePosition="end"
+            waitingForResponse={waitingForResponse}
+            sessionKey={activeCanonicalKey}
+            modelLabelById={modelLabelById}
+            pinToTop={pinToTop}
+            pinGroupMinHeight={pinGroupMinHeight}
+            headerHeight={headerHeight}
+            contentStyle={stableContentStyle}
+            onFork={handleForkMessage}
+            onEditUserTurn={handleOpenEditUserTurn}
+            onDeleteUserTurn={handleOpenDeleteUserTurn}
+            branchNavigators={branchNavigators}
+            onSelectBranch={handleSelectBranch}
+            onScrollTopChange={handleScrollTopChange}
+            restoreScrollTop={restoreScrollTop}
+            restoreKey={activeFriendlyId}
+            onRestoreScrollTopApplied={handleRestoreScrollTopApplied}
+            showConversationNavigator={
+              settings.showConversationNavigator &&
+              !isMobile &&
+              !rightSidebarOpen
             }
-          }}
-          initialMessage={editingUserTurn?.currentText ?? ''}
-          onSave={handleSaveEditedUserTurn}
-          onCancel={function handleCancelEdit() {
+          />
+          <ChatComposer
+            onSubmit={send}
+            onStop={handleStopGeneration}
+            isLoading={sending}
+            canStop={waitingForResponse && !isNewChat}
+            disabled={sending || !hasAvailableModel}
+            wrapperRef={composerRef}
+          />
+        </>
+      )}
+
+      <UserTurnEditDialog
+        open={editingUserTurn !== null}
+        onOpenChange={function handleOpenChange(open) {
+          if (!open) {
             setEditingUserTurn(null)
-          }}
-        />
-        <UserTurnDeleteDialog
-          open={deletingUserTurn !== null}
-          onOpenChange={function handleOpenChange(open) {
-            if (!open) {
-              setDeletingUserTurn(null)
-            }
-          }}
-          messagePreview={deletingUserTurn?.currentText ?? ''}
-          onConfirm={handleConfirmDeleteUserTurn}
-          onCancel={function handleCancelDelete() {
+          }
+        }}
+        initialMessage={editingUserTurn?.currentText ?? ''}
+        onSave={handleSaveEditedUserTurn}
+        onCancel={function handleCancelEdit() {
+          setEditingUserTurn(null)
+        }}
+      />
+      <UserTurnDeleteDialog
+        open={deletingUserTurn !== null}
+        onOpenChange={function handleOpenChange(open) {
+          if (!open) {
             setDeletingUserTurn(null)
-          }}
-        />
-      </div>
-    </div>
+          }
+        }}
+        messagePreview={deletingUserTurn?.currentText ?? ''}
+        onConfirm={handleConfirmDeleteUserTurn}
+        onCancel={function handleCancelDelete() {
+          setDeletingUserTurn(null)
+        }}
+      />
+    </AppShell>
   )
 }

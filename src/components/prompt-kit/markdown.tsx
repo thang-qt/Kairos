@@ -3,8 +3,8 @@ import { math } from '@streamdown/math'
 import 'katex/dist/katex.min.css'
 import { Streamdown } from 'streamdown'
 import { CodeBlock } from './code-block'
-import { cn } from '@/lib/utils'
 import type { ComponentProps, ReactNode } from 'react'
+import { cn } from '@/lib/utils'
 
 export type MarkdownProps = {
   children: string
