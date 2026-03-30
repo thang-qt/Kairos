@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest'
+import React from 'react'
+import { renderToStaticMarkup } from 'react-dom/server'
 import {
+  MessageItem,
   assistantPartRenderOrder,
   mapStandaloneToolResultToToolPart,
   modelFromMessage,
@@ -101,5 +104,24 @@ describe('modelFromMessage', function () {
     }
 
     expect(modelFromMessage(message, modelLabelById)).toBe('Kairos Code')
+  })
+})
+
+describe('MessageItem', function () {
+  it('preserves user message line breaks in the rendered bubble', function () {
+    const message: GatewayMessage = {
+      role: 'user',
+      content: [{ type: 'text', text: 'first line\nsecond line' }],
+    }
+
+    const html = renderToStaticMarkup(
+      React.createElement(MessageItem, {
+        message,
+        modelLabelById: new Map(),
+      }),
+    )
+
+    expect(html).toContain('whitespace-pre-wrap')
+    expect(html).toContain('first line\nsecond line')
   })
 })

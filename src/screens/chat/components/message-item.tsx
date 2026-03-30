@@ -429,7 +429,7 @@ function MessageItemComponent({
           <MessageContent
             markdown={false}
             className={cn(
-              'text-primary-900',
+              'text-primary-900 whitespace-pre-wrap',
               'bg-primary-100 px-4 py-2.5 max-w-[85%]',
             )}
           >
