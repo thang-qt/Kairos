@@ -5,9 +5,11 @@ import {
   Cancel01Icon,
   Delete02Icon,
   Loading03Icon,
+  PencilEdit02Icon,
   Tick02Icon,
 } from '@hugeicons/core-free-icons'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
+import type { UpdateProviderPayload } from '@/lib/app-api'
 import {
   ApiError,
   appQueryKeys,
@@ -22,6 +24,22 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
+import { cn } from '@/lib/utils'
+
+type ProviderEditorState =
+  | {
+      mode: 'add'
+    }
+  | {
+      mode: 'edit'
+      providerId: string
+    }
+
+type ProviderDraftState = {
+  label: string
+  baseURL: string
+  apiKey: string
+}
 
 function mutationErrorMessage(error: unknown, fallback: string) {
   if (error instanceof ApiError) {
@@ -33,14 +51,24 @@ function mutationErrorMessage(error: unknown, fallback: string) {
   return fallback
 }
 
+function createEmptyProviderDraft(): ProviderDraftState {
+  return {
+    label: '',
+    baseURL: '',
+    apiKey: '',
+  }
+}
+
 export function ProviderSettingsPanel() {
   const queryClient = useQueryClient()
   const capabilitiesQuery = useCapabilitiesQuery()
   const providersQuery = useProvidersQuery()
-  const [showAddForm, setShowAddForm] = useState(false)
-  const [label, setLabel] = useState('')
-  const [baseURL, setBaseURL] = useState('')
-  const [apiKey, setAPIKey] = useState('')
+  const [editorState, setEditorState] = useState<ProviderEditorState | null>(
+    null,
+  )
+  const [draft, setDraft] = useState<ProviderDraftState>(
+    createEmptyProviderDraft(),
+  )
   const [errorMessage, setErrorMessage] = useState('')
   const [testingConnection, setTestingConnection] = useState(false)
   const [testResult, setTestResult] = useState<{
@@ -60,15 +88,70 @@ export function ProviderSettingsPanel() {
     ])
   }
 
+  function resetEditorFeedback() {
+    setErrorMessage('')
+    setTestResult(null)
+  }
+
+  function resetEditorState() {
+    setEditorState(null)
+    setDraft(createEmptyProviderDraft())
+    resetEditorFeedback()
+  }
+
+  function openAddEditor() {
+    setEditorState({ mode: 'add' })
+    setDraft(createEmptyProviderDraft())
+    resetEditorFeedback()
+  }
+
+  function openEditEditor(provider: {
+    id: string
+    label: string
+    baseUrl?: string
+  }) {
+    setEditorState({
+      mode: 'edit',
+      providerId: provider.id,
+    })
+    setDraft({
+      label: provider.label,
+      baseURL: provider.baseUrl ?? '',
+      apiKey: '',
+    })
+    resetEditorFeedback()
+  }
+
+  function updateDraft<TKey extends keyof ProviderDraftState>(
+    key: TKey,
+    value: ProviderDraftState[TKey],
+  ) {
+    setDraft(function handleDraft(previous) {
+      return {
+        ...previous,
+        [key]: value,
+      }
+    })
+    resetEditorFeedback()
+  }
+
+  function buildUpdateProviderPayload(): UpdateProviderPayload {
+    const payload: UpdateProviderPayload = {
+      label: draft.label.trim() || 'Custom Provider',
+      baseUrl: draft.baseURL.trim(),
+    }
+
+    if (draft.apiKey.trim()) {
+      payload.apiKey = draft.apiKey.trim()
+    }
+
+    return payload
+  }
+
   const createProviderMutation = useMutation({
     mutationFn: createProvider,
     onSuccess: async function handleSuccess() {
-      setLabel('')
-      setBaseURL('')
-      setAPIKey('')
-      setErrorMessage('')
-      setTestResult(null)
-      setShowAddForm(false)
+      resetEditorState()
       await refreshProviderQueries()
     },
     onError: function handleError(error) {
@@ -76,7 +159,7 @@ export function ProviderSettingsPanel() {
     },
   })
 
-  const updateProviderMutation = useMutation({
+  const toggleProviderMutation = useMutation({
     mutationFn: function mutate(payload: {
       providerId: string
       enabled?: boolean
@@ -88,6 +171,22 @@ export function ProviderSettingsPanel() {
     onSuccess: refreshProviderQueries,
     onError: function handleError(error) {
       setErrorMessage(mutationErrorMessage(error, 'Failed to update provider.'))
+    },
+  })
+
+  const saveProviderMutation = useMutation({
+    mutationFn: function mutate(payload: {
+      providerId: string
+      values: UpdateProviderPayload
+    }) {
+      return updateProvider(payload.providerId, payload.values)
+    },
+    onSuccess: async function handleSuccess() {
+      resetEditorState()
+      await refreshProviderQueries()
+    },
+    onError: function handleError(error) {
+      setErrorMessage(mutationErrorMessage(error, 'Failed to save provider.'))
     },
   })
 
@@ -110,26 +209,37 @@ export function ProviderSettingsPanel() {
   })
 
   function handleCreateProvider() {
-    if (!apiKey.trim()) {
+    if (!draft.apiKey.trim()) {
       setErrorMessage('API key is required.')
       return
     }
 
     createProviderMutation.mutate({
-      label: label.trim() || 'Custom Provider',
-      baseUrl: baseURL.trim(),
-      apiKey: apiKey.trim(),
+      label: draft.label.trim() || 'Custom Provider',
+      baseUrl: draft.baseURL.trim(),
+      apiKey: draft.apiKey.trim(),
       kind: 'openai_compatible',
       supportsModelSync: capabilities?.canSyncModels ?? true,
     })
   }
 
+  function handleSaveProvider() {
+    if (editorState?.mode !== 'edit') {
+      return
+    }
+
+    saveProviderMutation.mutate({
+      providerId: editorState.providerId,
+      values: buildUpdateProviderPayload(),
+    })
+  }
+
   async function handleTestConnection() {
-    if (!apiKey.trim()) {
+    if (!draft.apiKey.trim()) {
       setErrorMessage('API key is required.')
       return
     }
-    if (!baseURL.trim()) {
+    if (!draft.baseURL.trim()) {
       setErrorMessage('Base URL is required for testing.')
       return
     }
@@ -141,8 +251,8 @@ export function ProviderSettingsPanel() {
     try {
       const result = await testConnection({
         kind: 'openai_compatible',
-        baseUrl: baseURL.trim(),
-        apiKey: apiKey.trim(),
+        baseUrl: draft.baseURL.trim(),
+        apiKey: draft.apiKey.trim(),
       })
       setTestResult({
         success: result.success,
@@ -205,68 +315,185 @@ export function ProviderSettingsPanel() {
       ) : null}
 
       <div className="space-y-2">
-        {providers.map((provider) => (
-          <div
-            key={provider.ref}
-            className="flex items-center gap-3 rounded-lg border border-primary-200 px-3 py-2"
-          >
-            <div className="min-w-0 flex-1">
-              <div className="truncate text-sm text-primary-900">
-                {provider.label}
+        {providers.map(function renderProvider(provider) {
+          const isEditingProvider =
+            editorState?.mode === 'edit' &&
+            editorState.providerId === provider.id
+
+          return (
+            <div key={provider.ref} className="space-y-2">
+              <div className="flex items-center gap-3 rounded-lg border border-primary-200 px-3 py-2">
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-sm text-primary-900">
+                    {provider.label}
+                  </div>
+                  <div className="truncate text-xs text-primary-500">
+                    {provider.systemManaged ? 'System' : 'User'} ·{' '}
+                    {provider.kind}
+                    {provider.baseUrl ? ` · ${provider.baseUrl}` : ''}
+                  </div>
+                </div>
+                {!provider.systemManaged ? (
+                  <Switch
+                    checked={provider.enabled}
+                    disabled={toggleProviderMutation.isPending}
+                    onCheckedChange={function handleCheckedChange(checked) {
+                      toggleProviderMutation.mutate({
+                        providerId: provider.id,
+                        enabled: checked,
+                      })
+                    }}
+                  />
+                ) : (
+                  <span className="text-xs text-primary-500">
+                    {provider.enabled ? 'enabled' : 'disabled'}
+                  </span>
+                )}
+                {!provider.systemManaged ? (
+                  <Button
+                    size="icon-sm"
+                    variant="ghost"
+                    onClick={function handleEdit() {
+                      openEditEditor(provider)
+                    }}
+                    aria-label={`Edit ${provider.label}`}
+                    className="text-primary-500 hover:bg-primary-100"
+                  >
+                    <HugeiconsIcon
+                      icon={PencilEdit02Icon}
+                      size={20}
+                      strokeWidth={1.5}
+                    />
+                  </Button>
+                ) : null}
+                {!provider.systemManaged ? (
+                  <Button
+                    size="icon-sm"
+                    variant="ghost"
+                    onClick={function handleDelete() {
+                      deleteProviderMutation.mutate(provider.id)
+                    }}
+                    aria-label={`Delete ${provider.label}`}
+                    className="text-primary-500 hover:bg-primary-100"
+                  >
+                    <HugeiconsIcon
+                      icon={Delete02Icon}
+                      size={20}
+                      strokeWidth={1.5}
+                    />
+                  </Button>
+                ) : null}
               </div>
-              <div className="truncate text-xs text-primary-500">
-                {provider.systemManaged ? 'System' : 'User'} · {provider.kind}
-                {provider.baseUrl ? ` · ${provider.baseUrl}` : ''}
-              </div>
+              {isEditingProvider ? (
+                <div className="space-y-2 rounded-lg border border-primary-200 p-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0 flex-1 text-sm text-primary-900">
+                      Edit provider
+                    </div>
+                    <Button
+                      size="icon-sm"
+                      variant="ghost"
+                      onClick={resetEditorState}
+                      aria-label="Cancel editing provider"
+                      className="text-primary-500 hover:bg-primary-100"
+                    >
+                      <HugeiconsIcon
+                        icon={Cancel01Icon}
+                        size={20}
+                        strokeWidth={1.5}
+                      />
+                    </Button>
+                  </div>
+                  <Input
+                    placeholder="Label"
+                    value={draft.label}
+                    onChange={function handleChange(event) {
+                      updateDraft('label', event.target.value)
+                    }}
+                  />
+                  <Input
+                    placeholder="Base URL"
+                    value={draft.baseURL}
+                    disabled={!capabilities.canAddCustomBaseUrl}
+                    onChange={function handleChange(event) {
+                      updateDraft('baseURL', event.target.value)
+                    }}
+                  />
+                  <Input
+                    placeholder="New API key"
+                    type="password"
+                    value={draft.apiKey}
+                    onChange={function handleChange(event) {
+                      updateDraft('apiKey', event.target.value)
+                    }}
+                  />
+                  <div className="text-xs text-primary-500">
+                    Leave the API key empty to keep the current secret.
+                  </div>
+                  {testResult ? (
+                    <div
+                      className={cn(
+                        'flex items-center gap-2 text-xs',
+                        testResult.success ? 'text-green-600' : 'text-red-600',
+                      )}
+                    >
+                      <HugeiconsIcon
+                        icon={testResult.success ? Tick02Icon : Cancel01Icon}
+                        size={16}
+                        strokeWidth={1.5}
+                      />
+                      <span>{testResult.message}</span>
+                    </div>
+                  ) : null}
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="text-xs text-primary-500">
+                      Test uses the values in this form before saving them.
+                    </div>
+                    <div className="flex gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={handleTestConnection}
+                        disabled={testingConnection}
+                      >
+                        {testingConnection ? (
+                          <HugeiconsIcon
+                            icon={Loading03Icon}
+                            size={20}
+                            strokeWidth={1.5}
+                            className="animate-spin"
+                          />
+                        ) : null}
+                        <span>Test</span>
+                      </Button>
+                      <Button
+                        size="sm"
+                        onClick={handleSaveProvider}
+                        disabled={saveProviderMutation.isPending}
+                      >
+                        <HugeiconsIcon
+                          icon={Tick02Icon}
+                          size={20}
+                          strokeWidth={1.5}
+                        />
+                        <span>Save</span>
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
             </div>
-            {!provider.systemManaged ? (
-              <Switch
-                checked={provider.enabled}
-                disabled={updateProviderMutation.isPending}
-                onCheckedChange={function handleCheckedChange(checked) {
-                  updateProviderMutation.mutate({
-                    providerId: provider.id,
-                    enabled: checked,
-                  })
-                }}
-              />
-            ) : (
-              <span className="text-xs text-primary-500">
-                {provider.enabled ? 'enabled' : 'disabled'}
-              </span>
-            )}
-            {!provider.systemManaged ? (
-              <Button
-                size="icon-sm"
-                variant="ghost"
-                onClick={function handleDelete() {
-                  deleteProviderMutation.mutate(provider.id)
-                }}
-                aria-label={`Delete ${provider.label}`}
-                className="text-primary-500 hover:bg-primary-100"
-              >
-                <HugeiconsIcon
-                  icon={Delete02Icon}
-                  size={20}
-                  strokeWidth={1.5}
-                />
-              </Button>
-            ) : null}
-          </div>
-        ))}
+          )
+        })}
       </div>
 
       {capabilities?.userProvidersEnabled ? (
         <div className="space-y-2">
-          {!showAddForm ? (
+          {editorState?.mode !== 'add' ? (
             <Button
               size="sm"
               variant="outline"
-              onClick={function handleShowAddForm() {
-                setShowAddForm(true)
-                setErrorMessage('')
-                setTestResult(null)
-              }}
+              onClick={openAddEditor}
               className="w-full"
             >
               <HugeiconsIcon icon={Add01Icon} size={20} strokeWidth={1.5} />
@@ -281,14 +508,7 @@ export function ProviderSettingsPanel() {
                 <Button
                   size="icon-sm"
                   variant="ghost"
-                  onClick={function handleHideAddForm() {
-                    setShowAddForm(false)
-                    setLabel('')
-                    setBaseURL('')
-                    setAPIKey('')
-                    setErrorMessage('')
-                    setTestResult(null)
-                  }}
+                  onClick={resetEditorState}
                   aria-label="Cancel"
                   className="text-primary-500 hover:bg-primary-100"
                 >
@@ -301,34 +521,33 @@ export function ProviderSettingsPanel() {
               </div>
               <Input
                 placeholder="Label"
-                value={label}
+                value={draft.label}
                 onChange={function handleChange(event) {
-                  setLabel(event.target.value)
+                  updateDraft('label', event.target.value)
                 }}
               />
               <Input
                 placeholder="Base URL"
-                value={baseURL}
+                value={draft.baseURL}
                 disabled={!capabilities.canAddCustomBaseUrl}
                 onChange={function handleChange(event) {
-                  setBaseURL(event.target.value)
+                  updateDraft('baseURL', event.target.value)
                 }}
               />
               <Input
                 placeholder="API key"
                 type="password"
-                value={apiKey}
+                value={draft.apiKey}
                 onChange={function handleChange(event) {
-                  setAPIKey(event.target.value)
+                  updateDraft('apiKey', event.target.value)
                 }}
               />
               {testResult ? (
                 <div
-                  className={
-                    testResult.success
-                      ? 'flex items-center gap-2 text-xs text-green-600'
-                      : 'flex items-center gap-2 text-xs text-red-600'
-                  }
+                  className={cn(
+                    'flex items-center gap-2 text-xs',
+                    testResult.success ? 'text-green-600' : 'text-red-600',
+                  )}
                 >
                   <HugeiconsIcon
                     icon={testResult.success ? Tick02Icon : Cancel01Icon}
