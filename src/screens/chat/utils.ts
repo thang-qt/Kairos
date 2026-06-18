@@ -52,16 +52,12 @@ export function getToolCallsFromMessage(
   )
 }
 
-export function findToolResultForCall(
-  toolCallId: string,
-  messages: Array<GatewayMessage>,
-): GatewayMessage | undefined {
-  return messages.find(
-    (msg) => msg.role === 'toolResult' && msg.toolCallId === toolCallId,
-  )
+export function getGatewayMessageId(message: GatewayMessage): string | null {
+  const id = message.id
+  return typeof id === 'string' && id.trim().length > 0 ? id : null
 }
 
-function normalizeTimestamp(value: unknown): number | null {
+export function normalizeMessageTimestamp(value: unknown): number | null {
   if (typeof value === 'number' && Number.isFinite(value)) {
     if (value < 1_000_000_000_000) return value * 1000
     return value
@@ -73,21 +69,25 @@ function normalizeTimestamp(value: unknown): number | null {
   return null
 }
 
-export function getMessageTimestamp(message: GatewayMessage): number {
+export function getRawMessageTimestamp(message: GatewayMessage): number | null {
   const candidates = [
-    (message as any).createdAt,
-    (message as any).created_at,
-    (message as any).timestamp,
-    (message as any).time,
-    (message as any).ts,
+    message.createdAt,
+    message.created_at,
+    message.timestamp,
+    message.time,
+    message.ts,
   ]
 
   for (const candidate of candidates) {
-    const normalized = normalizeTimestamp(candidate)
+    const normalized = normalizeMessageTimestamp(candidate)
     if (normalized) return normalized
   }
 
-  return Date.now()
+  return null
+}
+
+export function getMessageTimestamp(message: GatewayMessage): number {
+  return getRawMessageTimestamp(message) ?? Date.now()
 }
 
 export function normalizeSessions(

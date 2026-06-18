@@ -38,6 +38,33 @@ describe('assistantPartRenderOrder', function () {
       'text',
     ])
   })
+
+  it('ignores image content when classifying assistant render parts', function () {
+    const message: GatewayMessage = {
+      role: 'assistant',
+      content: [
+        { type: 'text', text: 'first' },
+        {
+          type: 'image',
+          source: {
+            type: 'base64',
+            media_type: 'image/png',
+            data: 'abc',
+          },
+        },
+        {
+          type: 'toolCall',
+          id: 'functions.read:17',
+          name: 'read',
+        },
+      ],
+    }
+
+    expect(assistantPartRenderOrder(message, true, true)).toEqual([
+      'text',
+      'toolCall',
+    ])
+  })
 })
 
 describe('mapStandaloneToolResultToToolPart', function () {

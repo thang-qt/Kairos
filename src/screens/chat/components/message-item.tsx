@@ -1,12 +1,15 @@
 import { memo, useState } from 'react'
 import {
+  getGatewayMessageId,
   getMessageTimestamp,
+  getRawMessageTimestamp,
   getToolCallsFromMessage,
   textFromMessage,
 } from '../utils'
 import { MessageActionsBar } from './message-actions-bar'
 import type {
   GatewayMessage,
+  ImageContent,
   MessageContent as MessageContentPart,
   ToolCallContent,
 } from '../types'
@@ -129,7 +132,7 @@ export function assistantPartRenderOrder(
       }
       continue
     }
-    if (showToolMessages) {
+    if (part.type === 'toolCall' && showToolMessages) {
       order.push('toolCall')
     }
   }
@@ -175,33 +178,6 @@ function toolResultsSignature(
     .join('||')
 }
 
-function normalizeTimestamp(value: unknown): number | null {
-  if (typeof value === 'number' && Number.isFinite(value)) {
-    if (value < 1_000_000_000_000) return value * 1000
-    return value
-  }
-  if (typeof value === 'string') {
-    const parsed = Date.parse(value)
-    if (!Number.isNaN(parsed)) return parsed
-  }
-  return null
-}
-
-function rawTimestamp(message: GatewayMessage): number | null {
-  const candidates = [
-    (message as any).createdAt,
-    (message as any).created_at,
-    (message as any).timestamp,
-    (message as any).time,
-    (message as any).ts,
-  ]
-  for (const candidate of candidates) {
-    const normalized = normalizeTimestamp(candidate)
-    if (normalized) return normalized
-  }
-  return null
-}
-
 function thinkingFromMessage(msg: GatewayMessage): string | null {
   const parts = Array.isArray(msg.content) ? msg.content : []
   const thinkingPart = parts.find((part) => part.type === 'thinking')
@@ -211,38 +187,19 @@ function thinkingFromMessage(msg: GatewayMessage): string | null {
   return null
 }
 
-/**
- * Represents an image attachment in message content.
- */
-type ImagePart = {
-  type: 'image'
-  source: {
-    type: 'base64'
-    media_type: string
-    data: string
-  }
+function isRenderableImagePart(part: MessageContentPart): part is ImageContent {
+  return (
+    part.type === 'image' &&
+    part.source.type === 'base64' &&
+    typeof part.source.media_type === 'string' &&
+    typeof part.source.data === 'string' &&
+    part.source.data.length > 0
+  )
 }
 
-/**
- * Extracts image attachments from a gateway message.
- * @param msg - The gateway message to extract images from
- * @returns Array of image parts with base64 data
- */
-function imagesFromMessage(msg: GatewayMessage): Array<ImagePart> {
+function imagesFromMessage(msg: GatewayMessage): Array<ImageContent> {
   const parts = Array.isArray(msg.content) ? msg.content : []
-  const images: Array<ImagePart> = []
-  for (const part of parts) {
-    const partType = (part as { type?: string }).type
-    const imagePart = part as unknown as ImagePart
-    if (
-      partType === 'image' &&
-      'source' in part &&
-      typeof imagePart.source.data === 'string'
-    ) {
-      images.push(imagePart)
-    }
-  }
-  return images
+  return parts.filter(isRenderableImagePart)
 }
 
 function normalizedString(value: unknown): string | null {
@@ -332,10 +289,7 @@ function MessageItemComponent({
   )
   const role = message.role || 'assistant'
   const text = textFromMessage(message)
-  const messageId =
-    typeof (message as { id?: unknown }).id === 'string'
-      ? (message as { id: string }).id
-      : ''
+  const messageId = getGatewayMessageId(message) ?? ''
   const [editing, setEditing] = useState(false)
   const [editDraft, setEditDraft] = useState(text)
   const [savingEdit, setSavingEdit] = useState(false)
@@ -403,6 +357,7 @@ function MessageItemComponent({
       )
     }
 
+    if (part.type !== 'toolCall') return null
     if (!showToolMessages) return null
     const resultMessage = part.id
       ? toolResultsByCallId?.get(part.id)
@@ -523,9 +478,7 @@ function MessageItemComponent({
           align="start"
           forceVisible={forceActionsVisible}
           onClone={
-            onClone && typeof (message as { id?: unknown }).id === 'string'
-              ? () => onClone(message, text)
-              : undefined
+            onClone && messageId ? () => onClone(message, text) : undefined
           }
         />
       )}
@@ -603,7 +556,10 @@ function areMessagesEqual(
   ) {
     return false
   }
-  if (rawTimestamp(prevProps.message) !== rawTimestamp(nextProps.message)) {
+  if (
+    getRawMessageTimestamp(prevProps.message) !==
+    getRawMessageTimestamp(nextProps.message)
+  ) {
     return false
   }
   if (prevProps.modelLabelById !== nextProps.modelLabelById) {

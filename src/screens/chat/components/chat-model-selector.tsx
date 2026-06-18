@@ -8,15 +8,16 @@ import type {
   ProviderPayload,
   UserPreferences,
 } from '@/lib/app-api'
-import {
-  ApiError,
-  appQueryKeys,
-  syncModels,
-  updatePreferences,
-} from '@/lib/app-api'
+import { appQueryKeys, syncModels, updatePreferences } from '@/lib/app-api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { MenuContent, MenuRoot, MenuTrigger } from '@/components/ui/menu'
+import { mutationErrorMessage } from '@/lib/error-utils'
+import {
+  providerModelDisplayName,
+  providerModelMetaLine,
+  providerModelSearchText,
+} from '@/lib/model-utils'
 import { cn } from '@/lib/utils'
 
 type ChatModelSelectorProps = {
@@ -32,16 +33,6 @@ type ChatModelSelectorProps = {
   align?: 'start' | 'center' | 'end'
 }
 
-function mutationErrorMessage(error: unknown, fallback: string) {
-  if (error instanceof ApiError) {
-    return error.message
-  }
-  if (error instanceof Error) {
-    return error.message
-  }
-  return fallback
-}
-
 function updatePayloadPreferences<T extends { preferences: UserPreferences }>(
   current: T | undefined,
   preferences: UserPreferences,
@@ -51,35 +42,6 @@ function updatePayloadPreferences<T extends { preferences: UserPreferences }>(
     ...current,
     preferences,
   }
-}
-
-function modelDisplayName(model?: ProviderModel) {
-  if (!model) return 'Select a model'
-  const normalizedName = model.name?.trim()
-  return normalizedName || model.id
-}
-
-function modelMetaLine(model: ProviderModel) {
-  if (model.providerLabel && model.providerLabel !== model.id) {
-    return `${model.providerLabel} · ${model.id}`
-  }
-  if (model.owned_by && model.owned_by !== model.id) {
-    return `${model.owned_by} · ${model.id}`
-  }
-  return model.id
-}
-
-function modelSearchText(model: ProviderModel) {
-  return [
-    model.id,
-    model.name,
-    model.description,
-    model.providerLabel,
-    model.owned_by,
-  ]
-    .filter(Boolean)
-    .join(' ')
-    .toLowerCase()
 }
 
 export function ChatModelSelector({
@@ -116,7 +78,7 @@ export function ChatModelSelector({
       const normalizedQuery = query.trim().toLowerCase()
       if (!normalizedQuery) return models
       return models.filter(function includeModel(model) {
-        return modelSearchText(model).includes(normalizedQuery)
+        return providerModelSearchText(model).includes(normalizedQuery)
       })
     },
     [models, query],
@@ -210,7 +172,7 @@ export function ChatModelSelector({
         <span className="truncate text-sm">
           {loading
             ? 'Loading models...'
-            : modelDisplayName(selectedModel ?? undefined)}
+            : providerModelDisplayName(selectedModel ?? undefined)}
         </span>
         <HugeiconsIcon
           icon={ArrowDown01Icon}
@@ -273,7 +235,7 @@ export function ChatModelSelector({
                     >
                       <div className="flex min-w-0 items-center gap-2">
                         <div className="truncate text-sm text-primary-900">
-                          {modelDisplayName(model)}
+                          {providerModelDisplayName(model)}
                         </div>
                         {isSelected ? (
                           <span className="shrink-0 text-[11px] text-primary-700">
@@ -287,7 +249,7 @@ export function ChatModelSelector({
                         ) : null}
                       </div>
                       <div className="truncate text-xs text-primary-500 tabular-nums">
-                        {modelMetaLine(model)}
+                        {providerModelMetaLine(model)}
                       </div>
                       {model.description ? (
                         <div className="line-clamp-1 text-xs text-primary-500">
@@ -311,7 +273,7 @@ export function ChatModelSelector({
                             handleMakeDefault(model.id)
                           }}
                           className="rounded-md px-2 text-primary-500 hover:text-primary-900"
-                          aria-label={`Make ${modelDisplayName(model)} default`}
+                          aria-label={`Make ${providerModelDisplayName(model)} default`}
                           title="Make default"
                         >
                           <HugeiconsIcon

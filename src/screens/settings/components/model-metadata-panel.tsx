@@ -4,7 +4,6 @@ import { ArrowDown01Icon } from '@hugeicons/core-free-icons'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import type { ProviderModel } from '@/lib/app-api'
 import {
-  ApiError,
   appQueryKeys,
   syncModels,
   updateModelMetadata,
@@ -21,35 +20,13 @@ import {
   MenuTrigger,
 } from '@/components/ui/menu'
 import { Switch } from '@/components/ui/switch'
+import { mutationErrorMessage } from '@/lib/error-utils'
+import {
+  formatContextWindow,
+  providerModelDisplayName,
+  providerModelSearchText,
+} from '@/lib/model-utils'
 import { cn } from '@/lib/utils'
-
-function mutationErrorMessage(error: unknown, fallback: string) {
-  if (error instanceof ApiError) {
-    return error.message
-  }
-  if (error instanceof Error) {
-    return error.message
-  }
-  return fallback
-}
-
-function formatContextWindow(value?: number) {
-  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
-    return 'Unknown'
-  }
-  if (value >= 1_000_000) {
-    return `${(value / 1_000_000).toFixed(value % 1_000_000 === 0 ? 0 : 1)}M`
-  }
-  if (value >= 1_000) {
-    return `${Math.round(value / 1_000)}K`
-  }
-  return String(value)
-}
-
-function modelDisplayName(model?: ProviderModel) {
-  if (!model) return 'Select a model'
-  return model.name?.trim() || model.id
-}
 
 type TitleModelPickerProps = {
   models: Array<ProviderModel>
@@ -79,17 +56,7 @@ function TitleModelPicker({
       const normalizedQuery = query.trim().toLowerCase()
       if (!normalizedQuery) return models
       return models.filter(function matchesModel(model) {
-        return [
-          model.id,
-          model.name,
-          model.description,
-          model.providerLabel,
-          model.owned_by,
-        ]
-          .filter(Boolean)
-          .join(' ')
-          .toLowerCase()
-          .includes(normalizedQuery)
+        return providerModelSearchText(model).includes(normalizedQuery)
       })
     },
     [models, query],
@@ -116,7 +83,7 @@ function TitleModelPicker({
           <span className="block truncate">
             {loading
               ? 'Loading models...'
-              : modelDisplayName(selectedModel ?? undefined)}
+              : providerModelDisplayName(selectedModel ?? undefined)}
           </span>
           <span className="block truncate text-xs text-primary-500 tabular-nums">
             {selectedModel
@@ -178,7 +145,7 @@ function TitleModelPicker({
                   >
                     <div className="min-w-0 flex-1">
                       <div className="truncate text-sm text-primary-900">
-                        {modelDisplayName(model)}
+                        {providerModelDisplayName(model)}
                       </div>
                       <div className="truncate text-xs text-primary-500 tabular-nums">
                         {model.providerLabel || model.owned_by || model.id}

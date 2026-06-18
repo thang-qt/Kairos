@@ -11,7 +11,6 @@ import {
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import type { UpdateProviderPayload } from '@/lib/app-api'
 import {
-  ApiError,
   appQueryKeys,
   createProvider,
   deleteProvider,
@@ -24,6 +23,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
+import { mutationErrorMessage } from '@/lib/error-utils'
 import { cn } from '@/lib/utils'
 
 type ProviderEditorState =
@@ -39,16 +39,6 @@ type ProviderDraftState = {
   label: string
   baseURL: string
   apiKey: string
-}
-
-function mutationErrorMessage(error: unknown, fallback: string) {
-  if (error instanceof ApiError) {
-    return error.message
-  }
-  if (error instanceof Error) {
-    return error.message
-  }
-  return fallback
 }
 
 function createEmptyProviderDraft(): ProviderDraftState {

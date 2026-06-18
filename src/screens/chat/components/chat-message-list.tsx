@@ -6,7 +6,11 @@ import {
   useRef,
   useState,
 } from 'react'
-import { getToolCallsFromMessage, textFromMessage } from '../utils'
+import {
+  getGatewayMessageId,
+  getToolCallsFromMessage,
+  textFromMessage,
+} from '../utils'
 import { MessageItem } from './message-item'
 import { ConversationNavigator } from './conversation-navigator'
 import type { GatewayMessage } from '../types'
@@ -93,7 +97,9 @@ function ChatMessageListComponent({
   }
 
   function getMessageKey(message: GatewayMessage, index: number): string {
-    return String(message.__optimisticId || (message as any).id || index)
+    return (
+      message.__optimisticId || getGatewayMessageId(message) || String(index)
+    )
   }
 
   function getOrCreateUserTurnRef(messageId: string) {
@@ -111,21 +117,10 @@ function ChatMessageListComponent({
     lastAssistantIndex,
     lastUserIndex,
   } = useMemo(() => {
-    const linkedToolCallIds = new Set<string>()
+    const linkedToolCallIds = collectLinkedToolCallIds(messages)
     const nextToolResultsByCallId = new Map<string, GatewayMessage>()
 
     for (const message of messages) {
-      if (message.role === 'assistant') {
-        const toolCalls = getToolCallsFromMessage(message)
-        for (const toolCall of toolCalls) {
-          const toolCallId =
-            typeof toolCall.id === 'string' ? toolCall.id.trim() : ''
-          if (!toolCallId) continue
-          linkedToolCallIds.add(toolCallId)
-        }
-        continue
-      }
-
       if (message.role !== 'toolResult') continue
       const toolCallId = message.toolCallId
       if (typeof toolCallId === 'string' && toolCallId.trim().length > 0) {
@@ -140,15 +135,7 @@ function ChatMessageListComponent({
     let nextLastUserIndex: number | undefined
 
     for (const message of messages) {
-      if (message.role === 'toolResult' && showToolMessages) {
-        const toolCallId =
-          typeof message.toolCallId === 'string'
-            ? message.toolCallId.trim()
-            : ''
-        if (toolCallId && linkedToolCallIds.has(toolCallId)) {
-          continue
-        }
-      }
+      if (isLinkedToolResultMessage(message, linkedToolCallIds)) continue
 
       nextDisplayMessages.push(message)
       const index = nextDisplayMessages.length - 1
@@ -326,10 +313,9 @@ function ChatMessageListComponent({
       ? headerHeight + 12
       : options?.wrapperScrollMarginTop
     const previousMessage = findPreviousClonePoint(displayMessages, index)
-    const previousMessageId =
-      typeof (previousMessage as { id?: unknown } | undefined)?.id === 'string'
-        ? (previousMessage as { id: string }).id
-        : undefined
+    const previousMessageId = previousMessage
+      ? (getGatewayMessageId(previousMessage) ?? undefined)
+      : undefined
 
     function handleClone(message: GatewayMessage, currentText: string) {
       onClone?.({ message, currentText, previousMessageId })
@@ -500,9 +486,36 @@ function findPreviousClonePoint(
   for (let previousIndex = index - 1; previousIndex >= 0; previousIndex -= 1) {
     const message = messages[previousIndex]
     if (message.role === 'toolResult') continue
-    if (typeof (message as { id?: unknown }).id === 'string') return message
+    if (getGatewayMessageId(message)) return message
   }
   return undefined
+}
+
+export function collectLinkedToolCallIds(
+  messages: Array<GatewayMessage>,
+): Set<string> {
+  const linkedToolCallIds = new Set<string>()
+  for (const message of messages) {
+    if (message.role !== 'assistant') continue
+    const toolCalls = getToolCallsFromMessage(message)
+    for (const toolCall of toolCalls) {
+      const toolCallId =
+        typeof toolCall.id === 'string' ? toolCall.id.trim() : ''
+      if (!toolCallId) continue
+      linkedToolCallIds.add(toolCallId)
+    }
+  }
+  return linkedToolCallIds
+}
+
+export function isLinkedToolResultMessage(
+  message: GatewayMessage,
+  linkedToolCallIds: ReadonlySet<string>,
+): boolean {
+  if (message.role !== 'toolResult') return false
+  const toolCallId =
+    typeof message.toolCallId === 'string' ? message.toolCallId.trim() : ''
+  return toolCallId.length > 0 && linkedToolCallIds.has(toolCallId)
 }
 
 const MemoizedChatMessageList = memo(
