@@ -425,13 +425,8 @@ function MessageItemComponent({
         typeof wrapperScrollMarginTop === 'number'
           ? {
               scrollMarginTop: `${wrapperScrollMarginTop}px`,
-              contentVisibility: 'auto',
-              containIntrinsicSize: '240px',
             }
-          : {
-              contentVisibility: 'auto',
-              containIntrinsicSize: '240px',
-            }
+          : undefined
       }
       className={cn(
         'group flex flex-col gap-0.5',

@@ -9,6 +9,7 @@ export const router = createRouter({
     queryClient: appQueryClient,
   },
   scrollRestoration: true,
+  scrollToTopSelectors: ['[data-scroll-restoration-id="chat-scroll"]'],
   defaultPreloadStaleTime: 0,
 })
 

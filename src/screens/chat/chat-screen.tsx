@@ -782,6 +782,17 @@ export function ChatScreen({
     )
   }
 
+  const storeCloneScrollRestore = useCallback(
+    function storeCloneScrollRestore() {
+      if (typeof window === 'undefined') return
+      window.sessionStorage.setItem(
+        CLONE_SCROLL_RESTORE_KEY,
+        JSON.stringify({ scrollTop: scrollTopRef.current }),
+      )
+    },
+    [],
+  )
+
   const handleCloneMessage = useCallback(
     async function handleCloneMessage(payload: CloneMessagePayload) {
       const sourceKey = activeSessionKey || resolvedSessionKey
@@ -795,6 +806,7 @@ export function ChatScreen({
       if (isUserTurn && !cloneAtMessageId) {
         stashCloneComposerDraft('new', payload.currentText)
         clearHistoryMessages(queryClient, 'new', 'new')
+        storeCloneScrollRestore()
         navigate({ to: '/new' })
         return
       }
@@ -813,6 +825,7 @@ export function ChatScreen({
         await queryClient.invalidateQueries({
           queryKey: chatQueryKeys.sessions,
         })
+        storeCloneScrollRestore()
         navigate({
           to: '/chat/$sessionKey',
           params: { sessionKey: result.friendlyId },
@@ -827,18 +840,8 @@ export function ChatScreen({
       activeFriendlyId,
       queryClient,
       navigate,
+      storeCloneScrollRestore,
     ],
-  )
-
-  const storeCloneScrollRestore = useCallback(
-    function storeCloneScrollRestore() {
-      if (typeof window === 'undefined') return
-      window.sessionStorage.setItem(
-        CLONE_SCROLL_RESTORE_KEY,
-        JSON.stringify({ scrollTop: scrollTopRef.current }),
-      )
-    },
-    [],
   )
 
   const handleOpenDeleteUserTurn = useCallback(

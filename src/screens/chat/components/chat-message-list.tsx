@@ -225,6 +225,29 @@ function ChatMessageListComponent({
   }, [])
 
   useLayoutEffect(() => {
+    const viewport = viewportNode
+    if (!viewport) return
+
+    let firstFrame = 0
+    let secondFrame = 0
+
+    function scheduleScroll(applyScroll: () => void) {
+      applyScroll()
+      if (typeof window === 'undefined') return
+      firstFrame = window.requestAnimationFrame(function applyFirstFrame() {
+        applyScroll()
+        secondFrame = window.requestAnimationFrame(function applySecondFrame() {
+          applyScroll()
+        })
+      })
+    }
+
+    function scrollNodeToViewportStart(node: HTMLElement, offset: number) {
+      const viewportRect = viewport.getBoundingClientRect()
+      const nodeRect = node.getBoundingClientRect()
+      viewport.scrollTop += nodeRect.top - viewportRect.top - offset
+    }
+
     if (
       pendingRestoreSessionKeyRef.current &&
       pendingRestoreSessionKeyRef.current === sessionKey
@@ -240,17 +263,35 @@ function ChatMessageListComponent({
       prevPinRef.current = true
       prevUserIndexRef.current = lastUserIndex
       if (shouldPin && lastUserRef.current) {
-        lastUserRef.current.scrollIntoView({ behavior: 'auto', block: 'start' })
+        const lastUserNode = lastUserRef.current
+        scheduleScroll(function scrollLastUserToTop() {
+          scrollNodeToViewportStart(lastUserNode, headerHeight)
+        })
       }
-      return
+      return function cleanupScrollFrames() {
+        window.cancelAnimationFrame(firstFrame)
+        window.cancelAnimationFrame(secondFrame)
+      }
     }
 
     prevPinRef.current = false
     prevUserIndexRef.current = lastUserIndex
-    if (anchorRef.current) {
-      anchorRef.current.scrollIntoView({ behavior: 'auto', block: 'end' })
+    scheduleScroll(function scrollToBottom() {
+      viewport.scrollTop = Math.max(0, viewport.scrollHeight - viewport.clientHeight)
+    })
+    return function cleanupScrollFrames() {
+      window.cancelAnimationFrame(firstFrame)
+      window.cancelAnimationFrame(secondFrame)
     }
-  }, [loading, displayMessages, sessionKey, pinToTop, lastUserIndex])
+  }, [
+    displayMessages,
+    headerHeight,
+    lastUserIndex,
+    loading,
+    pinToTop,
+    sessionKey,
+    viewportNode,
+  ])
 
   function renderMessage(
     chatMessage: GatewayMessage,
@@ -358,6 +399,7 @@ function ChatMessageListComponent({
   return (
     <ChatContainerRoot
       className="flex-1 min-h-0 -mb-4"
+      data-scroll-restoration-id="chat-scroll"
       overlay={
         shouldShowConversationNavigator ? (
           <ConversationNavigator
