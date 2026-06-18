@@ -56,7 +56,7 @@ function ThemePalettePreview({
   return (
     <div
       className={cn(
-        'rounded-md border border-primary-200 bg-primary-50/70 px-2.5 py-2',
+        'rounded-md border border-primary-200 bg-primary-50/70 px-2.5 py-2 theme-preview',
         themePaletteClassName(palette),
         resolvedTheme,
       )}
