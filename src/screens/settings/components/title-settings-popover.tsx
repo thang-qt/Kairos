@@ -205,7 +205,8 @@ export function TitleSettingsPopover({
           strokeWidth={1.5}
           className="text-primary-600"
         />
-        <span>Title Settings</span>
+        <span className="hidden sm:inline">Title Settings</span>
+        <span className="sm:hidden">Titles</span>
       </Button>
 
       {open && (
@@ -216,7 +217,7 @@ export function TitleSettingsPopover({
               setOpen(false)
             }}
           />
-          <div className="absolute right-0 mt-2 w-80 rounded-xl border border-primary-200 bg-surface p-4 shadow-lg z-50 space-y-4 text-left">
+          <div className="absolute right-0 mt-2 w-80 max-w-[calc(100vw-2rem)] rounded-xl border border-primary-200 bg-surface p-4 shadow-lg z-50 space-y-4 text-left">
             <h4 className="text-sm font-medium text-primary-955 tracking-tight">
               Title Generation
             </h4>

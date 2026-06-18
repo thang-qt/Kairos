@@ -539,3 +539,11 @@ code {
   --color-primary-900: var(--theme-primary-900);
   --color-primary-950: var(--theme-primary-950);
 }
+
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+.scrollbar-none {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}

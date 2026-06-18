@@ -100,7 +100,8 @@ export function ProvidersDialog({
               strokeWidth={1.5}
               className="text-primary-600"
             />
-            <span>Connection Settings</span>
+            <span className="hidden sm:inline">Connection Settings</span>
+            <span className="sm:hidden">Connections</span>
           </Button>
         }
       />
@@ -329,13 +330,13 @@ export function ProvidersDialog({
                             </div>
                           ) : null}
 
-                          <div className="flex items-center justify-between gap-3 pt-2">
+                          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between pt-2">
                             <Button
                               size="sm"
                               variant="outline"
                               onClick={handleTestConnection}
                               disabled={testingConnection}
-                              className="h-8 border-primary-200"
+                              className="h-8 border-primary-200 w-full sm:w-auto"
                             >
                               {testingConnection ? (
                                 <HugeiconsIcon
@@ -352,7 +353,7 @@ export function ProvidersDialog({
                               size="sm"
                               onClick={handleSaveProvider}
                               disabled={saveProviderMutation.isPending}
-                              className="h-8 gap-1"
+                              className="h-8 gap-1 w-full sm:w-auto"
                             >
                               <HugeiconsIcon
                                 icon={Tick02Icon}
@@ -453,13 +454,13 @@ export function ProvidersDialog({
                     </div>
                   ) : null}
 
-                  <div className="flex items-center justify-between gap-3 pt-1">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between pt-1">
                     <Button
                       size="sm"
                       variant="outline"
                       onClick={handleTestConnection}
                       disabled={testingConnection}
-                      className="h-8 border-primary-200"
+                      className="h-8 border-primary-200 w-full sm:w-auto"
                     >
                       {testingConnection ? (
                         <HugeiconsIcon
@@ -476,7 +477,7 @@ export function ProvidersDialog({
                       size="sm"
                       onClick={handleCreateProvider}
                       disabled={createProviderMutation.isPending}
-                      className="h-8 gap-1"
+                      className="h-8 gap-1 w-full sm:w-auto"
                     >
                       <HugeiconsIcon
                         icon={Add01Icon}

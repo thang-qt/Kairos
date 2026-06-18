@@ -5,6 +5,7 @@ import {
   Loading03Icon,
   Search01Icon,
   Download01Icon,
+  ArrowLeft01Icon,
 } from '@hugeicons/core-free-icons'
 import { AnimatePresence, motion } from 'motion/react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
@@ -594,7 +595,9 @@ export function ModelsProvidersPanel() {
         <div
           className={cn(
             'space-y-3 transition-all duration-200',
-            selectedModelId ? 'lg:col-span-7' : 'lg:col-span-12',
+            selectedModelId
+              ? 'hidden lg:block lg:col-span-7'
+              : 'block lg:col-span-12',
           )}
         >
           {modelsQuery.isLoading ? (
@@ -674,13 +677,32 @@ export function ModelsProvidersPanel() {
         <AnimatePresence>
           {selectedModelId && activeModel && (
             <motion.div
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: 20 }}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 10 }}
               transition={{ duration: 0.15 }}
-              className="col-span-12 lg:col-span-5 lg:sticky lg:top-20"
+              className="fixed inset-x-4 bottom-4 top-20 z-30 overflow-y-auto md:inset-x-8 lg:static lg:bottom-auto lg:top-auto lg:z-auto lg:inset-x-auto lg:overflow-visible lg:col-span-5 lg:sticky lg:top-20"
             >
-              <div className="rounded-xl border border-primary-200 bg-surface p-5 space-y-4">
+              <div className="rounded-xl border border-primary-200 bg-surface p-5 space-y-4 shadow-xl lg:shadow-none">
+                {/* Back button on mobile */}
+                <div className="lg:hidden">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={function handleBack() {
+                      setSelectedModelId('')
+                    }}
+                    className="flex items-center gap-1.5 text-primary-650 hover:text-primary-850 hover:bg-primary-50 px-2 h-8 -ml-2"
+                  >
+                    <HugeiconsIcon
+                      icon={ArrowLeft01Icon}
+                      size={20}
+                      strokeWidth={1.5}
+                    />
+                    <span>Back to models</span>
+                  </Button>
+                </div>
+
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
