@@ -28,7 +28,12 @@ type MessageItemProps = {
   wrapperRef?: React.RefObject<HTMLDivElement | null>
   wrapperClassName?: string
   wrapperScrollMarginTop?: number
-  onClone?: (message: GatewayMessage, currentText: string) => void
+  onClone?: (
+    message: GatewayMessage,
+    currentText: string,
+    previousMessageId?: string,
+  ) => void
+  previousMessageId?: string
   onEdit?: (messageId: string, currentText: string) => void | Promise<void>
   onDelete?: (messageId: string, currentText: string) => void
 }
@@ -278,6 +283,7 @@ function MessageItemComponent({
   wrapperClassName,
   wrapperScrollMarginTop,
   onClone,
+  previousMessageId,
   onEdit,
   onDelete,
 }: MessageItemProps) {
@@ -478,7 +484,9 @@ function MessageItemComponent({
           align="start"
           forceVisible={forceActionsVisible}
           onClone={
-            onClone && messageId ? () => onClone(message, text) : undefined
+            onClone && messageId
+              ? () => onClone(message, text, previousMessageId)
+              : undefined
           }
         />
       )}
@@ -490,7 +498,9 @@ function MessageItemComponent({
           align="end"
           forceVisible={forceActionsVisible && !editing}
           onClone={
-            onClone && messageId ? () => onClone(message, text) : undefined
+            onClone && messageId
+              ? () => onClone(message, text, previousMessageId)
+              : undefined
           }
           onEdit={onEdit && messageId && !editing ? handleStartEdit : undefined}
           onDelete={
@@ -517,6 +527,7 @@ function areMessagesEqual(
     return false
   }
   if (prevProps.onClone !== nextProps.onClone) return false
+  if (prevProps.previousMessageId !== nextProps.previousMessageId) return false
   if (prevProps.onEdit !== nextProps.onEdit) return false
   if (prevProps.onDelete !== nextProps.onDelete) return false
   if (

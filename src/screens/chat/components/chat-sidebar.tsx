@@ -7,7 +7,7 @@ import {
   SidebarLeft01Icon,
 } from '@hugeicons/core-free-icons'
 import { AnimatePresence, motion } from 'motion/react'
-import { memo, useState } from 'react'
+import { memo, useCallback, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate } from '@tanstack/react-router'
 import { useDeleteSession } from '../hooks/use-delete-session'
@@ -106,29 +106,36 @@ function ChatSidebarComponent({
     onSelectSession?.()
   }
 
-  function handleOpenRename(session: SessionMeta) {
+  const handleOpenRename = useCallback(function handleOpenRename(
+    session: SessionMeta,
+  ) {
     setRenameSessionKey(session.key)
     setRenameFriendlyId(session.friendlyId)
     setRenameSessionTitle(
       session.label || session.title || session.derivedTitle || '',
     )
     setRenameDialogOpen(true)
-  }
+  }, [])
 
-  function handleSaveRename(newTitle: string) {
-    if (renameSessionKey && renameFriendlyId) {
-      void renameSession({
-        sessionKey: renameSessionKey,
-        friendlyId: renameFriendlyId,
-        newTitle,
-      })
-    }
-    setRenameDialogOpen(false)
-    setRenameSessionKey(null)
-    setRenameFriendlyId(null)
-  }
+  const handleSaveRename = useCallback(
+    function handleSaveRename(newTitle: string) {
+      if (renameSessionKey && renameFriendlyId) {
+        void renameSession({
+          sessionKey: renameSessionKey,
+          friendlyId: renameFriendlyId,
+          newTitle,
+        })
+      }
+      setRenameDialogOpen(false)
+      setRenameSessionKey(null)
+      setRenameFriendlyId(null)
+    },
+    [renameSession, renameSessionKey, renameFriendlyId],
+  )
 
-  function handleOpenDelete(session: SessionMeta) {
+  const handleOpenDelete = useCallback(function handleOpenDelete(
+    session: SessionMeta,
+  ) {
     setDeleteSessionKey(session.key)
     setDeleteFriendlyId(session.friendlyId)
     setDeleteSessionTitle(
@@ -138,20 +145,29 @@ function ChatSidebarComponent({
         session.friendlyId,
     )
     setDeleteDialogOpen(true)
-  }
+  }, [])
 
-  function handleConfirmDelete() {
-    if (deleteSessionKey && deleteFriendlyId) {
-      const isActive = deleteFriendlyId === activeFriendlyId
-      if (isActive && onActiveSessionDelete) {
-        onActiveSessionDelete()
+  const handleConfirmDelete = useCallback(
+    function handleConfirmDelete() {
+      if (deleteSessionKey && deleteFriendlyId) {
+        const isActive = deleteFriendlyId === activeFriendlyId
+        if (isActive && onActiveSessionDelete) {
+          onActiveSessionDelete()
+        }
+        void deleteSession(deleteSessionKey, deleteFriendlyId, isActive)
       }
-      void deleteSession(deleteSessionKey, deleteFriendlyId, isActive)
-    }
-    setDeleteDialogOpen(false)
-    setDeleteSessionKey(null)
-    setDeleteFriendlyId(null)
-  }
+      setDeleteDialogOpen(false)
+      setDeleteSessionKey(null)
+      setDeleteFriendlyId(null)
+    },
+    [
+      activeFriendlyId,
+      deleteFriendlyId,
+      deleteSession,
+      deleteSessionKey,
+      onActiveSessionDelete,
+    ],
+  )
 
   const asideProps = {
     className:

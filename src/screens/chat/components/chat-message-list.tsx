@@ -215,6 +215,17 @@ function ChatMessageListComponent({
     return userTurnRefsRef.current.get(turnId)?.current ?? null
   }, [])
 
+  const handleClone = useCallback(
+    function handleClone(
+      message: GatewayMessage,
+      currentText: string,
+      previousMessageId?: string,
+    ) {
+      onClone?.({ message, currentText, previousMessageId })
+    },
+    [onClone],
+  )
+
   useLayoutEffect(() => {
     const viewport = viewportNode
     if (!viewport) return
@@ -317,10 +328,6 @@ function ChatMessageListComponent({
       ? (getGatewayMessageId(previousMessage) ?? undefined)
       : undefined
 
-    function handleClone(message: GatewayMessage, currentText: string) {
-      onClone?.({ message, currentText, previousMessageId })
-    }
-
     return (
       <MessageItem
         key={messageKey}
@@ -332,6 +339,7 @@ function ChatMessageListComponent({
         wrapperClassName={options?.wrapperClassName}
         wrapperScrollMarginTop={wrapperScrollMarginTop}
         onClone={onClone ? handleClone : undefined}
+        previousMessageId={previousMessageId}
         onEdit={onEditUserTurn}
         onDelete={onDeleteUserTurn}
       />

@@ -250,9 +250,10 @@ export function ChatScreen({
     (missingSessionError ||
       (!historyQuery.isFetching && !historyQuery.isSuccess))
 
+  const { refetch: refetchHistoryQuery } = historyQuery
   const refreshHistory = useCallback(() => {
-    void historyQuery.refetch()
-  }, [historyQuery])
+    void refetchHistoryQuery()
+  }, [refetchHistoryQuery])
 
   const hideUi = shouldRedirectToNew || isRedirecting
 
@@ -270,116 +271,135 @@ export function ChatScreen({
     setStreamError(null)
   }, [activeFriendlyId, forcedSessionKey, isNewChat])
 
-  function sendMessage(
-    sessionKey: string,
-    friendlyId: string,
-    body: string,
-    skipOptimistic = false,
-    modelOverride?: string,
-    systemPromptOverride?: string,
-    thinkingOverride?: string,
-    temperatureOverride?: number,
-    topPOverride?: number,
-    maxOutputTokensOverride?: number,
-    attachments?: Array<AttachmentFile>,
-  ) {
-    let optimisticClientId = ''
-    if (!skipOptimistic) {
-      const { clientId, optimisticMessage } = createOptimisticMessage(
-        body,
-        attachments,
-      )
-      optimisticClientId = clientId
-      appendHistoryMessage(
-        queryClient,
-        friendlyId,
-        sessionKey,
-        optimisticMessage,
-      )
-      updateSessionLastMessage(
-        queryClient,
-        sessionKey,
-        friendlyId,
-        optimisticMessage,
-      )
-    }
-
-    beginGeneration()
-    setSending(true)
-    setStreamError(null)
-    setPinToTop(true)
-
-    const attachmentsPayload = attachments
-      ?.filter((attachment) => Boolean(attachment.base64))
-      .map((attachment) => ({
-        mimeType: attachment.file.type,
-        content: attachment.base64 as string,
-      }))
-
-    const backend = getChatBackend()
-    const model = modelOverride?.trim() || resolvedConversationModel
-    const systemPrompt =
-      systemPromptOverride !== undefined
-        ? systemPromptOverride
-        : resolvedSystemPrompt
-    const thinking =
-      thinkingOverride !== undefined ? thinkingOverride : resolvedThinkingLevel
-    const temperature =
-      temperatureOverride !== undefined
-        ? temperatureOverride
-        : resolvedTemperature
-    const topP = topPOverride !== undefined ? topPOverride : resolvedTopP
-    const maxOutputTokens =
-      maxOutputTokensOverride !== undefined
-        ? maxOutputTokensOverride
-        : resolvedMaxOutputTokens
-    void backend
-      .sendMessage({
-        sessionKey,
-        friendlyId,
-        message: body,
-        model,
-        systemPrompt,
-        thinking,
-        temperature,
-        topP,
-        maxOutputTokens,
-        idempotencyKey: randomUUID(),
-        attachments: attachmentsPayload,
-      })
-      .then((payload) => {
-        if (
-          typeof payload.runId === 'string' &&
-          payload.runId.trim().length > 0
-        ) {
-          startRun(payload.runId.trim())
-        }
-        refreshHistory()
-        void queryClient.invalidateQueries({ queryKey: chatQueryKeys.sessions })
-      })
-      .catch((err) => {
-        if (optimisticClientId) {
-          updateHistoryMessageByClientId(
-            queryClient,
-            friendlyId,
-            sessionKey,
-            optimisticClientId,
-            function markFailed(message) {
-              return { ...message, status: 'error' }
-            },
-          )
-        }
-        finishGeneration()
-        setPinToTop(false)
-        setStreamError(
-          err instanceof Error ? err.message : 'The model request failed.',
+  const sendMessage = useCallback(
+    function sendMessage(
+      sessionKey: string,
+      friendlyId: string,
+      body: string,
+      skipOptimistic = false,
+      modelOverride?: string,
+      systemPromptOverride?: string,
+      thinkingOverride?: string,
+      temperatureOverride?: number,
+      topPOverride?: number,
+      maxOutputTokensOverride?: number,
+      attachments?: Array<AttachmentFile>,
+    ) {
+      let optimisticClientId = ''
+      if (!skipOptimistic) {
+        const { clientId, optimisticMessage } = createOptimisticMessage(
+          body,
+          attachments,
         )
-        throw err
-      })
-      .finally(() => {
-        setSending(false)
-      })
-  }
+        optimisticClientId = clientId
+        appendHistoryMessage(
+          queryClient,
+          friendlyId,
+          sessionKey,
+          optimisticMessage,
+        )
+        updateSessionLastMessage(
+          queryClient,
+          sessionKey,
+          friendlyId,
+          optimisticMessage,
+        )
+      }
+
+      beginGeneration()
+      setSending(true)
+      setStreamError(null)
+      setPinToTop(true)
+
+      const attachmentsPayload = attachments
+        ?.filter((attachment) => Boolean(attachment.base64))
+        .map((attachment) => ({
+          mimeType: attachment.file.type,
+          content: attachment.base64 as string,
+        }))
+
+      const backend = getChatBackend()
+      const model = modelOverride?.trim() || resolvedConversationModel
+      const systemPrompt =
+        systemPromptOverride !== undefined
+          ? systemPromptOverride
+          : resolvedSystemPrompt
+      const thinking =
+        thinkingOverride !== undefined
+          ? thinkingOverride
+          : resolvedThinkingLevel
+      const temperature =
+        temperatureOverride !== undefined
+          ? temperatureOverride
+          : resolvedTemperature
+      const topP = topPOverride !== undefined ? topPOverride : resolvedTopP
+      const maxOutputTokens =
+        maxOutputTokensOverride !== undefined
+          ? maxOutputTokensOverride
+          : resolvedMaxOutputTokens
+      void backend
+        .sendMessage({
+          sessionKey,
+          friendlyId,
+          message: body,
+          model,
+          systemPrompt,
+          thinking,
+          temperature,
+          topP,
+          maxOutputTokens,
+          idempotencyKey: randomUUID(),
+          attachments: attachmentsPayload,
+        })
+        .then((payload) => {
+          if (
+            typeof payload.runId === 'string' &&
+            payload.runId.trim().length > 0
+          ) {
+            startRun(payload.runId.trim())
+          }
+          refreshHistory()
+          void queryClient.invalidateQueries({
+            queryKey: chatQueryKeys.sessions,
+          })
+        })
+        .catch((err) => {
+          if (optimisticClientId) {
+            updateHistoryMessageByClientId(
+              queryClient,
+              friendlyId,
+              sessionKey,
+              optimisticClientId,
+              function markFailed(message) {
+                return { ...message, status: 'error' }
+              },
+            )
+          }
+          finishGeneration()
+          setPinToTop(false)
+          setStreamError(
+            err instanceof Error ? err.message : 'The model request failed.',
+          )
+          throw err
+        })
+        .finally(() => {
+          setSending(false)
+        })
+    },
+    [
+      beginGeneration,
+      finishGeneration,
+      queryClient,
+      refreshHistory,
+      resolvedConversationModel,
+      resolvedMaxOutputTokens,
+      resolvedSystemPrompt,
+      resolvedTemperature,
+      resolvedThinkingLevel,
+      resolvedTopP,
+      startRun,
+    ],
+  )
 
   const createSessionForMessage = useCallback(async () => {
     setCreatingSession(true)
@@ -495,6 +515,7 @@ export function ChatScreen({
       resolvedTemperature,
       resolvedThinkingLevel,
       resolvedTopP,
+      sendMessage,
     ],
   )
 
@@ -566,11 +587,7 @@ export function ChatScreen({
     activeSessionKey,
     displayMessages,
     resolvedConversationModel,
-    resolvedMaxOutputTokens,
-    resolvedSystemPrompt,
-    resolvedTemperature,
-    resolvedThinkingLevel,
-    resolvedTopP,
+    sendMessage,
   ])
 
   const handleStopGeneration = useCallback(
