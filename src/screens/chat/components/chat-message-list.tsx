@@ -1,6 +1,7 @@
 import {
   memo,
   useCallback,
+  useEffect,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -78,9 +79,6 @@ function ChatMessageListComponent({
   onRestoreScrollTopApplied,
   showConversationNavigator = false,
 }: ChatMessageListProps) {
-  const showToolMessages = useChatSettingsStore(
-    (state) => state.settings.showToolMessages,
-  )
   const wideMode = useChatSettingsStore((state) => state.settings.wideMode)
   const anchorRef = useRef<HTMLDivElement | null>(null)
   const lastUserRef = useRef<HTMLDivElement | null>(null)
@@ -92,9 +90,27 @@ function ChatMessageListComponent({
   const prevUserIndexRef = useRef<number | undefined>(undefined)
   const pendingRestoreSessionKeyRef = useRef<string | undefined>(undefined)
 
+  const [visibleCount, setVisibleCount] = useState(30)
+  const prevLengthRef = useRef(messages.length)
+
   if (typeof restoreScrollTop === 'number' && sessionKey) {
     pendingRestoreSessionKeyRef.current = sessionKey
   }
+
+  // Reset when session changes
+  useLayoutEffect(() => {
+    setVisibleCount(30)
+    prevLengthRef.current = messages.length
+  }, [sessionKey])
+
+  // Increase visibleCount when new messages are appended at the end
+  useLayoutEffect(() => {
+    const diff = messages.length - prevLengthRef.current
+    if (diff > 0) {
+      setVisibleCount((prev) => prev + diff)
+    }
+    prevLengthRef.current = messages.length
+  }, [messages.length])
 
   function getMessageKey(message: GatewayMessage, index: number): string {
     return (
@@ -110,13 +126,7 @@ function ChatMessageListComponent({
     return nextRef
   }
 
-  const {
-    displayMessages,
-    toolResultsByCallId,
-    conversationTurns,
-    lastAssistantIndex,
-    lastUserIndex,
-  } = useMemo(() => {
+  const { displayMessages, toolResultsByCallId } = useMemo(() => {
     const linkedToolCallIds = collectLinkedToolCallIds(messages)
     const nextToolResultsByCallId = new Map<string, GatewayMessage>()
 
@@ -130,9 +140,6 @@ function ChatMessageListComponent({
 
     const nextDisplayMessages: Array<GatewayMessage> = []
     const activeIds = new Set<string>()
-    const nextConversationTurns: Array<{ id: string; preview: string }> = []
-    let nextLastAssistantIndex: number | undefined
-    let nextLastUserIndex: number | undefined
 
     for (const message of messages) {
       if (isLinkedToolResultMessage(message, linkedToolCallIds)) continue
@@ -144,6 +151,37 @@ function ChatMessageListComponent({
         const messageId = getMessageKey(message, index)
         activeIds.add(messageId)
         getOrCreateUserTurnRef(messageId)
+      }
+    }
+
+    for (const existingId of userTurnRefsRef.current.keys()) {
+      if (activeIds.has(existingId)) continue
+      userTurnRefsRef.current.delete(existingId)
+    }
+
+    return {
+      displayMessages: nextDisplayMessages,
+      toolResultsByCallId: nextToolResultsByCallId,
+    }
+  }, [messages])
+
+  const slicedMessages = useMemo(() => {
+    return displayMessages.slice(-visibleCount)
+  }, [displayMessages, visibleCount])
+
+  const {
+    slicedConversationTurns,
+    slicedLastAssistantIndex,
+    slicedLastUserIndex,
+  } = useMemo(() => {
+    const nextConversationTurns: Array<{ id: string; preview: string }> = []
+    let nextLastAssistantIndex: number | undefined
+    let nextLastUserIndex: number | undefined
+
+    for (let index = 0; index < slicedMessages.length; index += 1) {
+      const message = slicedMessages[index]
+      if (message.role === 'user') {
+        const messageId = getMessageKey(message, index)
         if (showConversationNavigator) {
           const previewText = textFromMessage(message)
             .replace(/\s+/g, ' ')
@@ -156,33 +194,26 @@ function ChatMessageListComponent({
         nextLastUserIndex = index
         continue
       }
-
       nextLastAssistantIndex = index
     }
 
-    for (const existingId of userTurnRefsRef.current.keys()) {
-      if (activeIds.has(existingId)) continue
-      userTurnRefsRef.current.delete(existingId)
-    }
-
     return {
-      displayMessages: nextDisplayMessages,
-      toolResultsByCallId: nextToolResultsByCallId,
-      conversationTurns: nextConversationTurns,
-      lastAssistantIndex: nextLastAssistantIndex,
-      lastUserIndex: nextLastUserIndex,
+      slicedConversationTurns: nextConversationTurns,
+      slicedLastAssistantIndex: nextLastAssistantIndex,
+      slicedLastUserIndex: nextLastUserIndex,
     }
-  }, [messages, showConversationNavigator, showToolMessages])
+  }, [slicedMessages, showConversationNavigator])
 
   const showTypingIndicator =
     waitingForResponse &&
-    (typeof lastUserIndex !== 'number' ||
-      typeof lastAssistantIndex !== 'number' ||
-      lastAssistantIndex < lastUserIndex)
-  const groupStartIndex = typeof lastUserIndex === 'number' ? lastUserIndex : -1
+    (typeof slicedLastUserIndex !== 'number' ||
+      typeof slicedLastAssistantIndex !== 'number' ||
+      slicedLastAssistantIndex < slicedLastUserIndex)
+  const groupStartIndex =
+    typeof slicedLastUserIndex === 'number' ? slicedLastUserIndex : -1
   const hasGroup = pinToTop && groupStartIndex >= 0
   const shouldShowConversationNavigator =
-    showConversationNavigator && conversationTurns.length >= 2
+    showConversationNavigator && slicedConversationTurns.length >= 2
   const endScrollAnchorStyle = useMemo<React.CSSProperties>(
     function getEndScrollAnchorStyle() {
       return {
@@ -193,16 +224,44 @@ function ChatMessageListComponent({
     [],
   )
 
+  const handleScroll = useCallback(() => {
+    const viewport = viewportNode
+    if (!viewport) return
+
+    if (viewport.scrollTop < 80 && visibleCount < displayMessages.length) {
+      const prevScrollHeight = viewport.scrollHeight
+      const prevScrollTop = viewport.scrollTop
+
+      setVisibleCount((prev) => {
+        const next = Math.min(displayMessages.length, prev + 30)
+        requestAnimationFrame(() => {
+          const nextScrollHeight = viewport.scrollHeight
+          viewport.scrollTop =
+            prevScrollTop + (nextScrollHeight - prevScrollHeight)
+        })
+        return next
+      })
+    }
+  }, [viewportNode, visibleCount, displayMessages.length])
+
+  useEffect(() => {
+    const viewport = viewportNode
+    if (!viewport) return
+
+    viewport.addEventListener('scroll', handleScroll, { passive: true })
+    return () => viewport.removeEventListener('scroll', handleScroll)
+  }, [viewportNode, handleScroll])
+
   useLayoutEffect(() => {
-    if (typeof lastUserIndex !== 'number') {
+    if (typeof slicedLastUserIndex !== 'number') {
       lastUserRef.current = null
       return
     }
 
-    const lastUserMessage = displayMessages[lastUserIndex]
-    const messageId = getMessageKey(lastUserMessage, lastUserIndex)
+    const lastUserMessage = slicedMessages[slicedLastUserIndex]
+    const messageId = getMessageKey(lastUserMessage, slicedLastUserIndex)
     lastUserRef.current = getOrCreateUserTurnRef(messageId).current
-  }, [displayMessages, lastUserIndex])
+  }, [slicedMessages, slicedLastUserIndex])
 
   const handleViewportNodeChange = useCallback(
     function handleViewportNodeChange(node: HTMLDivElement | null) {
@@ -264,9 +323,9 @@ function ChatMessageListComponent({
     if (loading) return
     if (pinToTop) {
       const shouldPin =
-        !prevPinRef.current || prevUserIndexRef.current !== lastUserIndex
+        !prevPinRef.current || prevUserIndexRef.current !== slicedLastUserIndex
       prevPinRef.current = true
-      prevUserIndexRef.current = lastUserIndex
+      prevUserIndexRef.current = slicedLastUserIndex
       if (shouldPin && lastUserRef.current) {
         const lastUserNode = lastUserRef.current
         scheduleScroll(function scrollLastUserToTop() {
@@ -280,7 +339,7 @@ function ChatMessageListComponent({
     }
 
     prevPinRef.current = false
-    prevUserIndexRef.current = lastUserIndex
+    prevUserIndexRef.current = slicedLastUserIndex
     scheduleScroll(function scrollToBottom() {
       viewport.scrollTop = Math.max(
         0,
@@ -292,9 +351,9 @@ function ChatMessageListComponent({
       window.cancelAnimationFrame(secondFrame)
     }
   }, [
-    displayMessages,
+    slicedMessages,
     headerHeight,
-    lastUserIndex,
+    slicedLastUserIndex,
     loading,
     pinToTop,
     sessionKey,
@@ -312,7 +371,8 @@ function ChatMessageListComponent({
   ) {
     const messageKey = getMessageKey(chatMessage, index)
     const forceActionsVisible =
-      typeof lastAssistantIndex === 'number' && index === lastAssistantIndex
+      typeof slicedLastAssistantIndex === 'number' &&
+      index === slicedLastAssistantIndex
     const hasToolCalls =
       chatMessage.role === 'assistant' &&
       getToolCallsFromMessage(chatMessage).length > 0
@@ -323,7 +383,7 @@ function ChatMessageListComponent({
     const wrapperScrollMarginTop = isUserMessage
       ? headerHeight + 12
       : options?.wrapperScrollMarginTop
-    const previousMessage = findPreviousClonePoint(displayMessages, index)
+    const previousMessage = findPreviousClonePoint(slicedMessages, index)
     const previousMessageId = previousMessage
       ? (getGatewayMessageId(previousMessage) ?? undefined)
       : undefined
@@ -347,7 +407,7 @@ function ChatMessageListComponent({
   }
 
   const renderedMessages = useMemo(() => {
-    const flat = displayMessages.map(
+    const flat = slicedMessages.map(
       function renderFlatMessage(chatMessage, index) {
         return renderMessage(chatMessage, index)
       },
@@ -363,19 +423,19 @@ function ChatMessageListComponent({
 
     return {
       flat,
-      beforeGroup: displayMessages
+      beforeGroup: slicedMessages
         .slice(0, groupStartIndex)
         .map(function renderLeadingMessage(chatMessage, index) {
           return renderMessage(chatMessage, index)
         }),
-      group: displayMessages
+      group: slicedMessages
         .slice(groupStartIndex)
         .map(function renderGroupedMessage(chatMessage, index) {
           const realIndex = groupStartIndex + index
           const wrapperClassName =
-            realIndex === lastUserIndex ? 'scroll-mt-0' : undefined
+            realIndex === slicedLastUserIndex ? 'scroll-mt-0' : undefined
           const wrapperScrollMarginTop =
-            realIndex === lastUserIndex ? headerHeight : undefined
+            realIndex === slicedLastUserIndex ? headerHeight : undefined
           return renderMessage(chatMessage, realIndex, {
             wrapperClassName,
             wrapperScrollMarginTop,
@@ -383,12 +443,12 @@ function ChatMessageListComponent({
         }),
     }
   }, [
-    displayMessages,
+    slicedMessages,
     groupStartIndex,
     hasGroup,
     headerHeight,
-    lastAssistantIndex,
-    lastUserIndex,
+    slicedLastAssistantIndex,
+    slicedLastUserIndex,
     modelLabelById,
     onClone,
     onDeleteUserTurn,
@@ -408,7 +468,7 @@ function ChatMessageListComponent({
       overlay={
         shouldShowConversationNavigator ? (
           <ConversationNavigator
-            turns={conversationTurns}
+            turns={slicedConversationTurns}
             headerHeight={headerHeight}
             scrollElement={viewportNode}
             getTurnNode={getTurnNode}
@@ -426,6 +486,11 @@ function ChatMessageListComponent({
         style={contentStyle}
         wide={wideMode}
       >
+        {visibleCount < displayMessages.length && (
+          <div className="flex justify-center py-2 text-xs text-primary-500 font-medium select-none">
+            Loading older messages...
+          </div>
+        )}
         {notice && noticePosition === 'start' ? notice : null}
         {empty && !notice ? (
           (emptyState ?? <div aria-hidden></div>)

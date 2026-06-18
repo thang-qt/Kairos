@@ -2,7 +2,15 @@
 
 import { HugeiconsIcon } from '@hugeicons/react'
 import { ArrowRight01Icon } from '@hugeicons/core-free-icons'
-import { memo, useCallback, useMemo } from 'react'
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import { usePinSession } from '../../hooks/use-pin-session'
 import { SessionItem } from './session-item'
 import type { SessionMeta } from '../../types'
@@ -52,11 +60,49 @@ export const SidebarSessions = memo(function SidebarSessions({
     (state) => state.settings.showSidebarSectionCounts,
   )
 
+  const [visibleCount, setVisibleCount] = useState(20)
+  const viewportRef = useRef<HTMLDivElement | null>(null)
+
+  const activeIndex = useMemo(() => {
+    return sessions.findIndex(
+      (session) => session.friendlyId === activeFriendlyId,
+    )
+  }, [sessions, activeFriendlyId])
+
+  useLayoutEffect(() => {
+    if (activeIndex >= 0) {
+      setVisibleCount((prev) => Math.max(prev, activeIndex + 1))
+    }
+  }, [activeIndex])
+
+  const handleScroll = useCallback(() => {
+    const viewport = viewportRef.current
+    if (!viewport) return
+
+    const threshold = 40
+    const remainingScroll =
+      viewport.scrollHeight - viewport.clientHeight - viewport.scrollTop
+    if (remainingScroll < threshold && visibleCount < sessions.length) {
+      setVisibleCount((prev) => Math.min(sessions.length, prev + 20))
+    }
+  }, [sessions.length, visibleCount])
+
+  useEffect(() => {
+    const viewport = viewportRef.current
+    if (!viewport) return
+    viewport.addEventListener('scroll', handleScroll, { passive: true })
+    return () => viewport.removeEventListener('scroll', handleScroll)
+  }, [handleScroll])
+
+  const slicedSessions = useMemo(() => {
+    return sessions.slice(0, visibleCount)
+  }, [sessions, visibleCount])
+
   const groupedSessions = useMemo(
     function groupSessions() {
-      return buildSessionGroups(sessions)
+      return buildSessionGroups(slicedSessions)
     },
-    [sessions],
+    [slicedSessions],
   )
 
   const handleTogglePin = useCallback(
@@ -73,7 +119,7 @@ export const SidebarSessions = memo(function SidebarSessions({
   return (
     <div className="flex h-full flex-1 min-h-0 w-full flex-col">
       <ScrollAreaRoot className="flex-1 min-h-0">
-        <ScrollAreaViewport className="min-h-0">
+        <ScrollAreaViewport className="min-h-0" ref={viewportRef}>
           <div className="flex flex-col gap-2 px-2">
             {groupedSessions.pinned.length > 0 ? (
               <SessionSection
