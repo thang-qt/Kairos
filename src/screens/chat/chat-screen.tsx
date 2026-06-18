@@ -25,7 +25,6 @@ import {
   hasPendingGeneration,
   hasPendingSend,
   isRecentSession,
-  setPendingGeneration,
   setRecentSession,
   stashPendingSend,
 } from './pending-send'
@@ -35,8 +34,8 @@ import { useChatMobile } from './hooks/use-chat-mobile'
 import { useChatSessions } from './hooks/use-chat-sessions'
 import { useChatStream } from './hooks/use-chat-stream'
 import { useChatPendingSend } from './hooks/use-chat-pending-send'
-import { useChatGenerationGuard } from './hooks/use-chat-generation-guard'
 import { useChatRedirect } from './hooks/use-chat-redirect'
+import { useChatRuns } from './hooks/use-chat-runs'
 import {
   copyConversationSettings,
   normalizeConversationTextSetting,
@@ -100,9 +99,6 @@ export function ChatScreen({
     useState<UserTurnDeleteState>(null)
   const { headerRef, composerRef, mainRef, pinGroupMinHeight, headerHeight } =
     useChatMeasurements()
-  const [waitingForResponse, setWaitingForResponse] = useState(
-    () => hasPendingSend() || hasPendingGeneration(),
-  )
   const [pinToTop, setPinToTop] = useState(
     () => hasPendingSend() || hasPendingGeneration(),
   )
@@ -165,8 +161,6 @@ export function ChatScreen({
     },
   )
   const hasAvailableModel = resolvedConversationModel.trim().length > 0
-  const pendingRunIdsRef = useRef(new Set<string>())
-  const pendingRunTimersRef = useRef(new Map<string, number>())
   const scrollTopRef = useRef(0)
   const { isMobile } = useChatMobile(queryClient)
   const {
@@ -262,59 +256,15 @@ export function ChatScreen({
 
   const hideUi = shouldRedirectToNew || isRedirecting
 
-  const finishRun = useCallback(function finishRun(runId: string) {
-    if (!runId) return
-    const timer = pendingRunTimersRef.current.get(runId)
-    if (typeof timer === 'number') {
-      window.clearTimeout(timer)
-    }
-    pendingRunTimersRef.current.delete(runId)
-    pendingRunIdsRef.current.delete(runId)
-    if (pendingRunIdsRef.current.size === 0) {
-      setPendingGeneration(false)
-      setWaitingForResponse(false)
-    }
-  }, [])
-
-  const startRun = useCallback(
-    function startRun(runId: string) {
-      if (!runId) return
-      pendingRunIdsRef.current.add(runId)
-      const existingTimer = pendingRunTimersRef.current.get(runId)
-      if (typeof existingTimer === 'number') {
-        window.clearTimeout(existingTimer)
-      }
-      const timeout = window.setTimeout(() => {
-        pendingRunTimersRef.current.delete(runId)
-        pendingRunIdsRef.current.delete(runId)
-        refreshHistory()
-        if (pendingRunIdsRef.current.size === 0) {
-          setPendingGeneration(false)
-          setWaitingForResponse(false)
-        }
-      }, 120000)
-      pendingRunTimersRef.current.set(runId, timeout)
-      setPendingGeneration(true)
-      setWaitingForResponse(true)
-    },
-    [refreshHistory],
-  )
-
-  const finishAllRuns = useCallback(function finishAllRuns() {
-    for (const [, timer] of pendingRunTimersRef.current) {
-      window.clearTimeout(timer)
-    }
-    pendingRunTimersRef.current.clear()
-    pendingRunIdsRef.current.clear()
-    setPendingGeneration(false)
-    setWaitingForResponse(false)
-  }, [])
-
-  useEffect(() => {
-    return function cleanupRuns() {
-      finishAllRuns()
-    }
-  }, [finishAllRuns])
+  const {
+    beginGeneration,
+    finishAllRuns,
+    finishGeneration,
+    finishRun,
+    setWaitingForResponse,
+    startRun,
+    waitingForResponse,
+  } = useChatRuns({ refreshHistory })
 
   useEffect(() => {
     setStreamError(null)
@@ -354,10 +304,9 @@ export function ChatScreen({
       )
     }
 
-    setPendingGeneration(true)
+    beginGeneration()
     setSending(true)
     setStreamError(null)
-    setWaitingForResponse(true)
     setPinToTop(true)
 
     const attachmentsPayload = attachments
@@ -420,8 +369,7 @@ export function ChatScreen({
             },
           )
         }
-        setPendingGeneration(false)
-        setWaitingForResponse(false)
+        finishGeneration()
         setPinToTop(false)
         setStreamError(
           err instanceof Error ? err.message : 'The model request failed.',
@@ -463,10 +411,9 @@ export function ChatScreen({
         const { clientId, optimisticId, optimisticMessage } =
           createOptimisticMessage(body, attachments)
         appendHistoryMessage(queryClient, 'new', 'new', optimisticMessage)
-        setPendingGeneration(true)
+        beginGeneration()
         setSending(true)
         setStreamError(null)
-        setWaitingForResponse(true)
         setPinToTop(true)
 
         createSessionForMessage()
@@ -505,8 +452,7 @@ export function ChatScreen({
               optimisticId,
             )
             helpers.setValue(body)
-            setPendingGeneration(false)
-            setWaitingForResponse(false)
+            finishGeneration()
             setPinToTop(false)
             setSending(false)
           })
@@ -754,12 +700,6 @@ export function ChatScreen({
     sessionKeyForHistory,
     queryClient,
     setIsRedirecting,
-  })
-
-  useChatGenerationGuard({
-    waitingForResponse,
-    refreshHistory,
-    setWaitingForResponse,
   })
 
   useChatPendingSend({
