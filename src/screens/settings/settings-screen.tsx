@@ -1,7 +1,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { HugeiconsIcon } from '@hugeicons/react'
 import { Settings01Icon, SidebarLeft01Icon } from '@hugeicons/core-free-icons'
-import { ModelMetadataPanel } from './components/model-metadata-panel'
+import { ModelsProvidersPanel } from './components/models-providers-panel'
 import { AppearanceSettingsPanel } from './components/appearance-settings-panel'
 import { DisplaySettingsPanel } from './components/display-settings-panel'
 import { AccountSettingsPanel } from './components/account-settings-panel'
@@ -9,7 +9,6 @@ import {
   SettingsSidebar,
   getSettingsTabLabel,
 } from './components/settings-sidebar'
-import { ProviderSettingsPanel } from '@/screens/chat/components/provider-settings-panel'
 import { AppShell } from '@/components/app-shell'
 import { Button } from '@/components/ui/button'
 import { useChatMobile } from '@/screens/chat/hooks/use-chat-mobile'
@@ -19,12 +18,7 @@ import {
   setChatUiState,
 } from '@/screens/chat/chat-ui'
 
-export type SettingsTab =
-  | 'account'
-  | 'models'
-  | 'providers'
-  | 'appearance'
-  | 'display'
+export type SettingsTab = 'account' | 'models' | 'appearance' | 'display'
 
 type SettingsScreenProps = {
   activeTab: SettingsTab
@@ -36,10 +30,7 @@ function renderTabPanel(activeTab: SettingsTab) {
     return <AccountSettingsPanel />
   }
   if (activeTab === 'models') {
-    return <ModelMetadataPanel />
-  }
-  if (activeTab === 'providers') {
-    return <ProviderSettingsPanel />
+    return <ModelsProvidersPanel />
   }
   if (activeTab === 'appearance') {
     return <AppearanceSettingsPanel />

@@ -28,11 +28,7 @@ const SETTINGS_TABS: Array<{
   },
   {
     id: 'models',
-    label: 'Models',
-  },
-  {
-    id: 'providers',
-    label: 'Providers',
+    label: 'Models & Providers',
   },
   {
     id: 'appearance',

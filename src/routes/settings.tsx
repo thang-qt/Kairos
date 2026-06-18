@@ -6,7 +6,6 @@ import { SettingsScreen } from '@/screens/settings/settings-screen'
 const SETTINGS_TABS = new Set<SettingsTab>([
   'account',
   'models',
-  'providers',
   'appearance',
   'display',
 ])
@@ -16,10 +15,13 @@ export const Route = createFileRoute('/settings')({
     await requireAuthenticatedUser(context)
   },
   validateSearch: function validateSearch(search: Record<string, unknown>) {
+    const tabInput = search.tab
+    if (tabInput === 'providers') {
+      return { tab: 'models' as SettingsTab }
+    }
     const tab =
-      typeof search.tab === 'string' &&
-      SETTINGS_TABS.has(search.tab as SettingsTab)
-        ? (search.tab as SettingsTab)
+      typeof tabInput === 'string' && SETTINGS_TABS.has(tabInput as SettingsTab)
+        ? (tabInput as SettingsTab)
         : 'account'
     return { tab }
   },
