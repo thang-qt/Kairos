@@ -16,11 +16,7 @@ CREATE TABLE IF NOT EXISTS chat_sessions (
 	created_at INTEGER NOT NULL,
 	last_message_json TEXT,
 	total_tokens INTEGER NOT NULL DEFAULT 0,
-	context_tokens INTEGER NOT NULL DEFAULT 32768,
-	parent_session_id TEXT REFERENCES chat_sessions(id) ON DELETE SET NULL,
-	parent_friendly_id TEXT,
-	fork_point_message_id TEXT,
-	fork_depth INTEGER NOT NULL DEFAULT 0
+	context_tokens INTEGER NOT NULL DEFAULT 32768
 );
 
 CREATE INDEX IF NOT EXISTS idx_chat_sessions_user_updated

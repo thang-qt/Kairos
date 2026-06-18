@@ -1,8 +1,6 @@
 import { memo } from 'react'
-import { Link } from '@tanstack/react-router'
 import { HugeiconsIcon } from '@hugeicons/react'
 import {
-  GitBranchIcon,
   MoreVerticalIcon,
   SidebarLeft01Icon,
 } from '@hugeicons/core-free-icons'
@@ -20,11 +18,6 @@ type ChatHeaderProps = {
   onOpenSidebar?: () => void
   usedTokens?: number
   maxTokens?: number
-  forkedFrom?: {
-    title: string
-    friendlyId?: string
-    isOrphaned?: boolean
-  }
   onToggleRightSidebar?: () => void
   rightSidebarOpen?: boolean
   models: Array<ProviderModel>
@@ -44,7 +37,6 @@ function ChatHeaderComponent({
   onOpenSidebar,
   usedTokens,
   maxTokens,
-  forkedFrom,
   onToggleRightSidebar,
   rightSidebarOpen = false,
   models,
@@ -76,21 +68,6 @@ function ChatHeaderComponent({
         ) : (
           <div className="flex-1" />
         )}
-        {forkedFrom?.friendlyId ? (
-          <Link
-            to="/chat/$sessionKey"
-            params={{ sessionKey: forkedFrom.friendlyId }}
-            className="flex items-center gap-1 text-xs text-primary-500 hover:text-primary-700 shrink-0"
-          >
-            <HugeiconsIcon icon={GitBranchIcon} size={12} strokeWidth={1.8} />
-            <span className="truncate max-w-[120px]">{forkedFrom.title}</span>
-          </Link>
-        ) : forkedFrom ? (
-          <span className="flex items-center gap-1 text-xs text-primary-400 shrink-0">
-            <HugeiconsIcon icon={GitBranchIcon} size={12} strokeWidth={1.8} />
-            <span className="truncate max-w-[120px]">{forkedFrom.title}</span>
-          </span>
-        ) : null}
         <ChatModelSelector
           models={models}
           selectedModelId={selectedModelId}

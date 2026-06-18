@@ -1,4 +1,4 @@
-import { memo, useCallback, useRef, useState } from 'react'
+import { memo, useCallback, useLayoutEffect, useRef, useState } from 'react'
 import { HugeiconsIcon } from '@hugeicons/react'
 import { ArrowUp02Icon } from '@hugeicons/core-free-icons'
 import type { Ref } from 'react'
@@ -22,12 +22,18 @@ type ChatComposerProps = {
   canStop?: boolean
   disabled: boolean
   wrapperRef?: Ref<HTMLDivElement>
+  draft?: ChatComposerDraft | null
 }
 
 type ChatComposerHelpers = {
   reset: () => void
   setValue: (value: string) => void
   attachments?: Array<AttachmentFile>
+}
+
+type ChatComposerDraft = {
+  key: string
+  value: string
 }
 
 function ChatComposerComponent({
@@ -37,6 +43,7 @@ function ChatComposerComponent({
   canStop = false,
   disabled,
   wrapperRef,
+  draft,
 }: ChatComposerProps) {
   const [attachments, setAttachments] = useState<Array<AttachmentFile>>([])
   const promptRef = useRef<HTMLTextAreaElement | null>(null)
@@ -83,6 +90,12 @@ function ChatComposerComponent({
     },
     [focusPrompt],
   )
+
+  useLayoutEffect(() => {
+    if (!draft) return
+    setComposerValue(draft.value)
+  }, [draft, setComposerValue])
+
   const handleSubmit = useCallback(() => {
     if (disabled || canStop) return
     const body = valueRef.current.trim()
@@ -208,4 +221,4 @@ function ChatComposerComponent({
 const MemoizedChatComposer = memo(ChatComposerComponent)
 
 export { MemoizedChatComposer as ChatComposer }
-export type { ChatComposerHelpers }
+export type { ChatComposerDraft, ChatComposerHelpers }

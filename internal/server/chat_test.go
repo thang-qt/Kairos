@@ -218,12 +218,12 @@ func TestPinSessionPersistsAndSortsToTop(t *testing.T) {
 	}
 }
 
-func TestForkSessionCreatesBackendBranch(t *testing.T) {
+func TestCloneSessionCopiesMessages(t *testing.T) {
 	testServer := newTestApp(t, nil)
-	cookie := signupAndRequireCookie(t, testServer, "fork@example.com")
+	cookie := signupAndRequireCookie(t, testServer, "clone@example.com")
 
 	createResponse := performJSONRequest(t, testServer.handler, http.MethodPost, "/api/sessions", createSessionRequest{
-		Label: "Fork Source",
+		Label: "Clone Source",
 	}, []*http.Cookie{cookie})
 	assertStatusCode(t, createResponse, http.StatusCreated)
 
@@ -236,15 +236,15 @@ func TestForkSessionCreatesBackendBranch(t *testing.T) {
 		newUserTextMessage("Second question"),
 	})
 
-	forkResponse := performJSONRequest(t, testServer.handler, http.MethodPost, "/api/sessions/"+created.FriendlyID+"/fork", forkSessionRequest{
+	cloneResponse := performJSONRequest(t, testServer.handler, http.MethodPost, "/api/sessions/"+created.FriendlyID+"/clone", cloneSessionRequest{
 		MessageID: messageIDs[1],
 	}, []*http.Cookie{cookie})
-	assertStatusCode(t, forkResponse, http.StatusOK)
+	assertStatusCode(t, cloneResponse, http.StatusOK)
 
-	var forked sessionMutationResponse
-	decodeResponseJSON(t, forkResponse, &forked)
-	if forked.SessionKey == "" || forked.FriendlyID == "" {
-		t.Fatal("forked session identifiers = empty")
+	var cloned sessionMutationResponse
+	decodeResponseJSON(t, cloneResponse, &cloned)
+	if cloned.SessionKey == "" || cloned.FriendlyID == "" {
+		t.Fatal("cloned session identifiers = empty")
 	}
 
 	listResponse := performJSONRequest(t, testServer.handler, http.MethodGet, "/api/sessions", nil, []*http.Cookie{cookie})
@@ -253,47 +253,38 @@ func TestForkSessionCreatesBackendBranch(t *testing.T) {
 	var sessionsPayload sessionsResponse
 	decodeResponseJSON(t, listResponse, &sessionsPayload)
 	if len(sessionsPayload.Sessions) != 2 {
-		t.Fatalf("sessions count after fork = %d, want 2", len(sessionsPayload.Sessions))
+		t.Fatalf("sessions count after clone = %d, want 2", len(sessionsPayload.Sessions))
 	}
 
-	var forkedSummary *SessionSummary
+	var clonedSummary *SessionSummary
 	for index := range sessionsPayload.Sessions {
 		session := &sessionsPayload.Sessions[index]
-		if session.FriendlyID == forked.FriendlyID {
-			forkedSummary = session
+		if session.FriendlyID == cloned.FriendlyID {
+			clonedSummary = session
 			break
 		}
 	}
-	if forkedSummary == nil {
-		t.Fatal("forked session summary not found")
-	}
-	if forkedSummary.ParentSessionKey != created.SessionKey {
-		t.Fatalf("fork parent key = %q, want %q", forkedSummary.ParentSessionKey, created.SessionKey)
-	}
-	if forkedSummary.ParentFriendlyID != created.FriendlyID {
-		t.Fatalf("fork parent friendlyId = %q, want %q", forkedSummary.ParentFriendlyID, created.FriendlyID)
-	}
-	if forkedSummary.ForkPointMessageID != messageIDs[1] {
-		t.Fatalf("fork point message id = %q, want %q", forkedSummary.ForkPointMessageID, messageIDs[1])
+	if clonedSummary == nil {
+		t.Fatal("cloned session summary not found")
 	}
 
-	historyResponse := performJSONRequest(t, testServer.handler, http.MethodGet, "/api/sessions/"+forked.FriendlyID+"/history", nil, []*http.Cookie{cookie})
+	historyResponse := performJSONRequest(t, testServer.handler, http.MethodGet, "/api/sessions/"+cloned.FriendlyID+"/history", nil, []*http.Cookie{cookie})
 	assertStatusCode(t, historyResponse, http.StatusOK)
 
 	var historyPayload HistoryPayload
 	decodeResponseJSON(t, historyResponse, &historyPayload)
 	if len(historyPayload.Messages) != 2 {
-		t.Fatalf("forked history count = %d, want 2", len(historyPayload.Messages))
+		t.Fatalf("cloned history count = %d, want 2", len(historyPayload.Messages))
 	}
 	if messageIDFromMap(historyPayload.Messages[0]) != messageIDs[0] {
-		t.Fatalf("forked first message id = %q, want %q", messageIDFromMap(historyPayload.Messages[0]), messageIDs[0])
+		t.Fatalf("cloned first message id = %q, want %q", messageIDFromMap(historyPayload.Messages[0]), messageIDs[0])
 	}
 	if messageIDFromMap(historyPayload.Messages[1]) != messageIDs[1] {
-		t.Fatalf("forked second message id = %q, want %q", messageIDFromMap(historyPayload.Messages[1]), messageIDs[1])
+		t.Fatalf("cloned second message id = %q, want %q", messageIDFromMap(historyPayload.Messages[1]), messageIDs[1])
 	}
 }
 
-func TestDeleteUserMessageCreatesBackendBranch(t *testing.T) {
+func TestDeleteUserMessageUpdatesThread(t *testing.T) {
 	testServer := newTestApp(t, nil)
 	cookie := signupAndRequireCookie(t, testServer, "delete-turn@example.com")
 
@@ -315,23 +306,34 @@ func TestDeleteUserMessageCreatesBackendBranch(t *testing.T) {
 	deleteResponse := performJSONRequest(t, testServer.handler, http.MethodDelete, "/api/sessions/"+created.FriendlyID+"/messages/"+messageIDs[2], nil, []*http.Cookie{cookie})
 	assertStatusCode(t, deleteResponse, http.StatusOK)
 
-	var forked sessionMutationResponse
-	decodeResponseJSON(t, deleteResponse, &forked)
+	var deleted sessionMutationResponse
+	decodeResponseJSON(t, deleteResponse, &deleted)
+	if deleted.FriendlyID != created.FriendlyID {
+		t.Fatalf("delete friendlyId = %q, want original %q", deleted.FriendlyID, created.FriendlyID)
+	}
 
-	historyResponse := performJSONRequest(t, testServer.handler, http.MethodGet, "/api/sessions/"+forked.FriendlyID+"/history", nil, []*http.Cookie{cookie})
+	listResponse := performJSONRequest(t, testServer.handler, http.MethodGet, "/api/sessions", nil, []*http.Cookie{cookie})
+	assertStatusCode(t, listResponse, http.StatusOK)
+	var sessionsPayload sessionsResponse
+	decodeResponseJSON(t, listResponse, &sessionsPayload)
+	if len(sessionsPayload.Sessions) != 1 {
+		t.Fatalf("sessions count after delete = %d, want 1", len(sessionsPayload.Sessions))
+	}
+
+	historyResponse := performJSONRequest(t, testServer.handler, http.MethodGet, "/api/sessions/"+created.FriendlyID+"/history", nil, []*http.Cookie{cookie})
 	assertStatusCode(t, historyResponse, http.StatusOK)
 
 	var historyPayload HistoryPayload
 	decodeResponseJSON(t, historyResponse, &historyPayload)
 	if len(historyPayload.Messages) != 2 {
-		t.Fatalf("deleted-branch history count = %d, want 2", len(historyPayload.Messages))
+		t.Fatalf("deleted history count = %d, want 2", len(historyPayload.Messages))
 	}
 	if messageIDFromMap(historyPayload.Messages[1]) != messageIDs[1] {
-		t.Fatalf("deleted-branch last message id = %q, want %q", messageIDFromMap(historyPayload.Messages[1]), messageIDs[1])
+		t.Fatalf("deleted last message id = %q, want %q", messageIDFromMap(historyPayload.Messages[1]), messageIDs[1])
 	}
 }
 
-func TestEditUserMessageCreatesBackendBranchAndRuns(t *testing.T) {
+func TestEditUserMessageUpdatesThreadAndRuns(t *testing.T) {
 	testServer := newTestApp(t, func(config *Config) {
 		config.SystemProviderEnabled = true
 		config.SystemProviderLabel = "Server Default"
@@ -348,7 +350,7 @@ func TestEditUserMessageCreatesBackendBranchAndRuns(t *testing.T) {
 				ProviderLabel: "Server Default",
 			},
 		},
-		output: "Edited branch answer.",
+		output: "Edited answer.",
 	}
 	cookie := signupAndRequireCookie(t, testServer, "edit-turn@example.com")
 
@@ -380,16 +382,27 @@ func TestEditUserMessageCreatesBackendBranchAndRuns(t *testing.T) {
 	if editPayload.RunID == "" {
 		t.Fatal("edit runId = empty, want populated value")
 	}
+	if editPayload.FriendlyID != created.FriendlyID {
+		t.Fatalf("edit friendlyId = %q, want original %q", editPayload.FriendlyID, created.FriendlyID)
+	}
 
 	waitForRunStatus(t, testServer, editPayload.RunID, "completed")
 
-	historyResponse := performJSONRequest(t, testServer.handler, http.MethodGet, "/api/sessions/"+editPayload.FriendlyID+"/history", nil, []*http.Cookie{cookie})
+	listResponse := performJSONRequest(t, testServer.handler, http.MethodGet, "/api/sessions", nil, []*http.Cookie{cookie})
+	assertStatusCode(t, listResponse, http.StatusOK)
+	var sessionsPayload sessionsResponse
+	decodeResponseJSON(t, listResponse, &sessionsPayload)
+	if len(sessionsPayload.Sessions) != 1 {
+		t.Fatalf("sessions count after edit = %d, want 1", len(sessionsPayload.Sessions))
+	}
+
+	historyResponse := performJSONRequest(t, testServer.handler, http.MethodGet, "/api/sessions/"+created.FriendlyID+"/history", nil, []*http.Cookie{cookie})
 	assertStatusCode(t, historyResponse, http.StatusOK)
 
 	var historyPayload HistoryPayload
 	decodeResponseJSON(t, historyResponse, &historyPayload)
 	if len(historyPayload.Messages) != 2 {
-		t.Fatalf("edited-branch history count = %d, want 2", len(historyPayload.Messages))
+		t.Fatalf("edited history count = %d, want 2", len(historyPayload.Messages))
 	}
 	if textContentFromMessage(historyPayload.Messages[0]) != "Edited question" {
 		t.Fatalf("edited user message text = %q, want %q", textContentFromMessage(historyPayload.Messages[0]), "Edited question")
@@ -398,8 +411,8 @@ func TestEditUserMessageCreatesBackendBranchAndRuns(t *testing.T) {
 	if len(attachments) != 1 || attachments[0].MimeType != "image/png" || attachments[0].Content != "Zm9v" {
 		t.Fatalf("edited message attachments = %#v, want preserved image attachment", attachments)
 	}
-	if textContentFromMessage(historyPayload.Messages[1]) != "Edited branch answer." {
-		t.Fatalf("edited branch assistant text = %q, want %q", textContentFromMessage(historyPayload.Messages[1]), "Edited branch answer.")
+	if textContentFromMessage(historyPayload.Messages[1]) != "Edited answer." {
+		t.Fatalf("edited assistant text = %q, want %q", textContentFromMessage(historyPayload.Messages[1]), "Edited answer.")
 	}
 }
 

@@ -15,20 +15,16 @@ const defaultContextTokens = 32768
 var errChatSessionNotFound = errors.New("chat session not found")
 
 type SessionSummary struct {
-	Key                string         `json:"key"`
-	FriendlyID         string         `json:"friendlyId"`
-	Title              string         `json:"title,omitempty"`
-	DerivedTitle       string         `json:"derivedTitle,omitempty"`
-	Label              string         `json:"label,omitempty"`
-	IsPinned           bool           `json:"isPinned,omitempty"`
-	UpdatedAt          int64          `json:"updatedAt,omitempty"`
-	LastMessage        map[string]any `json:"lastMessage,omitempty"`
-	TotalTokens        int64          `json:"totalTokens,omitempty"`
-	ContextTokens      int64          `json:"contextTokens,omitempty"`
-	ParentSessionKey   string         `json:"parentSessionKey,omitempty"`
-	ParentFriendlyID   string         `json:"parentFriendlyId,omitempty"`
-	ForkPointMessageID string         `json:"forkPointMessageId,omitempty"`
-	ForkDepth          int64          `json:"forkDepth,omitempty"`
+	Key           string         `json:"key"`
+	FriendlyID    string         `json:"friendlyId"`
+	Title         string         `json:"title,omitempty"`
+	DerivedTitle  string         `json:"derivedTitle,omitempty"`
+	Label         string         `json:"label,omitempty"`
+	IsPinned      bool           `json:"isPinned,omitempty"`
+	UpdatedAt     int64          `json:"updatedAt,omitempty"`
+	LastMessage   map[string]any `json:"lastMessage,omitempty"`
+	TotalTokens   int64          `json:"totalTokens,omitempty"`
+	ContextTokens int64          `json:"contextTokens,omitempty"`
 }
 
 type HistoryPayload struct {
@@ -42,21 +38,17 @@ type ChatService struct {
 }
 
 type sessionRecord struct {
-	ID                 string
-	UserID             string
-	FriendlyID         string
-	Title              sql.NullString
-	DerivedTitle       sql.NullString
-	Label              sql.NullString
-	IsPinned           bool
-	UpdatedAt          int64
-	LastMessageJSON    sql.NullString
-	TotalTokens        int64
-	ContextTokens      int64
-	ParentSessionID    sql.NullString
-	ParentFriendlyID   sql.NullString
-	ForkPointMessageID sql.NullString
-	ForkDepth          int64
+	ID              string
+	UserID          string
+	FriendlyID      string
+	Title           sql.NullString
+	DerivedTitle    sql.NullString
+	Label           sql.NullString
+	IsPinned        bool
+	UpdatedAt       int64
+	LastMessageJSON sql.NullString
+	TotalTokens     int64
+	ContextTokens   int64
 }
 
 type messageRecord struct {
@@ -94,11 +86,7 @@ func (service *ChatService) ListSessions(
 			updated_at,
 			last_message_json,
 			total_tokens,
-			context_tokens,
-			parent_session_id,
-			parent_friendly_id,
-			fork_point_message_id,
-			fork_depth
+			context_tokens
 		FROM chat_sessions
 		WHERE user_id = ?
 		ORDER BY is_pinned DESC, updated_at DESC, created_at DESC, id DESC
@@ -148,11 +136,10 @@ func (service *ChatService) CreateSession(
 			is_pinned,
 			updated_at,
 			created_at,
-			total_tokens,
-			context_tokens,
-			fork_depth
-		)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, 0)
+				total_tokens,
+				context_tokens
+			)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)
 	`, sessionID, userID, friendlyID, nullableString(normalizedLabel), nullableString(normalizedLabel), nullableString(normalizedLabel), 0, now, now, defaultContextTokens); err != nil {
 		return SessionSummary{}, fmt.Errorf("create session: %w", err)
 	}
@@ -271,7 +258,7 @@ func (service *ChatService) GetHistory(
 	}, nil
 }
 
-func (service *ChatService) ForkSession(
+func (service *ChatService) CloneSession(
 	ctx context.Context,
 	userID string,
 	friendlyID string,
@@ -287,12 +274,12 @@ func (service *ChatService) ForkSession(
 		return SessionSummary{}, err
 	}
 
-	forkIndex := findMessageRecordIndex(messageRecords, messageID)
-	if forkIndex < 0 {
-		return SessionSummary{}, fmt.Errorf("fork point message not found")
+	cloneIndex := findMessageRecordIndex(messageRecords, messageID)
+	if cloneIndex < 0 {
+		return SessionSummary{}, fmt.Errorf("clone point message not found")
 	}
 
-	return service.createForkedSession(ctx, source, messageRecords[:forkIndex+1], strings.TrimSpace(messageID))
+	return service.createClonedSession(ctx, source, messageRecords[:cloneIndex+1])
 }
 
 func (service *ChatService) DeleteUserMessage(
@@ -319,12 +306,7 @@ func (service *ChatService) DeleteUserMessage(
 		return SessionSummary{}, fmt.Errorf("only user messages can be deleted")
 	}
 
-	forkPointMessageID := ""
-	if messageIndex > 0 {
-		forkPointMessageID = messageRecords[messageIndex-1].MessageID
-	}
-
-	return service.createForkedSession(ctx, source, messageRecords[:messageIndex], forkPointMessageID)
+	return service.truncateSessionMessages(ctx, source, messageRecords, messageIndex)
 }
 
 func (service *ChatService) EditUserMessage(
@@ -354,17 +336,78 @@ func (service *ChatService) EditUserMessage(
 		return SessionSummary{}, nil, fmt.Errorf("only user messages can be edited")
 	}
 
-	forkPointMessageID := ""
-	if messageIndex > 0 {
-		forkPointMessageID = messageRecords[messageIndex-1].MessageID
-	}
-
-	forkedSession, err := service.createForkedSession(ctx, source, messageRecords[:messageIndex], forkPointMessageID)
+	session, err := service.truncateSessionMessages(ctx, source, messageRecords, messageIndex)
 	if err != nil {
 		return SessionSummary{}, nil, err
 	}
 
-	return forkedSession, extractAttachmentPayloads(target.Message), nil
+	return session, extractAttachmentPayloads(target.Message), nil
+}
+
+func (service *ChatService) truncateSessionMessages(
+	ctx context.Context,
+	session sessionRecord,
+	messageRecords []messageRecord,
+	startIndex int,
+) (SessionSummary, error) {
+	if startIndex < 0 || startIndex > len(messageRecords) {
+		return SessionSummary{}, fmt.Errorf("invalid message truncate index")
+	}
+
+	remainingRecords := messageRecords[:startIndex]
+	deletedRecords := messageRecords[startIndex:]
+	now := time.Now().UnixMilli()
+	derivedTitle := deriveTitleFromMessages(remainingRecords)
+	totalTokens := countMessageRecordTokens(remainingRecords)
+	var lastMessageJSON sql.NullString
+	if len(remainingRecords) > 0 {
+		lastMessageJSON = nullableString(remainingRecords[len(remainingRecords)-1].MessageJSON)
+	}
+
+	transaction, err := service.db.BeginTx(ctx, nil)
+	if err != nil {
+		return SessionSummary{}, fmt.Errorf("begin truncate messages tx: %w", err)
+	}
+	defer transaction.Rollback()
+
+	if len(deletedRecords) > 0 {
+		placeholders := make([]string, 0, len(deletedRecords))
+		args := make([]any, 0, len(deletedRecords)+1)
+		args = append(args, session.ID)
+		for _, record := range deletedRecords {
+			placeholders = append(placeholders, "?")
+			args = append(args, record.StorageID)
+		}
+		query := fmt.Sprintf(
+			"DELETE FROM chat_messages WHERE session_id = ? AND id IN (%s)",
+			strings.Join(placeholders, ","),
+		)
+		if _, err := transaction.ExecContext(ctx, query, args...); err != nil {
+			return SessionSummary{}, fmt.Errorf("delete truncated messages: %w", err)
+		}
+	}
+
+	if _, err := transaction.ExecContext(ctx, `
+		UPDATE chat_sessions
+		SET
+			last_message_json = ?,
+			updated_at = ?,
+			derived_title = ?,
+			total_tokens = ?
+		WHERE id = ? AND user_id = ?
+	`, lastMessageJSON, now, nullableString(derivedTitle), totalTokens, session.ID, session.UserID); err != nil {
+		return SessionSummary{}, fmt.Errorf("update session after truncate: %w", err)
+	}
+
+	if err := transaction.Commit(); err != nil {
+		return SessionSummary{}, fmt.Errorf("commit truncate messages: %w", err)
+	}
+
+	session.LastMessageJSON = lastMessageJSON
+	session.UpdatedAt = now
+	session.DerivedTitle = nullableString(derivedTitle)
+	session.TotalTokens = totalTokens
+	return sessionRecordToSummary(session)
 }
 
 func (service *ChatService) appendMessage(
@@ -583,11 +626,10 @@ func (service *ChatService) listMessageRecords(
 	return records, nil
 }
 
-func (service *ChatService) createForkedSession(
+func (service *ChatService) createClonedSession(
 	ctx context.Context,
 	source sessionRecord,
 	messageRecords []messageRecord,
-	forkPointMessageID string,
 ) (SessionSummary, error) {
 	now := time.Now().UnixMilli()
 	sessionID := newID()
@@ -602,7 +644,7 @@ func (service *ChatService) createForkedSession(
 
 	transaction, err := service.db.BeginTx(ctx, nil)
 	if err != nil {
-		return SessionSummary{}, fmt.Errorf("begin fork session tx: %w", err)
+		return SessionSummary{}, fmt.Errorf("begin clone session tx: %w", err)
 	}
 	defer transaction.Rollback()
 
@@ -617,17 +659,13 @@ func (service *ChatService) createForkedSession(
 			is_pinned,
 			updated_at,
 			created_at,
-			last_message_json,
-			total_tokens,
-			context_tokens,
-			parent_session_id,
-			parent_friendly_id,
-			fork_point_message_id,
-			fork_depth
-		)
-		VALUES (?, ?, ?, NULL, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, sessionID, source.UserID, friendlyID, nullableString(derivedTitle), 0, now, now, lastMessageJSON, totalTokens, source.ContextTokens, source.ID, nullableString(source.FriendlyID), nullableString(forkPointMessageID), source.ForkDepth+1); err != nil {
-		return SessionSummary{}, fmt.Errorf("create fork session: %w", err)
+				last_message_json,
+				total_tokens,
+				context_tokens
+			)
+			VALUES (?, ?, ?, NULL, ?, NULL, ?, ?, ?, ?, ?, ?)
+		`, sessionID, source.UserID, friendlyID, nullableString(derivedTitle), 0, now, now, lastMessageJSON, totalTokens, source.ContextTokens); err != nil {
+		return SessionSummary{}, fmt.Errorf("create clone session: %w", err)
 	}
 
 	for _, messageRecord := range messageRecords {
@@ -643,27 +681,23 @@ func (service *ChatService) createForkedSession(
 			)
 			VALUES (?, ?, ?, ?, ?, ?, ?)
 		`, newID(), sessionID, messageRecord.Role, messageRecord.ContentJSON, messageRecord.Timestamp, messageRecord.MessageJSON, now); err != nil {
-			return SessionSummary{}, fmt.Errorf("copy fork message: %w", err)
+			return SessionSummary{}, fmt.Errorf("copy clone message: %w", err)
 		}
 	}
 
 	if err := transaction.Commit(); err != nil {
-		return SessionSummary{}, fmt.Errorf("commit fork session: %w", err)
+		return SessionSummary{}, fmt.Errorf("commit clone session: %w", err)
 	}
 
 	return SessionSummary{
-		Key:                sessionID,
-		FriendlyID:         friendlyID,
-		DerivedTitle:       derivedTitle,
-		IsPinned:           false,
-		UpdatedAt:          now,
-		LastMessage:        lastMessageFromRecords(messageRecords),
-		TotalTokens:        totalTokens,
-		ContextTokens:      source.ContextTokens,
-		ParentSessionKey:   source.ID,
-		ParentFriendlyID:   source.FriendlyID,
-		ForkPointMessageID: forkPointMessageID,
-		ForkDepth:          source.ForkDepth + 1,
+		Key:           sessionID,
+		FriendlyID:    friendlyID,
+		DerivedTitle:  derivedTitle,
+		IsPinned:      false,
+		UpdatedAt:     now,
+		LastMessage:   lastMessageFromRecords(messageRecords),
+		TotalTokens:   totalTokens,
+		ContextTokens: source.ContextTokens,
 	}, nil
 }
 
@@ -702,11 +736,7 @@ func (service *ChatService) findSession(
 			updated_at,
 			last_message_json,
 			total_tokens,
-			context_tokens,
-			parent_session_id,
-			parent_friendly_id,
-			fork_point_message_id,
-			fork_depth
+			context_tokens
 		FROM chat_sessions
 		WHERE user_id = ? AND `+field+` = ?
 	`, userID, value).Scan(
@@ -721,10 +751,6 @@ func (service *ChatService) findSession(
 		&record.LastMessageJSON,
 		&record.TotalTokens,
 		&record.ContextTokens,
-		&record.ParentSessionID,
-		&record.ParentFriendlyID,
-		&record.ForkPointMessageID,
-		&record.ForkDepth,
 	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -751,10 +777,6 @@ func scanSessionRecord(scanner interface {
 		&record.LastMessageJSON,
 		&record.TotalTokens,
 		&record.ContextTokens,
-		&record.ParentSessionID,
-		&record.ParentFriendlyID,
-		&record.ForkPointMessageID,
-		&record.ForkDepth,
 	); err != nil {
 		return sessionRecord{}, fmt.Errorf("scan session: %w", err)
 	}
@@ -837,20 +859,16 @@ func sessionRecordToSummary(record sessionRecord) (SessionSummary, error) {
 	}
 
 	return SessionSummary{
-		Key:                record.ID,
-		FriendlyID:         record.FriendlyID,
-		Title:              nullStringValue(record.Title),
-		DerivedTitle:       nullStringValue(record.DerivedTitle),
-		Label:              nullStringValue(record.Label),
-		IsPinned:           record.IsPinned,
-		UpdatedAt:          record.UpdatedAt,
-		LastMessage:        lastMessage,
-		TotalTokens:        record.TotalTokens,
-		ContextTokens:      record.ContextTokens,
-		ParentSessionKey:   nullStringValue(record.ParentSessionID),
-		ParentFriendlyID:   nullStringValue(record.ParentFriendlyID),
-		ForkPointMessageID: nullStringValue(record.ForkPointMessageID),
-		ForkDepth:          record.ForkDepth,
+		Key:           record.ID,
+		FriendlyID:    record.FriendlyID,
+		Title:         nullStringValue(record.Title),
+		DerivedTitle:  nullStringValue(record.DerivedTitle),
+		Label:         nullStringValue(record.Label),
+		IsPinned:      record.IsPinned,
+		UpdatedAt:     record.UpdatedAt,
+		LastMessage:   lastMessage,
+		TotalTokens:   record.TotalTokens,
+		ContextTokens: record.ContextTokens,
 	}, nil
 }
 

@@ -3,7 +3,6 @@ import { HugeiconsIcon } from '@hugeicons/react'
 import {
   Cancel01Icon,
   FilterHorizontalIcon,
-  GitBranchIcon,
   Pen01Icon,
   PinIcon,
   Settings02Icon,
@@ -11,7 +10,6 @@ import {
 import { AnimatePresence, motion } from 'motion/react'
 import { usePinSession } from '../hooks/use-pin-session'
 import { useRenameSession } from '../hooks/use-rename-session'
-import { BranchTreePanel } from './branch-tree-panel'
 import { ModelSettingsPanel } from './model-settings-panel'
 import { SessionRenameDialog } from './sidebar/session-rename-dialog'
 import type { SessionMeta } from '../types'
@@ -29,7 +27,7 @@ import {
 
 type ExportFormat = 'markdown' | 'json' | 'text'
 
-export type RightSidebarTab = 'options' | 'model' | 'branches'
+export type RightSidebarTab = 'options' | 'model'
 export type RightSidebarModelSettings = Pick<
   ConversationSettings,
   | 'model'
@@ -70,11 +68,6 @@ const TABS = [
     id: 'model' as const,
     label: 'Model',
     icon: Settings02Icon,
-  },
-  {
-    id: 'branches' as const,
-    label: 'Branches',
-    icon: GitBranchIcon,
   },
 ]
 
@@ -245,7 +238,6 @@ function OptionsPanel({
 function SidebarBody({
   activeTab,
   activeSession,
-  activeSessionKey,
   canSelectModel,
   defaultModelId,
   defaultModelLocked,
@@ -256,11 +248,9 @@ function SidebarBody({
   onExport,
   onModelSettingsChange,
   selectedModelId,
-  sessions,
 }: {
   activeTab: RightSidebarTab
   activeSession?: SessionMeta
-  activeSessionKey?: string
   canSelectModel: boolean
   defaultModelId?: string
   defaultModelLocked: boolean
@@ -271,7 +261,6 @@ function SidebarBody({
   onExport: (format: ExportFormat) => void
   onModelSettingsChange: (updates: Partial<RightSidebarModelSettings>) => void
   selectedModelId: string
-  sessions: Array<SessionMeta>
 }) {
   return (
     <div className="min-h-0 flex-1 overflow-y-auto px-1">
@@ -292,12 +281,6 @@ function SidebarBody({
           defaultModelLocked={defaultModelLocked}
           value={modelSettings}
           onChange={onModelSettingsChange}
-        />
-      ) : null}
-      {activeTab === 'branches' ? (
-        <BranchTreePanel
-          sessions={sessions}
-          activeSessionKey={activeSessionKey}
         />
       ) : null}
     </div>
@@ -375,7 +358,6 @@ function RightSidebarComponent({
               <SidebarBody
                 activeTab={activeTab}
                 activeSession={activeSession}
-                activeSessionKey={activeSessionKey}
                 canSelectModel={canSelectModel}
                 defaultModelId={defaultModelId}
                 defaultModelLocked={defaultModelLocked}
@@ -386,7 +368,6 @@ function RightSidebarComponent({
                 onExport={onExport}
                 onModelSettingsChange={onModelSettingsChange}
                 selectedModelId={selectedModelId}
-                sessions={sessions}
               />
             </motion.aside>
           </>
@@ -419,10 +400,9 @@ function RightSidebarComponent({
           </div>
 
           <SidebarBody
-            activeTab={activeTab}
-            activeSession={activeSession}
-            activeSessionKey={activeSessionKey}
-            canSelectModel={canSelectModel}
+          activeTab={activeTab}
+          activeSession={activeSession}
+          canSelectModel={canSelectModel}
             defaultModelId={defaultModelId}
             defaultModelLocked={defaultModelLocked}
             exportDisabled={exportDisabled}
@@ -431,9 +411,8 @@ function RightSidebarComponent({
             modelsLoading={modelsLoading}
             onExport={onExport}
             onModelSettingsChange={onModelSettingsChange}
-            selectedModelId={selectedModelId}
-            sessions={sessions}
-          />
+          selectedModelId={selectedModelId}
+        />
         </motion.aside>
       ) : null}
     </AnimatePresence>

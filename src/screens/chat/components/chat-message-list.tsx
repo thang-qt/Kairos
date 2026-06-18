@@ -10,7 +10,6 @@ import { getToolCallsFromMessage, textFromMessage } from '../utils'
 import { MessageItem } from './message-item'
 import { ConversationNavigator } from './conversation-navigator'
 import type { GatewayMessage } from '../types'
-import type { BranchNavigatorState } from './branch-inline-navigator'
 import {
   ChatContainerContent,
   ChatContainerRoot,
@@ -33,16 +32,23 @@ type ChatMessageListProps = {
   pinGroupMinHeight: number
   headerHeight: number
   contentStyle?: React.CSSProperties
-  onFork?: (messageId: string) => void
-  onEditUserTurn?: (messageId: string, currentText: string) => void
+  onClone?: (payload: CloneMessagePayload) => void
+  onEditUserTurn?: (
+    messageId: string,
+    currentText: string,
+  ) => void | Promise<void>
   onDeleteUserTurn?: (messageId: string, currentText: string) => void
-  branchNavigators?: Map<string, BranchNavigatorState>
-  onSelectBranch?: (friendlyId: string) => void
   onScrollTopChange?: (scrollTop: number) => void
   restoreScrollTop?: number | null
   restoreKey?: string
   onRestoreScrollTopApplied?: () => void
   showConversationNavigator?: boolean
+}
+
+export type CloneMessagePayload = {
+  message: GatewayMessage
+  currentText: string
+  previousMessageId?: string
 }
 
 function ChatMessageListComponent({
@@ -59,11 +65,9 @@ function ChatMessageListComponent({
   pinGroupMinHeight,
   headerHeight,
   contentStyle,
-  onFork,
+  onClone,
   onEditUserTurn,
   onDeleteUserTurn,
-  branchNavigators,
-  onSelectBranch,
   onScrollTopChange,
   restoreScrollTop,
   restoreKey,
@@ -270,6 +274,15 @@ function ChatMessageListComponent({
     const wrapperScrollMarginTop = isUserMessage
       ? headerHeight + 12
       : options?.wrapperScrollMarginTop
+    const previousMessage = findPreviousClonePoint(displayMessages, index)
+    const previousMessageId =
+      typeof (previousMessage as { id?: unknown } | undefined)?.id === 'string'
+        ? ((previousMessage as { id: string }).id)
+        : undefined
+
+    function handleClone(message: GatewayMessage, currentText: string) {
+      onClone?.({ message, currentText, previousMessageId })
+    }
 
     return (
       <MessageItem
@@ -281,11 +294,9 @@ function ChatMessageListComponent({
         wrapperRef={wrapperRef}
         wrapperClassName={options?.wrapperClassName}
         wrapperScrollMarginTop={wrapperScrollMarginTop}
-        onFork={onFork}
+        onClone={onClone ? handleClone : undefined}
         onEdit={onEditUserTurn}
         onDelete={onDeleteUserTurn}
-        branchState={branchNavigators?.get((chatMessage as any).id)}
-        onSelectBranch={onSelectBranch}
       />
     )
   }
@@ -325,7 +336,6 @@ function ChatMessageListComponent({
         }),
     }
   }, [
-    branchNavigators,
     displayMessages,
     groupStartIndex,
     hasGroup,
@@ -333,10 +343,9 @@ function ChatMessageListComponent({
     lastAssistantIndex,
     lastUserIndex,
     modelLabelById,
+    onClone,
     onDeleteUserTurn,
     onEditUserTurn,
-    onFork,
-    onSelectBranch,
     toolResultsByCallId,
   ])
 
@@ -420,17 +429,27 @@ function areChatMessageListEqual(
     prev.pinGroupMinHeight === next.pinGroupMinHeight &&
     prev.headerHeight === next.headerHeight &&
     prev.contentStyle === next.contentStyle &&
-    prev.onFork === next.onFork &&
+    prev.onClone === next.onClone &&
     prev.onEditUserTurn === next.onEditUserTurn &&
     prev.onDeleteUserTurn === next.onDeleteUserTurn &&
-    prev.branchNavigators === next.branchNavigators &&
-    prev.onSelectBranch === next.onSelectBranch &&
     prev.onScrollTopChange === next.onScrollTopChange &&
     prev.restoreScrollTop === next.restoreScrollTop &&
     prev.restoreKey === next.restoreKey &&
     prev.onRestoreScrollTopApplied === next.onRestoreScrollTopApplied &&
     prev.showConversationNavigator === next.showConversationNavigator
   )
+}
+
+function findPreviousClonePoint(
+  messages: Array<GatewayMessage>,
+  index: number,
+): GatewayMessage | undefined {
+  for (let previousIndex = index - 1; previousIndex >= 0; previousIndex -= 1) {
+    const message = messages[previousIndex]
+    if (message.role === 'toolResult') continue
+    if (typeof (message as { id?: unknown }).id === 'string') return message
+  }
+  return undefined
 }
 
 const MemoizedChatMessageList = memo(

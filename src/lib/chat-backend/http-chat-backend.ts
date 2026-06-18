@@ -148,9 +148,9 @@ export function createHTTPChatBackend(): ChatBackend {
       )
       return parseJSON(response)
     },
-    async forkConversation(input) {
+    async cloneConversation(input) {
       const response = await fetch(
-        `/api/sessions/${encodeURIComponent(input.sourceFriendlyId)}/fork`,
+        `/api/sessions/${encodeURIComponent(input.sourceFriendlyId)}/clone`,
         {
           method: 'POST',
           credentials: 'include',
@@ -158,7 +158,7 @@ export function createHTTPChatBackend(): ChatBackend {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            messageId: input.forkAtMessageId,
+            messageId: input.cloneAtMessageId,
           }),
         },
       )

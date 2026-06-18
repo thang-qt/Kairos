@@ -21,7 +21,6 @@ import { ChatComposer } from './components/chat-composer'
 import { BackendStatusMessage } from './components/backend-status-message'
 import { MessageStatus } from './components/message-status'
 import { UserTurnDeleteDialog } from './components/user-turn-delete-dialog'
-import { UserTurnEditDialog } from './components/user-turn-edit-dialog'
 import {
   hasPendingGeneration,
   hasPendingSend,
@@ -46,10 +45,13 @@ import {
   useConversationSettings,
 } from './conversation-settings'
 import { RightSidebar } from './components/right-sidebar'
-import type { BranchNavigatorState } from './components/branch-inline-navigator'
+import type { CloneMessagePayload } from './components/chat-message-list'
 import type { RightSidebarTab } from './components/right-sidebar'
 import type { AttachmentFile } from '@/components/attachment-button'
-import type { ChatComposerHelpers } from './components/chat-composer'
+import type {
+  ChatComposerDraft,
+  ChatComposerHelpers,
+} from './components/chat-composer'
 import { AppShell } from '@/components/app-shell'
 import { useExport } from '@/hooks/use-export'
 import { useChatSettings } from '@/hooks/use-chat-settings'
@@ -67,9 +69,10 @@ type ChatScreenProps = {
   forcedSessionKey?: string
 }
 
-const BRANCH_SCROLL_RESTORE_KEY = 'kairos.branch-scroll-restore'
+const CLONE_SCROLL_RESTORE_KEY = 'kairos.clone-scroll-restore'
+const CLONE_COMPOSER_DRAFT_KEY = 'kairos.clone-composer-draft'
 
-type UserTurnActionState = {
+type UserTurnDeleteState = {
   messageId: string
   currentText: string
 } | null
@@ -90,10 +93,11 @@ export function ChatScreen({
   const [rightSidebarTab, setRightSidebarTab] =
     useState<RightSidebarTab>('options')
   const [restoreScrollTop, setRestoreScrollTop] = useState<number | null>(null)
-  const [editingUserTurn, setEditingUserTurn] =
-    useState<UserTurnActionState>(null)
+  const [composerDraft, setComposerDraft] = useState<ChatComposerDraft | null>(
+    null,
+  )
   const [deletingUserTurn, setDeletingUserTurn] =
-    useState<UserTurnActionState>(null)
+    useState<UserTurnDeleteState>(null)
   const { headerRef, composerRef, mainRef, pinGroupMinHeight, headerHeight } =
     useChatMeasurements()
   const [waitingForResponse, setWaitingForResponse] = useState(
@@ -770,17 +774,42 @@ export function ChatScreen({
     sendMessage,
   })
 
-  const handleForkMessage = useCallback(
-    async (messageId: string) => {
+  function stashCloneComposerDraft(targetFriendlyId: string, value: string) {
+    if (typeof window === 'undefined') return
+    window.sessionStorage.setItem(
+      CLONE_COMPOSER_DRAFT_KEY,
+      JSON.stringify({ targetFriendlyId, value }),
+    )
+  }
+
+  const handleCloneMessage = useCallback(
+    async function handleCloneMessage(payload: CloneMessagePayload) {
       const sourceKey = activeSessionKey || resolvedSessionKey
-      if (!sourceKey) return
+      const messageId =
+        typeof (payload.message as { id?: unknown }).id === 'string'
+          ? (payload.message as { id: string }).id
+          : ''
+      const isUserTurn = payload.message.role === 'user'
+      const cloneAtMessageId = isUserTurn ? payload.previousMessageId : messageId
+
+      if (isUserTurn && !cloneAtMessageId) {
+        stashCloneComposerDraft('new', payload.currentText)
+        clearHistoryMessages(queryClient, 'new', 'new')
+        navigate({ to: '/new' })
+        return
+      }
+
+      if (!sourceKey || !cloneAtMessageId) return
       try {
         const backend = getChatBackend()
-        const result = await backend.forkConversation({
+        const result = await backend.cloneConversation({
           sourceSessionKey: sourceKey,
           sourceFriendlyId: activeFriendlyId,
-          forkAtMessageId: messageId,
+          cloneAtMessageId,
         })
+        if (isUserTurn) {
+          stashCloneComposerDraft(result.friendlyId, payload.currentText)
+        }
         await queryClient.invalidateQueries({
           queryKey: chatQueryKeys.sessions,
         })
@@ -789,7 +818,7 @@ export function ChatScreen({
           params: { sessionKey: result.friendlyId },
         })
       } catch (err) {
-        console.error('Fork failed:', err)
+        console.error('Clone failed:', err)
       }
     },
     [
@@ -801,35 +830,16 @@ export function ChatScreen({
     ],
   )
 
-  const storeBranchScrollRestore = useCallback(
-    function storeBranchScrollRestore() {
+  const storeCloneScrollRestore = useCallback(
+    function storeCloneScrollRestore() {
       if (typeof window === 'undefined') return
       window.sessionStorage.setItem(
-        BRANCH_SCROLL_RESTORE_KEY,
+        CLONE_SCROLL_RESTORE_KEY,
         JSON.stringify({ scrollTop: scrollTopRef.current }),
       )
     },
     [],
   )
-
-  const handleSelectBranch = useCallback(
-    function handleSelectBranch(friendlyId: string) {
-      if (!friendlyId || friendlyId === activeFriendlyId) return
-      storeBranchScrollRestore()
-      navigate({
-        to: '/chat/$sessionKey',
-        params: { sessionKey: friendlyId },
-      })
-    },
-    [activeFriendlyId, navigate, storeBranchScrollRestore],
-  )
-
-  const handleOpenEditUserTurn = useCallback(function handleOpenEditUserTurn(
-    messageId: string,
-    currentText: string,
-  ) {
-    setEditingUserTurn({ messageId, currentText })
-  }, [])
 
   const handleOpenDeleteUserTurn = useCallback(
     function handleOpenDeleteUserTurn(messageId: string, currentText: string) {
@@ -839,23 +849,22 @@ export function ChatScreen({
   )
 
   const handleSaveEditedUserTurn = useCallback(
-    async function handleSaveEditedUserTurn(nextMessage: string) {
+    async function handleSaveEditedUserTurn(
+      messageId: string,
+      nextMessage: string,
+    ) {
       const sourceKey = activeSessionKey || resolvedSessionKey
-      const target = editingUserTurn
       const normalizedMessage = nextMessage.trim()
-      if (!sourceKey || !target || normalizedMessage.length === 0) {
+      if (!sourceKey || !messageId || normalizedMessage.length === 0) {
         return
       }
-
-      setEditingUserTurn(null)
-      storeBranchScrollRestore()
 
       try {
         const backend = getChatBackend()
         const result = await backend.editUserMessage({
           sourceSessionKey: sourceKey,
           sourceFriendlyId: activeFriendlyId,
-          messageId: target.messageId,
+          messageId,
           message: normalizedMessage,
           model: resolvedConversationModel,
           systemPrompt: resolvedSystemPrompt,
@@ -865,12 +874,9 @@ export function ChatScreen({
           maxOutputTokens: resolvedMaxOutputTokens,
         })
         startRun(result.runId)
+        refreshHistory()
         await queryClient.invalidateQueries({
           queryKey: chatQueryKeys.sessions,
-        })
-        navigate({
-          to: '/chat/$sessionKey',
-          params: { sessionKey: result.friendlyId },
         })
       } catch (err) {
         console.error('Edit user turn failed:', err)
@@ -879,9 +885,8 @@ export function ChatScreen({
     [
       activeFriendlyId,
       activeSessionKey,
-      editingUserTurn,
-      navigate,
       queryClient,
+      refreshHistory,
       resolvedSessionKey,
       resolvedConversationModel,
       resolvedMaxOutputTokens,
@@ -890,7 +895,6 @@ export function ChatScreen({
       resolvedThinkingLevel,
       resolvedTopP,
       startRun,
-      storeBranchScrollRestore,
     ],
   )
 
@@ -901,21 +905,17 @@ export function ChatScreen({
       if (!sourceKey || !target) return
 
       setDeletingUserTurn(null)
-      storeBranchScrollRestore()
 
       try {
         const backend = getChatBackend()
-        const result = await backend.deleteUserMessage({
+        await backend.deleteUserMessage({
           sourceSessionKey: sourceKey,
           sourceFriendlyId: activeFriendlyId,
           messageId: target.messageId,
         })
+        refreshHistory()
         await queryClient.invalidateQueries({
           queryKey: chatQueryKeys.sessions,
-        })
-        navigate({
-          to: '/chat/$sessionKey',
-          params: { sessionKey: result.friendlyId },
         })
       } catch (err) {
         console.error('Delete user turn failed:', err)
@@ -925,10 +925,9 @@ export function ChatScreen({
       activeFriendlyId,
       activeSessionKey,
       deletingUserTurn,
-      navigate,
       queryClient,
+      refreshHistory,
       resolvedSessionKey,
-      storeBranchScrollRestore,
     ],
   )
 
@@ -947,9 +946,9 @@ export function ChatScreen({
 
   useEffect(() => {
     if (typeof window === 'undefined') return
-    const raw = window.sessionStorage.getItem(BRANCH_SCROLL_RESTORE_KEY)
+    const raw = window.sessionStorage.getItem(CLONE_SCROLL_RESTORE_KEY)
     if (!raw) return
-    window.sessionStorage.removeItem(BRANCH_SCROLL_RESTORE_KEY)
+    window.sessionStorage.removeItem(CLONE_SCROLL_RESTORE_KEY)
     try {
       const parsed = JSON.parse(raw) as { scrollTop?: unknown }
       if (
@@ -963,6 +962,34 @@ export function ChatScreen({
     }
   }, [activeFriendlyId])
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const raw = window.sessionStorage.getItem(CLONE_COMPOSER_DRAFT_KEY)
+    if (!raw) return
+
+    try {
+      const parsed = JSON.parse(raw) as {
+        targetFriendlyId?: unknown
+        value?: unknown
+      }
+      const targetFriendlyId =
+        typeof parsed.targetFriendlyId === 'string'
+          ? parsed.targetFriendlyId
+          : ''
+      const value = typeof parsed.value === 'string' ? parsed.value : ''
+      const currentFriendlyId = isNewChat ? 'new' : activeFriendlyId
+      if (targetFriendlyId !== currentFriendlyId) return
+
+      window.sessionStorage.removeItem(CLONE_COMPOSER_DRAFT_KEY)
+      setComposerDraft({
+        key: `${targetFriendlyId}:${Date.now()}`,
+        value,
+      })
+    } catch {
+      window.sessionStorage.removeItem(CLONE_COMPOSER_DRAFT_KEY)
+    }
+  }, [activeFriendlyId, isNewChat])
+
   const sidebar = (
     <ChatSidebar
       sessions={sessions}
@@ -975,129 +1002,6 @@ export function ChatScreen({
       onActiveSessionDelete={handleActiveSessionDelete}
     />
   )
-
-  const forkedFrom = useMemo(() => {
-    if (!activeSession?.parentSessionKey) return undefined
-    const parent = sessions.find(
-      (s) =>
-        s.key === activeSession.parentSessionKey ||
-        s.friendlyId === activeSession.parentFriendlyId,
-    )
-    if (!parent) {
-      return {
-        title: 'Original deleted',
-        isOrphaned: true,
-      }
-    }
-    return {
-      friendlyId: parent.friendlyId,
-      title:
-        parent.label ||
-        parent.title ||
-        parent.derivedTitle ||
-        parent.friendlyId,
-      isOrphaned: false,
-    }
-  }, [activeSession, sessions])
-
-  const branchNavigators = useMemo(() => {
-    const result = new Map<string, BranchNavigatorState>()
-
-    function getSessionTitle(session: (typeof sessions)[number]) {
-      return (
-        session.label ||
-        session.title ||
-        session.derivedTitle ||
-        session.friendlyId
-      )
-    }
-
-    function setBranchNavigator(payload: {
-      messageId: string
-      activeFriendlyId: string
-      options: Array<{ friendlyId: string; title: string }>
-    }) {
-      if (!payload.messageId || payload.options.length < 2) return
-      const seen = new Set<string>()
-      const options = payload.options.filter((option) => {
-        if (!option.friendlyId || seen.has(option.friendlyId)) return false
-        seen.add(option.friendlyId)
-        return true
-      })
-      if (options.length < 2) return
-      result.set(payload.messageId, {
-        messageId: payload.messageId,
-        activeFriendlyId: payload.activeFriendlyId,
-        options,
-      })
-    }
-
-    if (activeSession?.parentSessionKey && activeSession.forkPointMessageId) {
-      const parent = sessions.find(
-        (session) =>
-          session.key === activeSession.parentSessionKey ||
-          session.friendlyId === activeSession.parentFriendlyId,
-      )
-      const siblingForks = sessions.filter(
-        (session) =>
-          session.parentSessionKey === activeSession.parentSessionKey &&
-          session.forkPointMessageId === activeSession.forkPointMessageId,
-      )
-      const options = [
-        ...(parent
-          ? [
-              {
-                friendlyId: parent.friendlyId,
-                title: getSessionTitle(parent),
-              },
-            ]
-          : []),
-        ...siblingForks.map((session) => ({
-          friendlyId: session.friendlyId,
-          title: getSessionTitle(session),
-        })),
-      ]
-      setBranchNavigator({
-        messageId: activeSession.forkPointMessageId,
-        activeFriendlyId,
-        options,
-      })
-    }
-
-    if (activeSessionKey) {
-      const childrenByPoint = new Map<string, typeof sessions>()
-      for (const session of sessions) {
-        if (
-          session.parentSessionKey !== activeSessionKey ||
-          !session.forkPointMessageId
-        ) {
-          continue
-        }
-        const siblings = childrenByPoint.get(session.forkPointMessageId) ?? []
-        siblings.push(session)
-        childrenByPoint.set(session.forkPointMessageId, siblings)
-      }
-
-      for (const [messageId, children] of childrenByPoint) {
-        setBranchNavigator({
-          messageId,
-          activeFriendlyId,
-          options: [
-            {
-              friendlyId: activeFriendlyId,
-              title: activeTitle,
-            },
-            ...children.map((session) => ({
-              friendlyId: session.friendlyId,
-              title: getSessionTitle(session),
-            })),
-          ],
-        })
-      }
-    }
-
-    return result
-  }, [activeFriendlyId, activeSession, activeSessionKey, activeTitle, sessions])
 
   return (
     <AppShell
@@ -1119,7 +1023,6 @@ export function ChatScreen({
             activeSession?.contextTokens ??
             resolvedConversationModelDetails?.contextWindow
           }
-          forkedFrom={forkedFrom}
           onToggleRightSidebar={() => setRightSidebarOpen((prev) => !prev)}
           rightSidebarOpen={rightSidebarOpen}
           models={models}
@@ -1174,11 +1077,9 @@ export function ChatScreen({
             pinGroupMinHeight={pinGroupMinHeight}
             headerHeight={headerHeight}
             contentStyle={stableContentStyle}
-            onFork={handleForkMessage}
-            onEditUserTurn={handleOpenEditUserTurn}
+            onClone={handleCloneMessage}
+            onEditUserTurn={handleSaveEditedUserTurn}
             onDeleteUserTurn={handleOpenDeleteUserTurn}
-            branchNavigators={branchNavigators}
-            onSelectBranch={handleSelectBranch}
             onScrollTopChange={handleScrollTopChange}
             restoreScrollTop={restoreScrollTop}
             restoreKey={activeFriendlyId}
@@ -1196,23 +1097,11 @@ export function ChatScreen({
             canStop={waitingForResponse && !isNewChat}
             disabled={sending || !hasAvailableModel}
             wrapperRef={composerRef}
+            draft={composerDraft}
           />
         </>
       )}
 
-      <UserTurnEditDialog
-        open={editingUserTurn !== null}
-        onOpenChange={function handleOpenChange(open) {
-          if (!open) {
-            setEditingUserTurn(null)
-          }
-        }}
-        initialMessage={editingUserTurn?.currentText ?? ''}
-        onSave={handleSaveEditedUserTurn}
-        onCancel={function handleCancelEdit() {
-          setEditingUserTurn(null)
-        }}
-      />
       <UserTurnDeleteDialog
         open={deletingUserTurn !== null}
         onOpenChange={function handleOpenChange(open) {

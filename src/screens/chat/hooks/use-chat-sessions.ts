@@ -188,9 +188,6 @@ function sameSession(left: SessionMeta, right: SessionMeta): boolean {
     left.updatedAt === right.updatedAt &&
     left.lastMessage === right.lastMessage &&
     left.isPinned === right.isPinned &&
-    left.parentSessionKey === right.parentSessionKey &&
-    left.parentFriendlyId === right.parentFriendlyId &&
-    left.forkPointMessageId === right.forkPointMessageId &&
     left.totalTokens === right.totalTokens &&
     left.contextTokens === right.contextTokens
   )

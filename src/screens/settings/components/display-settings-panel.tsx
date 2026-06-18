@@ -54,7 +54,7 @@ export function DisplaySettingsPanel() {
 
       <SettingsRow
         label="Conversation navigator"
-        description="Show branch navigation controls in the message list."
+        description="Show quick navigation controls in the message list."
       >
         <Switch
           checked={settings.showConversationNavigator}

@@ -90,7 +90,7 @@ type sendMessageRequest struct {
 	Attachments     []AttachmentPayload `json:"attachments"`
 }
 
-type forkSessionRequest struct {
+type cloneSessionRequest struct {
 	MessageID string `json:"messageId"`
 }
 
@@ -700,19 +700,19 @@ func (app *App) handleSendMessage(writer http.ResponseWriter, request *http.Requ
 	writeJSON(writer, http.StatusOK, result)
 }
 
-func (app *App) handleForkSession(writer http.ResponseWriter, request *http.Request) {
+func (app *App) handleCloneSession(writer http.ResponseWriter, request *http.Request) {
 	user, ok := app.requireAuthenticatedUser(writer, request)
 	if !ok {
 		return
 	}
 
-	var payload forkSessionRequest
+	var payload cloneSessionRequest
 	if err := decodeJSON(request, &payload); err != nil {
 		writeError(writer, http.StatusBadRequest, err.Error())
 		return
 	}
 
-	session, err := app.chat.ForkSession(
+	session, err := app.chat.CloneSession(
 		request.Context(),
 		user.ID,
 		request.PathValue("friendlyId"),

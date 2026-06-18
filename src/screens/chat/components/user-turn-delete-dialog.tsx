@@ -33,14 +33,12 @@ export function UserTurnDeleteDialog({
         <div className="p-4">
           <AlertDialogTitle className="mb-1">Delete message</AlertDialogTitle>
           <AlertDialogDescription className="mb-4">
-            This creates a new branch without "{preview}" and removes everything
-            after it in that new branch. Your current branch stays unchanged.
+            This removes "{preview}" and everything after it from this
+            conversation.
           </AlertDialogDescription>
           <div className="flex justify-end gap-2">
             <AlertDialogCancel onClick={onCancel}>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={onConfirm}>
-              Delete and branch
-            </AlertDialogAction>
+            <AlertDialogAction onClick={onConfirm}>Delete</AlertDialogAction>
           </div>
         </div>
       </AlertDialogContent>

@@ -4,7 +4,6 @@ import { Link } from '@tanstack/react-router'
 import { HugeiconsIcon } from '@hugeicons/react'
 import {
   Delete01Icon,
-  GitBranchIcon,
   MoreHorizontalIcon,
   Pen01Icon,
   PinIcon,
@@ -61,14 +60,6 @@ function SessionItemComponent({
     >
       <div className="flex-1 min-w-0">
         <div className="flex min-w-0 items-center gap-1 text-sm font-[450]">
-          {session.parentSessionKey ? (
-            <HugeiconsIcon
-              icon={GitBranchIcon}
-              size={13}
-              strokeWidth={1.8}
-              className="shrink-0 text-primary-500"
-            />
-          ) : null}
           <span className="block min-w-0 flex-1 truncate">{label}</span>
         </div>
       </div>
@@ -148,8 +139,7 @@ function areSessionItemsEqual(prev: SessionItemProps, next: SessionItemProps) {
     prev.session.title === next.session.title &&
     prev.session.derivedTitle === next.session.derivedTitle &&
     prev.session.isPinned === next.session.isPinned &&
-    prev.session.updatedAt === next.session.updatedAt &&
-    prev.session.parentSessionKey === next.session.parentSessionKey
+    prev.session.updatedAt === next.session.updatedAt
   )
 }
 

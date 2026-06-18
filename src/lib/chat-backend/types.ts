@@ -63,10 +63,10 @@ export type ChatStopConversationInput = {
   friendlyId?: string
 }
 
-export type ChatForkConversationInput = {
+export type ChatCloneConversationInput = {
   sourceSessionKey: string
   sourceFriendlyId: string
-  forkAtMessageId: string
+  cloneAtMessageId: string
 }
 
 export type ChatEditUserMessageInput = {
@@ -135,8 +135,8 @@ export type ChatBackend = {
   deleteConversation: (input: ChatDeleteConversationInput) => Promise<void>
   stopConversation: (input: ChatStopConversationInput) => Promise<void>
   sendMessage: (input: ChatSendMessageInput) => Promise<ChatSendMessageResult>
-  forkConversation: (
-    input: ChatForkConversationInput,
+  cloneConversation: (
+    input: ChatCloneConversationInput,
   ) => Promise<ChatConversationResult>
   editUserMessage: (
     input: ChatEditUserMessageInput,

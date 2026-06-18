@@ -1,11 +1,10 @@
-import { memo } from 'react'
+import { memo, useState } from 'react'
 import {
   getMessageTimestamp,
   getToolCallsFromMessage,
   textFromMessage,
 } from '../utils'
 import { MessageActionsBar } from './message-actions-bar'
-import type { BranchNavigatorState } from './branch-inline-navigator'
 import type {
   GatewayMessage,
   MessageContent as MessageContentPart,
@@ -26,11 +25,9 @@ type MessageItemProps = {
   wrapperRef?: React.RefObject<HTMLDivElement | null>
   wrapperClassName?: string
   wrapperScrollMarginTop?: number
-  onFork?: (messageId: string) => void
-  onEdit?: (messageId: string, currentText: string) => void
+  onClone?: (message: GatewayMessage, currentText: string) => void
+  onEdit?: (messageId: string, currentText: string) => void | Promise<void>
   onDelete?: (messageId: string, currentText: string) => void
-  branchState?: BranchNavigatorState
-  onSelectBranch?: (friendlyId: string) => void
 }
 
 function mapToolCallToToolPart(
@@ -323,11 +320,9 @@ function MessageItemComponent({
   wrapperRef,
   wrapperClassName,
   wrapperScrollMarginTop,
-  onFork,
+  onClone,
   onEdit,
   onDelete,
-  branchState,
-  onSelectBranch,
 }: MessageItemProps) {
   const showReasoningBlocks = useChatSettingsStore(
     (state) => state.settings.showReasoningBlocks,
@@ -337,6 +332,13 @@ function MessageItemComponent({
   )
   const role = message.role || 'assistant'
   const text = textFromMessage(message)
+  const messageId =
+    typeof (message as { id?: unknown }).id === 'string'
+      ? (message as { id: string }).id
+      : ''
+  const [editing, setEditing] = useState(false)
+  const [editDraft, setEditDraft] = useState(text)
+  const [savingEdit, setSavingEdit] = useState(false)
   const images = imagesFromMessage(message)
   const isUser = role === 'user'
   const isToolResult = role === 'toolResult'
@@ -348,6 +350,32 @@ function MessageItemComponent({
     : null
 
   const assistantParts = Array.isArray(message.content) ? message.content : []
+
+  function handleStartEdit() {
+    setEditDraft(text)
+    setEditing(true)
+  }
+
+  function handleCancelEdit() {
+    setEditDraft(text)
+    setEditing(false)
+    setSavingEdit(false)
+  }
+
+  async function handleSaveEdit() {
+    const normalizedDraft = editDraft.trim()
+    if (!onEdit || !messageId || normalizedDraft.length === 0 || savingEdit) {
+      return
+    }
+
+    setSavingEdit(true)
+    try {
+      await onEdit(messageId, normalizedDraft)
+      setEditing(false)
+    } finally {
+      setSavingEdit(false)
+    }
+  }
 
   function renderAssistantPart(part: MessageContentPart, index: number) {
     if (part.type === 'thinking') {
@@ -424,7 +452,46 @@ function MessageItemComponent({
           ))}
         </div>
       )}
-      {isUser && (
+      {isUser && editing ? (
+        <Message className="flex-row-reverse">
+          <div
+            className={cn(
+              'max-w-[85%] rounded-lg bg-primary-100 px-3 py-2.5',
+              'flex min-w-[min(520px,85vw)] flex-col gap-2',
+            )}
+          >
+            <textarea
+              value={editDraft}
+              onChange={function handleChange(event) {
+                setEditDraft(event.currentTarget.value)
+              }}
+              rows={Math.min(8, Math.max(3, editDraft.split('\n').length))}
+              autoFocus
+              className="max-h-80 min-h-24 w-full resize-y bg-transparent text-sm text-primary-900 outline-none"
+            />
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={handleCancelEdit}
+                disabled={savingEdit}
+                className="rounded-md px-2.5 py-1 text-sm text-primary-700 hover:bg-primary-200 disabled:opacity-60"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  handleSaveEdit().catch(() => {})
+                }}
+                disabled={savingEdit || editDraft.trim().length === 0}
+                className="rounded-md bg-primary-900 px-2.5 py-1 text-sm text-primary-50 hover:bg-primary-800 disabled:opacity-60"
+              >
+                {savingEdit ? 'Saving' : 'Save'}
+              </button>
+            </div>
+          </div>
+        </Message>
+      ) : isUser ? (
         <Message className="flex-row-reverse">
           <MessageContent
             markdown={false}
@@ -436,7 +503,7 @@ function MessageItemComponent({
             {text}
           </MessageContent>
         </Message>
-      )}
+      ) : null}
 
       {isToolResult && showToolMessages && standaloneToolPart && (
         <div className="w-full max-w-[900px] mt-2 flex flex-col gap-3">
@@ -460,13 +527,11 @@ function MessageItemComponent({
           timestamp={timestamp}
           align="start"
           forceVisible={forceActionsVisible}
-          onFork={
-            onFork && (message as any).id
-              ? () => onFork((message as any).id)
+          onClone={
+            onClone && typeof (message as { id?: unknown }).id === 'string'
+              ? () => onClone(message, text)
               : undefined
           }
-          branchState={branchState}
-          onSelectBranch={onSelectBranch}
         />
       )}
 
@@ -475,15 +540,16 @@ function MessageItemComponent({
           text={text}
           timestamp={timestamp}
           align="end"
-          forceVisible={forceActionsVisible}
-          onEdit={
-            onEdit && typeof (message as { id?: unknown }).id === 'string'
-              ? () => onEdit((message as { id: string }).id, text)
+          forceVisible={forceActionsVisible && !editing}
+          onClone={
+            onClone && messageId
+              ? () => onClone(message, text)
               : undefined
           }
+          onEdit={onEdit && messageId && !editing ? handleStartEdit : undefined}
           onDelete={
-            onDelete && typeof (message as { id?: unknown }).id === 'string'
-              ? () => onDelete((message as { id: string }).id, text)
+            onDelete && messageId && !editing
+              ? () => onDelete(messageId, text)
               : undefined
           }
         />
@@ -504,8 +570,7 @@ function areMessagesEqual(
   if (prevProps.wrapperScrollMarginTop !== nextProps.wrapperScrollMarginTop) {
     return false
   }
-  if (prevProps.branchState !== nextProps.branchState) return false
-  if (prevProps.onSelectBranch !== nextProps.onSelectBranch) return false
+  if (prevProps.onClone !== nextProps.onClone) return false
   if (prevProps.onEdit !== nextProps.onEdit) return false
   if (prevProps.onDelete !== nextProps.onDelete) return false
   if (
