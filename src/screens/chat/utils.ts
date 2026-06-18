@@ -29,7 +29,9 @@ export function countApproximateTokens(text: string): number {
   return Math.max(1, Math.round(normalized.length / 4))
 }
 
-export function countConversationTokens(messages: Array<GatewayMessage>): number {
+export function countConversationTokens(
+  messages: Array<GatewayMessage>,
+): number {
   return messages.reduce(function count(total, message) {
     const parts = Array.isArray(message.content) ? message.content : []
     const messageText = parts

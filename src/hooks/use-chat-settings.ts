@@ -124,7 +124,8 @@ function normalizeChatSettings(value: unknown): ChatSettings {
     : isThemeMode(legacyTheme)
       ? legacyTheme
       : DEFAULT_CHAT_SETTINGS.themeMode
-  const themePalette = normalizedThemePalette ?? DEFAULT_CHAT_SETTINGS.themePalette
+  const themePalette =
+    normalizedThemePalette ?? DEFAULT_CHAT_SETTINGS.themePalette
 
   return {
     showToolMessages: booleanOrDefault(
@@ -145,7 +146,10 @@ function normalizeChatSettings(value: unknown): ChatSettings {
     ),
     themeMode,
     themePalette,
-    wideMode: booleanOrDefault(record?.wideMode, DEFAULT_CHAT_SETTINGS.wideMode),
+    wideMode: booleanOrDefault(
+      record?.wideMode,
+      DEFAULT_CHAT_SETTINGS.wideMode,
+    ),
   }
 }
 
@@ -164,11 +168,11 @@ export function applyThemeSettingsToDocument(settings: {
 }) {
   if (typeof document === 'undefined') return
   const root = document.documentElement
-  root.classList.remove(
-    ...THEME_MODE_CLASS_NAMES,
-    ...THEME_PALETTE_CLASS_NAMES,
+  root.classList.remove(...THEME_MODE_CLASS_NAMES, ...THEME_PALETTE_CLASS_NAMES)
+  root.classList.add(
+    settings.themeMode,
+    themePaletteClassName(settings.themePalette),
   )
-  root.classList.add(settings.themeMode, themePaletteClassName(settings.themePalette))
   if (
     settings.themeMode === 'system' &&
     typeof window !== 'undefined' &&
@@ -220,7 +224,7 @@ export const useChatSettingsStore = create<ChatSettingsState>()(
       migrate: (persistedState) => {
         const state = objectRecord(persistedState)
         return {
-          ...(state ?? {}),
+          ...state,
           settings: normalizeChatSettings(state?.settings),
         }
       },

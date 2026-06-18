@@ -54,10 +54,7 @@ export function ConversationNavigator({
 
     const halfWindow = Math.floor(MAX_VISIBLE_TURNS / 2)
     const maxStart = Math.max(0, turns.length - MAX_VISIBLE_TURNS)
-    const start = Math.min(
-      maxStart,
-      Math.max(0, activeIndex - halfWindow),
-    )
+    const start = Math.min(maxStart, Math.max(0, activeIndex - halfWindow))
 
     return turns.slice(start, start + MAX_VISIBLE_TURNS)
   }, [activeTurnId, turns])

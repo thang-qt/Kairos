@@ -594,7 +594,7 @@ export function ModelMetadataPanel() {
                 </div>
               ) : (
                 filteredModels.map(function renderModel(model) {
-                  const isActive = model.id === activeModel.id
+                  const isActive = model.id === activeModel?.id
                   return (
                     <button
                       key={model.id}

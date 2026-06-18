@@ -414,7 +414,7 @@ export function ProviderSettingsPanel() {
                   <Input
                     placeholder="Base URL"
                     value={draft.baseURL}
-                    disabled={!capabilities.canAddCustomBaseUrl}
+                    disabled={!capabilities?.canAddCustomBaseUrl}
                     onChange={function handleChange(event) {
                       updateDraft('baseURL', event.target.value)
                     }}

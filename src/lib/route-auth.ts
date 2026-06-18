@@ -1,10 +1,7 @@
 import { redirect } from '@tanstack/react-router'
 import type { QueryClient } from '@tanstack/react-query'
 
-import {
-  getCurrentUserQueryOptions,
-  isUnauthorizedError,
-} from '@/lib/app-api'
+import { getCurrentUserQueryOptions, isUnauthorizedError } from '@/lib/app-api'
 
 type RouteAuthContext = {
   queryClient: QueryClient

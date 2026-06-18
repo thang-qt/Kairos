@@ -21,7 +21,11 @@
       media="(prefers-color-scheme: dark)"
       data-theme-color-mode="dark"
     />
-    <meta name="theme-color" content="#f5f4ef" data-theme-color-mode="current" />
+    <meta
+      name="theme-color"
+      content="#f5f4ef"
+      data-theme-color-mode="current"
+    />
     <meta property="og:image" content="/cover.jpg" />
     <meta property="og:image:type" content="image/jpeg" />
     <meta name="twitter:card" content="summary_large_image" />
@@ -64,7 +68,8 @@
               const settings = parsed?.state?.settings
               const storedThemeMode = settings?.themeMode ?? settings?.theme
               const storedThemePalette =
-                legacyPaletteMap[settings?.themePalette] ?? settings?.themePalette
+                legacyPaletteMap[settings?.themePalette] ??
+                settings?.themePalette
               if (themeModes.includes(storedThemeMode)) {
                 themeMode = storedThemeMode
               }
@@ -79,7 +84,12 @@
           const media = window.matchMedia('(prefers-color-scheme: dark)')
           const apply = () => {
             const { themeMode, themePalette } = readSettings()
-            root.classList.remove('light', 'dark', 'system', ...paletteClassNames)
+            root.classList.remove(
+              'light',
+              'dark',
+              'system',
+              ...paletteClassNames,
+            )
             root.classList.add(themeMode, 'theme-' + themePalette)
             if (themeMode === 'system' && media.matches) {
               root.classList.add('dark')
@@ -92,8 +102,12 @@
             const lightSurface = styles
               .getPropertyValue('--theme-light-surface')
               .trim()
-            const darkSurface = styles.getPropertyValue('--theme-dark-surface').trim()
-            const currentSurface = styles.getPropertyValue('--theme-surface').trim()
+            const darkSurface = styles
+              .getPropertyValue('--theme-dark-surface')
+              .trim()
+            const currentSurface = styles
+              .getPropertyValue('--theme-surface')
+              .trim()
 
             document
               .querySelector('[data-theme-color-mode="light"]')

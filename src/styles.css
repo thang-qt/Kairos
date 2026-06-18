@@ -135,16 +135,8 @@
   --theme-light-primary-950: #34271f;
   --theme-light-surface: #fbf1de;
   --theme-light-ink: #34271f;
-  --theme-light-atmosphere-glow: color-mix(
-    in oklab,
-    #e0a94e 30%,
-    transparent
-  );
-  --theme-light-atmosphere-grid: color-mix(
-    in oklab,
-    #73543a 18%,
-    transparent
-  );
+  --theme-light-atmosphere-glow: color-mix(in oklab, #e0a94e 30%, transparent);
+  --theme-light-atmosphere-grid: color-mix(in oklab, #73543a 18%, transparent);
   --theme-light-atmosphere-stripe-soft: color-mix(
     in oklab,
     #c98a33 34%,
@@ -169,16 +161,8 @@
   --theme-dark-primary-950: #f6ead5;
   --theme-dark-surface: #241b18;
   --theme-dark-ink: #ebd3b0;
-  --theme-dark-atmosphere-glow: color-mix(
-    in oklab,
-    #d89238 36%,
-    transparent
-  );
-  --theme-dark-atmosphere-grid: color-mix(
-    in oklab,
-    #ebd3b0 14%,
-    transparent
-  );
+  --theme-dark-atmosphere-glow: color-mix(in oklab, #d89238 36%, transparent);
+  --theme-dark-atmosphere-grid: color-mix(in oklab, #ebd3b0 14%, transparent);
   --theme-dark-atmosphere-stripe-soft: color-mix(
     in oklab,
     #c47d2d 42%,
@@ -205,16 +189,8 @@
   --theme-light-primary-950: #2e3747;
   --theme-light-surface: #f3f6fb;
   --theme-light-ink: #2e3747;
-  --theme-light-atmosphere-glow: color-mix(
-    in oklab,
-    #93b2f0 34%,
-    transparent
-  );
-  --theme-light-atmosphere-grid: color-mix(
-    in oklab,
-    #5e708d 16%,
-    transparent
-  );
+  --theme-light-atmosphere-glow: color-mix(in oklab, #93b2f0 34%, transparent);
+  --theme-light-atmosphere-grid: color-mix(in oklab, #5e708d 16%, transparent);
   --theme-light-atmosphere-stripe-soft: color-mix(
     in oklab,
     #76a2ec 34%,
@@ -239,16 +215,8 @@
   --theme-dark-primary-950: #ebf1fb;
   --theme-dark-surface: #111720;
   --theme-dark-ink: #d4def0;
-  --theme-dark-atmosphere-glow: color-mix(
-    in oklab,
-    #729ae6 30%,
-    transparent
-  );
-  --theme-dark-atmosphere-grid: color-mix(
-    in oklab,
-    #d4def0 14%,
-    transparent
-  );
+  --theme-dark-atmosphere-glow: color-mix(in oklab, #729ae6 30%, transparent);
+  --theme-dark-atmosphere-grid: color-mix(in oklab, #d4def0 14%, transparent);
   --theme-dark-atmosphere-stripe-soft: color-mix(
     in oklab,
     #69a0f2 36%,
@@ -275,16 +243,8 @@
   --theme-light-primary-950: #31352b;
   --theme-light-surface: #f1f0e3;
   --theme-light-ink: #31352b;
-  --theme-light-atmosphere-glow: color-mix(
-    in oklab,
-    #95b476 30%,
-    transparent
-  );
-  --theme-light-atmosphere-grid: color-mix(
-    in oklab,
-    #5f6950 17%,
-    transparent
-  );
+  --theme-light-atmosphere-glow: color-mix(in oklab, #95b476 30%, transparent);
+  --theme-light-atmosphere-grid: color-mix(in oklab, #5f6950 17%, transparent);
   --theme-light-atmosphere-stripe-soft: color-mix(
     in oklab,
     #7ca86b 34%,
@@ -309,16 +269,8 @@
   --theme-dark-primary-950: #edf0e3;
   --theme-dark-surface: #18201c;
   --theme-dark-ink: #dde1cf;
-  --theme-dark-atmosphere-glow: color-mix(
-    in oklab,
-    #78a88b 28%,
-    transparent
-  );
-  --theme-dark-atmosphere-grid: color-mix(
-    in oklab,
-    #dde1cf 14%,
-    transparent
-  );
+  --theme-dark-atmosphere-glow: color-mix(in oklab, #78a88b 28%, transparent);
+  --theme-dark-atmosphere-grid: color-mix(in oklab, #dde1cf 14%, transparent);
   --theme-dark-atmosphere-stripe-soft: color-mix(
     in oklab,
     #7fb87f 34%,
@@ -345,16 +297,8 @@
   --theme-light-primary-950: #381f20;
   --theme-light-surface: #fbefea;
   --theme-light-ink: #381f20;
-  --theme-light-atmosphere-glow: color-mix(
-    in oklab,
-    #df7f56 30%,
-    transparent
-  );
-  --theme-light-atmosphere-grid: color-mix(
-    in oklab,
-    #794238 18%,
-    transparent
-  );
+  --theme-light-atmosphere-glow: color-mix(in oklab, #df7f56 30%, transparent);
+  --theme-light-atmosphere-grid: color-mix(in oklab, #794238 18%, transparent);
   --theme-light-atmosphere-stripe-soft: color-mix(
     in oklab,
     #d06d46 34%,
@@ -379,16 +323,8 @@
   --theme-dark-primary-950: #faece7;
   --theme-dark-surface: #1d1216;
   --theme-dark-ink: #f0d1c3;
-  --theme-dark-atmosphere-glow: color-mix(
-    in oklab,
-    #d97150 30%,
-    transparent
-  );
-  --theme-dark-atmosphere-grid: color-mix(
-    in oklab,
-    #f0d1c3 13%,
-    transparent
-  );
+  --theme-dark-atmosphere-glow: color-mix(in oklab, #d97150 30%, transparent);
+  --theme-dark-atmosphere-grid: color-mix(in oklab, #f0d1c3 13%, transparent);
   --theme-dark-atmosphere-stripe-soft: color-mix(
     in oklab,
     #cf6645 36%,
@@ -415,16 +351,8 @@
   --theme-light-primary-950: #1d2b31;
   --theme-light-surface: #eef5f7;
   --theme-light-ink: #1d2b31;
-  --theme-light-atmosphere-glow: color-mix(
-    in oklab,
-    #67b2c8 28%,
-    transparent
-  );
-  --theme-light-atmosphere-grid: color-mix(
-    in oklab,
-    #405c69 17%,
-    transparent
-  );
+  --theme-light-atmosphere-glow: color-mix(in oklab, #67b2c8 28%, transparent);
+  --theme-light-atmosphere-grid: color-mix(in oklab, #405c69 17%, transparent);
   --theme-light-atmosphere-stripe-soft: color-mix(
     in oklab,
     #5a9fb6 34%,
@@ -449,16 +377,8 @@
   --theme-dark-primary-950: #eff7f9;
   --theme-dark-surface: #111a1f;
   --theme-dark-ink: #d9e9ed;
-  --theme-dark-atmosphere-glow: color-mix(
-    in oklab,
-    #5ca8c0 28%,
-    transparent
-  );
-  --theme-dark-atmosphere-grid: color-mix(
-    in oklab,
-    #d9e9ed 13%,
-    transparent
-  );
+  --theme-dark-atmosphere-glow: color-mix(in oklab, #5ca8c0 28%, transparent);
+  --theme-dark-atmosphere-grid: color-mix(in oklab, #d9e9ed 13%, transparent);
   --theme-dark-atmosphere-stripe-soft: color-mix(
     in oklab,
     #5babc4 36%,
@@ -533,7 +453,9 @@
     --theme-atmosphere-glow: var(--theme-dark-atmosphere-glow);
     --theme-atmosphere-grid: var(--theme-dark-atmosphere-grid);
     --theme-atmosphere-stripe-soft: var(--theme-dark-atmosphere-stripe-soft);
-    --theme-atmosphere-stripe-strong: var(--theme-dark-atmosphere-stripe-strong);
+    --theme-atmosphere-stripe-strong: var(
+      --theme-dark-atmosphere-stripe-strong
+    );
   }
 }
 

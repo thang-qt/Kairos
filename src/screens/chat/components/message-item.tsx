@@ -537,9 +537,7 @@ function MessageItemComponent({
           align="end"
           forceVisible={forceActionsVisible && !editing}
           onClone={
-            onClone && messageId
-              ? () => onClone(message, text)
-              : undefined
+            onClone && messageId ? () => onClone(message, text) : undefined
           }
           onEdit={onEdit && messageId && !editing ? handleStartEdit : undefined}
           onDelete={

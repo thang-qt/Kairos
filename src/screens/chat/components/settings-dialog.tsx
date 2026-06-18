@@ -1,8 +1,6 @@
 import { useState } from 'react'
 import { HugeiconsIcon } from '@hugeicons/react'
-import {
-  Cancel01Icon,
-} from '@hugeicons/core-free-icons'
+import { Cancel01Icon } from '@hugeicons/core-free-icons'
 import { ProviderSettingsPanel } from './provider-settings-panel'
 import {
   DialogClose,

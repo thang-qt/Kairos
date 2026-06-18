@@ -49,13 +49,7 @@ function SettingsCard({ title, description, children }: SettingsCardProps) {
   )
 }
 
-function FieldLabel({
-  htmlFor,
-  label,
-}: {
-  htmlFor: string
-  label: string
-}) {
+function FieldLabel({ htmlFor, label }: { htmlFor: string; label: string }) {
   return (
     <label htmlFor={htmlFor} className="text-sm text-primary-900">
       {label}
@@ -217,7 +211,9 @@ export function AccountSettingsPanel() {
                 autoComplete="email"
                 placeholder={currentEmail || 'name@example.com'}
                 value={nextEmail}
-                onChange={function handleChange(event: ChangeEvent<HTMLInputElement>) {
+                onChange={function handleChange(
+                  event: ChangeEvent<HTMLInputElement>,
+                ) {
                   setNextEmail(readInputValue(event))
                 }}
               />
@@ -233,7 +229,9 @@ export function AccountSettingsPanel() {
                 type="password"
                 autoComplete="current-password"
                 value={emailPassword}
-                onChange={function handleChange(event: ChangeEvent<HTMLInputElement>) {
+                onChange={function handleChange(
+                  event: ChangeEvent<HTMLInputElement>,
+                ) {
                   setEmailPassword(readInputValue(event))
                 }}
               />
@@ -292,17 +290,16 @@ export function AccountSettingsPanel() {
         >
           <div className="grid gap-3 sm:grid-cols-3">
             <div className="space-y-1.5">
-              <FieldLabel
-                htmlFor="current-password"
-                label="Current password"
-              />
+              <FieldLabel htmlFor="current-password" label="Current password" />
               <Input
                 id="current-password"
                 nativeInput
                 type="password"
                 autoComplete="current-password"
                 value={currentPassword}
-                onChange={function handleChange(event: ChangeEvent<HTMLInputElement>) {
+                onChange={function handleChange(
+                  event: ChangeEvent<HTMLInputElement>,
+                ) {
                   setCurrentPassword(readInputValue(event))
                 }}
               />
@@ -315,7 +312,9 @@ export function AccountSettingsPanel() {
                 type="password"
                 autoComplete="new-password"
                 value={newPassword}
-                onChange={function handleChange(event: ChangeEvent<HTMLInputElement>) {
+                onChange={function handleChange(
+                  event: ChangeEvent<HTMLInputElement>,
+                ) {
                   setNewPassword(readInputValue(event))
                 }}
               />
@@ -331,7 +330,9 @@ export function AccountSettingsPanel() {
                 type="password"
                 autoComplete="new-password"
                 value={confirmPassword}
-                onChange={function handleChange(event: ChangeEvent<HTMLInputElement>) {
+                onChange={function handleChange(
+                  event: ChangeEvent<HTMLInputElement>,
+                ) {
                   setConfirmPassword(readInputValue(event))
                 }}
               />

@@ -801,7 +801,9 @@ export function ChatScreen({
           ? (payload.message as { id: string }).id
           : ''
       const isUserTurn = payload.message.role === 'user'
-      const cloneAtMessageId = isUserTurn ? payload.previousMessageId : messageId
+      const cloneAtMessageId = isUserTurn
+        ? payload.previousMessageId
+        : messageId
 
       if (isUserTurn && !cloneAtMessageId) {
         stashCloneComposerDraft('new', payload.currentText)

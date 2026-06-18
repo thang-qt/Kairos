@@ -38,20 +38,20 @@ export function usePinSession(): PinSessionResult {
         chatQueryKeys.sessions,
         function update(sessions: unknown) {
           if (!Array.isArray(sessions)) return sessions
-          return (sessions as Array<SessionMeta>).map(function mapSession(
-            session,
-          ) {
-            if (
-              session.key !== payload.sessionKey &&
-              session.friendlyId !== payload.friendlyId
-            ) {
-              return session
-            }
-            return {
-              ...session,
-              isPinned: payload.isPinned,
-            }
-          })
+          return (sessions as Array<SessionMeta>).map(
+            function mapSession(session) {
+              if (
+                session.key !== payload.sessionKey &&
+                session.friendlyId !== payload.friendlyId
+              ) {
+                return session
+              }
+              return {
+                ...session,
+                isPinned: payload.isPinned,
+              }
+            },
+          )
         },
       )
 

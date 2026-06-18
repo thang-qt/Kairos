@@ -1,20 +1,14 @@
 import { HugeiconsIcon } from '@hugeicons/react'
-import {
-  ComputerIcon,
-  Moon01Icon,
-  Sun01Icon,
-} from '@hugeicons/core-free-icons'
-import type { ComponentType } from 'react'
-import type {ThemeMode, ThemePalette} from '@/hooks/use-chat-settings';
+import { ComputerIcon, Moon01Icon, Sun01Icon } from '@hugeicons/core-free-icons'
+import type { IconSvgElement } from '@hugeicons/react'
+import type { ThemeMode, ThemePalette } from '@/hooks/use-chat-settings'
 import { Switch } from '@/components/ui/switch'
 import { Tabs, TabsList, TabsTab } from '@/components/ui/tabs'
 import {
   THEME_PALETTE_OPTIONS,
-  
-  
   themePaletteClassName,
   useChatSettings,
-  useResolvedTheme
+  useResolvedTheme,
 } from '@/hooks/use-chat-settings'
 import { cn } from '@/lib/utils'
 
@@ -36,7 +30,7 @@ const THEME_MODE_OPTIONS = [
 ] as const satisfies Array<{
   value: ThemeMode
   label: string
-  icon: ComponentType<any>
+  icon: IconSvgElement
 }>
 
 function SettingCard({ label, description, children }: SettingCardProps) {
@@ -99,11 +93,7 @@ export function AppearanceSettingsControls() {
           >
             {THEME_MODE_OPTIONS.map((option) => (
               <TabsTab key={option.value} value={option.value}>
-                <HugeiconsIcon
-                  icon={option.icon}
-                  size={20}
-                  strokeWidth={1.5}
-                />
+                <HugeiconsIcon icon={option.icon} size={20} strokeWidth={1.5} />
                 <span>{option.label}</span>
               </TabsTab>
             ))}

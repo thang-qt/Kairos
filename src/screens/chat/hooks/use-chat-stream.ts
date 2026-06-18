@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useEffectEvent, useRef } from 'react'
 
-import { getMessageTimestamp, textFromMessage } from '../utils'
 import {
   updateHistoryMessages,
   updateSessionLastMessage,

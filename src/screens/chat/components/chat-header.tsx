@@ -1,9 +1,6 @@
 import { memo } from 'react'
 import { HugeiconsIcon } from '@hugeicons/react'
-import {
-  MoreVerticalIcon,
-  SidebarLeft01Icon,
-} from '@hugeicons/core-free-icons'
+import { MoreVerticalIcon, SidebarLeft01Icon } from '@hugeicons/core-free-icons'
 import { ContextMeter } from './context-meter'
 import { ChatModelSelector } from './chat-model-selector'
 import type { ProviderModel } from '@/lib/app-api'

@@ -17,7 +17,8 @@ export const Route = createFileRoute('/settings')({
   },
   validateSearch: function validateSearch(search: Record<string, unknown>) {
     const tab =
-      typeof search.tab === 'string' && SETTINGS_TABS.has(search.tab as SettingsTab)
+      typeof search.tab === 'string' &&
+      SETTINGS_TABS.has(search.tab as SettingsTab)
         ? (search.tab as SettingsTab)
         : 'account'
     return { tab }
@@ -27,7 +28,7 @@ export const Route = createFileRoute('/settings')({
 
 function SettingsRoute() {
   const navigate = useNavigate()
-  const search = Route.useSearch()
+  const search = Route.useSearch() as { tab: SettingsTab }
 
   return (
     <SettingsScreen

@@ -29,7 +29,9 @@ function textFromNode(node: ReactNode): string {
   return ''
 }
 
-function codePropsFromPreChildren(children: ReactNode): ComponentProps<'code'> | null {
+function codePropsFromPreChildren(
+  children: ReactNode,
+): ComponentProps<'code'> | null {
   const child = Children.toArray(children)[0]
   if (!isValidElement<ComponentProps<'code'>>(child)) return null
   return child.props

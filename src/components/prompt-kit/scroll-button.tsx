@@ -15,12 +15,7 @@ export type ScrollButtonProps = {
   size?: VariantProps<typeof buttonVariants>['size']
 } & React.ButtonHTMLAttributes<HTMLButtonElement>
 
-function ScrollButton({
-  className,
-  variant = 'outline',
-  scrollRef,
-  ...props
-}: ScrollButtonProps) {
+function ScrollButton({ className, scrollRef, ...props }: ScrollButtonProps) {
   const [isAtBottom, setIsAtBottom] = useState(true)
   const [showButton, setShowButton] = useState(false)
   const lastScrollTopRef = useRef(0)

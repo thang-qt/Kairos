@@ -10,9 +10,22 @@ Kairos lives at the repository root and is built with React + TanStack Router + 
 - `pnpm build` — Build for production
 - `pnpm preview` — Preview production build
 - `pnpm test` — Run tests
-- `pnpm lint` — Run ESLint
-- `pnpm format` — Run Prettier
-- `pnpm check` — Format and lint fix
+- `pnpm lint` — Run Oxlint
+- `pnpm lint:fix` — Run Oxlint with safe fixes
+- `pnpm format` — Format files with Oxfmt
+- `pnpm format:check` — Check formatting with Oxfmt
+- `pnpm typecheck` — Run TypeScript without emitting files
+- `pnpm check` — Run frontend format check, lint, typecheck, and tests
+- `pnpm backend:format` — Format Go backend files with gofmt
+- `pnpm backend:format:check` — Check Go backend formatting
+- `pnpm backend:vet` — Run Go vet
+- `pnpm backend:test` — Run Go tests
+- `pnpm backend:check` — Run Go backend format check, vet, and tests
+
+## Verification
+
+- After every task that changes code, MUST run `pnpm check` before reporting completion.
+- For backend Go changes, also run `pnpm backend:check` when the local Go toolchain supports it. If it fails because of an environment/toolchain issue, report the exact failure.
 
 ## Conventions
 

@@ -28,8 +28,8 @@ export function BackendStatusMessage({
           description
         ) : (
           <>
-            The current chat backend did not respond. Retry the request or
-            check service availability.
+            The current chat backend did not respond. Retry the request or check
+            service availability.
           </>
         )
       }

@@ -142,7 +142,9 @@ function ChatMessageListComponent({
     for (const message of messages) {
       if (message.role === 'toolResult' && showToolMessages) {
         const toolCallId =
-          typeof message.toolCallId === 'string' ? message.toolCallId.trim() : ''
+          typeof message.toolCallId === 'string'
+            ? message.toolCallId.trim()
+            : ''
         if (toolCallId && linkedToolCallIds.has(toolCallId)) {
           continue
         }
@@ -156,7 +158,9 @@ function ChatMessageListComponent({
         activeIds.add(messageId)
         getOrCreateUserTurnRef(messageId)
         if (showConversationNavigator) {
-          const previewText = textFromMessage(message).replace(/\s+/g, ' ').trim()
+          const previewText = textFromMessage(message)
+            .replace(/\s+/g, ' ')
+            .trim()
           nextConversationTurns.push({
             id: messageId,
             preview: previewText || 'Attachment',
@@ -169,7 +173,7 @@ function ChatMessageListComponent({
       nextLastAssistantIndex = index
     }
 
-    for (const existingId of [...userTurnRefsRef.current.keys()]) {
+    for (const existingId of userTurnRefsRef.current.keys()) {
       if (activeIds.has(existingId)) continue
       userTurnRefsRef.current.delete(existingId)
     }
@@ -242,7 +246,10 @@ function ChatMessageListComponent({
       })
     }
 
-    function scrollNodeToViewportStart(node: HTMLElement, offset: number) {
+    const scrollNodeToViewportStart = function scrollNodeToViewportStart(
+      node: HTMLElement,
+      offset: number,
+    ) {
       const viewportRect = viewport.getBoundingClientRect()
       const nodeRect = node.getBoundingClientRect()
       viewport.scrollTop += nodeRect.top - viewportRect.top - offset
@@ -277,7 +284,10 @@ function ChatMessageListComponent({
     prevPinRef.current = false
     prevUserIndexRef.current = lastUserIndex
     scheduleScroll(function scrollToBottom() {
-      viewport.scrollTop = Math.max(0, viewport.scrollHeight - viewport.clientHeight)
+      viewport.scrollTop = Math.max(
+        0,
+        viewport.scrollHeight - viewport.clientHeight,
+      )
     })
     return function cleanupScrollFrames() {
       window.cancelAnimationFrame(firstFrame)
@@ -318,7 +328,7 @@ function ChatMessageListComponent({
     const previousMessage = findPreviousClonePoint(displayMessages, index)
     const previousMessageId =
       typeof (previousMessage as { id?: unknown } | undefined)?.id === 'string'
-        ? ((previousMessage as { id: string }).id)
+        ? (previousMessage as { id: string }).id
         : undefined
 
     function handleClone(message: GatewayMessage, currentText: string) {
@@ -343,9 +353,11 @@ function ChatMessageListComponent({
   }
 
   const renderedMessages = useMemo(() => {
-    const flat = displayMessages.map(function renderFlatMessage(chatMessage, index) {
-      return renderMessage(chatMessage, index)
-    })
+    const flat = displayMessages.map(
+      function renderFlatMessage(chatMessage, index) {
+        return renderMessage(chatMessage, index)
+      },
+    )
 
     if (!hasGroup) {
       return {
@@ -392,9 +404,8 @@ function ChatMessageListComponent({
 
   const pinnedEndNotice =
     hasGroup && notice && noticePosition === 'end' ? notice : null
-  const trailingNotice = !hasGroup && notice && noticePosition === 'end'
-    ? notice
-    : null
+  const trailingNotice =
+    !hasGroup && notice && noticePosition === 'end' ? notice : null
 
   return (
     <ChatContainerRoot

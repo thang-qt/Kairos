@@ -112,9 +112,8 @@ export function resolveConversationModelID(
   models: Array<ProviderModel>,
   defaultModelID?: string,
 ) {
-  const normalizedPreferredModelID = normalizeConversationStringValue(
-    preferredModelID,
-  )
+  const normalizedPreferredModelID =
+    normalizeConversationStringValue(preferredModelID)
   if (
     normalizedPreferredModelID &&
     models.some((model) => model.id === normalizedPreferredModelID)
@@ -122,9 +121,8 @@ export function resolveConversationModelID(
     return normalizedPreferredModelID
   }
 
-  const normalizedDefaultModelID = normalizeConversationStringValue(
-    defaultModelID,
-  )
+  const normalizedDefaultModelID =
+    normalizeConversationStringValue(defaultModelID)
   if (
     normalizedDefaultModelID &&
     models.some((model) => model.id === normalizedDefaultModelID)

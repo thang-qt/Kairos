@@ -400,9 +400,9 @@ function RightSidebarComponent({
           </div>
 
           <SidebarBody
-          activeTab={activeTab}
-          activeSession={activeSession}
-          canSelectModel={canSelectModel}
+            activeTab={activeTab}
+            activeSession={activeSession}
+            canSelectModel={canSelectModel}
             defaultModelId={defaultModelId}
             defaultModelLocked={defaultModelLocked}
             exportDisabled={exportDisabled}
@@ -411,8 +411,8 @@ function RightSidebarComponent({
             modelsLoading={modelsLoading}
             onExport={onExport}
             onModelSettingsChange={onModelSettingsChange}
-          selectedModelId={selectedModelId}
-        />
+            selectedModelId={selectedModelId}
+          />
         </motion.aside>
       ) : null}
     </AnimatePresence>

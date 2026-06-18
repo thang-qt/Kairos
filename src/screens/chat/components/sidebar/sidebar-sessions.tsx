@@ -82,20 +82,22 @@ export const SidebarSessions = memo(function SidebarSessions({
                 count={groupedSessions.pinned.length}
                 showCount={showSidebarSectionCounts}
               >
-                {groupedSessions.pinned.map(function renderPinnedSession(session) {
-                  return (
-                    <SessionItem
-                      key={session.key}
-                      session={session}
-                      active={session.friendlyId === activeFriendlyId}
-                      isPinned
-                      onSelect={onSelect}
-                      onTogglePin={handleTogglePin}
-                      onRename={onRename}
-                      onDelete={onDelete}
-                    />
-                  )
-                })}
+                {groupedSessions.pinned.map(
+                  function renderPinnedSession(session) {
+                    return (
+                      <SessionItem
+                        key={session.key}
+                        session={session}
+                        active={session.friendlyId === activeFriendlyId}
+                        isPinned
+                        onSelect={onSelect}
+                        onTogglePin={handleTogglePin}
+                        onRename={onRename}
+                        onDelete={onDelete}
+                      />
+                    )
+                  },
+                )}
               </SessionSection>
             ) : null}
 
@@ -174,10 +176,7 @@ function SessionSection({
   children: React.ReactNode
 }) {
   return (
-    <Collapsible
-      className="flex w-full flex-col"
-      defaultOpen={defaultOpen}
-    >
+    <Collapsible className="flex w-full flex-col" defaultOpen={defaultOpen}>
       <CollapsibleTrigger className="ml-0 flex h-8 w-full items-center justify-between rounded-lg pl-1.5 pr-1.5 text-left text-sm text-primary-700 hover:bg-primary-200">
         <span className="truncate">{label}</span>
         <span className="inline-flex items-center gap-1 text-primary-500 tabular-nums">

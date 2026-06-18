@@ -1,10 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { HugeiconsIcon } from '@hugeicons/react'
-import {
-  ArrowDown01Icon,
-  StarIcon,
-} from '@hugeicons/core-free-icons'
+import { ArrowDown01Icon, StarIcon } from '@hugeicons/core-free-icons'
 import type {
   ModelsPayload,
   ProviderModel,
@@ -60,11 +57,6 @@ function modelDisplayName(model?: ProviderModel) {
   if (!model) return 'Select a model'
   const normalizedName = model.name?.trim()
   return normalizedName || model.id
-}
-
-function modelSecondaryLabel(model?: ProviderModel) {
-  if (!model) return 'No model selected'
-  return model.providerLabel || model.owned_by || model.id
 }
 
 function modelMetaLine(model: ProviderModel) {
@@ -216,7 +208,9 @@ export function ChatModelSelector({
         )}
       >
         <span className="truncate text-sm">
-          {loading ? 'Loading models...' : modelDisplayName(selectedModel)}
+          {loading
+            ? 'Loading models...'
+            : modelDisplayName(selectedModel ?? undefined)}
         </span>
         <HugeiconsIcon
           icon={ArrowDown01Icon}
