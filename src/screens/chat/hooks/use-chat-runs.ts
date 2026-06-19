@@ -1,10 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
-import {
-  hasPendingGeneration,
-  hasPendingSend,
-  setPendingGeneration,
-} from '../pending-send'
+import { hasPendingGeneration, setPendingGeneration } from '../pending-send'
 import { useChatGenerationGuard } from './use-chat-generation-guard'
 
 type UseChatRunsInput = {
@@ -12,10 +8,11 @@ type UseChatRunsInput = {
 }
 
 export function useChatRuns({ refreshHistory }: UseChatRunsInput) {
-  const [waitingForResponse, setWaitingForResponse] = useState(
-    () => hasPendingSend() || hasPendingGeneration(),
+  const [waitingForResponse, setWaitingForResponse] = useState(() =>
+    hasPendingGeneration(),
   )
   const pendingRunIdsRef = useRef(new Set<string>())
+  const completedRunIdsRef = useRef(new Set<string>())
   const pendingRunTimersRef = useRef(new Map<string, number>())
 
   const beginGeneration = useCallback(function beginGeneration() {
@@ -31,6 +28,7 @@ export function useChatRuns({ refreshHistory }: UseChatRunsInput) {
   const finishRun = useCallback(
     function finishRun(runId: string) {
       if (!runId) return
+      completedRunIdsRef.current.add(runId)
       const timer = pendingRunTimersRef.current.get(runId)
       if (typeof timer === 'number') {
         window.clearTimeout(timer)
@@ -47,6 +45,12 @@ export function useChatRuns({ refreshHistory }: UseChatRunsInput) {
   const startRun = useCallback(
     function startRun(runId: string) {
       if (!runId) return
+      if (completedRunIdsRef.current.has(runId)) {
+        if (pendingRunIdsRef.current.size === 0) {
+          finishGeneration()
+        }
+        return
+      }
       pendingRunIdsRef.current.add(runId)
       const existingTimer = pendingRunTimersRef.current.get(runId)
       if (typeof existingTimer === 'number') {
@@ -73,6 +77,7 @@ export function useChatRuns({ refreshHistory }: UseChatRunsInput) {
       }
       pendingRunTimersRef.current.clear()
       pendingRunIdsRef.current.clear()
+      completedRunIdsRef.current.clear()
       finishGeneration()
     },
     [finishGeneration],

@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { chatQueryKeys } from '../chat-queries'
+import { chatQueryKeys, upsertSessionSummary } from '../chat-queries'
 import { getChatBackend } from '@/lib/chat-backend'
 
 export type RenameSessionResult = {
@@ -25,12 +25,12 @@ export function useRenameSession(): RenameSessionResult {
       newTitle: string
     }) {
       const backend = getChatBackend()
-      await backend.renameConversation({
+      const session = await backend.renameConversation({
         sessionKey: payload.sessionKey,
         friendlyId: payload.friendlyId,
         label: payload.newTitle,
       })
-      return payload
+      return session
     },
     onMutate: async function onMutate(payload) {
       setError(null)
@@ -66,8 +66,11 @@ export function useRenameSession(): RenameSessionResult {
       }
       setError(err instanceof Error ? err.message : String(err))
     },
-    onSuccess: function onSuccess() {
-      // Invalidate to ensure we have the latest data
+    onSuccess: function onSuccess(session) {
+      upsertSessionSummary(queryClient, {
+        ...session,
+        key: session.key || session.sessionKey,
+      })
       queryClient.invalidateQueries({ queryKey: chatQueryKeys.sessions })
     },
     onSettled: function onSettled() {

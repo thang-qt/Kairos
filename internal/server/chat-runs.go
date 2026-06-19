@@ -22,6 +22,7 @@ type SendMessageInput struct {
 	TopP            *float64            `json:"topP"`
 	MaxOutputTokens *int64              `json:"maxOutputTokens"`
 	IdempotencyKey  string              `json:"idempotencyKey"`
+	ClientID        string              `json:"clientId"`
 	Attachments     []AttachmentPayload `json:"attachments"`
 }
 
@@ -33,7 +34,9 @@ type AttachmentPayload struct {
 type SendMessageResult struct {
 	RunID              string `json:"runId"`
 	SessionKey         string `json:"sessionKey"`
+	UserMessageID      string `json:"userMessageId"`
 	AssistantMessageID string `json:"assistantMessageId"`
+	ClientID           string `json:"clientId,omitempty"`
 }
 
 type ChatEvent struct {
@@ -218,6 +221,7 @@ func (service *ChatRunService) StartRun(
 				RunID:              existingRun.ID,
 				SessionKey:         session.ID,
 				AssistantMessageID: existingRun.AssistantMessageID,
+				ClientID:           strings.TrimSpace(input.ClientID),
 			}, nil
 		}
 	}
@@ -239,7 +243,7 @@ func (service *ChatRunService) StartRun(
 		}
 	}
 
-	userMessage, _, err := buildUserMessage(input.Message, input.Attachments)
+	userMessage, _, err := buildUserMessage(input.Message, input.Attachments, input.ClientID)
 	if err != nil {
 		return SendMessageResult{}, err
 	}
@@ -295,6 +299,7 @@ func (service *ChatRunService) StartRun(
 					RunID:              existingRun.ID,
 					SessionKey:         session.ID,
 					AssistantMessageID: existingRun.AssistantMessageID,
+					ClientID:           strings.TrimSpace(input.ClientID),
 				}, nil
 			}
 		}
@@ -318,7 +323,9 @@ func (service *ChatRunService) StartRun(
 	return SendMessageResult{
 		RunID:              runID,
 		SessionKey:         session.ID,
+		UserMessageID:      stringValueFromMap(userMessage, "id"),
 		AssistantMessageID: assistantMessageID,
+		ClientID:           strings.TrimSpace(input.ClientID),
 	}, nil
 }
 
@@ -883,6 +890,7 @@ func (service *ChatRunService) unregisterRunCancel(record runRecord) {
 func buildUserMessage(
 	message string,
 	attachments []AttachmentPayload,
+	clientID string,
 ) (map[string]any, string, error) {
 	normalizedMessage := strings.TrimSpace(message)
 	if normalizedMessage == "" && len(attachments) == 0 {
@@ -910,11 +918,16 @@ func buildUserMessage(
 		})
 	}
 
-	return map[string]any{
+	userMessage := map[string]any{
 		"id":      newID(),
 		"role":    "user",
 		"content": content,
-	}, normalizedMessage, nil
+	}
+	if normalizedClientID := strings.TrimSpace(clientID); normalizedClientID != "" {
+		userMessage["clientId"] = normalizedClientID
+	}
+
+	return userMessage, normalizedMessage, nil
 }
 
 func normalizeModel(value string) string {

@@ -34,11 +34,22 @@ export type ChatSendMessageInput = {
   topP?: number
   maxOutputTokens?: number
   idempotencyKey?: string
+  clientId?: string
   attachments?: Array<ChatAttachmentPayload>
 }
 
 export type ChatCreateConversationInput = {
   label?: string
+  message?: string
+  model?: string
+  systemPrompt?: string
+  thinking?: string
+  temperature?: number
+  topP?: number
+  maxOutputTokens?: number
+  idempotencyKey?: string
+  clientId?: string
+  attachments?: Array<ChatAttachmentPayload>
 }
 
 export type ChatRenameConversationInput = {
@@ -91,12 +102,18 @@ export type ChatDeleteUserMessageInput = {
 export type ChatSendMessageResult = {
   runId: string
   sessionKey: string
+  userMessageId?: string
   assistantMessageId?: string
+  clientId?: string
 }
 
-export type ChatConversationResult = {
+export type ChatConversationResult = SessionMeta & {
   sessionKey: string
   friendlyId: string
+  runId?: string
+  userMessageId?: string
+  assistantMessageId?: string
+  clientId?: string
 }
 
 export type ChatConversationRunResult = ChatConversationResult & {

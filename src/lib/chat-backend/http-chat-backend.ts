@@ -15,7 +15,20 @@ type SessionsPayload = {
 
 type SessionMutationPayload = {
   sessionKey: string
+  key: string
   friendlyId: string
+  title?: string
+  derivedTitle?: string
+  label?: string
+  isPinned?: boolean
+  updatedAt?: number
+  lastMessage?: HistoryResponse['messages'][number] | null
+  totalTokens?: number
+  contextTokens?: number
+  runId?: string
+  userMessageId?: string
+  assistantMessageId?: string
+  clientId?: string
 }
 
 export function createHTTPChatBackend(): ChatBackend {
@@ -68,6 +81,16 @@ export function createHTTPChatBackend(): ChatBackend {
         },
         body: JSON.stringify({
           label: input?.label,
+          message: input?.message,
+          model: input?.model,
+          systemPrompt: input?.systemPrompt,
+          thinking: input?.thinking,
+          temperature: input?.temperature,
+          topP: input?.topP,
+          maxOutputTokens: input?.maxOutputTokens,
+          idempotencyKey: input?.idempotencyKey,
+          clientId: input?.clientId,
+          attachments: input?.attachments,
         }),
       })
       return parseJSON<SessionMutationPayload>(response)
@@ -142,6 +165,7 @@ export function createHTTPChatBackend(): ChatBackend {
             topP: input.topP,
             maxOutputTokens: input.maxOutputTokens,
             idempotencyKey: input.idempotencyKey,
+            clientId: input.clientId,
             attachments: input.attachments,
           }),
         },

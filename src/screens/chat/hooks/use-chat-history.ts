@@ -2,7 +2,6 @@ import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 
 import { chatQueryKeys, fetchHistory } from '../chat-queries'
-import { getMessageTimestamp, textFromMessage } from '../utils'
 import type { QueryClient } from '@tanstack/react-query'
 import type { GatewayMessage, HistoryResponse } from '../types'
 
@@ -208,22 +207,7 @@ function mergeOptimisticHistoryMessages(
       ) {
         return true
       }
-      if (
-        optimisticMessage.__optimisticId &&
-        serverMessage.__optimisticId &&
-        optimisticMessage.__optimisticId === serverMessage.__optimisticId
-      ) {
-        return true
-      }
-      if (optimisticMessage.role && serverMessage.role) {
-        if (optimisticMessage.role !== serverMessage.role) return false
-      }
-      const optimisticText = textFromMessage(optimisticMessage)
-      if (!optimisticText) return false
-      if (optimisticText !== textFromMessage(serverMessage)) return false
-      const optimisticTime = getMessageTimestamp(optimisticMessage)
-      const serverTime = getMessageTimestamp(serverMessage)
-      return Math.abs(optimisticTime - serverTime) <= 10000
+      return false
     })
 
     if (!hasMatch) {

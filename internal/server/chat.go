@@ -161,6 +161,18 @@ func (service *ChatService) CreateSession(
 	}, nil
 }
 
+func (service *ChatService) GetSessionSummary(
+	ctx context.Context,
+	userID string,
+	friendlyID string,
+) (SessionSummary, error) {
+	record, err := service.findSessionByFriendlyID(ctx, userID, friendlyID)
+	if err != nil {
+		return SessionSummary{}, err
+	}
+	return sessionRecordToSummary(record)
+}
+
 func (service *ChatService) PinSession(
 	ctx context.Context,
 	userID string,

@@ -2,7 +2,7 @@ import { useEffect } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 
 import { clearHistoryMessages } from '../chat-queries'
-import { resetPendingSend } from '../pending-send'
+import { resetPendingGeneration } from '../pending-send'
 import type { QueryClient } from '@tanstack/react-query'
 
 type UseChatRedirectInput = {
@@ -42,7 +42,7 @@ export function useChatRedirect({
     if (isNewChat) return
     if (!sessionsReady) return
     if (!shouldRedirectToNew) return
-    resetPendingSend()
+    resetPendingGeneration()
     clearHistoryMessages(queryClient, activeFriendlyId, sessionKeyForHistory)
     navigate({ to: '/new', replace: true })
   }, [

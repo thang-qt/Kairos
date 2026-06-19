@@ -8,10 +8,12 @@ import {
   appendHistoryMessage,
   chatQueryKeys,
   clearHistoryMessages,
+  moveHistoryMessages,
   fetchChatStatus,
   removeHistoryMessageByClientId,
   updateHistoryMessageByClientId,
   updateSessionLastMessage,
+  upsertSessionSummary,
 } from './chat-queries'
 import { chatUiQueryKey, getChatUiState, setChatUiState } from './chat-ui'
 import { ChatSidebar } from './components/chat-sidebar'
@@ -23,17 +25,14 @@ import { MessageStatus } from './components/message-status'
 import { UserTurnDeleteDialog } from './components/user-turn-delete-dialog'
 import {
   hasPendingGeneration,
-  hasPendingSend,
   isRecentSession,
   setRecentSession,
-  stashPendingSend,
 } from './pending-send'
 import { useChatMeasurements } from './hooks/use-chat-measurements'
 import { useChatHistory } from './hooks/use-chat-history'
 import { useChatMobile } from './hooks/use-chat-mobile'
 import { useChatSessions } from './hooks/use-chat-sessions'
 import { useChatStream } from './hooks/use-chat-stream'
-import { useChatPendingSend } from './hooks/use-chat-pending-send'
 import { useChatRedirect } from './hooks/use-chat-redirect'
 import { useChatRuns } from './hooks/use-chat-runs'
 import {
@@ -100,9 +99,7 @@ export function ChatScreen({
     useState<UserTurnDeleteState>(null)
   const { headerRef, composerRef, mainRef, pinGroupMinHeight, headerHeight } =
     useChatMeasurements()
-  const [pinToTop, setPinToTop] = useState(
-    () => hasPendingSend() || hasPendingGeneration(),
-  )
+  const [pinToTop, setPinToTop] = useState(() => hasPendingGeneration())
   const { settings } = useChatSettings()
   const {
     settings: conversationSettings,
@@ -288,6 +285,7 @@ export function ChatScreen({
       topPOverride?: number,
       maxOutputTokensOverride?: number,
       attachments?: Array<AttachmentFile>,
+      clientIdOverride?: string,
     ) {
       let optimisticClientId = ''
       if (!skipOptimistic) {
@@ -341,6 +339,8 @@ export function ChatScreen({
         maxOutputTokensOverride !== undefined
           ? maxOutputTokensOverride
           : resolvedMaxOutputTokens
+      const idempotencyKey =
+        clientIdOverride || optimisticClientId || randomUUID()
       void backend
         .sendMessage({
           sessionKey,
@@ -352,7 +352,8 @@ export function ChatScreen({
           temperature,
           topP,
           maxOutputTokens,
-          idempotencyKey: randomUUID(),
+          idempotencyKey,
+          clientId: clientIdOverride || optimisticClientId || undefined,
           attachments: attachmentsPayload,
         })
         .then((payload) => {
@@ -405,21 +406,6 @@ export function ChatScreen({
     ],
   )
 
-  const createSessionForMessage = useCallback(async () => {
-    setCreatingSession(true)
-    try {
-      const backend = getChatBackend()
-      const { sessionKey, friendlyId } = await backend.createConversation()
-      if (!sessionKey || !friendlyId) {
-        throw new Error('Invalid conversation response')
-      }
-      void queryClient.invalidateQueries({ queryKey: chatQueryKeys.sessions })
-      return { sessionKey, friendlyId }
-    } finally {
-      setCreatingSession(false)
-    }
-  }, [queryClient])
-
   const send = useCallback(
     function send(body: string, helpers: ChatComposerHelpers) {
       const attachments = helpers.attachments
@@ -437,26 +423,66 @@ export function ChatScreen({
         appendHistoryMessage(queryClient, 'new', 'new', optimisticMessage)
         beginGeneration()
         setSending(true)
+        setCreatingSession(true)
         setStreamError(null)
         setPinToTop(true)
 
-        createSessionForMessage()
-          .then(({ sessionKey, friendlyId }) => {
+        const attachmentsPayload = attachments
+          ?.filter((attachment) => Boolean(attachment.base64))
+          .map((attachment) => ({
+            mimeType: attachment.file.type,
+            content: attachment.base64 as string,
+          }))
+
+        getChatBackend()
+          .createConversation({
+            message: body,
+            model: resolvedConversationModel,
+            systemPrompt: resolvedSystemPrompt,
+            thinking: resolvedThinkingLevel,
+            temperature: resolvedTemperature,
+            topP: resolvedTopP,
+            maxOutputTokens: resolvedMaxOutputTokens,
+            idempotencyKey: clientId,
+            clientId,
+            attachments: attachmentsPayload,
+          })
+          .then((result) => {
+            const sessionKey = result.sessionKey || result.key
+            const friendlyId = result.friendlyId
+            if (!sessionKey || !friendlyId) {
+              throw new Error('Invalid conversation response')
+            }
             copyConversationSettings(activeFriendlyId || 'new', friendlyId)
             setRecentSession(friendlyId)
-            stashPendingSend({
-              sessionKey,
+            upsertSessionSummary(queryClient, {
+              ...result,
+              key: sessionKey,
               friendlyId,
-              message: body,
-              model: resolvedConversationModel,
-              systemPrompt: resolvedSystemPrompt,
-              thinking: resolvedThinkingLevel,
-              temperature: resolvedTemperature,
-              topP: resolvedTopP,
-              maxOutputTokens: resolvedMaxOutputTokens,
-              optimisticMessage,
-              attachments,
             })
+            moveHistoryMessages(
+              queryClient,
+              'new',
+              'new',
+              friendlyId,
+              sessionKey,
+            )
+            updateHistoryMessageByClientId(
+              queryClient,
+              friendlyId,
+              sessionKey,
+              clientId,
+              function markSent(message) {
+                return {
+                  ...message,
+                  id: result.userMessageId || message.id,
+                  status: undefined,
+                }
+              },
+            )
+            if (result.runId) {
+              startRun(result.runId)
+            }
             if (onSessionResolved) {
               onSessionResolved({ sessionKey, friendlyId })
               return
@@ -478,7 +504,10 @@ export function ChatScreen({
             helpers.setValue(body)
             finishGeneration()
             setPinToTop(false)
+          })
+          .finally(() => {
             setSending(false)
+            setCreatingSession(false)
           })
         return
       }
@@ -505,7 +534,6 @@ export function ChatScreen({
     [
       activeFriendlyId,
       activeSessionKey,
-      createSessionForMessage,
       forcedSessionKey,
       hasAvailableModel,
       isNewChat,
@@ -721,18 +749,6 @@ export function ChatScreen({
     sessionKeyForHistory,
     queryClient,
     setIsRedirecting,
-  })
-
-  useChatPendingSend({
-    activeFriendlyId,
-    activeSessionKey,
-    forcedSessionKey,
-    isNewChat,
-    queryClient,
-    resolvedSessionKey,
-    setWaitingForResponse,
-    setPinToTop,
-    sendMessage,
   })
 
   function stashCloneComposerDraft(targetFriendlyId: string, value: string) {

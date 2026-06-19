@@ -5,7 +5,6 @@ import {
   clearHistoryMessages,
   removeSessionFromCache,
 } from '../chat-queries'
-import { clearPendingSendForSession, resetPendingSend } from '../pending-send'
 import { clearSessionDeleted, markSessionDeleted } from '../session-tombstones'
 import { getChatBackend } from '@/lib/chat-backend'
 
@@ -40,7 +39,6 @@ export function useDeleteSession(): DeleteSessionResult {
     onMutate: async function onMutate(payload) {
       setError(null)
       markSessionDeleted(payload.sessionKey || payload.friendlyId)
-      clearPendingSendForSession(payload.sessionKey, payload.friendlyId)
       await queryClient.cancelQueries({ queryKey: chatQueryKeys.sessions })
       const previousSessions = queryClient.getQueryData(chatQueryKeys.sessions)
       removeSessionFromCache(
@@ -67,10 +65,7 @@ export function useDeleteSession(): DeleteSessionResult {
       clearSessionDeleted(_payload.sessionKey || _payload.friendlyId)
       setError(err instanceof Error ? err.message : String(err))
     },
-    onSuccess: function onSuccess(payload) {
-      if (payload.isActive) {
-        resetPendingSend()
-      }
+    onSuccess: function onSuccess() {
       queryClient.invalidateQueries({ queryKey: chatQueryKeys.sessions })
     },
     onSettled: function onSettled() {

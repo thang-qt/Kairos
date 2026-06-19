@@ -67,7 +67,17 @@ type modelMutationResponse struct {
 }
 
 type createSessionRequest struct {
-	Label string `json:"label"`
+	Label           string              `json:"label"`
+	Message         string              `json:"message"`
+	Model           string              `json:"model"`
+	SystemPrompt    string              `json:"systemPrompt"`
+	Thinking        string              `json:"thinking"`
+	Temperature     *float64            `json:"temperature"`
+	TopP            *float64            `json:"topP"`
+	MaxOutputTokens *int64              `json:"maxOutputTokens"`
+	IdempotencyKey  string              `json:"idempotencyKey"`
+	ClientID        string              `json:"clientId"`
+	Attachments     []AttachmentPayload `json:"attachments"`
 }
 
 type providerMutationResponse struct {
@@ -87,6 +97,7 @@ type sendMessageRequest struct {
 	TopP            *float64            `json:"topP"`
 	MaxOutputTokens *int64              `json:"maxOutputTokens"`
 	IdempotencyKey  string              `json:"idempotencyKey"`
+	ClientID        string              `json:"clientId"`
 	Attachments     []AttachmentPayload `json:"attachments"`
 }
 
@@ -103,8 +114,12 @@ type syncModelsResponse struct {
 }
 
 type sessionMutationResponse struct {
-	SessionKey string `json:"sessionKey"`
-	FriendlyID string `json:"friendlyId"`
+	SessionSummary
+	SessionKey         string `json:"sessionKey"`
+	RunID              string `json:"runId,omitempty"`
+	UserMessageID      string `json:"userMessageId,omitempty"`
+	AssistantMessageID string `json:"assistantMessageId,omitempty"`
+	ClientID           string `json:"clientId,omitempty"`
 }
 
 type testConnectionRequest struct {
@@ -120,6 +135,13 @@ type testConnectionResponse struct {
 
 type errorResponse struct {
 	Error string `json:"error"`
+}
+
+func newSessionMutationResponse(session SessionSummary) sessionMutationResponse {
+	return sessionMutationResponse{
+		SessionSummary: session,
+		SessionKey:     session.Key,
+	}
 }
 
 func (app *App) handleHealth(writer http.ResponseWriter, request *http.Request) {
@@ -601,10 +623,46 @@ func (app *App) handleCreateSession(writer http.ResponseWriter, request *http.Re
 		return
 	}
 
-	writeJSON(writer, http.StatusCreated, sessionMutationResponse{
-		SessionKey: session.Key,
-		FriendlyID: session.FriendlyID,
-	})
+	response := newSessionMutationResponse(session)
+	if strings.TrimSpace(payload.Message) != "" || len(payload.Attachments) > 0 {
+		result, err := app.runs.StartRun(request.Context(), user.ID, SendMessageInput{
+			FriendlyID:      session.FriendlyID,
+			Message:         payload.Message,
+			Model:           payload.Model,
+			SystemPrompt:    payload.SystemPrompt,
+			Thinking:        payload.Thinking,
+			Temperature:     payload.Temperature,
+			TopP:            payload.TopP,
+			MaxOutputTokens: payload.MaxOutputTokens,
+			IdempotencyKey:  payload.IdempotencyKey,
+			ClientID:        payload.ClientID,
+			Attachments:     payload.Attachments,
+		})
+		if err != nil {
+			switch {
+			case errors.Is(err, errNoProviderAvailable),
+				errors.Is(err, errNoModelAvailable),
+				errors.Is(err, errModelNotAvailable):
+				writeError(writer, http.StatusBadRequest, err.Error())
+			default:
+				writeError(writer, http.StatusBadGateway, err.Error())
+			}
+			return
+		}
+		if updatedSession, err := app.chat.GetSessionSummary(
+			request.Context(),
+			user.ID,
+			session.FriendlyID,
+		); err == nil {
+			response = newSessionMutationResponse(updatedSession)
+		}
+		response.RunID = result.RunID
+		response.UserMessageID = result.UserMessageID
+		response.AssistantMessageID = result.AssistantMessageID
+		response.ClientID = result.ClientID
+	}
+
+	writeJSON(writer, http.StatusCreated, response)
 }
 
 func (app *App) handleRenameSession(writer http.ResponseWriter, request *http.Request) {
@@ -629,10 +687,7 @@ func (app *App) handleRenameSession(writer http.ResponseWriter, request *http.Re
 		return
 	}
 
-	writeJSON(writer, http.StatusOK, sessionMutationResponse{
-		SessionKey: session.Key,
-		FriendlyID: session.FriendlyID,
-	})
+	writeJSON(writer, http.StatusOK, newSessionMutationResponse(session))
 }
 
 func (app *App) handleDeleteSession(writer http.ResponseWriter, request *http.Request) {
@@ -724,6 +779,7 @@ func (app *App) handleSendMessage(writer http.ResponseWriter, request *http.Requ
 		TopP:            payload.TopP,
 		MaxOutputTokens: payload.MaxOutputTokens,
 		IdempotencyKey:  payload.IdempotencyKey,
+		ClientID:        payload.ClientID,
 		Attachments:     payload.Attachments,
 	})
 	if err != nil {
@@ -771,10 +827,7 @@ func (app *App) handleCloneSession(writer http.ResponseWriter, request *http.Req
 		return
 	}
 
-	writeJSON(writer, http.StatusOK, sessionMutationResponse{
-		SessionKey: session.Key,
-		FriendlyID: session.FriendlyID,
-	})
+	writeJSON(writer, http.StatusOK, newSessionMutationResponse(session))
 }
 
 func (app *App) handleEditUserMessage(writer http.ResponseWriter, request *http.Request) {
@@ -830,9 +883,13 @@ func (app *App) handleEditUserMessage(writer http.ResponseWriter, request *http.
 	}
 
 	writeJSON(writer, http.StatusOK, map[string]any{
-		"sessionKey": session.Key,
-		"friendlyId": session.FriendlyID,
-		"runId":      result.RunID,
+		"sessionKey":         session.Key,
+		"key":                session.Key,
+		"friendlyId":         session.FriendlyID,
+		"runId":              result.RunID,
+		"userMessageId":      result.UserMessageID,
+		"assistantMessageId": result.AssistantMessageID,
+		"clientId":           result.ClientID,
 	})
 }
 
@@ -858,10 +915,7 @@ func (app *App) handleDeleteUserMessage(writer http.ResponseWriter, request *htt
 		return
 	}
 
-	writeJSON(writer, http.StatusOK, sessionMutationResponse{
-		SessionKey: session.Key,
-		FriendlyID: session.FriendlyID,
-	})
+	writeJSON(writer, http.StatusOK, newSessionMutationResponse(session))
 }
 
 func (app *App) handleStopSessionRuns(writer http.ResponseWriter, request *http.Request) {
