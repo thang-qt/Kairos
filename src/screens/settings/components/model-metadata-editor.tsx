@@ -12,16 +12,20 @@ type ModelMetadataEditorProps = {
     contextWindow: number
   }) => Promise<void>
   onReset: (modelId: string) => Promise<void>
+  onDelete?: (providerRef: string, modelId: string) => Promise<void>
   savePending: boolean
   resetPending: boolean
+  deletePending?: boolean
 }
 
 export function ModelMetadataEditor({
   model,
   onSave,
   onReset,
+  onDelete,
   savePending,
   resetPending,
+  deletePending,
 }: ModelMetadataEditorProps) {
   const [name, setName] = useState(model.name ?? '')
   const [description, setDescription] = useState(model.description ?? '')
@@ -104,22 +108,53 @@ export function ModelMetadataEditor({
         />
       </div>
 
-      <div className="flex items-center gap-2 pt-2 border-t border-primary-100">
-        <Button size="sm" type="submit" disabled={savePending} className="h-8">
-          {savePending ? 'Saving...' : 'Save Overrides'}
-        </Button>
-        <Button
-          size="sm"
-          type="button"
-          variant="ghost"
-          disabled={resetPending}
-          onClick={function handleReset() {
-            void onReset(model.id)
-          }}
-          className="h-8 text-primary-600 hover:text-primary-850 hover:bg-primary-50"
-        >
-          Reset to Default
-        </Button>
+      <div className="flex items-center justify-between gap-2 pt-2 border-t border-primary-100">
+        <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            type="submit"
+            disabled={savePending}
+            className="h-8"
+          >
+            {savePending
+              ? 'Saving...'
+              : model.isCustom
+                ? 'Save Changes'
+                : 'Save Overrides'}
+          </Button>
+          {!model.isCustom && (
+            <Button
+              size="sm"
+              type="button"
+              variant="ghost"
+              disabled={resetPending}
+              onClick={function handleReset() {
+                void onReset(model.id)
+              }}
+              className="h-8 text-primary-650 hover:text-primary-850 hover:bg-primary-50"
+            >
+              Reset to Default
+            </Button>
+          )}
+        </div>
+        {model.isCustom && onDelete && (
+          <Button
+            size="sm"
+            type="button"
+            variant="ghost"
+            disabled={deletePending}
+            onClick={function handleDelete() {
+              if (
+                confirm('Are you sure you want to delete this custom model?')
+              ) {
+                void onDelete(model.providerRef ?? '', model.id)
+              }
+            }}
+            className="h-8 text-red-650 hover:text-red-800 hover:bg-red-50"
+          >
+            {deletePending ? 'Deleting...' : 'Delete Model'}
+          </Button>
+        )}
       </div>
     </form>
   )

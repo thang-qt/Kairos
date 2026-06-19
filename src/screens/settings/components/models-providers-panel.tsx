@@ -12,6 +12,8 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   appQueryKeys,
   createProvider,
+  createCustomModel,
+  deleteCustomModel,
   deleteProvider,
   syncModels,
   testConnection,
@@ -27,6 +29,7 @@ import { Button } from '@/components/ui/button'
 import { TitleSettingsPopover } from './title-settings-popover'
 import { ProvidersDialog } from './providers-dialog'
 import { ModelMetadataEditor } from './model-metadata-editor'
+import { CustomModelDialog } from './custom-model-dialog'
 import { mutationErrorMessage } from '@/lib/error-utils'
 import { formatContextWindow } from '@/lib/model-utils'
 import { cn } from '@/lib/utils'
@@ -308,6 +311,41 @@ export function ModelsProvidersPanel() {
     },
   })
 
+  const addCustomModelMutation = useMutation({
+    mutationFn: createCustomModel,
+    onSuccess: async function handleSuccess() {
+      setErrorMessage('')
+      await refreshQueries()
+    },
+    onError: function handleError(error) {
+      setErrorMessage(
+        mutationErrorMessage(error, 'Failed to add custom model.'),
+      )
+    },
+  })
+
+  const deleteCustomModelMutation = useMutation({
+    mutationFn: function mutate({
+      providerRef,
+      modelId,
+    }: {
+      providerRef: string
+      modelId: string
+    }) {
+      return deleteCustomModel(providerRef, modelId)
+    },
+    onSuccess: async function handleSuccess() {
+      setErrorMessage('')
+      setSelectedModelId('')
+      await refreshQueries()
+    },
+    onError: function handleError(error) {
+      setErrorMessage(
+        mutationErrorMessage(error, 'Failed to delete custom model.'),
+      )
+    },
+  })
+
   function handleCreateProvider() {
     if (!draft.apiKey.trim()) {
       setErrorMessage('API key is required.')
@@ -494,6 +532,15 @@ export function ModelsProvidersPanel() {
             handleCreateProvider={handleCreateProvider}
           />
 
+          {/* Add Custom Model Dialog */}
+          <CustomModelDialog
+            providers={providers}
+            onAdd={async function handleAdd(payload) {
+              await addCustomModelMutation.mutateAsync(payload)
+            }}
+            addPending={addCustomModelMutation.isPending}
+          />
+
           {/* Sync catalog button */}
           <Button
             size="sm"
@@ -521,6 +568,21 @@ export function ModelsProvidersPanel() {
           </Button>
         </div>
       </div>
+
+      {errorMessage && (
+        <div className="rounded-xl border border-primary-200 bg-primary-50/50 p-4 text-xs text-primary-750 flex items-center justify-between gap-3 mt-4 text-pretty">
+          <span>{errorMessage}</span>
+          <button
+            type="button"
+            onClick={function handleClear() {
+              setErrorMessage('')
+            }}
+            className="text-primary-600 hover:text-primary-850 font-medium whitespace-nowrap"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
 
       {/* Provider Filter Pills */}
       <div className="flex items-center gap-1.5 overflow-x-auto pb-1 mt-3 scrollbar-none">
@@ -754,8 +816,18 @@ export function ModelsProvidersPanel() {
                     model={activeModel}
                     onSave={handleSaveModelMetadata}
                     onReset={handleResetModelMetadata}
+                    onDelete={async function handleDelete(
+                      providerRef,
+                      modelId,
+                    ) {
+                      await deleteCustomModelMutation.mutateAsync({
+                        providerRef,
+                        modelId,
+                      })
+                    }}
                     savePending={updateModelMetadataMutation.isPending}
                     resetPending={updateModelMetadataMutation.isPending}
+                    deletePending={deleteCustomModelMutation.isPending}
                   />
                 </div>
               </div>

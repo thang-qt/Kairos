@@ -385,3 +385,66 @@ func stringPointer(value string) *string {
 func boolPointer(value bool) *bool {
 	return &value
 }
+
+func TestCustomModelAddAndDelete(t *testing.T) {
+	testServer := newTestApp(t, func(config *Config) {
+		config.SystemProviderEnabled = true
+		config.SystemProviderLabel = "Server Default"
+		config.SystemProviderID = "default"
+	})
+
+	cookie := signupAndRequireCookie(t, testServer, "custom-models@example.com")
+
+	// 1. Add a custom model to the system provider (system:default)
+	addPayload := CreateModelInput{
+		ProviderRef:   "system:default",
+		ModelID:       "custom-llama-3",
+		Name:          "My Custom Llama",
+		Description:   "A custom model description",
+		ContextWindow: 4096,
+	}
+
+	addResponse := performJSONRequest(t, testServer.handler, http.MethodPost, "/api/models", addPayload, []*http.Cookie{cookie})
+	assertStatusCode(t, addResponse, http.StatusCreated)
+
+	var addResult modelMutationResponse
+	decodeResponseJSON(t, addResponse, &addResult)
+	if addResult.Model.ID != "custom-llama-3" || !addResult.Model.IsCustom || addResult.Model.Name != "My Custom Llama" {
+		t.Fatalf("unexpected added model metadata: %#v", addResult.Model)
+	}
+
+	// 2. List models and verify it exists
+	listResponse := performJSONRequest(t, testServer.handler, http.MethodGet, "/api/models", nil, []*http.Cookie{cookie})
+	assertStatusCode(t, listResponse, http.StatusOK)
+
+	var listPayload modelsResponse
+	decodeResponseJSON(t, listResponse, &listPayload)
+	found := false
+	for _, m := range listPayload.Models {
+		if m.ID == "custom-llama-3" {
+			found = true
+			if !m.IsCustom || m.ContextWindow != 4096 {
+				t.Fatalf("custom model loaded incorrectly: %#v", m)
+			}
+			break
+		}
+	}
+	if !found {
+		t.Fatal("custom model not found in models list")
+	}
+
+	// 3. Delete the custom model
+	deleteResponse := performJSONRequest(t, testServer.handler, http.MethodDelete, "/api/models?providerRef=system:default&modelId=custom-llama-3", nil, []*http.Cookie{cookie})
+	assertStatusCode(t, deleteResponse, http.StatusOK)
+
+	// 4. List models again and verify it is gone
+	listResponse2 := performJSONRequest(t, testServer.handler, http.MethodGet, "/api/models", nil, []*http.Cookie{cookie})
+	assertStatusCode(t, listResponse2, http.StatusOK)
+
+	decodeResponseJSON(t, listResponse2, &listPayload)
+	for _, m := range listPayload.Models {
+		if m.ID == "custom-llama-3" {
+			t.Fatal("custom model was not deleted")
+		}
+	}
+}

@@ -71,6 +71,7 @@ export type ProviderModel = {
   contextWindow?: number
   providerRef?: string
   providerLabel?: string
+  isCustom?: boolean
 }
 
 export type ProviderPayload = {
@@ -433,6 +434,47 @@ export function usePreferencesQuery() {
 
 export function isUnauthorizedError(error: unknown) {
   return error instanceof ApiError && error.status === 401
+}
+
+export type CreateModelPayload = {
+  providerRef: string
+  modelId: string
+  name: string
+  description?: string
+  contextWindow?: number
+}
+
+export async function createCustomModel(
+  payload: CreateModelPayload,
+): Promise<ProviderModel> {
+  const response = await fetch('/api/models', {
+    method: 'POST',
+    credentials: 'include',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  })
+  const data = await parseJSON<{ model: ProviderModel }>(response)
+  return data.model
+}
+
+export async function deleteCustomModel(
+  providerRef: string,
+  modelId: string,
+): Promise<void> {
+  const params = new URLSearchParams({
+    providerRef,
+    modelId,
+  })
+  const response = await fetch(`/api/models?${params.toString()}`, {
+    method: 'DELETE',
+    credentials: 'include',
+  })
+  if (!response.ok) {
+    const errorText = await response.text()
+    throw new Error(errorText || 'Failed to delete custom model')
+  }
 }
 
 async function parseJSON<T>(response: Response): Promise<T> {

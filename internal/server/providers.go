@@ -29,6 +29,7 @@ var errProviderKindUnsupported = errors.New("provider kind is not supported")
 var errNoProviderAvailable = errors.New("no enabled provider is available for this account")
 var errNoModelAvailable = errors.New("no chat model is available for the selected provider")
 var errModelNotAvailable = errors.New("selected chat model is not available")
+var errCustomModelNotFound = errors.New("custom model not found")
 
 const providerModelCacheTTL = 15 * time.Minute
 
@@ -75,6 +76,7 @@ type ProviderModel struct {
 	ContextWindow int64  `json:"contextWindow,omitempty"`
 	ProviderRef   string `json:"providerRef,omitempty"`
 	ProviderLabel string `json:"providerLabel,omitempty"`
+	IsCustom      bool   `json:"isCustom"`
 }
 
 type CreateProviderInput struct {
@@ -168,6 +170,7 @@ type providerModelCacheRow struct {
 	Description   string
 	ContextWindow int64
 	FetchedAt     int64
+	IsCustom      bool
 }
 
 type providerModelCacheStateRow struct {
@@ -1009,14 +1012,161 @@ func (service *ProviderService) SyncModels(
 	return visibleModels, preferences, nil
 }
 
+type CreateModelInput struct {
+	ProviderRef   string `json:"providerRef"`
+	ModelID       string `json:"modelId"`
+	Name          string `json:"name"`
+	Description   string `json:"description"`
+	ContextWindow int64  `json:"contextWindow"`
+}
+
+func (service *ProviderService) AddCustomModel(
+	ctx context.Context,
+	userID string,
+	input CreateModelInput,
+) (ProviderModel, error) {
+	providerRef := strings.TrimSpace(input.ProviderRef)
+	modelID := strings.TrimSpace(input.ModelID)
+	name := strings.TrimSpace(input.Name)
+	description := strings.TrimSpace(input.Description)
+
+	if providerRef == "" {
+		return ProviderModel{}, errors.New("provider ref is required")
+	}
+	if modelID == "" {
+		return ProviderModel{}, errors.New("model id is required")
+	}
+	if name == "" {
+		return ProviderModel{}, errors.New("model name is required")
+	}
+
+	provider, err := service.resolveProvider(ctx, userID, providerRef)
+	if err != nil {
+		return ProviderModel{}, err
+	}
+
+	now := time.Now().UnixMilli()
+	if _, err := service.db.ExecContext(ctx, `
+		INSERT INTO provider_models(
+			user_id,
+			provider_ref,
+			model_id,
+			object,
+			created,
+			owned_by,
+			name,
+			description,
+			context_window,
+			fetched_at,
+			is_custom
+		)
+		VALUES (?, ?, ?, 'model', ?, ?, ?, ?, ?, ?, 1)
+		ON CONFLICT(user_id, provider_ref, model_id) DO UPDATE SET
+			name = excluded.name,
+			description = excluded.description,
+			context_window = excluded.context_window,
+			is_custom = 1
+	`, userID, providerRef, modelID, now, provider.Record.Label, name, description, maxInt64(input.ContextWindow, 0), now); err != nil {
+		return ProviderModel{}, fmt.Errorf("add custom model: %w", err)
+	}
+
+	models, _, err := service.ListModels(ctx, userID)
+	if err != nil {
+		return ProviderModel{}, err
+	}
+	for _, m := range models {
+		if strings.TrimSpace(m.ID) == modelID && m.ProviderRef == providerRef {
+			return m, nil
+		}
+	}
+
+	return ProviderModel{
+		ID:            modelID,
+		Object:        "model",
+		Created:       now,
+		OwnedBy:       provider.Record.Label,
+		Name:          name,
+		Description:   description,
+		ContextWindow: maxInt64(input.ContextWindow, 0),
+		ProviderRef:   providerRef,
+		ProviderLabel: provider.Record.Label,
+		IsCustom:      true,
+	}, nil
+}
+
+func (service *ProviderService) DeleteCustomModel(
+	ctx context.Context,
+	userID string,
+	providerRef string,
+	modelID string,
+) error {
+	providerRef = strings.TrimSpace(providerRef)
+	modelID = strings.TrimSpace(modelID)
+
+	if providerRef == "" {
+		return errors.New("provider ref is required")
+	}
+	if modelID == "" {
+		return errors.New("model id is required")
+	}
+
+	result, err := service.db.ExecContext(ctx, `
+		DELETE FROM provider_models
+		WHERE user_id = ? AND provider_ref = ? AND model_id = ? AND is_custom = 1
+	`, userID, providerRef, modelID)
+	if err != nil {
+		return fmt.Errorf("delete custom model: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rowsAffected == 0 {
+		return errCustomModelNotFound
+	}
+
+	return nil
+}
+
 func (service *ProviderService) ResolveGenerationTarget(
 	ctx context.Context,
 	userID string,
 	requestedModel string,
 ) (resolvedProvider, ProviderModel, UserPreferences, error) {
-	providers, preferences, err := service.ListProviders(ctx, userID)
+	models, preferences, err := service.ListModels(ctx, userID)
 	if err != nil {
 		return resolvedProvider{}, ProviderModel{}, UserPreferences{}, err
+	}
+
+	effectiveModel := strings.TrimSpace(requestedModel)
+	if effectiveModel == "" {
+		effectiveModel = strings.TrimSpace(preferences.DefaultModelID)
+	}
+	if effectiveModel == "" {
+		effectiveModel = strings.TrimSpace(service.config.DefaultChatModel)
+	}
+	if effectiveModel == "" && len(models) > 0 {
+		effectiveModel = strings.TrimSpace(models[0].ID)
+	}
+	if effectiveModel == "" {
+		return resolvedProvider{}, ProviderModel{}, preferences, errNoModelAvailable
+	}
+
+	for _, model := range models {
+		if strings.TrimSpace(model.ID) == effectiveModel {
+			resolved, err := service.resolveProvider(ctx, userID, model.ProviderRef)
+			if err != nil {
+				return resolvedProvider{}, ProviderModel{}, preferences, err
+			}
+			return resolved, model, preferences, nil
+		}
+	}
+
+	// Fallback to candidates list if not found in cache
+	providers, _, err := service.ListProviders(ctx, userID)
+	if err != nil {
+		return resolvedProvider{}, ProviderModel{}, preferences, err
 	}
 
 	candidates := make([]ProviderRecord, 0, len(providers))
@@ -1028,57 +1178,6 @@ func (service *ProviderService) ResolveGenerationTarget(
 			continue
 		}
 		candidates = append(candidates, record)
-	}
-	if len(candidates) == 0 {
-		return resolvedProvider{}, ProviderModel{}, preferences, errNoProviderAvailable
-	}
-
-	type candidateModel struct {
-		Provider resolvedProvider
-		Model    ProviderModel
-	}
-
-	models := make([]candidateModel, 0)
-	for _, record := range candidates {
-		resolved, err := service.resolveProvider(ctx, userID, record.Ref)
-		if err != nil {
-			continue
-		}
-		driver := service.drivers[resolved.Record.Kind]
-		if driver == nil {
-			continue
-		}
-		visibleModels, err := driver.ListModels(ctx, resolved)
-		if err != nil {
-			continue
-		}
-		for _, model := range visibleModels {
-			models = append(models, candidateModel{
-				Provider: resolved,
-				Model:    model,
-			})
-		}
-	}
-
-	effectiveModel := strings.TrimSpace(requestedModel)
-	if effectiveModel == "" {
-		effectiveModel = strings.TrimSpace(preferences.DefaultModelID)
-	}
-	if effectiveModel == "" {
-		effectiveModel = strings.TrimSpace(service.config.DefaultChatModel)
-	}
-	if effectiveModel == "" && len(models) > 0 {
-		effectiveModel = strings.TrimSpace(models[0].Model.ID)
-	}
-	if effectiveModel == "" {
-		return resolvedProvider{}, ProviderModel{}, preferences, errNoModelAvailable
-	}
-
-	for _, candidate := range models {
-		if strings.TrimSpace(candidate.Model.ID) != effectiveModel {
-			continue
-		}
-		return candidate.Provider, service.enrichModel(ctx, userID, candidate.Model), preferences, nil
 	}
 
 	if len(candidates) == 1 {
@@ -1373,7 +1472,8 @@ func (service *ProviderService) loadProviderModelRows(
 			name,
 			description,
 			context_window,
-			fetched_at
+			fetched_at,
+			is_custom
 		FROM provider_models
 		WHERE user_id = ? AND provider_ref IN (`+placeholders+`)
 		ORDER BY provider_ref ASC, model_id ASC
@@ -1401,6 +1501,7 @@ func (service *ProviderService) loadProviderModelRows(
 			&row.Description,
 			&row.ContextWindow,
 			&row.FetchedAt,
+			&row.IsCustom,
 		); scanErr != nil {
 			return nil, fmt.Errorf("scan provider models: %w", scanErr)
 		}
@@ -1420,6 +1521,7 @@ func (service *ProviderService) loadProviderModelRows(
 				ContextWindow: maxInt64(row.ContextWindow, 0),
 				ProviderRef:   provider.Record.Ref,
 				ProviderLabel: provider.Record.Label,
+				IsCustom:      row.IsCustom,
 			},
 		)
 	}
@@ -1442,6 +1544,14 @@ func (service *ProviderService) refreshVisibleProviderModels(
 
 	snapshots := make([]providerModelsSnapshot, 0, len(visibleProviders))
 	for _, provider := range visibleProviders {
+		if !provider.Record.SupportsModelSync {
+			snapshots = append(snapshots, providerModelsSnapshot{
+				Provider: provider,
+				Models:   modelsFromStaticList(provider.StaticModels, provider.Record),
+			})
+			continue
+		}
+
 		driver := service.drivers[provider.Record.Kind]
 		if driver == nil {
 			continue
@@ -1483,7 +1593,7 @@ func (service *ProviderService) refreshVisibleProviderModels(
 	for _, snapshot := range snapshots {
 		if _, execErr := tx.ExecContext(ctx, `
 			DELETE FROM provider_models
-			WHERE user_id = ? AND provider_ref = ?
+			WHERE user_id = ? AND provider_ref = ? AND is_custom = 0
 		`, userID, snapshot.Provider.Record.Ref); execErr != nil {
 			tx.Rollback()
 			return fmt.Errorf("clear provider models: %w", execErr)
@@ -1501,9 +1611,12 @@ func (service *ProviderService) refreshVisibleProviderModels(
 					name,
 					description,
 					context_window,
-					fetched_at
+					fetched_at,
+					is_custom
 				)
-				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+				ON CONFLICT(user_id, provider_ref, model_id) DO UPDATE SET
+					fetched_at = excluded.fetched_at
 			`, userID, snapshot.Provider.Record.Ref, model.ID, defaultModelObject(model.Object), model.Created, strings.TrimSpace(model.OwnedBy), strings.TrimSpace(model.Name), strings.TrimSpace(model.Description), maxInt64(model.ContextWindow, 0), now); execErr != nil {
 				tx.Rollback()
 				return fmt.Errorf("insert provider model: %w", execErr)

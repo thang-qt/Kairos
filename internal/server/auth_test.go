@@ -408,6 +408,7 @@ func newTestApp(t *testing.T, override func(config *Config)) *testApp {
 		AllowUserDisableSystem:     true,
 		AllowUserModelSync:         true,
 		SystemProviderKind:         "openai_compatible",
+		SystemProviderModelSync:    true,
 	}
 	if override != nil {
 		override(&config)

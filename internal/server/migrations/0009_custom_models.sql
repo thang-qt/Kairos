@@ -1,0 +1,1 @@
+ALTER TABLE provider_models ADD COLUMN is_custom INTEGER NOT NULL DEFAULT 0;

@@ -385,6 +385,49 @@ func (app *App) handleListModels(writer http.ResponseWriter, request *http.Reque
 	})
 }
 
+func (app *App) handleCreateCustomModel(writer http.ResponseWriter, request *http.Request) {
+	user, ok := app.requireAuthenticatedUser(writer, request)
+	if !ok {
+		return
+	}
+
+	var payload CreateModelInput
+	if err := decodeJSON(request, &payload); err != nil {
+		writeError(writer, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	model, err := app.providers.AddCustomModel(request.Context(), user.ID, payload)
+	if err != nil {
+		writeError(writer, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	writeJSON(writer, http.StatusCreated, modelMutationResponse{Model: model})
+}
+
+func (app *App) handleDeleteCustomModel(writer http.ResponseWriter, request *http.Request) {
+	user, ok := app.requireAuthenticatedUser(writer, request)
+	if !ok {
+		return
+	}
+
+	providerRef := request.URL.Query().Get("providerRef")
+	modelID := request.URL.Query().Get("modelId")
+
+	if err := app.providers.DeleteCustomModel(request.Context(), user.ID, providerRef, modelID); err != nil {
+		switch {
+		case errors.Is(err, errCustomModelNotFound):
+			writeError(writer, http.StatusNotFound, err.Error())
+		default:
+			writeError(writer, http.StatusBadRequest, err.Error())
+		}
+		return
+	}
+
+	writeJSON(writer, http.StatusOK, map[string]any{"ok": true})
+}
+
 func (app *App) handleSignup(writer http.ResponseWriter, request *http.Request) {
 	var payload authRequest
 	if err := decodeJSON(request, &payload); err != nil {
