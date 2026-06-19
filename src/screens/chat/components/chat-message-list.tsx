@@ -7,6 +7,7 @@ import {
   useRef,
   useState,
 } from 'react'
+import { useHotkey } from '@tanstack/react-hotkeys'
 import {
   getGatewayMessageId,
   getToolCallsFromMessage,
@@ -14,6 +15,7 @@ import {
 } from '../utils'
 import { MessageItem } from './message-item'
 import { ConversationNavigator } from './conversation-navigator'
+import { ShortcutsHelpDialog } from './shortcuts-help-dialog'
 import type { GatewayMessage } from '../types'
 import {
   ChatContainerContent,
@@ -83,6 +85,128 @@ function ChatMessageListComponent({
   const anchorRef = useRef<HTMLDivElement | null>(null)
   const lastUserRef = useRef<HTMLDivElement | null>(null)
   const [viewportNode, setViewportNode] = useState<HTMLDivElement | null>(null)
+  const [shortcutsHelpOpen, setShortcutsHelpOpen] = useState(false)
+
+  const navigateMessage = useCallback(
+    function navigateMessage(direction: 'up' | 'down') {
+      if (!viewportNode) return
+      const nodes = Array.from(
+        viewportNode.querySelectorAll('[data-message-item]'),
+      ) as Array<HTMLElement>
+      if (nodes.length === 0) return
+
+      // Find which node is currently active (closest to viewport top)
+      const threshold = viewportNode.scrollTop + headerHeight + 24
+      let activeIndex = -1
+
+      for (let i = 0; i < nodes.length; i += 1) {
+        if (nodes[i].offsetTop <= threshold) {
+          activeIndex = i
+        } else {
+          break
+        }
+      }
+      let targetIndex = activeIndex
+      let shouldScrollToBottom = false
+      if (direction === 'up') {
+        const currentNode = nodes[activeIndex]
+        if (
+          currentNode &&
+          viewportNode.scrollTop >
+            currentNode.offsetTop - headerHeight - 12 + 10
+        ) {
+          targetIndex = activeIndex
+        } else {
+          targetIndex = Math.max(0, activeIndex - 1)
+        }
+      } else {
+        if (activeIndex === nodes.length - 1) {
+          shouldScrollToBottom = true
+        } else {
+          targetIndex = Math.min(nodes.length - 1, activeIndex + 1)
+        }
+      }
+
+      if (shouldScrollToBottom) {
+        viewportNode.scrollTo({
+          top: viewportNode.scrollHeight - viewportNode.clientHeight,
+          behavior: 'smooth',
+        })
+      } else {
+        const targetNode = nodes[targetIndex]
+        if (!targetNode) return
+
+        const viewportRect = viewportNode.getBoundingClientRect()
+        const nodeRect = targetNode.getBoundingClientRect()
+        viewportNode.scrollTo({
+          top:
+            viewportNode.scrollTop +
+            nodeRect.top -
+            viewportRect.top -
+            headerHeight -
+            12,
+          behavior: 'smooth',
+        })
+      }
+    },
+    [viewportNode, headerHeight],
+  )
+
+  useHotkey(
+    'Alt+ArrowUp',
+    function handleAltArrowUp(event) {
+      event.preventDefault()
+      navigateMessage('up')
+    },
+    { preventDefault: true },
+  )
+
+  useHotkey(
+    'Alt+ArrowDown',
+    function handleAltArrowDown(event) {
+      event.preventDefault()
+      navigateMessage('down')
+    },
+    { preventDefault: true },
+  )
+
+  useHotkey('K', function handleKeyK(event) {
+    if (isEditableTarget(event.target)) return
+    event.preventDefault()
+    if (!viewportNode) return
+    viewportNode.scrollBy({
+      top: -100,
+      behavior: 'smooth',
+    })
+  })
+
+  useHotkey('J', function handleKeyJ(event) {
+    if (isEditableTarget(event.target)) return
+    event.preventDefault()
+    if (!viewportNode) return
+    viewportNode.scrollBy({
+      top: 100,
+      behavior: 'smooth',
+    })
+  })
+
+  useHotkey('[', function handleLeftBracket(event) {
+    if (isEditableTarget(event.target)) return
+    event.preventDefault()
+    navigateMessage('up')
+  })
+
+  useHotkey(']', function handleRightBracket(event) {
+    if (isEditableTarget(event.target)) return
+    event.preventDefault()
+    navigateMessage('down')
+  })
+
+  useHotkey({ key: '?', shift: true }, function handleQuestionMark(event) {
+    if (isEditableTarget(event.target)) return
+    event.preventDefault()
+    setShortcutsHelpOpen((prev) => !prev)
+  })
   const userTurnRefsRef = useRef(
     new Map<string, React.RefObject<HTMLDivElement | null>>(),
   )
@@ -462,64 +586,72 @@ function ChatMessageListComponent({
     !hasGroup && notice && noticePosition === 'end' ? notice : null
 
   return (
-    <ChatContainerRoot
-      className="flex-1 min-h-0 -mb-4"
-      data-scroll-restoration-id="chat-scroll"
-      overlay={
-        shouldShowConversationNavigator ? (
-          <ConversationNavigator
-            turns={slicedConversationTurns}
-            headerHeight={headerHeight}
-            scrollElement={viewportNode}
-            getTurnNode={getTurnNode}
-          />
-        ) : null
-      }
-      onUserScroll={onScrollTopChange}
-      onViewportNodeChange={handleViewportNodeChange}
-      restoreScrollTop={restoreScrollTop}
-      restoreKey={restoreKey}
-      onRestoreScrollTopApplied={onRestoreScrollTopApplied}
-    >
-      <ChatContainerContent
-        className="pt-14"
-        style={contentStyle}
-        wide={wideMode}
+    <>
+      <ChatContainerRoot
+        className="flex-1 min-h-0 -mb-4"
+        data-scroll-restoration-id="chat-scroll"
+        overlay={
+          shouldShowConversationNavigator ? (
+            <ConversationNavigator
+              turns={slicedConversationTurns}
+              headerHeight={headerHeight}
+              scrollElement={viewportNode}
+              getTurnNode={getTurnNode}
+            />
+          ) : null
+        }
+        onUserScroll={onScrollTopChange}
+        onViewportNodeChange={handleViewportNodeChange}
+        restoreScrollTop={restoreScrollTop}
+        restoreKey={restoreKey}
+        onRestoreScrollTopApplied={onRestoreScrollTopApplied}
       >
-        {visibleCount < displayMessages.length && (
-          <div className="flex justify-center py-2 text-xs text-primary-500 font-medium select-none">
-            Loading older messages...
-          </div>
-        )}
-        {notice && noticePosition === 'start' ? notice : null}
-        {empty && !notice ? (
-          (emptyState ?? <div aria-hidden></div>)
-        ) : hasGroup ? (
-          <>
-            {renderedMessages.beforeGroup}
-            <div
-              className="flex flex-col space-y-6"
-              style={{ minHeight: `${Math.max(0, pinGroupMinHeight - 24)}px` }}
-            >
-              {renderedMessages.group}
-              {showTypingIndicator ? (
-                <div className="py-2">
-                  <TypingIndicator />
-                </div>
-              ) : null}
-              {pinnedEndNotice}
+        <ChatContainerContent
+          className="pt-14"
+          style={contentStyle}
+          wide={wideMode}
+        >
+          {visibleCount < displayMessages.length && (
+            <div className="flex justify-center py-2 text-xs text-primary-500 font-medium select-none">
+              Loading older messages...
             </div>
-          </>
-        ) : (
-          renderedMessages.flat
-        )}
-        {trailingNotice}
-        <ChatContainerScrollAnchor
-          ref={anchorRef as React.RefObject<HTMLDivElement>}
-          style={endScrollAnchorStyle}
-        />
-      </ChatContainerContent>
-    </ChatContainerRoot>
+          )}
+          {notice && noticePosition === 'start' ? notice : null}
+          {empty && !notice ? (
+            (emptyState ?? <div aria-hidden></div>)
+          ) : hasGroup ? (
+            <>
+              {renderedMessages.beforeGroup}
+              <div
+                className="flex flex-col space-y-6"
+                style={{
+                  minHeight: `${Math.max(0, pinGroupMinHeight - 24)}px`,
+                }}
+              >
+                {renderedMessages.group}
+                {showTypingIndicator ? (
+                  <div className="py-2">
+                    <TypingIndicator />
+                  </div>
+                ) : null}
+                {pinnedEndNotice}
+              </div>
+            </>
+          ) : (
+            renderedMessages.flat
+          )}
+          {trailingNotice}
+          <ChatContainerScrollAnchor
+            ref={anchorRef as React.RefObject<HTMLDivElement>}
+            style={endScrollAnchorStyle}
+          />
+        </ChatContainerContent>
+      </ChatContainerRoot>
+      <ShortcutsHelpDialog
+        open={shortcutsHelpOpen}
+        onOpenChange={setShortcutsHelpOpen}
+      />
+    </>
   )
 }
 
@@ -562,6 +694,13 @@ function findPreviousClonePoint(
     if (getGatewayMessageId(message)) return message
   }
   return undefined
+}
+
+function isEditableTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false
+  const tag = target.tagName.toLowerCase()
+  if (tag === 'input' || tag === 'textarea' || tag === 'select') return true
+  return target.isContentEditable
 }
 
 export function collectLinkedToolCallIds(

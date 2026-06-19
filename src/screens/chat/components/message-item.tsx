@@ -382,6 +382,9 @@ function MessageItemComponent({
   return (
     <div
       ref={wrapperRef}
+      data-message-item
+      data-message-id={messageId}
+      data-message-role={role}
       style={
         typeof wrapperScrollMarginTop === 'number'
           ? {

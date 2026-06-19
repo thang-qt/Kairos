@@ -88,9 +88,42 @@ function ChatSidebarComponent({
     },
   })
 
+  const navigateSession = useCallback(
+    function navigateSession(direction: 'up' | 'down') {
+      if (sessions.length <= 1) return
+      const currentIndex = sessions.findIndex(function findActiveSession(s) {
+        return s.friendlyId === activeFriendlyId
+      })
+      let targetIndex = currentIndex
+      if (direction === 'up') {
+        targetIndex = currentIndex - 1
+        if (targetIndex < 0) {
+          targetIndex = sessions.length - 1
+        }
+      } else {
+        targetIndex = currentIndex + 1
+        if (targetIndex >= sessions.length) {
+          targetIndex = 0
+        }
+      }
+      const targetSession = sessions[targetIndex]
+      if (targetSession) {
+        void navigate({
+          to: '/chat/$sessionKey',
+          params: { sessionKey: targetSession.friendlyId },
+        })
+        onSelectSession?.()
+      }
+    },
+    [sessions, activeFriendlyId, navigate, onSelectSession],
+  )
+
   useSessionShortcuts({
     onNewSession: onCreateSession,
-    onSearchSessions: () => setSearchDialogOpen(true),
+    onSearchSessions: function openSearch() {
+      setSearchDialogOpen(true)
+    },
+    onNavigateSession: navigateSession,
   })
 
   function handleSearchDialogOpenChange(nextOpen: boolean) {

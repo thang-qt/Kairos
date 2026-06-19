@@ -3,11 +3,13 @@ import { useHotkey } from '@tanstack/react-hotkeys'
 type SessionShortcutOptions = {
   onNewSession: () => void
   onSearchSessions: () => void
+  onNavigateSession?: (direction: 'up' | 'down') => void
 }
 
 function useSessionShortcuts({
   onNewSession,
   onSearchSessions,
+  onNavigateSession,
 }: SessionShortcutOptions) {
   useHotkey(
     'Mod+K',
@@ -25,6 +27,24 @@ function useSessionShortcuts({
       if (event.altKey || isEditableTarget(event.target)) return
       event.preventDefault()
       onNewSession()
+    },
+    { preventDefault: true },
+  )
+
+  useHotkey(
+    'Alt+[',
+    function handleAltLeftBracket(event) {
+      event.preventDefault()
+      onNavigateSession?.('up')
+    },
+    { preventDefault: true },
+  )
+
+  useHotkey(
+    'Alt+]',
+    function handleAltRightBracket(event) {
+      event.preventDefault()
+      onNavigateSession?.('down')
     },
     { preventDefault: true },
   )
