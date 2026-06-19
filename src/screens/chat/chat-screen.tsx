@@ -1080,6 +1080,7 @@ export function ChatScreen({
             disabled={sending || !hasAvailableModel}
             wrapperRef={composerRef}
             draft={composerDraft}
+            autoFocus={isNewChat}
           />
         </>
       )}

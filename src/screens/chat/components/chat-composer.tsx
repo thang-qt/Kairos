@@ -23,6 +23,7 @@ type ChatComposerProps = {
   disabled: boolean
   wrapperRef?: Ref<HTMLDivElement>
   draft?: ChatComposerDraft | null
+  autoFocus?: boolean
 }
 
 type ChatComposerHelpers = {
@@ -44,6 +45,7 @@ function ChatComposerComponent({
   disabled,
   wrapperRef,
   draft,
+  autoFocus,
 }: ChatComposerProps) {
   const [attachments, setAttachments] = useState<Array<AttachmentFile>>([])
   const promptRef = useRef<HTMLTextAreaElement | null>(null)
@@ -95,6 +97,15 @@ function ChatComposerComponent({
     if (!draft) return
     setComposerValue(draft.value)
   }, [draft, setComposerValue])
+
+  useLayoutEffect(
+    function handleAutoFocus() {
+      if (autoFocus) {
+        focusPrompt()
+      }
+    },
+    [autoFocus, focusPrompt],
+  )
 
   const handleSubmit = useCallback(() => {
     if (disabled || canStop) return
