@@ -726,6 +726,63 @@ func TestSendMessagePersistsHistoryAndStreamsFinalEvent(t *testing.T) {
 	}
 }
 
+func TestSendMessageIdempotencyKeyReusesExistingRun(t *testing.T) {
+	testServer := newTestApp(t, func(config *Config) {
+		config.SystemProviderEnabled = true
+		config.SystemProviderStaticModels = []string{"test-model"}
+	})
+	testServer.app.providers.drivers["openai_compatible"] = fakeProviderDriver{
+		models: []ProviderModel{
+			{
+				ID:            "test-model",
+				Object:        "model",
+				OwnedBy:       "test",
+				ProviderRef:   "system:system-default",
+				ProviderLabel: "Server Default",
+			},
+		},
+		output: "Only one reply.",
+	}
+	cookie := signupAndRequireCookie(t, testServer, "idempotent@example.com")
+
+	createResponse := performJSONRequest(t, testServer.handler, http.MethodPost, "/api/sessions", createSessionRequest{}, []*http.Cookie{cookie})
+	assertStatusCode(t, createResponse, http.StatusCreated)
+
+	var created sessionMutationResponse
+	decodeResponseJSON(t, createResponse, &created)
+
+	payload := sendMessageRequest{
+		Message:        "Send this once",
+		Model:          "test-model",
+		IdempotencyKey: "same-send",
+	}
+	firstResponse := performJSONRequest(t, testServer.handler, http.MethodPost, "/api/sessions/"+created.FriendlyID+"/messages", payload, []*http.Cookie{cookie})
+	assertStatusCode(t, firstResponse, http.StatusOK)
+
+	var firstResult SendMessageResult
+	decodeResponseJSON(t, firstResponse, &firstResult)
+
+	secondResponse := performJSONRequest(t, testServer.handler, http.MethodPost, "/api/sessions/"+created.FriendlyID+"/messages", payload, []*http.Cookie{cookie})
+	assertStatusCode(t, secondResponse, http.StatusOK)
+
+	var secondResult SendMessageResult
+	decodeResponseJSON(t, secondResponse, &secondResult)
+	if secondResult.RunID != firstResult.RunID {
+		t.Fatalf("second run id = %q, want %q", secondResult.RunID, firstResult.RunID)
+	}
+
+	waitForAssistantMessage(t, testServer, cookie, created.FriendlyID)
+
+	historyResponse := performJSONRequest(t, testServer.handler, http.MethodGet, "/api/sessions/"+created.FriendlyID+"/history", nil, []*http.Cookie{cookie})
+	assertStatusCode(t, historyResponse, http.StatusOK)
+
+	var historyPayload HistoryPayload
+	decodeResponseJSON(t, historyResponse, &historyPayload)
+	if len(historyPayload.Messages) != 2 {
+		t.Fatalf("history message count after idempotent retry = %d, want 2", len(historyPayload.Messages))
+	}
+}
+
 func TestSendMessageIncludesProviderThinkingWhenAvailable(t *testing.T) {
 	testServer := newTestApp(t, func(config *Config) {
 		config.SystemProviderEnabled = true

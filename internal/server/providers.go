@@ -68,6 +68,7 @@ type ProviderRecord struct {
 
 type ProviderModel struct {
 	ID            string `json:"id"`
+	ModelRef      string `json:"modelRef,omitempty"`
 	Object        string `json:"object"`
 	Created       int64  `json:"created"`
 	OwnedBy       string `json:"owned_by"`
@@ -1082,6 +1083,7 @@ func (service *ProviderService) AddCustomModel(
 
 	return ProviderModel{
 		ID:            modelID,
+		ModelRef:      modelReference(providerRef, modelID),
 		Object:        "model",
 		Created:       now,
 		OwnedBy:       provider.Record.Label,
@@ -1154,7 +1156,7 @@ func (service *ProviderService) ResolveGenerationTarget(
 	}
 
 	for _, model := range models {
-		if strings.TrimSpace(model.ID) == effectiveModel {
+		if modelMatchesRequestedValue(model, effectiveModel) {
 			resolved, err := service.resolveProvider(ctx, userID, model.ProviderRef)
 			if err != nil {
 				return resolvedProvider{}, ProviderModel{}, preferences, err
@@ -1186,7 +1188,7 @@ func (service *ProviderService) ResolveGenerationTarget(
 			return resolvedProvider{}, ProviderModel{}, preferences, err
 		}
 		return resolved, service.enrichModel(ctx, userID, ProviderModel{
-			ID:            effectiveModel,
+			ID:            modelIDFromRequestedValue(effectiveModel),
 			Object:        "model",
 			OwnedBy:       candidates[0].Label,
 			ProviderRef:   candidates[0].Ref,
@@ -1221,6 +1223,9 @@ func (service *ProviderService) enrichModels(
 	enriched := make([]ProviderModel, 0, len(models))
 	for _, model := range models {
 		next := model
+		if strings.TrimSpace(next.ModelRef) == "" {
+			next.ModelRef = modelReference(next.ProviderRef, next.ID)
+		}
 		if entry, ok := entries[strings.TrimSpace(model.ID)]; ok {
 			next = applyModelCatalogEntry(next, entry)
 		}
@@ -1614,10 +1619,16 @@ func (service *ProviderService) refreshVisibleProviderModels(
 					fetched_at,
 					is_custom
 				)
-				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
-				ON CONFLICT(user_id, provider_ref, model_id) DO UPDATE SET
-					fetched_at = excluded.fetched_at
-			`, userID, snapshot.Provider.Record.Ref, model.ID, defaultModelObject(model.Object), model.Created, strings.TrimSpace(model.OwnedBy), strings.TrimSpace(model.Name), strings.TrimSpace(model.Description), maxInt64(model.ContextWindow, 0), now); execErr != nil {
+					VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+					ON CONFLICT(user_id, provider_ref, model_id) DO UPDATE SET
+						object = excluded.object,
+						created = excluded.created,
+						owned_by = excluded.owned_by,
+						name = excluded.name,
+						description = excluded.description,
+						context_window = excluded.context_window,
+						fetched_at = excluded.fetched_at
+				`, userID, snapshot.Provider.Record.Ref, model.ID, defaultModelObject(model.Object), model.Created, strings.TrimSpace(model.OwnedBy), strings.TrimSpace(model.Name), strings.TrimSpace(model.Description), maxInt64(model.ContextWindow, 0), now); execErr != nil {
 				tx.Rollback()
 				return fmt.Errorf("insert provider model: %w", execErr)
 			}
@@ -2071,10 +2082,11 @@ func buildVisibleModels(
 			if normalizedID == "" {
 				continue
 			}
-			if _, exists := seen[normalizedID]; exists {
+			identity := provider.Record.Ref + "\x00" + normalizedID
+			if _, exists := seen[identity]; exists {
 				continue
 			}
-			seen[normalizedID] = struct{}{}
+			seen[identity] = struct{}{}
 			visibleModels = append(visibleModels, normalizeProviderModel(model, provider.Record))
 		}
 	}
@@ -2083,6 +2095,7 @@ func buildVisibleModels(
 
 func normalizeProviderModel(model ProviderModel, provider ProviderRecord) ProviderModel {
 	model.ID = strings.TrimSpace(model.ID)
+	model.ModelRef = modelReference(provider.Ref, model.ID)
 	model.Object = defaultModelObject(model.Object)
 	model.OwnedBy = strings.TrimSpace(model.OwnedBy)
 	model.Name = strings.TrimSpace(model.Name)
@@ -2094,6 +2107,46 @@ func normalizeProviderModel(model ProviderModel, provider ProviderRecord) Provid
 		model.OwnedBy = provider.Label
 	}
 	return model
+}
+
+func modelReference(providerRef string, modelID string) string {
+	providerRef = strings.TrimSpace(providerRef)
+	modelID = strings.TrimSpace(modelID)
+	if providerRef == "" || modelID == "" {
+		return modelID
+	}
+	return providerRef + ":" + modelID
+}
+
+func modelMatchesRequestedValue(model ProviderModel, requested string) bool {
+	normalized := strings.TrimSpace(requested)
+	if normalized == "" {
+		return false
+	}
+	if strings.TrimSpace(model.ModelRef) == normalized {
+		return true
+	}
+	if modelReference(model.ProviderRef, model.ID) == normalized {
+		return true
+	}
+	return strings.TrimSpace(model.ID) == normalized
+}
+
+func modelIDFromRequestedValue(requested string) string {
+	normalized := strings.TrimSpace(requested)
+	if normalized == "" {
+		return ""
+	}
+	for _, prefix := range []string{"system:", "user:"} {
+		if !strings.HasPrefix(normalized, prefix) {
+			continue
+		}
+		rest := strings.TrimPrefix(normalized, prefix)
+		if separator := strings.Index(rest, ":"); separator >= 0 {
+			return strings.TrimSpace(rest[separator+1:])
+		}
+	}
+	return normalized
 }
 
 func defaultModelObject(value string) string {

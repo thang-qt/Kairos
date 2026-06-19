@@ -7,7 +7,7 @@ import type {
   ChatStatus,
 } from './types'
 import type { HistoryResponse, SessionMeta } from '@/screens/chat/types'
-import { ApiError } from '@/lib/app-api'
+import { parseJSON } from '@/lib/api-client'
 
 type SessionsPayload = {
   sessions: Array<SessionMeta>
@@ -237,20 +237,4 @@ export function createHTTPChatBackend(): ChatBackend {
       }
     },
   }
-}
-
-async function parseJSON<T>(response: Response): Promise<T> {
-  const text = await response.text()
-  const data = text ? (JSON.parse(text) as { error?: string } & T) : ({} as T)
-  if (!response.ok) {
-    const errorData = data as { error?: string }
-    throw new ApiError({
-      message:
-        typeof errorData.error === 'string'
-          ? errorData.error
-          : 'Request failed',
-      status: response.status,
-    })
-  }
-  return data
 }

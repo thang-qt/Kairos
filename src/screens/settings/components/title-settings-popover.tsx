@@ -13,6 +13,7 @@ import {
 } from '@/components/ui/menu'
 import {
   providerModelDisplayName,
+  providerModelKey,
   providerModelSearchText,
 } from '@/lib/model-utils'
 import { cn } from '@/lib/utils'
@@ -37,7 +38,10 @@ function TitleModelPicker({
 
   const selectedModel =
     models.find(function matchModel(model) {
-      return model.id === selectedModelId
+      return (
+        providerModelKey(model) === selectedModelId ||
+        model.id === selectedModelId
+      )
     }) ?? null
 
   const filteredModels = useMemo(
@@ -118,12 +122,15 @@ function TitleModelPicker({
           ) : (
             <div className="space-y-1">
               {filteredModels.map(function renderModel(model) {
-                const isSelected = model.id === selectedModel?.id
+                const modelKey = providerModelKey(model)
+                const isSelected =
+                  !!selectedModel &&
+                  modelKey === providerModelKey(selectedModel)
                 return (
                   <MenuItem
-                    key={model.id}
+                    key={modelKey}
                     onClick={function handleClick() {
-                      onSelectModel(model.id)
+                      onSelectModel(modelKey)
                       setOpen(false)
                       setQuery('')
                     }}

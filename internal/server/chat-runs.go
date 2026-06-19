@@ -52,6 +52,7 @@ type runRecord struct {
 	SessionID          string
 	Status             string
 	Model              string
+	IdempotencyKey     string
 	AssistantMessageID string
 }
 
@@ -201,6 +202,25 @@ func (service *ChatRunService) StartRun(
 	if err != nil {
 		return SendMessageResult{}, err
 	}
+	idempotencyKey := strings.TrimSpace(input.IdempotencyKey)
+	if idempotencyKey != "" {
+		existingRun, found, err := service.findRunByIdempotencyKey(
+			ctx,
+			userID,
+			session.ID,
+			idempotencyKey,
+		)
+		if err != nil {
+			return SendMessageResult{}, err
+		}
+		if found {
+			return SendMessageResult{
+				RunID:              existingRun.ID,
+				SessionKey:         session.ID,
+				AssistantMessageID: existingRun.AssistantMessageID,
+			}, nil
+		}
+	}
 	shouldGenerateTitle := shouldAutoGenerateSessionTitle(session)
 	titlePreferences := UserPreferences{}
 	autoGenerateTitleEnabled := false
@@ -226,8 +246,28 @@ func (service *ChatRunService) StartRun(
 
 	now := time.Now().UnixMilli()
 	userMessage["timestamp"] = now
-	if _, err := service.chat.appendMessageWithOptions(
+	runID := newID()
+	assistantMessageID := newID()
+	model := normalizeModel(input.Model)
+	record := runRecord{
+		ID:                 runID,
+		UserID:             userID,
+		SessionID:          session.ID,
+		Status:             "running",
+		Model:              model,
+		IdempotencyKey:     idempotencyKey,
+		AssistantMessageID: assistantMessageID,
+	}
+
+	transaction, err := service.db.BeginTx(ctx, nil)
+	if err != nil {
+		return SendMessageResult{}, fmt.Errorf("begin run tx: %w", err)
+	}
+	defer transaction.Rollback()
+
+	if _, err := service.chat.appendMessageWithOptionsExec(
 		ctx,
+		transaction,
 		session,
 		userMessage,
 		now,
@@ -238,18 +278,30 @@ func (service *ChatRunService) StartRun(
 		return SendMessageResult{}, err
 	}
 
-	runID := newID()
-	assistantMessageID := newID()
-	model := normalizeModel(input.Model)
-	if err := service.insertRun(ctx, runRecord{
-		ID:                 runID,
-		UserID:             userID,
-		SessionID:          session.ID,
-		Status:             "running",
-		Model:              model,
-		AssistantMessageID: assistantMessageID,
-	}, input, now); err != nil {
+	if err := service.insertRunExec(ctx, transaction, record, input, now); err != nil {
+		if idempotencyKey != "" && isUniqueConstraintError(err) {
+			_ = transaction.Rollback()
+			existingRun, found, lookupErr := service.findRunByIdempotencyKey(
+				ctx,
+				userID,
+				session.ID,
+				idempotencyKey,
+			)
+			if lookupErr != nil {
+				return SendMessageResult{}, lookupErr
+			}
+			if found {
+				return SendMessageResult{
+					RunID:              existingRun.ID,
+					SessionKey:         session.ID,
+					AssistantMessageID: existingRun.AssistantMessageID,
+				}, nil
+			}
+		}
 		return SendMessageResult{}, err
+	}
+	if err := transaction.Commit(); err != nil {
+		return SendMessageResult{}, fmt.Errorf("commit run tx: %w", err)
 	}
 
 	history, err := service.chat.GetHistory(ctx, userID, input.FriendlyID)
@@ -261,14 +313,7 @@ func (service *ChatRunService) StartRun(
 		service.maybeGenerateSessionTitle(session, input, userMessage, titlePreferences)
 	}
 
-	service.runAsync(runRecord{
-		ID:                 runID,
-		UserID:             userID,
-		SessionID:          session.ID,
-		Status:             "running",
-		Model:              model,
-		AssistantMessageID: assistantMessageID,
-	}, session, history.Messages, input)
+	service.runAsync(record, session, history.Messages, input)
 
 	return SendMessageResult{
 		RunID:              runID,
@@ -491,28 +536,81 @@ func (service *ChatRunService) insertRun(
 	input SendMessageInput,
 	now int64,
 ) error {
+	return service.insertRunExec(ctx, service.db, record, input, now)
+}
+
+func (service *ChatRunService) insertRunExec(
+	ctx context.Context,
+	exec sqlExecutor,
+	record runRecord,
+	input SendMessageInput,
+	now int64,
+) error {
 	requestJSON, err := json.Marshal(input)
 	if err != nil {
 		return fmt.Errorf("encode run request: %w", err)
 	}
 
-	if _, err := service.db.ExecContext(ctx, `
+	if _, err := exec.ExecContext(ctx, `
 		INSERT INTO chat_runs(
 			id,
 			user_id,
 			session_id,
 			status,
 			model,
+			idempotency_key,
+			assistant_message_id,
 			request_json,
 			started_at,
 			created_at
 		)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-	`, record.ID, record.UserID, record.SessionID, record.Status, record.Model, string(requestJSON), now, now); err != nil {
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, record.ID, record.UserID, record.SessionID, record.Status, record.Model, nullableString(record.IdempotencyKey), nullableString(record.AssistantMessageID), string(requestJSON), now, now); err != nil {
 		return fmt.Errorf("insert run: %w", err)
 	}
 
 	return nil
+}
+
+func (service *ChatRunService) findRunByIdempotencyKey(
+	ctx context.Context,
+	userID string,
+	sessionID string,
+	idempotencyKey string,
+) (runRecord, bool, error) {
+	normalizedKey := strings.TrimSpace(idempotencyKey)
+	if normalizedKey == "" {
+		return runRecord{}, false, nil
+	}
+
+	var record runRecord
+	var assistantMessageID sql.NullString
+	err := service.db.QueryRowContext(ctx, `
+		SELECT id, user_id, session_id, status, model, assistant_message_id
+		FROM chat_runs
+		WHERE user_id = ? AND session_id = ? AND idempotency_key = ?
+		LIMIT 1
+	`, userID, sessionID, normalizedKey).Scan(
+		&record.ID,
+		&record.UserID,
+		&record.SessionID,
+		&record.Status,
+		&record.Model,
+		&assistantMessageID,
+	)
+	if errors.Is(err, sql.ErrNoRows) {
+		return runRecord{}, false, nil
+	}
+	if err != nil {
+		return runRecord{}, false, fmt.Errorf("find idempotent run: %w", err)
+	}
+	record.IdempotencyKey = normalizedKey
+	record.AssistantMessageID = nullStringValue(assistantMessageID)
+	return record, true, nil
+}
+
+func isUniqueConstraintError(err error) bool {
+	return strings.Contains(strings.ToLower(err.Error()), "unique constraint")
 }
 
 func (service *ChatRunService) runAsync(
@@ -642,7 +740,8 @@ func (service *ChatRunService) executeRun(
 		}
 	}
 
-	if _, err := service.chat.appendMessage(ctx, session, finalMessage, finalTimestamp); err != nil {
+	sessionSummary, err := service.chat.appendMessage(ctx, session, finalMessage, finalTimestamp)
+	if err != nil {
 		service.publishRunError(ctx, record, session, err)
 		return
 	}
@@ -652,6 +751,7 @@ func (service *ChatRunService) executeRun(
 			return
 		}
 		session.TotalTokens = result.TotalTokens
+		sessionSummary.TotalTokens = result.TotalTokens
 	}
 	if err := service.markRunCompleted(ctx, record.ID, finalTimestamp); err != nil {
 		service.publishRunError(ctx, record, session, err)
@@ -660,7 +760,7 @@ func (service *ChatRunService) executeRun(
 
 	service.broker.Publish(
 		record.SessionID,
-		buildRunEvent(record, session, "final", "", finalMessage),
+		buildRunEventWithSession(record, session, "final", "", finalMessage, &sessionSummary),
 	)
 }
 
@@ -697,14 +797,18 @@ func (service *ChatRunService) publishRunAborted(
 	message map[string]any,
 ) {
 	persistCtx := context.Background()
+	var sessionSummary *SessionSummary
 	if len(message) > 0 {
 		timestamp, _ := message["timestamp"].(int64)
 		if timestamp == 0 {
 			timestamp = time.Now().UnixMilli()
 			message["timestamp"] = timestamp
 		}
-		if _, err := service.chat.appendMessage(persistCtx, session, message, timestamp); err != nil {
+		summary, err := service.chat.appendMessage(persistCtx, session, message, timestamp)
+		if err != nil {
 			log.Printf("kairos: failed to persist aborted run message for run %s: %v", record.ID, err)
+		} else {
+			sessionSummary = &summary
 		}
 	}
 	if err := service.markRunAborted(persistCtx, record.ID); err != nil {
@@ -712,7 +816,7 @@ func (service *ChatRunService) publishRunAborted(
 	}
 	service.broker.Publish(
 		record.SessionID,
-		buildRunEvent(record, session, "aborted", "", message),
+		buildRunEventWithSession(record, session, "aborted", "", message, sessionSummary),
 	)
 }
 
@@ -914,6 +1018,17 @@ func buildRunEvent(
 	errorMessage string,
 	message map[string]any,
 ) ChatEvent {
+	return buildRunEventWithSession(record, session, state, errorMessage, message, nil)
+}
+
+func buildRunEventWithSession(
+	record runRecord,
+	session sessionRecord,
+	state string,
+	errorMessage string,
+	message map[string]any,
+	summary *SessionSummary,
+) ChatEvent {
 	return ChatEvent{
 		RunID:      record.ID,
 		SessionKey: session.ID,
@@ -921,6 +1036,7 @@ func buildRunEvent(
 		State:      state,
 		Error:      errorMessage,
 		Message:    message,
+		Session:    summary,
 	}
 }
 

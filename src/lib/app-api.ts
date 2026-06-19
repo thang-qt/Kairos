@@ -1,4 +1,6 @@
 import { queryOptions, useQuery } from '@tanstack/react-query'
+import { ApiError, parseJSON } from './api-client'
+export { ApiError } from './api-client'
 
 export type AppCapabilities = {
   auth: {
@@ -63,6 +65,7 @@ export type ProviderRecord = {
 
 export type ProviderModel = {
   id: string
+  modelRef?: string
   object: 'model'
   created: number
   owned_by: string
@@ -133,21 +136,6 @@ export type TestConnectionPayload = {
 export type TestConnectionResult = {
   success: boolean
   message?: string
-}
-
-export type ApiErrorOptions = {
-  message: string
-  status: number
-}
-
-export class ApiError extends Error {
-  status: number
-
-  constructor({ message, status }: ApiErrorOptions) {
-    super(message)
-    this.name = 'ApiError'
-    this.status = status
-  }
 }
 
 export const appQueryKeys = {
@@ -475,19 +463,4 @@ export async function deleteCustomModel(
     const errorText = await response.text()
     throw new Error(errorText || 'Failed to delete custom model')
   }
-}
-
-async function parseJSON<T>(response: Response): Promise<T> {
-  const text = await response.text()
-  const data = text ? (JSON.parse(text) as { error?: string } & T) : ({} as T)
-  if (!response.ok) {
-    throw new ApiError({
-      message:
-        typeof (data as { error?: string }).error === 'string'
-          ? (data as { error?: string }).error!
-          : 'Request failed',
-      status: response.status,
-    })
-  }
-  return data
 }

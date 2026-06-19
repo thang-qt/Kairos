@@ -8,57 +8,27 @@ import {
   ArrowLeft01Icon,
 } from '@hugeicons/core-free-icons'
 import { AnimatePresence, motion } from 'motion/react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation } from '@tanstack/react-query'
 import {
-  appQueryKeys,
-  createProvider,
   createCustomModel,
   deleteCustomModel,
-  deleteProvider,
   syncModels,
-  testConnection,
   updateModelMetadata,
-  updatePreferences,
-  updateProvider,
   useCapabilitiesQuery,
   useModelsQuery,
   useProvidersQuery,
 } from '@/lib/app-api'
-import type { UpdateProviderPayload } from '@/lib/app-api'
 import { Button } from '@/components/ui/button'
 import { TitleSettingsPopover } from './title-settings-popover'
 import { ProvidersDialog } from './providers-dialog'
 import { ModelMetadataEditor } from './model-metadata-editor'
 import { CustomModelDialog } from './custom-model-dialog'
 import { mutationErrorMessage } from '@/lib/error-utils'
-import { formatContextWindow } from '@/lib/model-utils'
+import { useProviderEditor } from '@/hooks/use-provider-editor'
+import { formatContextWindow, providerModelKey } from '@/lib/model-utils'
 import { cn } from '@/lib/utils'
 
-type ProviderEditorState =
-  | {
-      mode: 'add'
-    }
-  | {
-      mode: 'edit'
-      providerId: string
-    }
-
-type ProviderDraftState = {
-  label: string
-  baseURL: string
-  apiKey: string
-}
-
-function createEmptyProviderDraft(): ProviderDraftState {
-  return {
-    label: '',
-    baseURL: '',
-    apiKey: '',
-  }
-}
-
 export function ModelsProvidersPanel() {
-  const queryClient = useQueryClient()
   const capabilitiesQuery = useCapabilitiesQuery()
   const providersQuery = useProvidersQuery()
   const modelsQuery = useModelsQuery()
@@ -68,19 +38,6 @@ export function ModelsProvidersPanel() {
   const [selectedProviderFilter, setSelectedProviderFilter] = useState<
     'all' | 'system' | string
   >('all')
-  const [errorMessage, setErrorMessage] = useState('')
-
-  const [editorState, setEditorState] = useState<ProviderEditorState | null>(
-    null,
-  )
-  const [draft, setDraft] = useState<ProviderDraftState>(
-    createEmptyProviderDraft(),
-  )
-  const [testingConnection, setTestingConnection] = useState(false)
-  const [testResult, setTestResult] = useState<{
-    success: boolean
-    message: string
-  } | null>(null)
 
   const providers = providersQuery.data?.providers ?? []
   const preferences = providersQuery.data?.preferences
@@ -91,13 +48,27 @@ export function ModelsProvidersPanel() {
   const defaultModelId = modelPreferences?.defaultModelId
   const titleGenerationModelId = modelPreferences?.titleGenerationModelId
 
-  const refreshQueries = async function refreshQueries() {
-    await Promise.all([
-      queryClient.invalidateQueries({ queryKey: appQueryKeys.providers }),
-      queryClient.invalidateQueries({ queryKey: appQueryKeys.models }),
-      queryClient.invalidateQueries({ queryKey: appQueryKeys.preferences }),
-    ])
-  }
+  const {
+    createProviderMutation,
+    deleteProviderMutation,
+    draft,
+    editorState,
+    errorMessage,
+    handleCreateProvider,
+    handleSaveProvider,
+    handleTestConnection,
+    openAddEditor,
+    openEditEditor,
+    refreshProviderQueries: refreshQueries,
+    resetEditorState,
+    saveProviderMutation,
+    setErrorMessage,
+    testResult,
+    testingConnection,
+    toggleProviderMutation,
+    updateDraft,
+    updatePreferencesMutation,
+  } = useProviderEditor({ canSyncModels: capabilities?.canSyncModels ?? true })
 
   const filteredModels = useMemo(
     function filterModels() {
@@ -158,132 +129,14 @@ export function ModelsProvidersPanel() {
     function getActiveModel() {
       return (
         models.find(function matchModel(m) {
-          return m.id === selectedModelId
+          return (
+            providerModelKey(m) === selectedModelId || m.id === selectedModelId
+          )
         }) || null
       )
     },
     [models, selectedModelId],
   )
-
-  function resetEditorFeedback() {
-    setErrorMessage('')
-    setTestResult(null)
-  }
-
-  function resetEditorState() {
-    setEditorState(null)
-    setDraft(createEmptyProviderDraft())
-    resetEditorFeedback()
-  }
-
-  function openAddEditor() {
-    setEditorState({ mode: 'add' })
-    setDraft(createEmptyProviderDraft())
-    resetEditorFeedback()
-  }
-
-  function openEditEditor(provider: {
-    id: string
-    label: string
-    baseUrl?: string
-  }) {
-    setEditorState({
-      mode: 'edit',
-      providerId: provider.id,
-    })
-    setDraft({
-      label: provider.label,
-      baseURL: provider.baseUrl ?? '',
-      apiKey: '',
-    })
-    resetEditorFeedback()
-  }
-
-  function updateDraft<TKey extends keyof ProviderDraftState>(
-    key: TKey,
-    value: ProviderDraftState[TKey],
-  ) {
-    setDraft(function handleDraft(previous) {
-      return {
-        ...previous,
-        [key]: value,
-      }
-    })
-    resetEditorFeedback()
-  }
-
-  function buildUpdateProviderPayload(): UpdateProviderPayload {
-    const payload: UpdateProviderPayload = {
-      label: draft.label.trim() || 'Custom Provider',
-      baseUrl: draft.baseURL.trim(),
-    }
-
-    if (draft.apiKey.trim()) {
-      payload.apiKey = draft.apiKey.trim()
-    }
-
-    return payload
-  }
-
-  const createProviderMutation = useMutation({
-    mutationFn: createProvider,
-    onSuccess: async function handleSuccess() {
-      resetEditorState()
-      await refreshQueries()
-    },
-    onError: function handleError(error) {
-      setErrorMessage(mutationErrorMessage(error, 'Failed to save provider.'))
-    },
-  })
-
-  const toggleProviderMutation = useMutation({
-    mutationFn: function mutate(payload: {
-      providerId: string
-      enabled?: boolean
-    }) {
-      return updateProvider(payload.providerId, {
-        enabled: payload.enabled,
-      })
-    },
-    onSuccess: refreshQueries,
-    onError: function handleError(error) {
-      setErrorMessage(mutationErrorMessage(error, 'Failed to update provider.'))
-    },
-  })
-
-  const saveProviderMutation = useMutation({
-    mutationFn: function mutate(payload: {
-      providerId: string
-      values: UpdateProviderPayload
-    }) {
-      return updateProvider(payload.providerId, payload.values)
-    },
-    onSuccess: async function handleSuccess() {
-      resetEditorState()
-      await refreshQueries()
-    },
-    onError: function handleError(error) {
-      setErrorMessage(mutationErrorMessage(error, 'Failed to save provider.'))
-    },
-  })
-
-  const deleteProviderMutation = useMutation({
-    mutationFn: deleteProvider,
-    onSuccess: refreshQueries,
-    onError: function handleError(error) {
-      setErrorMessage(mutationErrorMessage(error, 'Failed to delete provider.'))
-    },
-  })
-
-  const updatePreferencesMutation = useMutation({
-    mutationFn: updatePreferences,
-    onSuccess: refreshQueries,
-    onError: function handleError(error) {
-      setErrorMessage(
-        mutationErrorMessage(error, 'Failed to update preferences.'),
-      )
-    },
-  })
 
   const updateModelMetadataMutation = useMutation({
     mutationFn: updateModelMetadata,
@@ -346,69 +199,6 @@ export function ModelsProvidersPanel() {
     },
   })
 
-  function handleCreateProvider() {
-    if (!draft.apiKey.trim()) {
-      setErrorMessage('API key is required.')
-      return
-    }
-
-    createProviderMutation.mutate({
-      label: draft.label.trim() || 'Custom Provider',
-      baseUrl: draft.baseURL.trim(),
-      apiKey: draft.apiKey.trim(),
-      kind: 'openai_compatible',
-      supportsModelSync: capabilities?.canSyncModels ?? true,
-    })
-  }
-
-  function handleSaveProvider() {
-    if (editorState?.mode !== 'edit') {
-      return
-    }
-
-    saveProviderMutation.mutate({
-      providerId: editorState.providerId,
-      values: buildUpdateProviderPayload(),
-    })
-  }
-
-  async function handleTestConnection() {
-    if (!draft.apiKey.trim()) {
-      setErrorMessage('API key is required.')
-      return
-    }
-    if (!draft.baseURL.trim()) {
-      setErrorMessage('Base URL is required for testing.')
-      return
-    }
-
-    setTestingConnection(true)
-    setErrorMessage('')
-    setTestResult(null)
-
-    try {
-      const result = await testConnection({
-        kind: 'openai_compatible',
-        baseUrl: draft.baseURL.trim(),
-        apiKey: draft.apiKey.trim(),
-      })
-      setTestResult({
-        success: result.success,
-        message: result.message || '',
-      })
-      if (!result.success) {
-        setErrorMessage(result.message || 'Connection failed.')
-      }
-    } catch (error) {
-      setTestResult({ success: false, message: 'Connection failed.' })
-      setErrorMessage(
-        error instanceof Error ? error.message : 'Connection failed.',
-      )
-    } finally {
-      setTestingConnection(false)
-    }
-  }
-
   function resolveInitialTitleModelId() {
     const normalizedConfiguredId = titleGenerationModelId?.trim()
     if (normalizedConfiguredId) {
@@ -420,7 +210,7 @@ export function ModelsProvidersPanel() {
       return normalizedDefaultModelId
     }
 
-    return models[0]?.id ?? ''
+    return models[0] ? providerModelKey(models[0]) : ''
   }
 
   function handleAutoGenerateTitleChange(checked: boolean) {
@@ -679,11 +469,12 @@ export function ModelsProvidersPanel() {
               )}
             >
               {filteredModels.map(function renderModelCard(model) {
-                const isActive = model.id === selectedModelId
+                const modelKey = providerModelKey(model)
+                const isActive = modelKey === selectedModelId
 
                 return (
                   <div
-                    key={model.id}
+                    key={modelKey}
                     className={cn(
                       'rounded-xl border border-primary-200 bg-surface overflow-hidden transition-all duration-200 self-start',
                       isActive &&
@@ -694,7 +485,7 @@ export function ModelsProvidersPanel() {
                     <button
                       type="button"
                       onClick={function handleToggle() {
-                        setSelectedModelId(isActive ? '' : model.id)
+                        setSelectedModelId(isActive ? '' : modelKey)
                       }}
                       className="flex w-full items-start justify-between gap-3 p-4 text-left hover:bg-primary-50/40"
                     >
@@ -703,7 +494,7 @@ export function ModelsProvidersPanel() {
                           <span className="truncate font-mono text-[10px] text-primary-600 bg-primary-100 px-1.5 py-0.5 rounded">
                             {model.id}
                           </span>
-                          {defaultModelId === model.id && (
+                          {defaultModelId === modelKey && (
                             <span className="rounded-full bg-primary-200 px-2 py-0.5 text-[9px] font-medium tracking-tight text-primary-900 uppercase">
                               Default
                             </span>
@@ -771,7 +562,7 @@ export function ModelsProvidersPanel() {
                       <span className="font-mono text-xs text-primary-600 bg-primary-100 px-1.5 py-0.5 rounded">
                         {activeModel.id}
                       </span>
-                      {defaultModelId === activeModel.id && (
+                      {defaultModelId === providerModelKey(activeModel) && (
                         <span className="rounded-full bg-primary-200 px-2 py-0.5 text-[9px] font-medium tracking-tight text-primary-900 uppercase">
                           Default
                         </span>

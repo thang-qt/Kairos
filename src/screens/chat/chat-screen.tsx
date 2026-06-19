@@ -56,6 +56,7 @@ import { useExport } from '@/hooks/use-export'
 import { useChatSettings } from '@/hooks/use-chat-settings'
 import { useModelsQuery } from '@/lib/app-api'
 import { getChatBackend } from '@/lib/chat-backend'
+import { providerModelKey } from '@/lib/model-utils'
 import { randomUUID } from '@/lib/utils'
 
 type ChatScreenProps = {
@@ -117,14 +118,17 @@ export function ChatScreen({
   )
   const resolvedConversationModelDetails = models.find(
     function matchResolvedModel(model) {
-      return model.id === resolvedConversationModel
+      return (
+        providerModelKey(model) === resolvedConversationModel ||
+        model.id === resolvedConversationModel
+      )
     },
   )
   const modelLabelById = useMemo(() => {
     const map = new Map<string, string>()
     for (const model of models) {
       const normalizedName = model.name?.trim()
-      map.set(model.id, normalizedName || model.id)
+      map.set(providerModelKey(model), normalizedName || model.id)
     }
     return map
   }, [models])

@@ -66,6 +66,10 @@ type appendMessageOptions struct {
 	SkipDerivedTitle bool
 }
 
+type sqlExecutor interface {
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+}
+
 func NewChatService(db *sql.DB) *ChatService {
 	return &ChatService{db: db}
 }
@@ -432,6 +436,24 @@ func (service *ChatService) appendMessageWithOptions(
 	timestamp int64,
 	options appendMessageOptions,
 ) (SessionSummary, error) {
+	return service.appendMessageWithOptionsExec(
+		ctx,
+		service.db,
+		session,
+		message,
+		timestamp,
+		options,
+	)
+}
+
+func (service *ChatService) appendMessageWithOptionsExec(
+	ctx context.Context,
+	exec sqlExecutor,
+	session sessionRecord,
+	message map[string]any,
+	timestamp int64,
+	options appendMessageOptions,
+) (SessionSummary, error) {
 	messageJSON, err := json.Marshal(message)
 	if err != nil {
 		return SessionSummary{}, fmt.Errorf("encode message: %w", err)
@@ -449,7 +471,7 @@ func (service *ChatService) appendMessageWithOptions(
 		derivedTitle = deriveTitleFromMessage(message)
 	}
 
-	if _, err := service.db.ExecContext(ctx, `
+	if _, err := exec.ExecContext(ctx, `
 		INSERT INTO chat_messages(
 			id,
 			session_id,
@@ -471,7 +493,7 @@ func (service *ChatService) appendMessageWithOptions(
 		return SessionSummary{}, fmt.Errorf("insert chat message: %w", err)
 	}
 
-	if _, err := service.db.ExecContext(ctx, `
+	if _, err := exec.ExecContext(ctx, `
 		UPDATE chat_sessions
 		SET
 			last_message_json = ?,

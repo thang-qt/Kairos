@@ -15,6 +15,7 @@ import { MenuContent, MenuRoot, MenuTrigger } from '@/components/ui/menu'
 import { mutationErrorMessage } from '@/lib/error-utils'
 import {
   providerModelDisplayName,
+  providerModelKey,
   providerModelMetaLine,
   providerModelSearchText,
 } from '@/lib/model-utils'
@@ -64,14 +65,17 @@ export function ChatModelSelector({
 
   const selectedModel =
     models.find(function matchModel(model) {
-      return model.id === selectedModelId
+      return (
+        providerModelKey(model) === selectedModelId ||
+        model.id === selectedModelId
+      )
     }) ?? null
 
   const normalizedDefaultModelId = defaultModelId?.trim()
   const isSelectedModelDefault =
     !!selectedModel &&
     !!normalizedDefaultModelId &&
-    selectedModel.id === normalizedDefaultModelId
+    providerModelKey(selectedModel) === normalizedDefaultModelId
 
   const filteredModels = useMemo(
     function filterModels() {
@@ -213,14 +217,17 @@ export function ChatModelSelector({
           ) : (
             <div className="space-y-1">
               {filteredModels.map(function renderModel(model) {
-                const isSelected = model.id === selectedModel?.id
+                const modelKey = providerModelKey(model)
+                const isSelected =
+                  !!selectedModel &&
+                  modelKey === providerModelKey(selectedModel)
                 const isDefault =
                   !!normalizedDefaultModelId &&
-                  model.id === normalizedDefaultModelId
+                  modelKey === normalizedDefaultModelId
 
                 return (
                   <div
-                    key={model.id}
+                    key={modelKey}
                     className={cn(
                       'flex w-full items-start justify-between gap-3 rounded-lg px-3 py-2 text-left transition-colors hover:bg-primary-100',
                       isSelected && 'bg-primary-100 text-primary-950',
@@ -229,7 +236,7 @@ export function ChatModelSelector({
                     <button
                       type="button"
                       onClick={function handleClick() {
-                        handleSelectModel(model.id)
+                        handleSelectModel(modelKey)
                       }}
                       className="min-w-0 flex-1 text-left"
                     >
@@ -270,7 +277,7 @@ export function ChatModelSelector({
                           onClick={function handleClick(event) {
                             event.preventDefault()
                             event.stopPropagation()
-                            handleMakeDefault(model.id)
+                            handleMakeDefault(modelKey)
                           }}
                           className="rounded-md px-2 text-primary-500 hover:text-primary-900"
                           aria-label={`Make ${providerModelDisplayName(model)} default`}
@@ -331,7 +338,7 @@ export function ChatModelSelector({
                   onClick={function handleClick(event) {
                     event.preventDefault()
                     event.stopPropagation()
-                    handleMakeDefault(selectedModel.id)
+                    handleMakeDefault(providerModelKey(selectedModel))
                   }}
                   className="shrink-0 rounded-md px-2.5"
                 >

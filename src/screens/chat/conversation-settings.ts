@@ -2,6 +2,7 @@ import { useMemo } from 'react'
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import type { ProviderModel } from '@/lib/app-api'
+import { providerModelKey } from '@/lib/model-utils'
 import type { ThinkingLevel } from '@/hooks/use-chat-settings'
 
 export type ConversationSettings = {
@@ -116,22 +117,46 @@ export function resolveConversationModelID(
     normalizeConversationStringValue(preferredModelID)
   if (
     normalizedPreferredModelID &&
-    models.some((model) => model.id === normalizedPreferredModelID)
+    models.some(function hasPreferredModel(model) {
+      return (
+        providerModelKey(model) === normalizedPreferredModelID ||
+        model.id === normalizedPreferredModelID
+      )
+    })
   ) {
-    return normalizedPreferredModelID
+    return (
+      models.find(function findPreferredModel(model) {
+        return (
+          providerModelKey(model) === normalizedPreferredModelID ||
+          model.id === normalizedPreferredModelID
+        )
+      })?.modelRef ?? normalizedPreferredModelID
+    )
   }
 
   const normalizedDefaultModelID =
     normalizeConversationStringValue(defaultModelID)
   if (
     normalizedDefaultModelID &&
-    models.some((model) => model.id === normalizedDefaultModelID)
+    models.some(function hasDefaultModel(model) {
+      return (
+        providerModelKey(model) === normalizedDefaultModelID ||
+        model.id === normalizedDefaultModelID
+      )
+    })
   ) {
-    return normalizedDefaultModelID
+    return (
+      models.find(function findDefaultModel(model) {
+        return (
+          providerModelKey(model) === normalizedDefaultModelID ||
+          model.id === normalizedDefaultModelID
+        )
+      })?.modelRef ?? normalizedDefaultModelID
+    )
   }
 
   if (models.length > 0) {
-    return models[0].id
+    return providerModelKey(models[0])
   }
 
   return ''

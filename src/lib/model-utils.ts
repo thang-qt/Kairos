@@ -9,6 +9,10 @@ export function providerModelDisplayName(
   return normalizedName || model.id
 }
 
+export function providerModelKey(model: ProviderModel) {
+  return model.modelRef?.trim() || model.id
+}
+
 export function providerModelMetaLine(model: ProviderModel) {
   if (model.providerLabel && model.providerLabel !== model.id) {
     return `${model.providerLabel} · ${model.id}`
@@ -21,6 +25,7 @@ export function providerModelMetaLine(model: ProviderModel) {
 
 export function providerModelSearchText(model: ProviderModel) {
   return [
+    model.modelRef,
     model.id,
     model.name,
     model.description,

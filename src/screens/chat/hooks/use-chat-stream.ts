@@ -54,8 +54,12 @@ export function useChatStream({
       refreshHistoryRef.current()
     }
 
-    if (payload.session && typeof payload.session === 'object') {
-      upsertSessionSummary(queryClient, payload.session)
+    const authoritativeSession =
+      payload.session && typeof payload.session === 'object'
+        ? payload.session
+        : null
+    if (authoritativeSession) {
+      upsertSessionSummary(queryClient, authoritativeSession)
     }
 
     if (!payload.message || typeof payload.message !== 'object') {
@@ -131,7 +135,7 @@ export function useChatStream({
       )
     }
 
-    if (payloadSessionKey) {
+    if (payloadSessionKey && !authoritativeSession) {
       updateSessionLastMessage(
         queryClient,
         payloadSessionKey,
