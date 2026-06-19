@@ -853,23 +853,16 @@ func lastMessageFromRecords(records []messageRecord) map[string]any {
 }
 
 func extractAttachmentPayloads(message map[string]any) []AttachmentPayload {
-	content, ok := message["content"].([]any)
-	if !ok {
-		return nil
-	}
-
 	attachments := make([]AttachmentPayload, 0)
-	for _, item := range content {
-		part, ok := item.(map[string]any)
-		if !ok || strings.TrimSpace(stringValueFromMap(part, "type")) != "image" {
+	for _, part := range contentPartsFromAny(message["content"]) {
+		if strings.TrimSpace(part.Type) != "image" || part.Source == nil {
 			continue
 		}
-		source, ok := part["source"].(map[string]any)
-		if !ok || strings.TrimSpace(stringValueFromMap(source, "type")) != "base64" {
+		if strings.TrimSpace(part.Source.Type) != "base64" {
 			continue
 		}
-		mimeType := strings.TrimSpace(stringValueFromMap(source, "media_type"))
-		content := strings.TrimSpace(stringValueFromMap(source, "data"))
+		mimeType := strings.TrimSpace(part.Source.MediaType)
+		content := strings.TrimSpace(part.Source.Data)
 		if mimeType == "" || content == "" {
 			continue
 		}
@@ -1006,26 +999,9 @@ func deriveTitleFromMessage(message map[string]any) string {
 	if stringValueFromMap(message, "role") != "user" {
 		return ""
 	}
-	content, ok := message["content"].([]map[string]any)
-	if ok {
-		for _, part := range content {
-			if strings.TrimSpace(stringValueFromMap(part, "type")) == "text" {
-				return trimTitle(stringValueFromMap(part, "text"))
-			}
-		}
-	}
-
-	rawContent, ok := message["content"].([]any)
-	if !ok {
-		return ""
-	}
-	for _, item := range rawContent {
-		part, ok := item.(map[string]any)
-		if !ok {
-			continue
-		}
-		if strings.TrimSpace(stringValueFromMap(part, "type")) == "text" {
-			return trimTitle(stringValueFromMap(part, "text"))
+	for _, part := range contentPartsFromAny(message["content"]) {
+		if strings.TrimSpace(part.Type) == "text" {
+			return trimTitle(part.Text)
 		}
 	}
 	return ""
@@ -1048,25 +1024,7 @@ func approximateMessageTokens(message map[string]any) int64 {
 }
 
 func textFromMessageMap(message map[string]any) string {
-	rawContent, ok := message["content"].([]any)
-	if !ok {
-		return ""
-	}
-	parts := make([]string, 0, len(rawContent))
-	for _, rawPart := range rawContent {
-		part, ok := rawPart.(map[string]any)
-		if !ok {
-			continue
-		}
-		if strings.TrimSpace(stringValueFromMap(part, "type")) != "text" {
-			continue
-		}
-		text := strings.TrimSpace(stringValueFromMap(part, "text"))
-		if text != "" {
-			parts = append(parts, text)
-		}
-	}
-	return strings.Join(parts, " ")
+	return textFromContentParts(contentPartsFromAny(message["content"]))
 }
 
 func max(left int, right int) int {

@@ -1,0 +1,186 @@
+package server
+
+import "strings"
+
+type chatMessage struct {
+	ID               string
+	Role             string
+	Model            string
+	ModelName        string
+	ModelDescription string
+	ClientID         string
+	Timestamp        int64
+	Content          []chatMessageContentPart
+	Details          map[string]any
+}
+
+type chatMessageContentPart struct {
+	Type     string
+	Text     string
+	Thinking string
+	Source   *chatMessageContentSource
+}
+
+type chatMessageContentSource struct {
+	Type      string
+	MediaType string
+	Data      string
+}
+
+func newTextContentPart(text string) chatMessageContentPart {
+	return chatMessageContentPart{
+		Type: "text",
+		Text: strings.TrimSpace(text),
+	}
+}
+
+func newThinkingContentPart(thinking string) chatMessageContentPart {
+	return chatMessageContentPart{
+		Type:     "thinking",
+		Thinking: strings.TrimSpace(thinking),
+	}
+}
+
+func newImageContentPart(mimeType string, data string) chatMessageContentPart {
+	return chatMessageContentPart{
+		Type: "image",
+		Source: &chatMessageContentSource{
+			Type:      "base64",
+			MediaType: strings.TrimSpace(mimeType),
+			Data:      strings.TrimSpace(data),
+		},
+	}
+}
+
+func (message chatMessage) toMap() map[string]any {
+	value := map[string]any{
+		"id":      message.ID,
+		"role":    message.Role,
+		"content": contentPartsToMaps(message.Content),
+	}
+	if message.Model != "" {
+		value["model"] = message.Model
+	}
+	if message.ModelName != "" {
+		value["modelName"] = message.ModelName
+	}
+	if message.ModelDescription != "" {
+		value["modelDescription"] = message.ModelDescription
+	}
+	if message.ClientID != "" {
+		value["clientId"] = message.ClientID
+	}
+	if message.Timestamp > 0 {
+		value["timestamp"] = message.Timestamp
+	}
+	if len(message.Details) > 0 {
+		value["details"] = message.Details
+	}
+	return value
+}
+
+func contentPartsToMaps(parts []chatMessageContentPart) []map[string]any {
+	values := make([]map[string]any, 0, len(parts))
+	for _, part := range parts {
+		switch strings.TrimSpace(part.Type) {
+		case "text":
+			text := strings.TrimSpace(part.Text)
+			if text == "" {
+				continue
+			}
+			values = append(values, map[string]any{
+				"type": "text",
+				"text": text,
+			})
+		case "thinking":
+			thinking := strings.TrimSpace(part.Thinking)
+			if thinking == "" {
+				continue
+			}
+			values = append(values, map[string]any{
+				"type":     "thinking",
+				"thinking": thinking,
+			})
+		case "image":
+			if part.Source == nil {
+				continue
+			}
+			mimeType := strings.TrimSpace(part.Source.MediaType)
+			data := strings.TrimSpace(part.Source.Data)
+			if strings.TrimSpace(part.Source.Type) != "base64" || mimeType == "" || data == "" {
+				continue
+			}
+			values = append(values, map[string]any{
+				"type": "image",
+				"source": map[string]any{
+					"type":       "base64",
+					"media_type": mimeType,
+					"data":       data,
+				},
+			})
+		}
+	}
+	return values
+}
+
+func contentPartsFromAny(value any) []chatMessageContentPart {
+	switch typed := value.(type) {
+	case []map[string]any:
+		return contentPartsFromMaps(typed)
+	case []any:
+		items := make([]map[string]any, 0, len(typed))
+		for _, item := range typed {
+			part, ok := item.(map[string]any)
+			if !ok {
+				continue
+			}
+			items = append(items, part)
+		}
+		return contentPartsFromMaps(items)
+	default:
+		return nil
+	}
+}
+
+func contentPartsFromMaps(items []map[string]any) []chatMessageContentPart {
+	parts := make([]chatMessageContentPart, 0, len(items))
+	for _, item := range items {
+		switch strings.TrimSpace(stringValueFromMap(item, "type")) {
+		case "text":
+			text := strings.TrimSpace(stringValueFromMap(item, "text"))
+			if text != "" {
+				parts = append(parts, newTextContentPart(text))
+			}
+		case "thinking":
+			thinking := strings.TrimSpace(stringValueFromMap(item, "thinking"))
+			if thinking != "" {
+				parts = append(parts, newThinkingContentPart(thinking))
+			}
+		case "image":
+			source, ok := item["source"].(map[string]any)
+			if !ok || strings.TrimSpace(stringValueFromMap(source, "type")) != "base64" {
+				continue
+			}
+			mimeType := strings.TrimSpace(stringValueFromMap(source, "media_type"))
+			data := strings.TrimSpace(stringValueFromMap(source, "data"))
+			if mimeType != "" && data != "" {
+				parts = append(parts, newImageContentPart(mimeType, data))
+			}
+		}
+	}
+	return parts
+}
+
+func textFromContentParts(parts []chatMessageContentPart) string {
+	textParts := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if strings.TrimSpace(part.Type) != "text" {
+			continue
+		}
+		text := strings.TrimSpace(part.Text)
+		if text != "" {
+			textParts = append(textParts, text)
+		}
+	}
+	return strings.Join(textParts, " ")
+}
