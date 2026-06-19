@@ -49,9 +49,15 @@ export const THEME_PALETTE_OPTIONS = [
   description: string
 }>
 
+export type ReasoningCollapseMode =
+  | 'collapsed'
+  | 'expanded-while-thinking'
+  | 'expanded'
+
 export type ChatSettings = {
   showToolMessages: boolean
   showReasoningBlocks: boolean
+  reasoningCollapseMode: ReasoningCollapseMode
   showConversationNavigator: boolean
   showSidebarSectionCounts: boolean
   themeMode: ThemeMode
@@ -77,6 +83,7 @@ const THEME_PALETTE_CLASS_NAMES = [
 const DEFAULT_CHAT_SETTINGS: ChatSettings = {
   showToolMessages: true,
   showReasoningBlocks: true,
+  reasoningCollapseMode: 'expanded-while-thinking',
   showConversationNavigator: true,
   showSidebarSectionCounts: false,
   themeMode: 'system',
@@ -96,6 +103,16 @@ function isThemePalette(value: unknown): value is ThemePalette {
     value === 'canopy' ||
     value === 'ember' ||
     value === 'tide'
+  )
+}
+
+function isReasoningCollapseMode(
+  value: unknown,
+): value is ReasoningCollapseMode {
+  return (
+    value === 'collapsed' ||
+    value === 'expanded-while-thinking' ||
+    value === 'expanded'
   )
 }
 
@@ -127,6 +144,17 @@ function normalizeChatSettings(value: unknown): ChatSettings {
   const themePalette =
     normalizedThemePalette ?? DEFAULT_CHAT_SETTINGS.themePalette
 
+  let reasoningCollapseModeValue = record?.reasoningCollapseMode
+  if (reasoningCollapseModeValue === 'expand-streaming') {
+    reasoningCollapseModeValue = 'expanded-while-thinking'
+  }
+
+  const reasoningCollapseMode = isReasoningCollapseMode(
+    reasoningCollapseModeValue,
+  )
+    ? reasoningCollapseModeValue
+    : DEFAULT_CHAT_SETTINGS.reasoningCollapseMode
+
   return {
     showToolMessages: booleanOrDefault(
       record?.showToolMessages,
@@ -136,6 +164,7 @@ function normalizeChatSettings(value: unknown): ChatSettings {
       record?.showReasoningBlocks,
       DEFAULT_CHAT_SETTINGS.showReasoningBlocks,
     ),
+    reasoningCollapseMode,
     showConversationNavigator: booleanOrDefault(
       record?.showConversationNavigator,
       DEFAULT_CHAT_SETTINGS.showConversationNavigator,

@@ -1,5 +1,6 @@
 'use client'
 
+import { useEffect, useRef, useState } from 'react'
 import { HugeiconsIcon } from '@hugeicons/react'
 import { ArrowDown01Icon } from '@hugeicons/core-free-icons'
 import { Markdown } from './markdown'
@@ -9,15 +10,61 @@ import {
   CollapsibleTrigger,
 } from '@/components/ui/collapsible'
 import { Button } from '@/components/ui/button'
+import { useChatSettingsStore } from '@/hooks/use-chat-settings'
 
 export type ThinkingProps = {
   content: string
+  isThinking?: boolean
 }
 
-function Thinking({ content }: ThinkingProps) {
+function Thinking({ content, isThinking = false }: ThinkingProps) {
+  const reasoningCollapseMode = useChatSettingsStore(
+    (state) => state.settings.reasoningCollapseMode,
+  )
+
+  function getInitialOpen() {
+    if (reasoningCollapseMode === 'collapsed') return false
+    if (reasoningCollapseMode === 'expanded') return true
+    // 'expanded-while-thinking'
+    return isThinking
+  }
+
+  const [open, setOpen] = useState(getInitialOpen)
+
+  const prevIsThinkingRef = useRef(isThinking)
+  const prevCollapseModeRef = useRef(reasoningCollapseMode)
+
+  useEffect(
+    function handleThinkingTransition() {
+      const prevIsThinking = prevIsThinkingRef.current
+      const prevCollapseMode = prevCollapseModeRef.current
+
+      prevIsThinkingRef.current = isThinking
+      prevCollapseModeRef.current = reasoningCollapseMode
+
+      if (reasoningCollapseMode !== prevCollapseMode) {
+        setOpen(getInitialOpen())
+        return
+      }
+
+      if (prevIsThinking && !isThinking) {
+        if (reasoningCollapseMode === 'expanded-while-thinking') {
+          setOpen(false)
+        }
+      }
+
+      if (!prevIsThinking && isThinking) {
+        if (reasoningCollapseMode === 'expanded-while-thinking') {
+          setOpen(true)
+        }
+      }
+    },
+    [isThinking, reasoningCollapseMode],
+  )
+
   return (
     <div className="inline-flex flex-col">
-      <Collapsible>
+      <Collapsible open={open} onOpenChange={setOpen}>
         <CollapsibleTrigger
           render={
             <Button

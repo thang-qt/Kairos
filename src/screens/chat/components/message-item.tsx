@@ -341,9 +341,20 @@ function MessageItemComponent({
     if (part.type === 'thinking') {
       const thinking = String(part.thinking ?? '')
       if (!thinking || !showReasoningBlocks) return null
+      const isStreaming = Boolean(message.__streamRunId)
+      const hasRealContent = assistantParts.some(function checkPart(p) {
+        if (p.type === 'text') {
+          return String(p.text ?? '').trim().length > 0
+        }
+        if (p.type === 'toolCall') {
+          return true
+        }
+        return false
+      })
+      const isThinking = isStreaming && !hasRealContent
       return (
         <div key={`thinking-${index}`} className="w-full max-w-[900px]">
-          <Thinking content={thinking} />
+          <Thinking content={thinking} isThinking={isThinking} />
         </div>
       )
     }
