@@ -3,17 +3,10 @@ import { useNavigate } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { countConversationTokens, isSessionNotFound } from './utils'
-import { createOptimisticMessage } from './chat-screen-utils'
 import {
-  appendHistoryMessage,
   chatQueryKeys,
   clearHistoryMessages,
-  moveHistoryMessages,
   fetchChatStatus,
-  removeHistoryMessageByClientId,
-  updateHistoryMessageByClientId,
-  updateSessionLastMessage,
-  upsertSessionSummary,
 } from './chat-queries'
 import { chatUiQueryKey, getChatUiState, setChatUiState } from './chat-ui'
 import { ChatSidebar } from './components/chat-sidebar'
@@ -23,11 +16,7 @@ import { ChatComposer } from './components/chat-composer'
 import { BackendStatusMessage } from './components/backend-status-message'
 import { MessageStatus } from './components/message-status'
 import { UserTurnDeleteDialog } from './components/user-turn-delete-dialog'
-import {
-  hasPendingGeneration,
-  isRecentSession,
-  setRecentSession,
-} from './pending-send'
+import { hasPendingGeneration, isRecentSession } from './pending-send'
 import { useChatMeasurements } from './hooks/use-chat-measurements'
 import { useChatHistory } from './hooks/use-chat-history'
 import { useChatMobile } from './hooks/use-chat-mobile'
@@ -35,28 +24,21 @@ import { useChatSessions } from './hooks/use-chat-sessions'
 import { useChatStream } from './hooks/use-chat-stream'
 import { useChatRedirect } from './hooks/use-chat-redirect'
 import { useChatRuns } from './hooks/use-chat-runs'
+import { useChatRestoration } from './hooks/use-chat-restoration'
+import { useChatMutations } from './hooks/use-chat-mutations'
 import {
-  copyConversationSettings,
   normalizeConversationTextSetting,
   parseConversationNumberSetting,
   resolveConversationModelID,
   useConversationSettings,
 } from './conversation-settings'
 import { RightSidebar } from './components/right-sidebar'
-import type { CloneMessagePayload } from './components/chat-message-list'
 import type { RightSidebarTab } from './components/right-sidebar'
-import type { AttachmentFile } from '@/components/attachment-button'
-import type {
-  ChatComposerDraft,
-  ChatComposerHelpers,
-} from './components/chat-composer'
 import { AppShell } from '@/components/app-shell'
 import { useExport } from '@/hooks/use-export'
 import { useChatSettings } from '@/hooks/use-chat-settings'
 import { useModelsQuery } from '@/lib/app-api'
-import { getChatBackend } from '@/lib/chat-backend'
 import { providerModelKey } from '@/lib/model-utils'
-import { randomUUID } from '@/lib/utils'
 
 type ChatScreenProps = {
   activeFriendlyId: string
@@ -68,14 +50,6 @@ type ChatScreenProps = {
   forcedSessionKey?: string
 }
 
-const CLONE_SCROLL_RESTORE_KEY = 'kairos.clone-scroll-restore'
-const CLONE_COMPOSER_DRAFT_KEY = 'kairos.clone-composer-draft'
-
-type UserTurnDeleteState = {
-  messageId: string
-  currentText: string
-} | null
-
 export function ChatScreen({
   activeFriendlyId,
   isNewChat = false,
@@ -84,19 +58,10 @@ export function ChatScreen({
 }: ChatScreenProps) {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
-  const [sending, setSending] = useState(false)
-  const [creatingSession, setCreatingSession] = useState(false)
   const [isRedirecting, setIsRedirecting] = useState(false)
-  const [streamError, setStreamError] = useState<string | null>(null)
   const [rightSidebarOpen, setRightSidebarOpen] = useState(false)
   const [rightSidebarTab, setRightSidebarTab] =
     useState<RightSidebarTab>('options')
-  const [restoreScrollTop, setRestoreScrollTop] = useState<number | null>(null)
-  const [composerDraft, setComposerDraft] = useState<ChatComposerDraft | null>(
-    null,
-  )
-  const [deletingUserTurn, setDeletingUserTurn] =
-    useState<UserTurnDeleteState>(null)
   const { headerRef, composerRef, mainRef, pinGroupMinHeight, headerHeight } =
     useChatMeasurements()
   const [pinToTop, setPinToTop] = useState(() => hasPendingGeneration())
@@ -161,8 +126,6 @@ export function ChatScreen({
       round: true,
     },
   )
-  const hasAvailableModel = resolvedConversationModel.trim().length > 0
-  const scrollTopRef = useRef(0)
   const { isMobile } = useChatMobile(queryClient)
   const {
     sessionsQuery,
@@ -268,288 +231,59 @@ export function ChatScreen({
     waitingForResponse,
   } = useChatRuns({ refreshHistory })
 
+  const {
+    restoreScrollTop,
+    composerDraft,
+    handleScrollTopChange,
+    handleRestoreScrollTopApplied,
+    storeCloneScrollRestore,
+    stashCloneComposerDraft,
+  } = useChatRestoration({
+    activeFriendlyId,
+    isNewChat,
+  })
+
+  const {
+    sending,
+    creatingSession,
+    streamError,
+    setStreamError,
+    deletingUserTurn,
+    setDeletingUserTurn,
+    hasAvailableModel,
+    send,
+    handleRetryLastMessage,
+    handleStopGeneration,
+    handleCloneMessage,
+    handleOpenDeleteUserTurn,
+    handleSaveEditedUserTurn,
+    handleConfirmDeleteUserTurn,
+  } = useChatMutations({
+    activeFriendlyId,
+    isNewChat,
+    forcedSessionKey,
+    resolvedSessionKey,
+    activeSessionKey,
+    onSessionResolved,
+    resolvedConversationModel,
+    resolvedSystemPrompt,
+    resolvedThinkingLevel,
+    resolvedTemperature,
+    resolvedTopP,
+    resolvedMaxOutputTokens,
+    beginGeneration,
+    finishGeneration,
+    startRun,
+    refreshHistory,
+    setPinToTop,
+    storeCloneScrollRestore,
+    stashCloneComposerDraft,
+    displayMessages,
+  })
+
   useEffect(() => {
     setStreamError(null)
-  }, [activeFriendlyId, forcedSessionKey, isNewChat])
-
-  const sendMessage = useCallback(
-    function sendMessage(
-      sessionKey: string,
-      friendlyId: string,
-      body: string,
-      skipOptimistic = false,
-      modelOverride?: string,
-      systemPromptOverride?: string,
-      thinkingOverride?: string,
-      temperatureOverride?: number,
-      topPOverride?: number,
-      maxOutputTokensOverride?: number,
-      attachments?: Array<AttachmentFile>,
-      clientIdOverride?: string,
-    ) {
-      let optimisticClientId = ''
-      if (!skipOptimistic) {
-        const { clientId, optimisticMessage } = createOptimisticMessage(
-          body,
-          attachments,
-        )
-        optimisticClientId = clientId
-        appendHistoryMessage(
-          queryClient,
-          friendlyId,
-          sessionKey,
-          optimisticMessage,
-        )
-        updateSessionLastMessage(
-          queryClient,
-          sessionKey,
-          friendlyId,
-          optimisticMessage,
-        )
-      }
-
-      beginGeneration()
-      setSending(true)
-      setStreamError(null)
-      setPinToTop(true)
-
-      const attachmentsPayload = attachments
-        ?.filter((attachment) => Boolean(attachment.base64))
-        .map((attachment) => ({
-          mimeType: attachment.file.type,
-          content: attachment.base64 as string,
-        }))
-
-      const backend = getChatBackend()
-      const model = modelOverride?.trim() || resolvedConversationModel
-      const systemPrompt =
-        systemPromptOverride !== undefined
-          ? systemPromptOverride
-          : resolvedSystemPrompt
-      const thinking =
-        thinkingOverride !== undefined
-          ? thinkingOverride
-          : resolvedThinkingLevel
-      const temperature =
-        temperatureOverride !== undefined
-          ? temperatureOverride
-          : resolvedTemperature
-      const topP = topPOverride !== undefined ? topPOverride : resolvedTopP
-      const maxOutputTokens =
-        maxOutputTokensOverride !== undefined
-          ? maxOutputTokensOverride
-          : resolvedMaxOutputTokens
-      const idempotencyKey =
-        clientIdOverride || optimisticClientId || randomUUID()
-      void backend
-        .sendMessage({
-          sessionKey,
-          friendlyId,
-          message: body,
-          model,
-          systemPrompt,
-          thinking,
-          temperature,
-          topP,
-          maxOutputTokens,
-          idempotencyKey,
-          clientId: clientIdOverride || optimisticClientId || undefined,
-          attachments: attachmentsPayload,
-        })
-        .then((payload) => {
-          if (
-            typeof payload.runId === 'string' &&
-            payload.runId.trim().length > 0
-          ) {
-            startRun(payload.runId.trim())
-          }
-          refreshHistory()
-          void queryClient.invalidateQueries({
-            queryKey: chatQueryKeys.sessions,
-          })
-        })
-        .catch((err) => {
-          if (optimisticClientId) {
-            updateHistoryMessageByClientId(
-              queryClient,
-              friendlyId,
-              sessionKey,
-              optimisticClientId,
-              function markFailed(message) {
-                return { ...message, status: 'error' }
-              },
-            )
-          }
-          finishGeneration()
-          setPinToTop(false)
-          setStreamError(
-            err instanceof Error ? err.message : 'The model request failed.',
-          )
-          throw err
-        })
-        .finally(() => {
-          setSending(false)
-        })
-    },
-    [
-      beginGeneration,
-      finishGeneration,
-      queryClient,
-      refreshHistory,
-      resolvedConversationModel,
-      resolvedMaxOutputTokens,
-      resolvedSystemPrompt,
-      resolvedTemperature,
-      resolvedThinkingLevel,
-      resolvedTopP,
-      startRun,
-    ],
-  )
-
-  const send = useCallback(
-    function send(body: string, helpers: ChatComposerHelpers) {
-      const attachments = helpers.attachments
-      if (!hasAvailableModel) {
-        return
-      }
-      if (body.length === 0 && (!attachments || attachments.length === 0)) {
-        return
-      }
-      helpers.reset()
-
-      if (isNewChat) {
-        const { clientId, optimisticId, optimisticMessage } =
-          createOptimisticMessage(body, attachments)
-        appendHistoryMessage(queryClient, 'new', 'new', optimisticMessage)
-        beginGeneration()
-        setSending(true)
-        setCreatingSession(true)
-        setStreamError(null)
-        setPinToTop(true)
-
-        const attachmentsPayload = attachments
-          ?.filter((attachment) => Boolean(attachment.base64))
-          .map((attachment) => ({
-            mimeType: attachment.file.type,
-            content: attachment.base64 as string,
-          }))
-
-        getChatBackend()
-          .createConversation({
-            message: body,
-            model: resolvedConversationModel,
-            systemPrompt: resolvedSystemPrompt,
-            thinking: resolvedThinkingLevel,
-            temperature: resolvedTemperature,
-            topP: resolvedTopP,
-            maxOutputTokens: resolvedMaxOutputTokens,
-            idempotencyKey: clientId,
-            clientId,
-            attachments: attachmentsPayload,
-          })
-          .then((result) => {
-            const sessionKey = result.sessionKey || result.key
-            const friendlyId = result.friendlyId
-            if (!sessionKey || !friendlyId) {
-              throw new Error('Invalid conversation response')
-            }
-            copyConversationSettings(activeFriendlyId || 'new', friendlyId)
-            setRecentSession(friendlyId)
-            upsertSessionSummary(queryClient, {
-              ...result,
-              key: sessionKey,
-              friendlyId,
-            })
-            moveHistoryMessages(
-              queryClient,
-              'new',
-              'new',
-              friendlyId,
-              sessionKey,
-            )
-            updateHistoryMessageByClientId(
-              queryClient,
-              friendlyId,
-              sessionKey,
-              clientId,
-              function markSent(message) {
-                return {
-                  ...message,
-                  id: result.userMessageId || message.id,
-                  status: undefined,
-                }
-              },
-            )
-            if (result.runId) {
-              startRun(result.runId)
-            }
-            if (onSessionResolved) {
-              onSessionResolved({ sessionKey, friendlyId })
-              return
-            }
-            navigate({
-              to: '/chat/$sessionKey',
-              params: { sessionKey: friendlyId },
-              replace: true,
-            })
-          })
-          .catch(() => {
-            removeHistoryMessageByClientId(
-              queryClient,
-              'new',
-              'new',
-              clientId,
-              optimisticId,
-            )
-            helpers.setValue(body)
-            finishGeneration()
-            setPinToTop(false)
-          })
-          .finally(() => {
-            setSending(false)
-            setCreatingSession(false)
-          })
-        return
-      }
-
-      const sessionKeyForSend =
-        forcedSessionKey ||
-        resolvedSessionKey ||
-        activeSessionKey ||
-        activeFriendlyId
-      sendMessage(
-        sessionKeyForSend,
-        activeFriendlyId,
-        body,
-        false,
-        resolvedConversationModel,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        attachments,
-      )
-    },
-    [
-      activeFriendlyId,
-      activeSessionKey,
-      forcedSessionKey,
-      hasAvailableModel,
-      isNewChat,
-      navigate,
-      onSessionResolved,
-      queryClient,
-      resolvedMaxOutputTokens,
-      resolvedSessionKey,
-      resolvedConversationModel,
-      resolvedSystemPrompt,
-      resolvedTemperature,
-      resolvedThinkingLevel,
-      resolvedTopP,
-      sendMessage,
-    ],
-  )
+  }, [activeFriendlyId, forcedSessionKey, isNewChat, setStreamError])
 
   const startNewChat = useCallback(() => {
     setStreamError(null)
@@ -562,7 +296,7 @@ export function ChatScreen({
         return { ...state, isSidebarCollapsed: true }
       })
     }
-  }, [isMobile, navigate, queryClient])
+  }, [isMobile, navigate, queryClient, setStreamError, setWaitingForResponse])
 
   const handleToggleSidebarCollapse = useCallback(() => {
     setChatUiState(queryClient, function toggle(state) {
@@ -588,69 +322,6 @@ export function ChatScreen({
     Boolean(backendStatusError) &&
     backendStatusQuery.errorUpdatedAt > backendStatusMountRef.current
   const historyEmpty = !historyLoading && displayMessages.length === 0
-
-  const handleRetryLastMessage = useCallback(() => {
-    const lastUserMessage = [...displayMessages]
-      .reverse()
-      .find((msg) => msg.role === 'user')
-    if (lastUserMessage && Array.isArray(lastUserMessage.content)) {
-      const text = lastUserMessage.content
-        .filter((part) => part.type === 'text')
-        .map((part) => part.text || '')
-        .join('')
-      if (text.trim()) {
-        setStreamError(null)
-        sendMessage(
-          activeSessionKey || '',
-          activeFriendlyId,
-          text,
-          true,
-          resolvedConversationModel,
-          undefined,
-          undefined,
-          undefined,
-          undefined,
-          undefined,
-        )
-      }
-    }
-  }, [
-    activeFriendlyId,
-    activeSessionKey,
-    displayMessages,
-    resolvedConversationModel,
-    sendMessage,
-  ])
-
-  const handleStopGeneration = useCallback(
-    async function handleStopGeneration() {
-      if (isNewChat) return
-      const sessionKeyForStop =
-        forcedSessionKey ||
-        resolvedSessionKey ||
-        activeSessionKey ||
-        activeFriendlyId
-      if (!sessionKeyForStop) return
-
-      try {
-        await getChatBackend().stopConversation({
-          sessionKey: sessionKeyForStop,
-          friendlyId: activeFriendlyId,
-        })
-      } catch (error) {
-        setStreamError(
-          error instanceof Error ? error.message : 'Failed to stop response.',
-        )
-      }
-    },
-    [
-      activeFriendlyId,
-      activeSessionKey,
-      forcedSessionKey,
-      isNewChat,
-      resolvedSessionKey,
-    ],
-  )
 
   const backendNotice = useMemo(() => {
     if (streamError) {
@@ -750,227 +421,6 @@ export function ChatScreen({
     queryClient,
     setIsRedirecting,
   })
-
-  function stashCloneComposerDraft(targetFriendlyId: string, value: string) {
-    if (typeof window === 'undefined') return
-    window.sessionStorage.setItem(
-      CLONE_COMPOSER_DRAFT_KEY,
-      JSON.stringify({ targetFriendlyId, value }),
-    )
-  }
-
-  const storeCloneScrollRestore = useCallback(
-    function storeCloneScrollRestore() {
-      if (typeof window === 'undefined') return
-      window.sessionStorage.setItem(
-        CLONE_SCROLL_RESTORE_KEY,
-        JSON.stringify({ scrollTop: scrollTopRef.current }),
-      )
-    },
-    [],
-  )
-
-  const handleCloneMessage = useCallback(
-    async function handleCloneMessage(payload: CloneMessagePayload) {
-      const sourceKey = activeSessionKey || resolvedSessionKey
-      const messageId =
-        typeof (payload.message as { id?: unknown }).id === 'string'
-          ? (payload.message as { id: string }).id
-          : ''
-      const isUserTurn = payload.message.role === 'user'
-      const cloneAtMessageId = isUserTurn
-        ? payload.previousMessageId
-        : messageId
-
-      if (isUserTurn && !cloneAtMessageId) {
-        stashCloneComposerDraft('new', payload.currentText)
-        clearHistoryMessages(queryClient, 'new', 'new')
-        storeCloneScrollRestore()
-        navigate({ to: '/new' })
-        return
-      }
-
-      if (!sourceKey || !cloneAtMessageId) return
-      try {
-        const backend = getChatBackend()
-        const result = await backend.cloneConversation({
-          sourceSessionKey: sourceKey,
-          sourceFriendlyId: activeFriendlyId,
-          cloneAtMessageId,
-        })
-        if (isUserTurn) {
-          stashCloneComposerDraft(result.friendlyId, payload.currentText)
-        }
-        await queryClient.invalidateQueries({
-          queryKey: chatQueryKeys.sessions,
-        })
-        storeCloneScrollRestore()
-        navigate({
-          to: '/chat/$sessionKey',
-          params: { sessionKey: result.friendlyId },
-        })
-      } catch (err) {
-        console.error('Clone failed:', err)
-      }
-    },
-    [
-      activeSessionKey,
-      resolvedSessionKey,
-      activeFriendlyId,
-      queryClient,
-      navigate,
-      storeCloneScrollRestore,
-    ],
-  )
-
-  const handleOpenDeleteUserTurn = useCallback(
-    function handleOpenDeleteUserTurn(messageId: string, currentText: string) {
-      setDeletingUserTurn({ messageId, currentText })
-    },
-    [],
-  )
-
-  const handleSaveEditedUserTurn = useCallback(
-    async function handleSaveEditedUserTurn(
-      messageId: string,
-      nextMessage: string,
-    ) {
-      const sourceKey = activeSessionKey || resolvedSessionKey
-      const normalizedMessage = nextMessage.trim()
-      if (!sourceKey || !messageId || normalizedMessage.length === 0) {
-        return
-      }
-
-      try {
-        const backend = getChatBackend()
-        const result = await backend.editUserMessage({
-          sourceSessionKey: sourceKey,
-          sourceFriendlyId: activeFriendlyId,
-          messageId,
-          message: normalizedMessage,
-          model: resolvedConversationModel,
-          systemPrompt: resolvedSystemPrompt,
-          thinking: resolvedThinkingLevel,
-          temperature: resolvedTemperature,
-          topP: resolvedTopP,
-          maxOutputTokens: resolvedMaxOutputTokens,
-        })
-        startRun(result.runId)
-        refreshHistory()
-        await queryClient.invalidateQueries({
-          queryKey: chatQueryKeys.sessions,
-        })
-      } catch (err) {
-        console.error('Edit user turn failed:', err)
-      }
-    },
-    [
-      activeFriendlyId,
-      activeSessionKey,
-      queryClient,
-      refreshHistory,
-      resolvedSessionKey,
-      resolvedConversationModel,
-      resolvedMaxOutputTokens,
-      resolvedSystemPrompt,
-      resolvedTemperature,
-      resolvedThinkingLevel,
-      resolvedTopP,
-      startRun,
-    ],
-  )
-
-  const handleConfirmDeleteUserTurn = useCallback(
-    async function handleConfirmDeleteUserTurn() {
-      const sourceKey = activeSessionKey || resolvedSessionKey
-      const target = deletingUserTurn
-      if (!sourceKey || !target) return
-
-      setDeletingUserTurn(null)
-
-      try {
-        const backend = getChatBackend()
-        await backend.deleteUserMessage({
-          sourceSessionKey: sourceKey,
-          sourceFriendlyId: activeFriendlyId,
-          messageId: target.messageId,
-        })
-        refreshHistory()
-        await queryClient.invalidateQueries({
-          queryKey: chatQueryKeys.sessions,
-        })
-      } catch (err) {
-        console.error('Delete user turn failed:', err)
-      }
-    },
-    [
-      activeFriendlyId,
-      activeSessionKey,
-      deletingUserTurn,
-      queryClient,
-      refreshHistory,
-      resolvedSessionKey,
-    ],
-  )
-
-  const handleScrollTopChange = useCallback(function handleScrollTopChange(
-    scrollTop: number,
-  ) {
-    scrollTopRef.current = scrollTop
-  }, [])
-
-  const handleRestoreScrollTopApplied = useCallback(
-    function handleRestoreScrollTopApplied() {
-      setRestoreScrollTop(null)
-    },
-    [],
-  )
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return
-    const raw = window.sessionStorage.getItem(CLONE_SCROLL_RESTORE_KEY)
-    if (!raw) return
-    window.sessionStorage.removeItem(CLONE_SCROLL_RESTORE_KEY)
-    try {
-      const parsed = JSON.parse(raw) as { scrollTop?: unknown }
-      if (
-        typeof parsed.scrollTop === 'number' &&
-        Number.isFinite(parsed.scrollTop)
-      ) {
-        setRestoreScrollTop(parsed.scrollTop)
-      }
-    } catch {
-      setRestoreScrollTop(null)
-    }
-  }, [activeFriendlyId])
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return
-    const raw = window.sessionStorage.getItem(CLONE_COMPOSER_DRAFT_KEY)
-    if (!raw) return
-
-    try {
-      const parsed = JSON.parse(raw) as {
-        targetFriendlyId?: unknown
-        value?: unknown
-      }
-      const targetFriendlyId =
-        typeof parsed.targetFriendlyId === 'string'
-          ? parsed.targetFriendlyId
-          : ''
-      const value = typeof parsed.value === 'string' ? parsed.value : ''
-      const currentFriendlyId = isNewChat ? 'new' : activeFriendlyId
-      if (targetFriendlyId !== currentFriendlyId) return
-
-      window.sessionStorage.removeItem(CLONE_COMPOSER_DRAFT_KEY)
-      setComposerDraft({
-        key: `${targetFriendlyId}:${Date.now()}`,
-        value,
-      })
-    } catch {
-      window.sessionStorage.removeItem(CLONE_COMPOSER_DRAFT_KEY)
-    }
-  }, [activeFriendlyId, isNewChat])
 
   const sidebar = (
     <ChatSidebar
