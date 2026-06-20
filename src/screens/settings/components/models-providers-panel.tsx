@@ -1,4 +1,3 @@
-import { useMemo, useState } from 'react'
 import { HugeiconsIcon } from '@hugeicons/react'
 import {
   Cancel01Icon,
@@ -23,21 +22,18 @@ import { TitleSettingsPopover } from './title-settings-popover'
 import { ProvidersDialog } from './providers-dialog'
 import { ModelMetadataEditor } from './model-metadata-editor'
 import { CustomModelDialog } from './custom-model-dialog'
+import { ProviderFilterPills } from './provider-filter-pills'
+import { ModelItemCard } from './model-item-card'
+import { useModelFilter } from '../hooks/use-model-filter'
 import { mutationErrorMessage } from '@/lib/error-utils'
 import { useProviderEditor } from '@/hooks/use-provider-editor'
-import { formatContextWindow, providerModelKey } from '@/lib/model-utils'
+import { providerModelKey } from '@/lib/model-utils'
 import { cn } from '@/lib/utils'
 
 export function ModelsProvidersPanel() {
   const capabilitiesQuery = useCapabilitiesQuery()
   const providersQuery = useProvidersQuery()
   const modelsQuery = useModelsQuery()
-
-  const [modelSearchQuery, setModelSearchQuery] = useState('')
-  const [selectedModelId, setSelectedModelId] = useState('')
-  const [selectedProviderFilter, setSelectedProviderFilter] = useState<
-    'all' | 'system' | string
-  >('all')
 
   const providers = providersQuery.data?.providers ?? []
   const preferences = providersQuery.data?.preferences
@@ -70,73 +66,16 @@ export function ModelsProvidersPanel() {
     updatePreferencesMutation,
   } = useProviderEditor({ canSyncModels: capabilities?.canSyncModels ?? true })
 
-  const filteredModels = useMemo(
-    function filterModels() {
-      let list = models
-
-      // Apply provider filter
-      if (selectedProviderFilter === 'system') {
-        const systemProviderLabels = new Set(
-          providers
-            .filter(function isSys(p) {
-              return p.systemManaged
-            })
-            .map(function getLabel(p) {
-              return p.label
-            }),
-        )
-        list = list.filter(function matchSys(m) {
-          return m.providerLabel && systemProviderLabels.has(m.providerLabel)
-        })
-      } else if (selectedProviderFilter !== 'all') {
-        const targetProvider = providers.find(function matchTarget(p) {
-          return (
-            p.id === selectedProviderFilter ||
-            p.label === selectedProviderFilter
-          )
-        })
-        if (targetProvider) {
-          list = list.filter(function matchProv(m) {
-            return (
-              m.providerLabel === targetProvider.label ||
-              m.owned_by === targetProvider.label
-            )
-          })
-        }
-      }
-
-      // Apply search query
-      const normalizedQuery = modelSearchQuery.trim().toLowerCase()
-      if (!normalizedQuery) return list
-      return list.filter(function matchesModel(model) {
-        const haystack = [
-          model.id,
-          model.name,
-          model.description,
-          model.providerLabel,
-          model.owned_by,
-        ]
-          .filter(Boolean)
-          .join(' ')
-          .toLowerCase()
-        return haystack.includes(normalizedQuery)
-      })
-    },
-    [models, selectedProviderFilter, modelSearchQuery, providers],
-  )
-
-  const activeModel = useMemo(
-    function getActiveModel() {
-      return (
-        models.find(function matchModel(m) {
-          return (
-            providerModelKey(m) === selectedModelId || m.id === selectedModelId
-          )
-        }) || null
-      )
-    },
-    [models, selectedModelId],
-  )
+  const {
+    modelSearchQuery,
+    setModelSearchQuery,
+    selectedModelId,
+    setSelectedModelId,
+    selectedProviderFilter,
+    setSelectedProviderFilter,
+    filteredModels,
+    activeModel,
+  } = useModelFilter({ models, providers })
 
   const updateModelMetadataMutation = useMutation({
     mutationFn: updateModelMetadata,
@@ -375,71 +314,13 @@ export function ModelsProvidersPanel() {
       )}
 
       {/* Provider Filter Pills */}
-      <div className="flex items-center gap-1.5 overflow-x-auto pb-1 mt-3 scrollbar-none">
-        <button
-          type="button"
-          onClick={function handleSelectAll() {
-            setSelectedProviderFilter('all')
-          }}
-          className={cn(
-            'rounded-full px-3 py-1 text-xs font-medium border transition-colors whitespace-nowrap',
-            selectedProviderFilter === 'all'
-              ? 'bg-primary-900 border-primary-900 text-primary-50 font-normal'
-              : 'bg-surface border-primary-200 text-primary-650 hover:bg-primary-50 hover:text-primary-900',
-          )}
-        >
-          All Models ({models.length})
-        </button>
-
-        {capabilities?.systemProvidersEnabled && (
-          <button
-            type="button"
-            onClick={function handleSelectSystem() {
-              setSelectedProviderFilter('system')
-            }}
-            className={cn(
-              'rounded-full px-3 py-1 text-xs font-medium border transition-colors whitespace-nowrap',
-              selectedProviderFilter === 'system'
-                ? 'bg-primary-900 border-primary-900 text-primary-50 font-normal'
-                : 'bg-surface border-primary-200 text-primary-650 hover:bg-primary-50 hover:text-primary-900',
-            )}
-          >
-            System Models
-          </button>
-        )}
-
-        {providers.map(function renderProviderPill(provider) {
-          const modelCount = models.filter(function matchCount(m) {
-            return (
-              m.providerLabel === provider.label ||
-              m.owned_by === provider.label
-            )
-          }).length
-
-          if (modelCount === 0 && !provider.enabled) return null
-
-          return (
-            <button
-              key={provider.id}
-              type="button"
-              onClick={function handleSelectProvider() {
-                setSelectedProviderFilter(provider.id)
-              }}
-              className={cn(
-                'rounded-full px-3 py-1 text-xs font-medium border transition-colors whitespace-nowrap',
-                selectedProviderFilter === provider.id
-                  ? 'bg-primary-900 border-primary-900 text-primary-50 font-normal'
-                  : 'bg-surface border-primary-200 text-primary-650 hover:bg-primary-50 hover:text-primary-900',
-              )}
-            >
-              {provider.label}{' '}
-              <span className="text-[10px] opacity-70 tabular-nums">
-                ({modelCount})
-              </span>
-            </button>
-          )
-        })}
-      </div>
+      <ProviderFilterPills
+        models={models}
+        providers={providers}
+        systemProvidersEnabled={capabilities?.systemProvidersEnabled}
+        selectedProviderFilter={selectedProviderFilter}
+        onSelectProviderFilter={setSelectedProviderFilter}
+      />
 
       {/* Models List and Details Sidepane Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 mt-6 items-start">
@@ -473,53 +354,15 @@ export function ModelsProvidersPanel() {
                 const isActive = modelKey === selectedModelId
 
                 return (
-                  <div
+                  <ModelItemCard
                     key={modelKey}
-                    className={cn(
-                      'rounded-xl border border-primary-200 bg-surface overflow-hidden transition-all duration-200 self-start',
-                      isActive &&
-                        'ring-1 ring-primary-400 border-primary-400 bg-primary-50/10',
-                    )}
-                  >
-                    {/* Expand trigger header */}
-                    <button
-                      type="button"
-                      onClick={function handleToggle() {
-                        setSelectedModelId(isActive ? '' : modelKey)
-                      }}
-                      className="flex w-full items-start justify-between gap-3 p-4 text-left hover:bg-primary-50/40"
-                    >
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="truncate font-mono text-[10px] text-primary-600 bg-primary-100 px-1.5 py-0.5 rounded">
-                            {model.id}
-                          </span>
-                          {defaultModelId === modelKey && (
-                            <span className="rounded-full bg-primary-200 px-2 py-0.5 text-[9px] font-medium tracking-tight text-primary-900 uppercase">
-                              Default
-                            </span>
-                          )}
-                        </div>
-                        <h4 className="truncate text-sm font-medium text-primary-955 mt-2 tracking-tight">
-                          {model.name || model.providerLabel || model.owned_by}
-                        </h4>
-                        {!isActive && model.description && (
-                          <p className="line-clamp-1 text-xs text-primary-500 mt-1 text-pretty">
-                            {model.description}
-                          </p>
-                        )}
-                      </div>
-
-                      <div className="shrink-0 text-right flex flex-col items-end gap-1.5">
-                        <span className="text-[10px] font-medium text-primary-700 bg-primary-100 px-2 py-0.5 rounded tabular-nums">
-                          {formatContextWindow(model.contextWindow)} ctx
-                        </span>
-                        <span className="text-[10px] text-primary-450 block truncate max-w-[120px]">
-                          {model.providerLabel || model.owned_by}
-                        </span>
-                      </div>
-                    </button>
-                  </div>
+                    model={model}
+                    defaultModelId={defaultModelId}
+                    isActive={isActive}
+                    onToggle={function handleToggle() {
+                      setSelectedModelId(isActive ? '' : modelKey)
+                    }}
+                  />
                 )
               })}
             </div>
