@@ -10,15 +10,18 @@ import {
   moveHistoryMessages,
   removeHistoryMessageByClientId,
   updateHistoryMessageByClientId,
+  updateHistoryMessages,
   updateSessionLastMessage,
   upsertSessionSummary,
 } from '../chat-queries'
+import { getGatewayMessageId } from '../utils'
 import { setRecentSession } from '../pending-send'
 import { copyConversationSettings } from '../conversation-settings'
 import { getChatBackend } from '@/lib/chat-backend'
 import { randomUUID } from '@/lib/utils'
 
 import type { CloneMessagePayload } from '../components/chat-message-list'
+import type { QueryClient } from '@tanstack/react-query'
 import type { AttachmentFile } from '@/components/attachment-button'
 import type { ChatComposerHelpers } from '../components/chat-composer'
 import type { GatewayMessage } from '../types'
@@ -470,6 +473,20 @@ export function useChatMutations({
       }
 
       try {
+        const { clientId, optimisticMessage } =
+          createOptimisticMessage(normalizedMessage)
+        replaceTurnFromUserMessage(
+          queryClient,
+          activeFriendlyId,
+          sourceKey,
+          messageId,
+          optimisticMessage,
+        )
+        beginGeneration()
+        setSending(true)
+        setStreamError(null)
+        setPinToTop(true)
+
         const backend = getChatBackend()
         const result = await backend.editUserMessage({
           sourceSessionKey: sourceKey,
@@ -479,25 +496,51 @@ export function useChatMutations({
           model: resolvedConversationModel,
           systemPrompt: resolvedSystemPrompt,
           webSearch: resolvedWebSearch,
+          clientId,
         })
-        startRun(result.runId)
+        updateHistoryMessageByClientId(
+          queryClient,
+          activeFriendlyId,
+          sourceKey,
+          clientId,
+          function markSent(message) {
+            return {
+              ...message,
+              id: result.userMessageId || message.id,
+              status: undefined,
+            }
+          },
+        )
+        if (result.runId) {
+          startRun(result.runId)
+        }
         refreshHistory()
         await queryClient.invalidateQueries({
           queryKey: chatQueryKeys.sessions,
         })
       } catch (err) {
+        finishGeneration()
+        setPinToTop(false)
+        setStreamError(
+          err instanceof Error ? err.message : 'Failed to edit message.',
+        )
         console.error('Edit user turn failed:', err)
+      } finally {
+        setSending(false)
       }
     },
     [
       activeFriendlyId,
       activeSessionKey,
+      beginGeneration,
+      finishGeneration,
       queryClient,
       refreshHistory,
       resolvedSessionKey,
       resolvedConversationModel,
       resolvedSystemPrompt,
       resolvedWebSearch,
+      setPinToTop,
       startRun,
     ],
   )
@@ -511,6 +554,12 @@ export function useChatMutations({
       setDeletingUserTurn(null)
 
       try {
+        deleteTurnFromUserMessage(
+          queryClient,
+          activeFriendlyId,
+          sourceKey,
+          target.messageId,
+        )
         const backend = getChatBackend()
         await backend.deleteUserMessage({
           sourceSessionKey: sourceKey,
@@ -522,6 +571,9 @@ export function useChatMutations({
           queryKey: chatQueryKeys.sessions,
         })
       } catch (err) {
+        setStreamError(
+          err instanceof Error ? err.message : 'Failed to delete message.',
+        )
         console.error('Delete user turn failed:', err)
       }
     },
@@ -581,4 +633,52 @@ export function useChatMutations({
     handleSaveEditedUserTurn,
     handleConfirmDeleteUserTurn,
   }
+}
+
+function findMessageIndexById(
+  messages: Array<GatewayMessage>,
+  messageId: string,
+): number {
+  return messages.findIndex(
+    (message) => getGatewayMessageId(message) === messageId,
+  )
+}
+
+function replaceTurnFromUserMessage(
+  queryClient: QueryClient,
+  friendlyId: string,
+  sessionKey: string,
+  messageId: string,
+  replacementMessage: GatewayMessage,
+) {
+  updateHistoryMessages(
+    queryClient,
+    friendlyId,
+    sessionKey,
+    function replace(messages) {
+      const messageIndex = findMessageIndexById(messages, messageId)
+      if (messageIndex < 0) return messages
+
+      return [...messages.slice(0, messageIndex), replacementMessage]
+    },
+  )
+}
+
+function deleteTurnFromUserMessage(
+  queryClient: QueryClient,
+  friendlyId: string,
+  sessionKey: string,
+  messageId: string,
+) {
+  updateHistoryMessages(
+    queryClient,
+    friendlyId,
+    sessionKey,
+    function remove(messages) {
+      const messageIndex = findMessageIndexById(messages, messageId)
+      if (messageIndex < 0) return messages
+
+      return messages.slice(0, messageIndex)
+    },
+  )
 }

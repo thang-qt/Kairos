@@ -324,6 +324,7 @@ func (app *App) handleEditUserMessage(writer http.ResponseWriter, request *http.
 		Model:        payload.Model,
 		SystemPrompt: payload.SystemPrompt,
 		WebSearch:    payload.WebSearch,
+		ClientID:     payload.ClientID,
 		Attachments:  attachments,
 	})
 	if err != nil {

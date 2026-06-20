@@ -196,6 +196,7 @@ export function createHTTPChatBackend(): ChatBackend {
             model: input.model,
             systemPrompt: input.systemPrompt,
             webSearch: input.webSearch,
+            clientId: input.clientId,
           }),
         },
       )

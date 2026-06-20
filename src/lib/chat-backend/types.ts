@@ -82,6 +82,7 @@ export type ChatEditUserMessageInput = {
   model?: string
   systemPrompt?: string
   webSearch?: boolean
+  clientId?: string
 }
 
 export type ChatDeleteUserMessageInput = {
