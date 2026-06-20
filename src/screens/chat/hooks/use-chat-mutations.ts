@@ -535,6 +535,34 @@ export function useChatMutations({
     ],
   )
 
+  const sendProgrammaticMessage = useCallback(
+    function sendProgrammaticMessage(body: string) {
+      const sessionKeyForSend =
+        forcedSessionKey ||
+        resolvedSessionKey ||
+        activeSessionKey ||
+        activeFriendlyId
+      if (!hasAvailableModel || isNewChat || body.trim().length === 0) return
+      sendMessage(
+        sessionKeyForSend,
+        activeFriendlyId,
+        body,
+        false,
+        resolvedConversationModel,
+      )
+    },
+    [
+      activeFriendlyId,
+      activeSessionKey,
+      forcedSessionKey,
+      hasAvailableModel,
+      isNewChat,
+      resolvedConversationModel,
+      resolvedSessionKey,
+      sendMessage,
+    ],
+  )
+
   return {
     sending,
     creatingSession,
@@ -545,6 +573,7 @@ export function useChatMutations({
     hasAvailableModel,
     send,
     sendMessage,
+    sendProgrammaticMessage,
     handleRetryLastMessage,
     handleStopGeneration,
     handleCloneMessage,

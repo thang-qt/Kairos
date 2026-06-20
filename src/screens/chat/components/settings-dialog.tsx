@@ -190,6 +190,17 @@ export function SettingsDialog({
                       }}
                     />
                   </SettingsRow>
+                  <SettingsRow
+                    label="Visual UI blocks"
+                    description="Allow assistant messages to render safe JSON component blocks from visual-ui fences. Off by default."
+                  >
+                    <Switch
+                      checked={settings.visualUiBlocks}
+                      onCheckedChange={function handleChange(checked) {
+                        updateSettings({ visualUiBlocks: checked })
+                      }}
+                    />
+                  </SettingsRow>
                 </div>
               ) : null}
             </div>

@@ -62,6 +62,7 @@ export type ChatSettings = {
   themeMode: ThemeMode
   themePalette: ThemePalette
   wideMode: boolean
+  visualUiBlocks: boolean
 }
 
 type ChatSettingsState = {
@@ -88,6 +89,7 @@ const DEFAULT_CHAT_SETTINGS: ChatSettings = {
   themeMode: 'system',
   themePalette: 'default',
   wideMode: true,
+  visualUiBlocks: false,
 }
 
 function isThemeMode(value: unknown): value is ThemeMode {
@@ -177,6 +179,10 @@ function normalizeChatSettings(value: unknown): ChatSettings {
     wideMode: booleanOrDefault(
       record?.wideMode,
       DEFAULT_CHAT_SETTINGS.wideMode,
+    ),
+    visualUiBlocks: booleanOrDefault(
+      record?.visualUiBlocks,
+      DEFAULT_CHAT_SETTINGS.visualUiBlocks,
     ),
   }
 }

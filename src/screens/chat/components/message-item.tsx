@@ -12,6 +12,7 @@ import type {
 } from '../types'
 import { Message, MessageContent } from '@/components/prompt-kit/message'
 import { Thinking } from '@/components/prompt-kit/thinking'
+import { VisualUiBlock, extractVisualUiParts } from '@/components/visual-ui'
 import { Tool } from '@/components/prompt-kit/tool'
 import { useChatSettingsStore } from '@/hooks/use-chat-settings'
 import { cn } from '@/lib/utils'
@@ -53,6 +54,7 @@ type MessageItemProps = {
   previousMessageId?: string
   onEdit?: (messageId: string, currentText: string) => void | Promise<void>
   onDelete?: (messageId: string, currentText: string) => void
+  onVisualUiCallback?: (message: string) => void
 }
 
 function MessageItemComponent({
@@ -67,12 +69,16 @@ function MessageItemComponent({
   previousMessageId,
   onEdit,
   onDelete,
+  onVisualUiCallback,
 }: MessageItemProps) {
   const showReasoningBlocks = useChatSettingsStore(
     (state) => state.settings.showReasoningBlocks,
   )
   const showToolMessages = useChatSettingsStore(
     (state) => state.settings.showToolMessages,
+  )
+  const visualUiBlocks = useChatSettingsStore(
+    (state) => state.settings.visualUiBlocks,
   )
   const role = message.role || 'assistant'
   const text = textFromMessage(message)
@@ -94,6 +100,7 @@ function MessageItemComponent({
   const searchToolPart = isAssistant
     ? mapSearchDetailsToToolPart(message)
     : null
+  const assistantIsStreaming = Boolean(message.__streamRunId)
 
   function handleStartEdit() {
     setEditDraft(text)
@@ -125,7 +132,7 @@ function MessageItemComponent({
     if (part.type === 'thinking') {
       const thinking = String(part.thinking ?? '')
       if (!thinking || !showReasoningBlocks) return null
-      const isStreaming = Boolean(message.__streamRunId)
+      const isStreaming = assistantIsStreaming
       const hasRealContent = assistantParts.some(function checkPart(p) {
         if (p.type === 'text') {
           return String(p.text ?? '').trim().length > 0
@@ -146,16 +153,53 @@ function MessageItemComponent({
     if (part.type === 'text') {
       const chunk = String(part.text ?? '')
       if (!chunk.trim()) return null
-      return (
-        <Message key={`text-${index}`}>
-          <MessageContent
-            markdown
-            className="text-primary-900 bg-transparent w-full"
-          >
-            {chunk}
-          </MessageContent>
-        </Message>
-      )
+      if (!visualUiBlocks) {
+        return (
+          <Message key={`text-${index}`}>
+            <MessageContent
+              markdown
+              className="text-primary-900 bg-transparent w-full"
+            >
+              {chunk}
+            </MessageContent>
+          </Message>
+        )
+      }
+
+      return extractVisualUiParts(chunk, {
+        streaming: assistantIsStreaming,
+      }).map((visualPart, partIndex) => {
+        if (visualPart.type === 'pending-ui') {
+          return (
+            <div
+              key={`pending-visual-ui-${index}-${partIndex}`}
+              className="my-2 rounded-[12px] border border-primary-200 bg-surface px-3 py-2 text-sm text-primary-600"
+            >
+              Building interface…
+            </div>
+          )
+        }
+        if (visualPart.type === 'ui') {
+          return (
+            <VisualUiBlock
+              key={`visual-ui-${index}-${partIndex}`}
+              source={visualPart.content}
+              onCallback={onVisualUiCallback}
+            />
+          )
+        }
+        if (!visualPart.content.trim()) return null
+        return (
+          <Message key={`text-${index}-${partIndex}`}>
+            <MessageContent
+              markdown
+              className="text-primary-900 bg-transparent w-full"
+            >
+              {visualPart.content}
+            </MessageContent>
+          </Message>
+        )
+      })
     }
 
     if (part.type !== 'toolCall') return null
@@ -303,6 +347,7 @@ function areMessagesEqual(
   if (prevProps.previousMessageId !== nextProps.previousMessageId) return false
   if (prevProps.onEdit !== nextProps.onEdit) return false
   if (prevProps.onDelete !== nextProps.onDelete) return false
+  if (prevProps.onVisualUiCallback !== nextProps.onVisualUiCallback) return false
   if (
     (prevProps.message.role || 'assistant') !==
     (nextProps.message.role || 'assistant')

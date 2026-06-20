@@ -39,6 +39,23 @@ import { useChatSettings } from '@/hooks/use-chat-settings'
 import { useModelsQuery } from '@/lib/app-api'
 import { providerModelKey } from '@/lib/model-utils'
 
+const VISUAL_UI_SYSTEM_PROMPT = `## Visual UI blocks
+You may enhance responses with small app-native UI blocks by including JSON in a \`\`\`visual-ui code fence. Use this only when it is more useful than markdown for chat: collecting user input, offering choices, organizing a compact form, or displaying a brief notice. Do not use HTML, CSS, or JavaScript. Use normal markdown for prose, lists, formatted text, and code fences.
+
+Format: wrap one JSON object in \`\`\`visual-ui fences.
+Essential components only:
+- stack: vertical layout: {"type":"stack","children":[...]}
+- row: horizontal/wrapping layout, useful for two inputs side by side: {"type":"row","children":[...]}
+- form: groups form content without adding a visual card: {"type":"form","title":"...","description":"...","children":[...]}
+- text: {"type":"text","value":"...","style":"title|body|caption"}. Text values support normal markdown formatting like bold, italic, and links.
+- button: {"type":"button","label":"Submit","variant":"primary|secondary|ghost","action":{"type":"callback","event":"submit","collectFrom":["name","timezone"]}}
+- input: {"type":"input","id":"name","label":"Name","placeholder":"Enter name"}
+- toggle: {"type":"toggle","id":"enabled","label":"Enable it","checked":false}
+- select: {"type":"select","id":"choice","label":"Pick one","options":["A","B"],"selected":"A"}
+- choices: quick-reply buttons. Alone, clicking sends the label immediately. If a later submit button collectFrom includes the choices id, clicking only selects an option until submit: {"type":"choices","id":"choice","options":["A","B"],"action":{"type":"callback","event":"choose"}}
+- notice: {"type":"notice","tone":"info|success|warning|error","title":"Note","value":"..."}
+For normal prose, explanations, lists, results, and formatted text, use markdown outside visual-ui instead of UI components. For short text inside a visual UI block, use text with style title/body/caption; all text values already support simple markdown, so do not invent bold or markdownText components. Use choices for one-step questions and quick replies without a submit button. For multi-question quizzes, use choices for each question plus one final submit button whose collectFrom includes each choices id; those choices will behave as selectable answers instead of immediate sends. Use form when you need to collect multiple pieces of information from the user. Use row inside form to place related fields side by side, such as first/last name or city/date. Every form with input, toggle, or select fields MUST include a submit button with a callback action and collectFrom listing every field id. Inputs/toggles/selects/choices only send values when a button action includes their ids in collectFrom. Callback messages are shown as normal readable user messages, so choose clear labels and ids. Keep blocks compact and self-contained. Prefer markdown unless interaction or structure helps.`
+
 type ChatScreenProps = {
   activeFriendlyId: string
   isNewChat?: boolean
@@ -99,9 +116,14 @@ export function ChatScreen({
     },
     [updateConversationSettings],
   )
-  const resolvedSystemPrompt = normalizeConversationTextSetting(
+  const resolvedSystemPromptBase = normalizeConversationTextSetting(
     conversationSettings.systemPrompt,
   )
+  const resolvedSystemPrompt = settings.visualUiBlocks
+    ? [resolvedSystemPromptBase, VISUAL_UI_SYSTEM_PROMPT]
+        .filter(Boolean)
+        .join('\n\n')
+    : resolvedSystemPromptBase
   const resolvedWebSearch = conversationSettings.webSearch
   const { isMobile } = useChatMobile(queryClient)
   const {
@@ -229,6 +251,7 @@ export function ChatScreen({
     setDeletingUserTurn,
     hasAvailableModel,
     send,
+    sendProgrammaticMessage,
     handleRetryLastMessage,
     handleStopGeneration,
     handleCloneMessage,
@@ -486,6 +509,7 @@ export function ChatScreen({
             onClone={handleCloneMessage}
             onEditUserTurn={handleSaveEditedUserTurn}
             onDeleteUserTurn={handleOpenDeleteUserTurn}
+            onVisualUiCallback={sendProgrammaticMessage}
             onScrollTopChange={handleScrollTopChange}
             restoreScrollTop={restoreScrollTop}
             restoreKey={activeFriendlyId}
