@@ -155,9 +155,11 @@ function buttonVariant(variant?: VisualUiNode['variant']) {
 
 function toneClassName(tone?: VisualUiNode['tone']) {
   if (tone === 'error') return 'border-red-300 bg-red-50 text-red-900'
-  if (tone === 'warning') return 'border-yellow-300 bg-yellow-50 text-yellow-950'
+  if (tone === 'warning')
+    return 'border-yellow-300 bg-yellow-50 text-yellow-950'
   if (tone === 'success') return 'border-green-300 bg-green-50 text-green-950'
-  if (tone === 'info') return 'border-primary-300 bg-primary-50 text-primary-950'
+  if (tone === 'info')
+    return 'border-primary-300 bg-primary-50 text-primary-950'
   return 'border-primary-200 bg-surface text-primary-950'
 }
 
@@ -251,7 +253,13 @@ function VisualUiRenderer({ source, onCallback }: VisualUiBlockProps) {
             onClick={() => {
               if (!node.action) return
               if (node.action.type === 'callback') {
-                onCallback?.(callbackMessage(node.action, values, node.label || 'Continue'))
+                onCallback?.(
+                  callbackMessage(
+                    node.action,
+                    values,
+                    node.label || 'Continue',
+                  ),
+                )
                 return
               }
               runAction(node.action)
@@ -313,12 +321,15 @@ function VisualUiRenderer({ source, onCallback }: VisualUiBlockProps) {
         )
       }
       case 'choices': {
-        const controlledBySubmit = Boolean(node.id && submitFieldIds.has(node.id))
+        const controlledBySubmit = Boolean(
+          node.id && submitFieldIds.has(node.id),
+        )
         const selectedValue = node.id ? values[node.id] : undefined
         return (
           <div key={key} className="flex flex-wrap gap-2">
             {selectOptions(node.options).map((option) => {
-              const selected = controlledBySubmit && selectedValue === option.value
+              const selected =
+                controlledBySubmit && selectedValue === option.value
               return (
                 <Button
                   key={option.value}
@@ -326,7 +337,8 @@ function VisualUiRenderer({ source, onCallback }: VisualUiBlockProps) {
                   variant={selected ? 'default' : 'secondary'}
                   onClick={() => {
                     if (node.id) setValue(node.id, option.value)
-                    if (!controlledBySubmit) onCallback?.(option.label || option.value)
+                    if (!controlledBySubmit)
+                      onCallback?.(option.label || option.value)
                   }}
                 >
                   {option.label}
@@ -345,7 +357,9 @@ function VisualUiRenderer({ source, onCallback }: VisualUiBlockProps) {
               toneClassName(node.tone),
             )}
           >
-            {node.title ? <div className="font-medium">{node.title}</div> : null}
+            {node.title ? (
+              <div className="font-medium">{node.title}</div>
+            ) : null}
             {textValue(node) ? <div>{textValue(node)}</div> : null}
           </div>
         )

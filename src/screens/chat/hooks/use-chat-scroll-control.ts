@@ -141,7 +141,10 @@ export function useChatScrollControl({
           const lastUserNode = lastUserRef.current
           if (!lastUserNode) return false
 
-          const visibleHeight = Math.max(0, viewport.clientHeight - headerHeight)
+          const visibleHeight = Math.max(
+            0,
+            viewport.clientHeight - headerHeight,
+          )
           const longMessageThreshold = Math.max(240, visibleHeight * 0.45)
           const isLongUserMessage =
             lastUserNode.getBoundingClientRect().height > longMessageThreshold

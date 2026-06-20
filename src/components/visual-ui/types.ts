@@ -27,6 +27,9 @@ export type VisualUiAction =
   | { type?: 'open_url'; url?: string }
   | { type?: 'copy_to_clipboard'; text?: string }
 
-export type VisualUiPart = { type: 'markdown' | 'ui' | 'pending-ui'; content: string }
+export type VisualUiPart = {
+  type: 'markdown' | 'ui' | 'pending-ui'
+  content: string
+}
 
 export type InputValues = Record<string, string | boolean>

@@ -347,7 +347,8 @@ function areMessagesEqual(
   if (prevProps.previousMessageId !== nextProps.previousMessageId) return false
   if (prevProps.onEdit !== nextProps.onEdit) return false
   if (prevProps.onDelete !== nextProps.onDelete) return false
-  if (prevProps.onVisualUiCallback !== nextProps.onVisualUiCallback) return false
+  if (prevProps.onVisualUiCallback !== nextProps.onVisualUiCallback)
+    return false
   if (
     (prevProps.message.role || 'assistant') !==
     (nextProps.message.role || 'assistant')
