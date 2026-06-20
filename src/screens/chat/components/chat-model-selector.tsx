@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { HugeiconsIcon } from '@hugeicons/react'
 import { ArrowDown01Icon, StarIcon } from '@hugeicons/core-free-icons'
@@ -62,6 +62,21 @@ export function ChatModelSelector({
   const [query, setQuery] = useState('')
   const [defaultErrorMessage, setDefaultErrorMessage] = useState('')
   const [syncErrorMessage, setSyncErrorMessage] = useState('')
+  const selectedRef = useRef<HTMLDivElement | null>(null)
+
+  useEffect(
+    function scrollSelectedIntoView() {
+      if (open) {
+        const handle = requestAnimationFrame(function scroll() {
+          selectedRef.current?.scrollIntoView({ block: 'start' })
+        })
+        return function cleanup() {
+          cancelAnimationFrame(handle)
+        }
+      }
+    },
+    [open],
+  )
 
   const selectedModel =
     models.find(function matchModel(model) {
@@ -228,6 +243,7 @@ export function ChatModelSelector({
                 return (
                   <div
                     key={modelKey}
+                    ref={isSelected ? selectedRef : undefined}
                     className={cn(
                       'flex w-full items-start justify-between gap-3 rounded-lg px-3 py-2 text-left transition-colors hover:bg-primary-100',
                       isSelected && 'bg-primary-100 text-primary-950',
