@@ -58,6 +58,7 @@ func (service *ChatRunService) executeRun(
 
 	accumulatedText := ""
 	accumulatedThinking := ""
+	accumulatedToolCalls := []ProviderToolCall{}
 	displayModel := assistantModelDisplay{
 		ID:          model.ID,
 		Name:        firstNonEmpty(model.Name, model.ID),
@@ -68,13 +69,10 @@ func (service *ChatRunService) executeRun(
 		ctx,
 		provider,
 		ChatGenerationRequest{
-			Model:           model.ID,
-			SystemPrompt:    input.SystemPrompt,
-			ReasoningEffort: input.Thinking,
-			Temperature:     input.Temperature,
-			TopP:            input.TopP,
-			MaxOutputTokens: input.MaxOutputTokens,
-			Messages:        buildProviderMessages(history, input.SystemPrompt),
+			Model:        model.ID,
+			SystemPrompt: input.SystemPrompt,
+			WebSearch:    buildProviderWebSearchOptions(input.WebSearch),
+			Messages:     buildProviderMessages(history, input.SystemPrompt),
 		},
 		func(delta ChatGenerationDelta) error {
 			if delta.Thinking != "" {
@@ -83,7 +81,13 @@ func (service *ChatRunService) executeRun(
 			if delta.Text != "" {
 				accumulatedText += delta.Text
 			}
-			content := buildAssistantContent(accumulatedThinking, accumulatedText)
+			if len(delta.ToolCalls) > 0 {
+				accumulatedToolCalls = mergeProviderToolCalls(
+					accumulatedToolCalls,
+					delta.ToolCalls,
+				)
+			}
+			content := buildAssistantContent(accumulatedThinking, accumulatedText, accumulatedToolCalls)
 			if len(content) == 0 {
 				return nil
 			}
@@ -112,7 +116,7 @@ func (service *ChatRunService) executeRun(
 				record.AssistantMessageID,
 				displayModel,
 				abortedTimestamp,
-				buildAssistantContent(accumulatedThinking, accumulatedText),
+				buildAssistantContent(accumulatedThinking, accumulatedText, accumulatedToolCalls),
 			)
 			service.publishRunAborted(ctx, record, session, abortedMessage)
 			return
@@ -122,18 +126,17 @@ func (service *ChatRunService) executeRun(
 	}
 	displayModel = displayModel.withProviderResult(result)
 	accumulatedThinking = firstNonEmpty(result.ThinkingText, accumulatedThinking)
+	accumulatedToolCalls = mergeProviderToolCalls(accumulatedToolCalls, result.ToolCalls)
 
 	finalTimestamp := maxInt64(time.Now().UnixMilli(), minAssistantTimestamp)
 	finalMessage := buildAssistantMessage(
 		record.AssistantMessageID,
 		displayModel,
 		finalTimestamp,
-		buildAssistantContent(accumulatedThinking, result.OutputText),
+		buildAssistantContent(accumulatedThinking, result.OutputText, accumulatedToolCalls),
 	)
-	if usageDetails := buildUsageDetails(result); usageDetails != nil {
-		finalMessage["details"] = map[string]any{
-			"usage": usageDetails,
-		}
+	if generationDetails := buildGenerationDetails(result); generationDetails != nil {
+		finalMessage["details"] = generationDetails
 	}
 
 	sessionSummary, err := service.chat.appendMessage(ctx, session, finalMessage, finalTimestamp)

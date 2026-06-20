@@ -40,10 +40,7 @@ type UseChatMutationsInput = {
   }) => void
   resolvedConversationModel: string
   resolvedSystemPrompt: string
-  resolvedThinkingLevel: string
-  resolvedTemperature: number | undefined
-  resolvedTopP: number | undefined
-  resolvedMaxOutputTokens: number | undefined
+  resolvedWebSearch: boolean
   beginGeneration: () => void
   finishGeneration: () => void
   startRun: (runId: string) => void
@@ -63,10 +60,7 @@ export function useChatMutations({
   onSessionResolved,
   resolvedConversationModel,
   resolvedSystemPrompt,
-  resolvedThinkingLevel,
-  resolvedTemperature,
-  resolvedTopP,
-  resolvedMaxOutputTokens,
+  resolvedWebSearch,
   beginGeneration,
   finishGeneration,
   startRun,
@@ -95,10 +89,7 @@ export function useChatMutations({
       skipOptimistic = false,
       modelOverride?: string,
       systemPromptOverride?: string,
-      thinkingOverride?: string,
-      temperatureOverride?: number,
-      topPOverride?: number,
-      maxOutputTokensOverride?: number,
+      webSearchOverride?: boolean,
       attachments?: Array<AttachmentFile>,
       clientIdOverride?: string,
     ) {
@@ -141,19 +132,8 @@ export function useChatMutations({
         systemPromptOverride !== undefined
           ? systemPromptOverride
           : resolvedSystemPrompt
-      const thinking =
-        thinkingOverride !== undefined
-          ? thinkingOverride
-          : resolvedThinkingLevel
-      const temperature =
-        temperatureOverride !== undefined
-          ? temperatureOverride
-          : resolvedTemperature
-      const topP = topPOverride !== undefined ? topPOverride : resolvedTopP
-      const maxOutputTokens =
-        maxOutputTokensOverride !== undefined
-          ? maxOutputTokensOverride
-          : resolvedMaxOutputTokens
+      const webSearch =
+        webSearchOverride !== undefined ? webSearchOverride : resolvedWebSearch
       const idempotencyKey =
         clientIdOverride || optimisticClientId || randomUUID()
       void backend
@@ -163,10 +143,7 @@ export function useChatMutations({
           message: body,
           model,
           systemPrompt,
-          thinking,
-          temperature,
-          topP,
-          maxOutputTokens,
+          webSearch,
           idempotencyKey,
           clientId: clientIdOverride || optimisticClientId || undefined,
           attachments: attachmentsPayload,
@@ -212,11 +189,8 @@ export function useChatMutations({
       queryClient,
       refreshHistory,
       resolvedConversationModel,
-      resolvedMaxOutputTokens,
       resolvedSystemPrompt,
-      resolvedTemperature,
-      resolvedThinkingLevel,
-      resolvedTopP,
+      resolvedWebSearch,
       setPinToTop,
       startRun,
     ],
@@ -255,10 +229,7 @@ export function useChatMutations({
             message: body,
             model: resolvedConversationModel,
             systemPrompt: resolvedSystemPrompt,
-            thinking: resolvedThinkingLevel,
-            temperature: resolvedTemperature,
-            topP: resolvedTopP,
-            maxOutputTokens: resolvedMaxOutputTokens,
+            webSearch: resolvedWebSearch,
             idempotencyKey: clientId,
             clientId,
             attachments: attachmentsPayload,
@@ -341,9 +312,6 @@ export function useChatMutations({
         resolvedConversationModel,
         undefined,
         undefined,
-        undefined,
-        undefined,
-        undefined,
         attachments,
       )
     },
@@ -356,13 +324,10 @@ export function useChatMutations({
       navigate,
       onSessionResolved,
       queryClient,
-      resolvedMaxOutputTokens,
       resolvedSessionKey,
       resolvedConversationModel,
       resolvedSystemPrompt,
-      resolvedTemperature,
-      resolvedThinkingLevel,
-      resolvedTopP,
+      resolvedWebSearch,
       sendMessage,
       beginGeneration,
       finishGeneration,
@@ -389,11 +354,6 @@ export function useChatMutations({
             text,
             true,
             resolvedConversationModel,
-            undefined,
-            undefined,
-            undefined,
-            undefined,
-            undefined,
           )
         }
       }
@@ -518,10 +478,7 @@ export function useChatMutations({
           message: normalizedMessage,
           model: resolvedConversationModel,
           systemPrompt: resolvedSystemPrompt,
-          thinking: resolvedThinkingLevel,
-          temperature: resolvedTemperature,
-          topP: resolvedTopP,
-          maxOutputTokens: resolvedMaxOutputTokens,
+          webSearch: resolvedWebSearch,
         })
         startRun(result.runId)
         refreshHistory()
@@ -539,11 +496,8 @@ export function useChatMutations({
       refreshHistory,
       resolvedSessionKey,
       resolvedConversationModel,
-      resolvedMaxOutputTokens,
       resolvedSystemPrompt,
-      resolvedTemperature,
-      resolvedThinkingLevel,
-      resolvedTopP,
+      resolvedWebSearch,
       startRun,
     ],
   )

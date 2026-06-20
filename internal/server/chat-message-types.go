@@ -19,6 +19,10 @@ type chatMessageContentPart struct {
 	Text     string
 	Thinking string
 	Source   *chatMessageContentSource
+	ID       string
+	Name     string
+	Args     map[string]any
+	ArgsJSON string
 }
 
 type chatMessageContentSource struct {
@@ -49,6 +53,16 @@ func newImageContentPart(mimeType string, data string) chatMessageContentPart {
 			MediaType: strings.TrimSpace(mimeType),
 			Data:      strings.TrimSpace(data),
 		},
+	}
+}
+
+func newToolCallContentPart(toolCall ProviderToolCall) chatMessageContentPart {
+	return chatMessageContentPart{
+		Type:     "toolCall",
+		ID:       strings.TrimSpace(toolCall.ID),
+		Name:     strings.TrimSpace(toolCall.Name),
+		Args:     toolCall.Args,
+		ArgsJSON: strings.TrimSpace(toolCall.ArgsJSON),
 	}
 }
 
@@ -118,6 +132,23 @@ func contentPartsToMaps(parts []chatMessageContentPart) []map[string]any {
 					"data":       data,
 				},
 			})
+		case "toolCall":
+			toolCall := map[string]any{
+				"type": "toolCall",
+			}
+			if id := strings.TrimSpace(part.ID); id != "" {
+				toolCall["id"] = id
+			}
+			if name := strings.TrimSpace(part.Name); name != "" {
+				toolCall["name"] = name
+			}
+			if len(part.Args) > 0 {
+				toolCall["arguments"] = part.Args
+			}
+			if argsJSON := strings.TrimSpace(part.ArgsJSON); argsJSON != "" {
+				toolCall["partialJson"] = argsJSON
+			}
+			values = append(values, toolCall)
 		}
 	}
 	return values
@@ -166,6 +197,17 @@ func contentPartsFromMaps(items []map[string]any) []chatMessageContentPart {
 			if mimeType != "" && data != "" {
 				parts = append(parts, newImageContentPart(mimeType, data))
 			}
+		case "toolCall":
+			toolCall := chatMessageContentPart{
+				Type:     "toolCall",
+				ID:       strings.TrimSpace(stringValueFromMap(item, "id")),
+				Name:     strings.TrimSpace(stringValueFromMap(item, "name")),
+				ArgsJSON: strings.TrimSpace(stringValueFromMap(item, "partialJson")),
+			}
+			if args, ok := item["arguments"].(map[string]any); ok {
+				toolCall.Args = args
+			}
+			parts = append(parts, toolCall)
 		}
 	}
 	return parts

@@ -127,17 +127,6 @@ export type UpdatePreferencesPayload = {
   titleGenerationModelId?: string
 }
 
-export type TestConnectionPayload = {
-  kind: string
-  baseUrl: string
-  apiKey: string
-}
-
-export type TestConnectionResult = {
-  success: boolean
-  message?: string
-}
-
 export const appQueryKeys = {
   capabilities: ['app', 'capabilities'] as const,
   me: ['app', 'me'] as const,
@@ -337,33 +326,6 @@ export async function updateModelMetadata(
   })
   const data = await parseJSON<{ model: ProviderModel }>(response)
   return data.model
-}
-
-export async function testConnection(
-  payload: TestConnectionPayload,
-): Promise<TestConnectionResult> {
-  const response = await fetch('/api/providers/test-connection', {
-    method: 'POST',
-    credentials: 'include',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(payload),
-  })
-  return parseJSON<TestConnectionResult>(response)
-}
-
-export async function testProviderConnection(
-  providerId: string,
-): Promise<TestConnectionResult> {
-  const response = await fetch(
-    `/api/providers/${encodeURIComponent(providerId)}/test-connection`,
-    {
-      method: 'POST',
-      credentials: 'include',
-    },
-  )
-  return parseJSON<TestConnectionResult>(response)
 }
 
 export function getCapabilitiesQueryOptions() {

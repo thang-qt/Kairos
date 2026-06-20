@@ -407,7 +407,7 @@ func newTestApp(t *testing.T, override func(config *Config)) *testApp {
 		AllowUserCustomProviderURL: true,
 		AllowUserDisableSystem:     true,
 		AllowUserModelSync:         true,
-		SystemProviderKind:         "openai_compatible",
+		SystemProviderKind:         openRouterProviderKind,
 		SystemProviderModelSync:    true,
 	}
 	if override != nil {

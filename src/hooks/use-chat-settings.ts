@@ -10,7 +10,6 @@ export type ThemePalette =
   | 'canopy'
   | 'ember'
   | 'tide'
-export type ThinkingLevel = 'low' | 'medium' | 'high'
 
 export const THEME_PALETTE_OPTIONS = [
   {

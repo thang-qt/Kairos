@@ -16,12 +16,15 @@ import { Tool } from '@/components/prompt-kit/tool'
 import { useChatSettingsStore } from '@/hooks/use-chat-settings'
 import { cn } from '@/lib/utils'
 import { MessageItemEditor } from './message-item-editor'
+import { WebToolCards } from './web-tool-cards'
 import {
   mapToolCallToToolPart,
+  mapSearchDetailsToToolPart,
   mapStandaloneToolResultToToolPart,
   assistantPartRenderOrder,
   imagesFromMessage,
   modelFromMessage,
+  searchDetailsSignature,
   thinkingFromMessage,
   toolCallsSignature,
   toolResultsSignature,
@@ -88,6 +91,9 @@ function MessageItemComponent({
     : null
 
   const assistantParts = Array.isArray(message.content) ? message.content : []
+  const searchToolPart = isAssistant
+    ? mapSearchDetailsToToolPart(message)
+    : null
 
   function handleStartEdit() {
     setEditDraft(text)
@@ -240,6 +246,10 @@ function MessageItemComponent({
 
       {isAssistant && assistantParts.map(renderAssistantPart)}
 
+      {isAssistant && showToolMessages && searchToolPart ? (
+        <WebToolCards message={message} />
+      ) : null}
+
       {isAssistant && (
         <MessageActionsBar
           text={text}
@@ -319,6 +329,12 @@ function areMessagesEqual(
   if (
     toolResultsSignature(prevProps.message, prevProps.toolResultsByCallId) !==
     toolResultsSignature(nextProps.message, nextProps.toolResultsByCallId)
+  ) {
+    return false
+  }
+  if (
+    searchDetailsSignature(prevProps.message) !==
+    searchDetailsSignature(nextProps.message)
   ) {
     return false
   }

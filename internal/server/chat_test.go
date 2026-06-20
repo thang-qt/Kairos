@@ -338,7 +338,7 @@ func TestEditUserMessageUpdatesThreadAndRuns(t *testing.T) {
 		config.SystemProviderLabel = "Server Default"
 		config.SystemProviderStaticModels = []string{"test-model"}
 	})
-	testServer.app.providers.drivers["openai_compatible"] = fakeProviderDriver{
+	testServer.app.providers.drivers[openRouterProviderKind] = fakeProviderDriver{
 		models: []ProviderModel{
 			{
 				ID:            "test-model",
@@ -432,7 +432,7 @@ func TestSendMessagePersistsHistoryAndStreamsFinalEvent(t *testing.T) {
 		config.SystemProviderLabel = "Server Default"
 		config.SystemProviderStaticModels = []string{"test-model"}
 	})
-	testServer.app.providers.drivers["openai_compatible"] = fakeProviderDriver{
+	testServer.app.providers.drivers[openRouterProviderKind] = fakeProviderDriver{
 		models: []ProviderModel{
 			{
 				ID:            "test-model",
@@ -588,7 +588,7 @@ func TestSendMessageIdempotencyKeyReusesExistingRun(t *testing.T) {
 		config.SystemProviderEnabled = true
 		config.SystemProviderStaticModels = []string{"test-model"}
 	})
-	testServer.app.providers.drivers["openai_compatible"] = fakeProviderDriver{
+	testServer.app.providers.drivers[openRouterProviderKind] = fakeProviderDriver{
 		models: []ProviderModel{
 			{
 				ID:            "test-model",
@@ -646,7 +646,7 @@ func TestSendMessageIncludesProviderThinkingWhenAvailable(t *testing.T) {
 		config.SystemProviderLabel = "Server Default"
 		config.SystemProviderStaticModels = []string{"test-model"}
 	})
-	testServer.app.providers.drivers["openai_compatible"] = fakeProviderDriver{
+	testServer.app.providers.drivers[openRouterProviderKind] = fakeProviderDriver{
 		models: []ProviderModel{
 			{
 				ID:            "test-model",
@@ -713,7 +713,7 @@ func TestSendMessagePassesModelSettingsToProvider(t *testing.T) {
 		config.SystemProviderLabel = "Server Default"
 		config.SystemProviderStaticModels = []string{"test-model"}
 	})
-	testServer.app.providers.drivers["openai_compatible"] = fakeProviderDriver{
+	testServer.app.providers.drivers[openRouterProviderKind] = fakeProviderDriver{
 		models: []ProviderModel{
 			{
 				ID:            "test-model",
@@ -736,17 +736,11 @@ func TestSendMessagePassesModelSettingsToProvider(t *testing.T) {
 	var created sessionMutationResponse
 	decodeResponseJSON(t, createResponse, &created)
 
-	temperature := 0.4
-	topP := 0.85
-	maxOutputTokens := int64(512)
 	sendResponse := performJSONRequest(t, testServer.handler, http.MethodPost, "/api/sessions/"+created.FriendlyID+"/messages", sendMessageRequest{
-		Message:         "Use the configured settings",
-		Model:           "test-model",
-		SystemPrompt:    "You are terse and precise.",
-		Thinking:        "high",
-		Temperature:     &temperature,
-		TopP:            &topP,
-		MaxOutputTokens: &maxOutputTokens,
+		Message:      "Use the configured settings",
+		Model:        "test-model",
+		SystemPrompt: "You are terse and precise.",
+		WebSearch:    true,
 	}, []*http.Cookie{cookie})
 	assertStatusCode(t, sendResponse, http.StatusOK)
 
@@ -758,17 +752,8 @@ func TestSendMessagePassesModelSettingsToProvider(t *testing.T) {
 	if capturedRequest.SystemPrompt != "You are terse and precise." {
 		t.Fatalf("request system prompt = %q, want configured system prompt", capturedRequest.SystemPrompt)
 	}
-	if capturedRequest.ReasoningEffort != "high" {
-		t.Fatalf("request reasoning effort = %q, want high", capturedRequest.ReasoningEffort)
-	}
-	if capturedRequest.Temperature == nil || *capturedRequest.Temperature != temperature {
-		t.Fatalf("request temperature = %v, want %v", capturedRequest.Temperature, temperature)
-	}
-	if capturedRequest.TopP == nil || *capturedRequest.TopP != topP {
-		t.Fatalf("request topP = %v, want %v", capturedRequest.TopP, topP)
-	}
-	if capturedRequest.MaxOutputTokens == nil || *capturedRequest.MaxOutputTokens != maxOutputTokens {
-		t.Fatalf("request max output tokens = %v, want %v", capturedRequest.MaxOutputTokens, maxOutputTokens)
+	if capturedRequest.WebSearch == nil {
+		t.Fatalf("request web search = nil, want enabled")
 	}
 	if len(capturedRequest.Messages) < 2 {
 		t.Fatalf("request messages length = %d, want system + user", len(capturedRequest.Messages))
@@ -843,7 +828,7 @@ type fakeProviderDriver struct {
 }
 
 func (driver fakeProviderDriver) Kind() string {
-	return "openai_compatible"
+	return openRouterProviderKind
 }
 
 func (driver fakeProviderDriver) ListModels(
@@ -921,7 +906,7 @@ func TestSendMessageAutoGeneratesSessionTitleFromFirstTurn(t *testing.T) {
 		config.SystemProviderLabel = "Server Default"
 		config.SystemProviderStaticModels = []string{"chat-model"}
 	})
-	testServer.app.providers.drivers["openai_compatible"] = fakeProviderDriver{
+	testServer.app.providers.drivers[openRouterProviderKind] = fakeProviderDriver{
 		models: []ProviderModel{
 			{
 				ID:            "chat-model",
@@ -973,7 +958,7 @@ func TestSendMessageDoesNotExposeDerivedTitleBeforeGeneratedTitleArrives(t *test
 		config.SystemProviderLabel = "Server Default"
 		config.SystemProviderStaticModels = []string{"chat-model"}
 	})
-	testServer.app.providers.drivers["openai_compatible"] = fakeProviderDriver{
+	testServer.app.providers.drivers[openRouterProviderKind] = fakeProviderDriver{
 		models: []ProviderModel{
 			{
 				ID:            "chat-model",
@@ -1038,7 +1023,7 @@ func TestSendMessagePublishesTitleEvent(t *testing.T) {
 		config.SystemProviderLabel = "Server Default"
 		config.SystemProviderStaticModels = []string{"chat-model"}
 	})
-	testServer.app.providers.drivers["openai_compatible"] = fakeProviderDriver{
+	testServer.app.providers.drivers[openRouterProviderKind] = fakeProviderDriver{
 		models: []ProviderModel{
 			{
 				ID:            "chat-model",
@@ -1121,7 +1106,7 @@ func TestSendMessageUsesSeparateTitleModelWhenConfigured(t *testing.T) {
 		config.SystemProviderLabel = "Server Default"
 		config.SystemProviderStaticModels = []string{"chat-model", "title-model"}
 	})
-	testServer.app.providers.drivers["openai_compatible"] = fakeProviderDriver{
+	testServer.app.providers.drivers[openRouterProviderKind] = fakeProviderDriver{
 		models: []ProviderModel{
 			{
 				ID:            "chat-model",
@@ -1227,7 +1212,7 @@ func TestStopSessionRunPublishesAbortedEventAndKeepsPartialAssistantHistory(t *t
 		config.SystemProviderLabel = "Server Default"
 		config.SystemProviderStaticModels = []string{"test-model"}
 	})
-	testServer.app.providers.drivers["openai_compatible"] = fakeProviderDriver{
+	testServer.app.providers.drivers[openRouterProviderKind] = fakeProviderDriver{
 		models: []ProviderModel{
 			{
 				ID:            "test-model",

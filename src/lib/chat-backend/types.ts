@@ -29,10 +29,7 @@ export type ChatSendMessageInput = {
   message: string
   model?: string
   systemPrompt?: string
-  thinking?: string
-  temperature?: number
-  topP?: number
-  maxOutputTokens?: number
+  webSearch?: boolean
   idempotencyKey?: string
   clientId?: string
   attachments?: Array<ChatAttachmentPayload>
@@ -43,10 +40,7 @@ export type ChatCreateConversationInput = {
   message?: string
   model?: string
   systemPrompt?: string
-  thinking?: string
-  temperature?: number
-  topP?: number
-  maxOutputTokens?: number
+  webSearch?: boolean
   idempotencyKey?: string
   clientId?: string
   attachments?: Array<ChatAttachmentPayload>
@@ -87,10 +81,7 @@ export type ChatEditUserMessageInput = {
   message: string
   model?: string
   systemPrompt?: string
-  thinking?: string
-  temperature?: number
-  topP?: number
-  maxOutputTokens?: number
+  webSearch?: boolean
 }
 
 export type ChatDeleteUserMessageInput = {

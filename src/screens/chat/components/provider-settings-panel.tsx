@@ -3,7 +3,6 @@ import {
   Add01Icon,
   Cancel01Icon,
   Delete02Icon,
-  Loading03Icon,
   PencilEdit02Icon,
   Tick02Icon,
 } from '@hugeicons/core-free-icons'
@@ -12,7 +11,6 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import { useProviderEditor } from '@/hooks/use-provider-editor'
-import { cn } from '@/lib/utils'
 
 export function ProviderSettingsPanel() {
   const capabilitiesQuery = useCapabilitiesQuery()
@@ -28,13 +26,10 @@ export function ProviderSettingsPanel() {
     errorMessage,
     handleCreateProvider,
     handleSaveProvider,
-    handleTestConnection,
     openAddEditor,
     openEditEditor,
     resetEditorState,
     saveProviderMutation,
-    testResult,
-    testingConnection,
     toggleProviderMutation,
     updateDraft,
     updatePreferencesMutation,
@@ -174,6 +169,11 @@ export function ProviderSettingsPanel() {
                     </Button>
                   </div>
                   <Input
+                    value="OpenRouter"
+                    disabled
+                    aria-label="Provider type"
+                  />
+                  <Input
                     placeholder="Label"
                     value={draft.label}
                     onChange={function handleChange(event) {
@@ -199,42 +199,11 @@ export function ProviderSettingsPanel() {
                   <div className="text-xs text-primary-500">
                     Leave the API key empty to keep the current secret.
                   </div>
-                  {testResult ? (
-                    <div
-                      className={cn(
-                        'flex items-center gap-2 text-xs',
-                        testResult.success ? 'text-green-600' : 'text-red-600',
-                      )}
-                    >
-                      <HugeiconsIcon
-                        icon={testResult.success ? Tick02Icon : Cancel01Icon}
-                        size={16}
-                        strokeWidth={1.5}
-                      />
-                      <span>{testResult.message}</span>
-                    </div>
-                  ) : null}
                   <div className="flex items-center justify-between gap-3">
                     <div className="text-xs text-primary-500">
-                      Test uses the values in this form before saving them.
+                      Changes apply after saving.
                     </div>
                     <div className="flex gap-2">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={handleTestConnection}
-                        disabled={testingConnection}
-                      >
-                        {testingConnection ? (
-                          <HugeiconsIcon
-                            icon={Loading03Icon}
-                            size={20}
-                            strokeWidth={1.5}
-                            className="animate-spin"
-                          />
-                        ) : null}
-                        <span>Test</span>
-                      </Button>
                       <Button
                         size="sm"
                         onClick={handleSaveProvider}
@@ -288,6 +257,7 @@ export function ProviderSettingsPanel() {
                   />
                 </Button>
               </div>
+              <Input value="OpenRouter" disabled aria-label="Provider type" />
               <Input
                 placeholder="Label"
                 value={draft.label}
@@ -311,42 +281,11 @@ export function ProviderSettingsPanel() {
                   updateDraft('apiKey', event.target.value)
                 }}
               />
-              {testResult ? (
-                <div
-                  className={cn(
-                    'flex items-center gap-2 text-xs',
-                    testResult.success ? 'text-green-600' : 'text-red-600',
-                  )}
-                >
-                  <HugeiconsIcon
-                    icon={testResult.success ? Tick02Icon : Cancel01Icon}
-                    size={16}
-                    strokeWidth={1.5}
-                  />
-                  <span>{testResult.message}</span>
-                </div>
-              ) : null}
               <div className="flex items-center justify-between gap-3">
                 <div className="text-xs text-primary-500">
-                  OpenAI-compatible providers only in v1.
+                  OpenRouter providers only in v1.
                 </div>
                 <div className="flex gap-2">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={handleTestConnection}
-                    disabled={testingConnection}
-                  >
-                    {testingConnection ? (
-                      <HugeiconsIcon
-                        icon={Loading03Icon}
-                        size={20}
-                        strokeWidth={1.5}
-                        className="animate-spin"
-                      />
-                    ) : null}
-                    <span>Test</span>
-                  </Button>
                   <Button
                     size="sm"
                     onClick={handleCreateProvider}

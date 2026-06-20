@@ -3,15 +3,11 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import type { ProviderModel } from '@/lib/app-api'
 import { providerModelKey } from '@/lib/model-utils'
-import type { ThinkingLevel } from '@/hooks/use-chat-settings'
 
 export type ConversationSettings = {
   model: string
   systemPrompt: string
-  temperature: string
-  topP: string
-  maxOutputTokens: string
-  thinkingLevel: ThinkingLevel
+  webSearch: boolean
 }
 
 type ConversationSettingsState = {
@@ -29,10 +25,7 @@ type ConversationSettingsState = {
 export const defaultConversationSettings: ConversationSettings = {
   model: '',
   systemPrompt: '',
-  temperature: '',
-  topP: '',
-  maxOutputTokens: '',
-  thinkingLevel: 'high',
+  webSearch: true,
 }
 
 export const useConversationSettingsStore = create<ConversationSettingsState>()(
@@ -164,29 +157,6 @@ export function resolveConversationModelID(
 
 export function normalizeConversationTextSetting(value: string): string {
   return normalizeConversationStringValue(value)
-}
-
-export function parseConversationNumberSetting(
-  value: string | number | null | undefined,
-  {
-    max,
-    min,
-    round = false,
-  }: {
-    min: number
-    max: number
-    round?: boolean
-  },
-): number | undefined {
-  const normalizedValue = normalizeConversationStringValue(value)
-  if (normalizedValue.length === 0) return undefined
-
-  const parsedValue = Number(normalizedValue)
-  if (!Number.isFinite(parsedValue)) return undefined
-  if (parsedValue < min || parsedValue > max) return undefined
-  if (round && !Number.isInteger(parsedValue)) return undefined
-
-  return parsedValue
 }
 
 function normalizeConversationStringValue(

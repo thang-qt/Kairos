@@ -11,30 +11,24 @@ type sessionsResponse struct {
 }
 
 type createSessionRequest struct {
-	Label           string              `json:"label"`
-	Message         string              `json:"message"`
-	Model           string              `json:"model"`
-	SystemPrompt    string              `json:"systemPrompt"`
-	Thinking        string              `json:"thinking"`
-	Temperature     *float64            `json:"temperature"`
-	TopP            *float64            `json:"topP"`
-	MaxOutputTokens *int64              `json:"maxOutputTokens"`
-	IdempotencyKey  string              `json:"idempotencyKey"`
-	ClientID        string              `json:"clientId"`
-	Attachments     []AttachmentPayload `json:"attachments"`
+	Label          string              `json:"label"`
+	Message        string              `json:"message"`
+	Model          string              `json:"model"`
+	SystemPrompt   string              `json:"systemPrompt"`
+	WebSearch      bool                `json:"webSearch"`
+	IdempotencyKey string              `json:"idempotencyKey"`
+	ClientID       string              `json:"clientId"`
+	Attachments    []AttachmentPayload `json:"attachments"`
 }
 
 type sendMessageRequest struct {
-	Message         string              `json:"message"`
-	Model           string              `json:"model"`
-	SystemPrompt    string              `json:"systemPrompt"`
-	Thinking        string              `json:"thinking"`
-	Temperature     *float64            `json:"temperature"`
-	TopP            *float64            `json:"topP"`
-	MaxOutputTokens *int64              `json:"maxOutputTokens"`
-	IdempotencyKey  string              `json:"idempotencyKey"`
-	ClientID        string              `json:"clientId"`
-	Attachments     []AttachmentPayload `json:"attachments"`
+	Message        string              `json:"message"`
+	Model          string              `json:"model"`
+	SystemPrompt   string              `json:"systemPrompt"`
+	WebSearch      bool                `json:"webSearch"`
+	IdempotencyKey string              `json:"idempotencyKey"`
+	ClientID       string              `json:"clientId"`
+	Attachments    []AttachmentPayload `json:"attachments"`
 }
 
 type cloneSessionRequest struct {
@@ -97,17 +91,14 @@ func (app *App) handleCreateSession(writer http.ResponseWriter, request *http.Re
 	response := newSessionMutationResponse(session)
 	if strings.TrimSpace(payload.Message) != "" || len(payload.Attachments) > 0 {
 		result, err := app.runs.StartRun(request.Context(), user.ID, SendMessageInput{
-			FriendlyID:      session.FriendlyID,
-			Message:         payload.Message,
-			Model:           payload.Model,
-			SystemPrompt:    payload.SystemPrompt,
-			Thinking:        payload.Thinking,
-			Temperature:     payload.Temperature,
-			TopP:            payload.TopP,
-			MaxOutputTokens: payload.MaxOutputTokens,
-			IdempotencyKey:  payload.IdempotencyKey,
-			ClientID:        payload.ClientID,
-			Attachments:     payload.Attachments,
+			FriendlyID:     session.FriendlyID,
+			Message:        payload.Message,
+			Model:          payload.Model,
+			SystemPrompt:   payload.SystemPrompt,
+			WebSearch:      payload.WebSearch,
+			IdempotencyKey: payload.IdempotencyKey,
+			ClientID:       payload.ClientID,
+			Attachments:    payload.Attachments,
 		})
 		if err != nil {
 			switch {
@@ -241,17 +232,14 @@ func (app *App) handleSendMessage(writer http.ResponseWriter, request *http.Requ
 	}
 
 	result, err := app.runs.StartRun(request.Context(), user.ID, SendMessageInput{
-		FriendlyID:      request.PathValue("friendlyId"),
-		Message:         payload.Message,
-		Model:           payload.Model,
-		SystemPrompt:    payload.SystemPrompt,
-		Thinking:        payload.Thinking,
-		Temperature:     payload.Temperature,
-		TopP:            payload.TopP,
-		MaxOutputTokens: payload.MaxOutputTokens,
-		IdempotencyKey:  payload.IdempotencyKey,
-		ClientID:        payload.ClientID,
-		Attachments:     payload.Attachments,
+		FriendlyID:     request.PathValue("friendlyId"),
+		Message:        payload.Message,
+		Model:          payload.Model,
+		SystemPrompt:   payload.SystemPrompt,
+		WebSearch:      payload.WebSearch,
+		IdempotencyKey: payload.IdempotencyKey,
+		ClientID:       payload.ClientID,
+		Attachments:    payload.Attachments,
 	})
 	if err != nil {
 		switch {
@@ -331,15 +319,12 @@ func (app *App) handleEditUserMessage(writer http.ResponseWriter, request *http.
 	}
 
 	result, err := app.runs.StartRun(request.Context(), user.ID, SendMessageInput{
-		FriendlyID:      session.FriendlyID,
-		Message:         payload.Message,
-		Model:           payload.Model,
-		SystemPrompt:    payload.SystemPrompt,
-		Thinking:        payload.Thinking,
-		Temperature:     payload.Temperature,
-		TopP:            payload.TopP,
-		MaxOutputTokens: payload.MaxOutputTokens,
-		Attachments:     attachments,
+		FriendlyID:   session.FriendlyID,
+		Message:      payload.Message,
+		Model:        payload.Model,
+		SystemPrompt: payload.SystemPrompt,
+		WebSearch:    payload.WebSearch,
+		Attachments:  attachments,
 	})
 	if err != nil {
 		switch {

@@ -4,7 +4,6 @@ import {
   appQueryKeys,
   createProvider,
   deleteProvider,
-  testConnection,
   updatePreferences,
   updateProvider,
 } from '@/lib/app-api'
@@ -21,15 +20,21 @@ export type ProviderEditorState =
     }
 
 export type ProviderDraftState = {
+  kind: 'openrouter'
   label: string
   baseURL: string
   apiKey: string
 }
 
+export const defaultProviderDraft = {
+  kind: 'openrouter',
+  label: 'OpenRouter',
+  baseURL: 'https://openrouter.ai/api/v1',
+} as const
+
 export function createEmptyProviderDraft(): ProviderDraftState {
   return {
-    label: '',
-    baseURL: '',
+    ...defaultProviderDraft,
     apiKey: '',
   }
 }
@@ -43,11 +48,6 @@ export function useProviderEditor(options?: { canSyncModels?: boolean }) {
     createEmptyProviderDraft(),
   )
   const [errorMessage, setErrorMessage] = useState('')
-  const [testingConnection, setTestingConnection] = useState(false)
-  const [testResult, setTestResult] = useState<{
-    success: boolean
-    message: string
-  } | null>(null)
 
   const refreshProviderQueries = async function refreshProviderQueries() {
     await Promise.all([
@@ -59,7 +59,6 @@ export function useProviderEditor(options?: { canSyncModels?: boolean }) {
 
   function resetEditorFeedback() {
     setErrorMessage('')
-    setTestResult(null)
   }
 
   function resetEditorState() {
@@ -84,6 +83,7 @@ export function useProviderEditor(options?: { canSyncModels?: boolean }) {
       providerId: provider.id,
     })
     setDraft({
+      kind: 'openrouter',
       label: provider.label,
       baseURL: provider.baseUrl ?? '',
       apiKey: '',
@@ -187,7 +187,7 @@ export function useProviderEditor(options?: { canSyncModels?: boolean }) {
       label: draft.label.trim() || 'Custom Provider',
       baseUrl: draft.baseURL.trim(),
       apiKey: draft.apiKey.trim(),
-      kind: 'openai_compatible',
+      kind: draft.kind,
       supportsModelSync: options?.canSyncModels ?? true,
     })
   }
@@ -203,43 +203,6 @@ export function useProviderEditor(options?: { canSyncModels?: boolean }) {
     })
   }
 
-  async function handleTestConnection() {
-    if (!draft.apiKey.trim()) {
-      setErrorMessage('API key is required.')
-      return
-    }
-    if (!draft.baseURL.trim()) {
-      setErrorMessage('Base URL is required for testing.')
-      return
-    }
-
-    setTestingConnection(true)
-    setErrorMessage('')
-    setTestResult(null)
-
-    try {
-      const result = await testConnection({
-        kind: 'openai_compatible',
-        baseUrl: draft.baseURL.trim(),
-        apiKey: draft.apiKey.trim(),
-      })
-      setTestResult({
-        success: result.success,
-        message: result.message || '',
-      })
-      if (!result.success) {
-        setErrorMessage(result.message || 'Connection failed.')
-      }
-    } catch (error) {
-      setTestResult({ success: false, message: 'Connection failed.' })
-      setErrorMessage(
-        error instanceof Error ? error.message : 'Connection failed.',
-      )
-    } finally {
-      setTestingConnection(false)
-    }
-  }
-
   return {
     createProviderMutation,
     deleteProviderMutation,
@@ -248,15 +211,12 @@ export function useProviderEditor(options?: { canSyncModels?: boolean }) {
     errorMessage,
     handleCreateProvider,
     handleSaveProvider,
-    handleTestConnection,
     openAddEditor,
     openEditEditor,
     refreshProviderQueries,
     resetEditorState,
     saveProviderMutation,
     setErrorMessage,
-    testResult,
-    testingConnection,
     toggleProviderMutation,
     updateDraft,
     updatePreferencesMutation,

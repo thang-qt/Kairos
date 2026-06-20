@@ -1,17 +1,16 @@
-import { ChatModelSelector } from './chat-model-selector'
 import type { ProviderModel } from '@/lib/app-api'
-import type { ThinkingLevel } from '@/hooks/use-chat-settings'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
+import { Switch } from '@/components/ui/switch'
+import {
+  formatContextWindow,
+  providerModelDisplayName,
+  providerModelKey,
+} from '@/lib/model-utils'
 import { cn } from '@/lib/utils'
 
 type ModelSettingsValue = {
   model: string
   systemPrompt: string
-  temperature: string
-  topP: string
-  maxOutputTokens: string
-  thinkingLevel: ThinkingLevel
+  webSearch: boolean
 }
 
 type ModelSettingsPanelProps = {
@@ -24,12 +23,6 @@ type ModelSettingsPanelProps = {
   value: ModelSettingsValue
   onChange: (updates: Partial<ModelSettingsValue>) => void
 }
-
-const THINKING_LEVEL_OPTIONS = [
-  { label: 'Low', value: 'low' },
-  { label: 'Medium', value: 'medium' },
-  { label: 'High', value: 'high' },
-] satisfies Array<{ label: string; value: ThinkingLevel }>
 
 function PanelSection({
   title,
@@ -70,35 +63,85 @@ function FieldBlock({
   )
 }
 
+function ModelInfoRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="grid grid-cols-[5.5rem_minmax(0,1fr)] gap-3 text-xs">
+      <div className="text-primary-500">{label}</div>
+      <div className="min-w-0 break-words text-primary-800">{value}</div>
+    </div>
+  )
+}
+
+function findSelectedModel(
+  models: Array<ProviderModel>,
+  selectedModelId: string,
+): ProviderModel | null {
+  return (
+    models.find(function matchModel(model) {
+      return (
+        providerModelKey(model) === selectedModelId ||
+        model.id === selectedModelId
+      )
+    }) ?? null
+  )
+}
+
 export function ModelSettingsPanel({
   models,
   selectedModelId,
-  defaultModelId,
   loading = false,
-  canSelectModel = true,
-  defaultModelLocked = false,
   value,
   onChange,
 }: ModelSettingsPanelProps) {
+  const selectedModel = findSelectedModel(models, selectedModelId)
+  const modelName = loading
+    ? 'Loading model…'
+    : providerModelDisplayName(
+        selectedModel,
+        selectedModelId || 'No model selected',
+      )
+  const modelDescription = selectedModel?.description?.trim()
+
   return (
     <div className="pb-4">
       <PanelSection title="Model">
-        <FieldBlock
-          label="Active model"
-          description="Choose the model used for the next turn in this conversation."
-        >
-          <ChatModelSelector
-            models={models}
-            selectedModelId={selectedModelId}
-            defaultModelId={defaultModelId}
-            loading={loading}
-            canSelectModel={canSelectModel}
-            defaultModelLocked={defaultModelLocked}
-            onSelectModel={function handleSelectModel(modelId) {
-              onChange({ model: modelId })
-            }}
-            className="w-full justify-between rounded-lg border border-primary-200 px-3 py-2 hover:bg-primary-50"
-          />
+        <FieldBlock label="Current model">
+          <div className="rounded-xl border border-primary-200 bg-primary-50/60 p-3">
+            <div className="text-pretty text-sm font-medium text-primary-950">
+              {modelName}
+            </div>
+
+            {modelDescription ? (
+              <details className="group mt-3">
+                <summary className="cursor-pointer list-none text-sm leading-relaxed text-primary-700 outline-none">
+                  <span className="line-clamp-3 group-open:line-clamp-none">
+                    {modelDescription}
+                  </span>
+                  <span className="mt-1 inline-block text-xs font-medium text-primary-500 group-open:hidden">
+                    Read full description
+                  </span>
+                  <span className="mt-1 hidden text-xs font-medium text-primary-500 group-open:inline-block">
+                    Show less
+                  </span>
+                </summary>
+              </details>
+            ) : null}
+
+            <div className="mt-4 space-y-2 rounded-lg border border-primary-200 bg-surface/70 p-3">
+              <ModelInfoRow
+                label="Context"
+                value={formatContextWindow(selectedModel?.contextWindow)}
+              />
+              {selectedModel?.created ? (
+                <ModelInfoRow
+                  label="Created"
+                  value={new Date(
+                    selectedModel.created * 1000,
+                  ).toLocaleDateString()}
+                />
+              ) : null}
+            </div>
+          </div>
         </FieldBlock>
       </PanelSection>
 
@@ -123,92 +166,27 @@ export function ModelSettingsPanel({
         </FieldBlock>
       </PanelSection>
 
-      <PanelSection title="Sampling">
+      <PanelSection title="Web tools">
         <FieldBlock
-          label="Reasoning effort"
-          description="Sent as `reasoning_effort` for OpenAI-compatible chat completions."
+          label="Search and fetch"
+          description="Allows OpenRouter to search the web and fetch URLs for the next turn."
         >
-          <div className="grid grid-cols-3 gap-2">
-            {THINKING_LEVEL_OPTIONS.map(function renderOption(option) {
-              const isActive = value.thinkingLevel === option.value
-              return (
-                <Button
-                  key={option.value}
-                  size="sm"
-                  variant={isActive ? 'secondary' : 'outline'}
-                  onClick={function handleClick() {
-                    onChange({ thinkingLevel: option.value })
-                  }}
-                  className={cn(
-                    'w-full',
-                    isActive &&
-                      'border-primary-300 bg-primary-200 text-primary-950 shadow-xs outline outline-primary-900/10',
-                  )}
-                >
-                  {option.label}
-                </Button>
-              )
-            })}
+          <div className="flex items-center justify-between gap-3 rounded-lg border border-primary-200 px-3 py-2">
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-sm text-primary-800">
+                Use web tools
+              </div>
+              <div className="text-pretty text-xs text-primary-500">
+                Adds OpenRouter web search and web fetch server tools.
+              </div>
+            </div>
+            <Switch
+              checked={value.webSearch}
+              onCheckedChange={function handleCheckedChange(checked) {
+                onChange({ webSearch: checked })
+              }}
+            />
           </div>
-        </FieldBlock>
-
-        <FieldBlock
-          label="Temperature"
-          description="Optional. Use a value between 0 and 2."
-        >
-          <Input
-            nativeInput
-            type="number"
-            min="0"
-            max="2"
-            step="0.1"
-            value={value.temperature}
-            onChange={function handleChange(
-              event: React.ChangeEvent<HTMLInputElement>,
-            ) {
-              onChange({ temperature: event.target.value })
-            }}
-            placeholder="Default"
-          />
-        </FieldBlock>
-
-        <FieldBlock
-          label="Top P"
-          description="Optional. Use a value between 0 and 1."
-        >
-          <Input
-            nativeInput
-            type="number"
-            min="0"
-            max="1"
-            step="0.05"
-            value={value.topP}
-            onChange={function handleChange(
-              event: React.ChangeEvent<HTMLInputElement>,
-            ) {
-              onChange({ topP: event.target.value })
-            }}
-            placeholder="Default"
-          />
-        </FieldBlock>
-
-        <FieldBlock
-          label="Max output tokens"
-          description="Optional. Caps completion length for this conversation."
-        >
-          <Input
-            nativeInput
-            type="number"
-            min="1"
-            step="1"
-            value={value.maxOutputTokens}
-            onChange={function handleChange(
-              event: React.ChangeEvent<HTMLInputElement>,
-            ) {
-              onChange({ maxOutputTokens: event.target.value })
-            }}
-            placeholder="Default"
-          />
         </FieldBlock>
       </PanelSection>
     </div>

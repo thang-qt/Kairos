@@ -141,12 +141,6 @@ type modelMetadataOverrideRow struct {
 	UpdatedAt     int64
 }
 
-type modelCatalogEntry struct {
-	Name          string
-	Description   string
-	ContextWindow int64
-}
-
 type providerModelCacheRow struct {
 	UserID        string
 	ProviderRef   string
@@ -169,18 +163,19 @@ type providerModelCacheStateRow struct {
 }
 
 type ChatGenerationRequest struct {
-	Model           string
-	SystemPrompt    string
-	ReasoningEffort string
-	Temperature     *float64
-	TopP            *float64
-	MaxOutputTokens *int64
-	Messages        []ProviderMessage
+	Model        string
+	SystemPrompt string
+	Messages     []ProviderMessage
+	Tools        []ProviderTool
+	ToolChoice   any
+	WebSearch    *ProviderWebSearchOptions
+	Plugins      []ProviderPlugin
 }
 
 type ChatGenerationDelta struct {
-	Text     string
-	Thinking string
+	Text      string
+	Thinking  string
+	ToolCalls []ProviderToolCall
 }
 
 type ChatGenerationResult struct {
@@ -192,11 +187,14 @@ type ChatGenerationResult struct {
 	PromptTokens     int64
 	CompletionTokens int64
 	TotalTokens      int64
+	ToolCalls        []ProviderToolCall
+	Details          map[string]any
 }
 
 type ProviderMessage struct {
-	Role  string
-	Parts []ProviderMessagePart
+	Role       string
+	Parts      []ProviderMessagePart
+	ToolCallID string
 }
 
 type ProviderMessagePart struct {
@@ -204,6 +202,33 @@ type ProviderMessagePart struct {
 	Text     string
 	MimeType string
 	Content  string
+	ID       string
+	Name     string
+	ArgsJSON string
+	Args     map[string]any
+}
+
+type ProviderTool struct {
+	Type        string
+	Name        string
+	Description string
+	Parameters  any
+	Strict      bool
+}
+
+type ProviderToolCall struct {
+	ID       string
+	Name     string
+	ArgsJSON string
+	Args     map[string]any
+}
+
+type ProviderWebSearchOptions struct{}
+
+type ProviderPlugin struct {
+	ID         string
+	PDFEngine  string
+	MaxResults *int
 }
 
 type ProviderDriver interface {
@@ -223,7 +248,6 @@ type ProviderService struct {
 	encryptionKey        [32]byte
 	drivers              map[string]ProviderDriver
 	system               *systemProvider
-	modelCatalog         *modelCatalog
 	modelCacheTTL        time.Duration
 	modelRefreshMu       sync.Mutex
 	refreshingModelUsers map[string]struct{}
@@ -235,7 +259,6 @@ func NewProviderService(db *sql.DB, config Config) *ProviderService {
 		config:               config,
 		encryptionKey:        config.ProviderEncryptionKey(),
 		drivers:              defaultProviderDrivers(),
-		modelCatalog:         newModelCatalog(),
 		modelCacheTTL:        providerModelCacheTTL,
 		refreshingModelUsers: make(map[string]struct{}),
 	}

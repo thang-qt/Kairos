@@ -6,6 +6,10 @@ import type {
   ToolCallContent,
 } from '../types'
 import type { ToolPart } from '@/components/prompt-kit/tool'
+export {
+  mapSearchDetailsToToolPart,
+  searchDetailsSignature,
+} from './web-tool-utils'
 
 type MessageModelMetadata = {
   id: string | null

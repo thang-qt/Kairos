@@ -28,7 +28,6 @@ import { useChatRestoration } from './hooks/use-chat-restoration'
 import { useChatMutations } from './hooks/use-chat-mutations'
 import {
   normalizeConversationTextSetting,
-  parseConversationNumberSetting,
   resolveConversationModelID,
   useConversationSettings,
 } from './conversation-settings'
@@ -103,29 +102,7 @@ export function ChatScreen({
   const resolvedSystemPrompt = normalizeConversationTextSetting(
     conversationSettings.systemPrompt,
   )
-  const resolvedThinkingLevel = conversationSettings.thinkingLevel
-  const resolvedTemperature = parseConversationNumberSetting(
-    conversationSettings.temperature,
-    {
-      min: 0,
-      max: 2,
-    },
-  )
-  const resolvedTopP = parseConversationNumberSetting(
-    conversationSettings.topP,
-    {
-      min: 0,
-      max: 1,
-    },
-  )
-  const resolvedMaxOutputTokens = parseConversationNumberSetting(
-    conversationSettings.maxOutputTokens,
-    {
-      min: 1,
-      max: Number.MAX_SAFE_INTEGER,
-      round: true,
-    },
-  )
+  const resolvedWebSearch = conversationSettings.webSearch
   const { isMobile } = useChatMobile(queryClient)
   const {
     sessionsQuery,
@@ -267,10 +244,7 @@ export function ChatScreen({
     onSessionResolved,
     resolvedConversationModel,
     resolvedSystemPrompt,
-    resolvedThinkingLevel,
-    resolvedTemperature,
-    resolvedTopP,
-    resolvedMaxOutputTokens,
+    resolvedWebSearch,
     beginGeneration,
     finishGeneration,
     startRun,

@@ -5,7 +5,8 @@ import (
 	"net/http"
 	"sync"
 	"testing"
-	"time"
+
+	openrouter "github.com/revrost/go-openrouter"
 )
 
 type countingProviderDriver struct {
@@ -15,7 +16,7 @@ type countingProviderDriver struct {
 }
 
 func (driver *countingProviderDriver) Kind() string {
-	return "openai_compatible"
+	return openRouterProviderKind
 }
 
 func (driver *countingProviderDriver) ListModels(
@@ -52,12 +53,33 @@ func (driver *countingProviderDriver) callCount() int {
 	return driver.calls
 }
 
+func TestBuildOpenRouterChatRequestUsesServerToolsForWebSearch(t *testing.T) {
+	request := buildOpenRouterChatRequest(ChatGenerationRequest{
+		Model:     "openai/gpt-5.2",
+		Messages:  []ProviderMessage{{Role: "user", Parts: []ProviderMessagePart{{Type: "text", Text: "What happened today?"}}}},
+		WebSearch: &ProviderWebSearchOptions{},
+	})
+
+	if len(request.Tools) != 2 {
+		t.Fatalf("tools length = %d, want 2", len(request.Tools))
+	}
+	if request.Tools[0].Type != openrouter.ToolType("openrouter:web_search") {
+		t.Fatalf("tool 0 type = %q, want openrouter:web_search", request.Tools[0].Type)
+	}
+	if request.Tools[1].Type != openrouter.ToolType("openrouter:web_fetch") {
+		t.Fatalf("tool 1 type = %q, want openrouter:web_fetch", request.Tools[1].Type)
+	}
+	if len(request.Plugins) != 0 {
+		t.Fatalf("plugins length = %d, want 0", len(request.Plugins))
+	}
+}
+
 func TestCreateListUpdateAndDeleteProvider(t *testing.T) {
 	testServer := newTestApp(t, nil)
 	cookie := signupAndRequireCookie(t, testServer, "providers@example.com")
 
 	createResponse := performJSONRequest(t, testServer.handler, http.MethodPost, "/api/providers", CreateProviderInput{
-		Label:   "My OpenAI",
+		Label:   "My OpenRouter",
 		BaseURL: "https://example.com/v1",
 		APIKey:  "sk-test",
 	}, []*http.Cookie{cookie})
@@ -212,24 +234,25 @@ func TestPreferencesPersistTitleGenerationSettings(t *testing.T) {
 	}
 }
 
-func TestModelListAppliesCatalogAndUserMetadata(t *testing.T) {
+func TestModelListAppliesProviderAndUserMetadata(t *testing.T) {
 	testServer := newTestApp(t, func(config *Config) {
 		config.SystemProviderEnabled = true
 		config.SystemProviderLabel = "Server Default"
-		config.SystemProviderStaticModels = []string{"gpt-4.1-mini"}
 	})
-	testServer.app.providers.modelCatalog = &modelCatalog{
-		httpClient: nil,
-		ttl:        time.Hour,
-		entries: map[string]modelCatalogEntry{
-			"gpt-4.1-mini": {
+	testServer.app.providers.drivers[openRouterProviderKind] = &countingProviderDriver{
+		models: []ProviderModel{
+			{
+				ID:            "gpt-4.1-mini",
+				Object:        "model",
+				OwnedBy:       "openai",
 				Name:          "GPT-4.1 Mini",
-				Description:   "Catalog description",
+				Description:   "Provider description",
 				ContextWindow: 1_000_000,
+				ProviderRef:   "system:system-default",
+				ProviderLabel: "Server Default",
 			},
 		},
 	}
-	testServer.app.providers.modelCatalog.expiresAt = time.Now().Add(time.Hour)
 
 	cookie := signupAndRequireCookie(t, testServer, "model-metadata@example.com")
 
@@ -239,7 +262,10 @@ func TestModelListAppliesCatalogAndUserMetadata(t *testing.T) {
 	var initial modelsResponse
 	decodeResponseJSON(t, response, &initial)
 	if initial.Models[0].Name != "GPT-4.1 Mini" {
-		t.Fatalf("model name = %q, want catalog name", initial.Models[0].Name)
+		t.Fatalf("model name = %q, want provider name", initial.Models[0].Name)
+	}
+	if initial.Models[0].Description != "Provider description" {
+		t.Fatalf("model description = %q, want provider description", initial.Models[0].Description)
 	}
 	if initial.Models[0].ContextWindow != 1_000_000 {
 		t.Fatalf("context window = %d, want 1000000", initial.Models[0].ContextWindow)
@@ -292,7 +318,7 @@ func TestModelListUsesPersistedProviderModelsCache(t *testing.T) {
 		config.SystemProviderEnabled = true
 		config.SystemProviderLabel = "Server Default"
 	})
-	testServer.app.providers.drivers["openai_compatible"] = driver
+	testServer.app.providers.drivers[openRouterProviderKind] = driver
 
 	cookie := signupAndRequireCookie(t, testServer, "cached-models@example.com")
 
@@ -335,7 +361,7 @@ func TestManualModelSyncRefreshesPersistedProviderModels(t *testing.T) {
 		config.SystemProviderEnabled = true
 		config.SystemProviderLabel = "Server Default"
 	})
-	testServer.app.providers.drivers["openai_compatible"] = driver
+	testServer.app.providers.drivers[openRouterProviderKind] = driver
 
 	cookie := signupAndRequireCookie(t, testServer, "manual-model-sync@example.com")
 

@@ -52,15 +52,12 @@ export function ModelsProvidersPanel() {
     errorMessage,
     handleCreateProvider,
     handleSaveProvider,
-    handleTestConnection,
     openAddEditor,
     openEditEditor,
     refreshProviderQueries: refreshQueries,
     resetEditorState,
     saveProviderMutation,
     setErrorMessage,
-    testResult,
-    testingConnection,
     toggleProviderMutation,
     updateDraft,
     updatePreferencesMutation,
@@ -244,8 +241,6 @@ export function ModelsProvidersPanel() {
             preferences={preferences}
             editorState={editorState}
             draft={draft}
-            testingConnection={testingConnection}
-            testResult={testResult}
             errorMessage={errorMessage}
             updatePreferencesMutation={updatePreferencesMutation}
             toggleProviderMutation={toggleProviderMutation}
@@ -256,7 +251,6 @@ export function ModelsProvidersPanel() {
             openAddEditor={openAddEditor}
             resetEditorState={resetEditorState}
             updateDraft={updateDraft}
-            handleTestConnection={handleTestConnection}
             handleSaveProvider={handleSaveProvider}
             handleCreateProvider={handleCreateProvider}
           />

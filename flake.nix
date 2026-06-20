@@ -39,7 +39,7 @@
               ALLOW_USER_MODEL_SYNC = boolString cfg.settings.allowUserModelSync;
               LOCK_CHAT_MODEL = boolString cfg.settings.lockChatModel;
               SYSTEM_PROVIDER_1_ID = cfg.settings.systemProvider.id;
-              SYSTEM_PROVIDER_1_KIND = "openai_compatible";
+              SYSTEM_PROVIDER_1_KIND = "openrouter";
               SYSTEM_PROVIDER_1_LABEL = cfg.settings.systemProvider.label;
               SYSTEM_PROVIDER_1_ENABLED = boolString cfg.settings.systemProvider.enabled;
               SYSTEM_PROVIDER_1_ALLOW_DISABLE = boolString cfg.settings.systemProvider.allowDisable;

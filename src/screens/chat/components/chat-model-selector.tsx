@@ -274,11 +274,6 @@ export function ChatModelSelector({
                       <div className="truncate text-xs text-primary-500 tabular-nums">
                         {providerModelMetaLine(model)}
                       </div>
-                      {model.description ? (
-                        <div className="line-clamp-1 text-xs text-primary-500">
-                          {model.description}
-                        </div>
-                      ) : null}
                     </button>
                     <div className="shrink-0">
                       {isDefault ? (

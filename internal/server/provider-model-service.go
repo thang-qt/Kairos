@@ -169,22 +169,10 @@ func (service *ProviderService) UpdateModelMetadata(
 	return ProviderModel{}, errModelNotAvailable
 }
 
-func (service *ProviderService) SyncModelCatalog(ctx context.Context) error {
-	if service.modelCatalog == nil {
-		return nil
-	}
-	_, err := service.modelCatalog.load(ctx, true)
-	return err
-}
-
 func (service *ProviderService) SyncModels(
 	ctx context.Context,
 	userID string,
 ) ([]ProviderModel, UserPreferences, error) {
-	if err := service.SyncModelCatalog(ctx); err != nil && ctx.Err() == nil {
-		// Keep serving cached metadata if models.dev is temporarily unavailable.
-	}
-
 	visibleProviders, preferences, err := service.listVisibleResolvedProviders(ctx, userID)
 	if err != nil {
 		return nil, UserPreferences{}, err
@@ -328,16 +316,6 @@ func (service *ProviderService) enrichModels(
 		return models
 	}
 
-	entries := map[string]modelCatalogEntry{}
-	if service.modelCatalog != nil {
-		ids := make([]string, 0, len(models))
-		for _, model := range models {
-			if strings.TrimSpace(model.ID) != "" {
-				ids = append(ids, model.ID)
-			}
-		}
-		entries = service.modelCatalog.lookupMany(ctx, ids)
-	}
 	overrides := service.loadModelMetadataOverrides(ctx, userID, models)
 
 	enriched := make([]ProviderModel, 0, len(models))
@@ -345,9 +323,6 @@ func (service *ProviderService) enrichModels(
 		next := model
 		if strings.TrimSpace(next.ModelRef) == "" {
 			next.ModelRef = modelReference(next.ProviderRef, next.ID)
-		}
-		if entry, ok := entries[strings.TrimSpace(model.ID)]; ok {
-			next = applyModelCatalogEntry(next, entry)
 		}
 		if override, ok := overrides[strings.TrimSpace(model.ID)]; ok {
 			next = applyModelMetadataOverride(next, override)

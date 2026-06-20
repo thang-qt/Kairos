@@ -66,7 +66,7 @@ func LoadConfig() (Config, error) {
 		DefaultChatModel:            strings.TrimSpace(os.Getenv("DEFAULT_CHAT_MODEL")),
 		LockChatModel:               getEnvBool("LOCK_CHAT_MODEL", false),
 		SystemProviderID:            getEnv("SYSTEM_PROVIDER_1_ID", "system-default"),
-		SystemProviderKind:          getEnv("SYSTEM_PROVIDER_1_KIND", "openai_compatible"),
+		SystemProviderKind:          strings.ToLower(getEnv("SYSTEM_PROVIDER_1_KIND", defaultProviderKind)),
 		SystemProviderLabel:         getEnv("SYSTEM_PROVIDER_1_LABEL", "Server Default"),
 		SystemProviderBaseURL:       strings.TrimSpace(os.Getenv("SYSTEM_PROVIDER_1_BASE_URL")),
 		SystemProviderAPIKey:        strings.TrimSpace(os.Getenv("SYSTEM_PROVIDER_1_API_KEY")),
@@ -94,8 +94,8 @@ func LoadConfig() (Config, error) {
 			return Config{}, errors.New("ADMIN_PASSWORD or ADMIN_PASSWORD_HASH is required when BOOTSTRAP_ADMIN is true")
 		}
 	}
-	if config.SystemProviderKind != "" && config.SystemProviderKind != "openai_compatible" {
-		return Config{}, errors.New("SYSTEM_PROVIDER_1_KIND must be openai_compatible")
+	if config.SystemProviderKind != "" && config.SystemProviderKind != openRouterProviderKind {
+		return Config{}, errors.New("SYSTEM_PROVIDER_1_KIND must be openrouter")
 	}
 	if config.ProviderEncryptionSecretKey == "" {
 		// Development and tests get a deterministic fallback. Production should

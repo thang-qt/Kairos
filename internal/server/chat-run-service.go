@@ -13,17 +13,14 @@ import (
 )
 
 type SendMessageInput struct {
-	FriendlyID      string              `json:"-"`
-	Message         string              `json:"message"`
-	Model           string              `json:"model"`
-	SystemPrompt    string              `json:"systemPrompt"`
-	Thinking        string              `json:"thinking"`
-	Temperature     *float64            `json:"temperature"`
-	TopP            *float64            `json:"topP"`
-	MaxOutputTokens *int64              `json:"maxOutputTokens"`
-	IdempotencyKey  string              `json:"idempotencyKey"`
-	ClientID        string              `json:"clientId"`
-	Attachments     []AttachmentPayload `json:"attachments"`
+	FriendlyID     string              `json:"-"`
+	Message        string              `json:"message"`
+	Model          string              `json:"model"`
+	SystemPrompt   string              `json:"systemPrompt"`
+	WebSearch      bool                `json:"webSearch"`
+	IdempotencyKey string              `json:"idempotencyKey"`
+	ClientID       string              `json:"clientId"`
+	Attachments    []AttachmentPayload `json:"attachments"`
 }
 
 type AttachmentPayload struct {

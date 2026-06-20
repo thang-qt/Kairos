@@ -31,6 +31,7 @@ type ProviderEditorState =
     }
 
 type ProviderDraftState = {
+  kind: 'openrouter'
   label: string
   baseURL: string
   apiKey: string
@@ -42,8 +43,6 @@ type ProvidersDialogProps = {
   preferences: any
   editorState: ProviderEditorState | null
   draft: ProviderDraftState
-  testingConnection: boolean
-  testResult: { success: boolean; message: string } | null
   errorMessage: string
   updatePreferencesMutation: any
   toggleProviderMutation: any
@@ -54,7 +53,6 @@ type ProvidersDialogProps = {
   openAddEditor: () => void
   resetEditorState: () => void
   updateDraft: (key: keyof ProviderDraftState, value: string) => void
-  handleTestConnection: () => Promise<void>
   handleSaveProvider: () => void
   handleCreateProvider: () => void
 }
@@ -65,8 +63,6 @@ export function ProvidersDialog({
   preferences,
   editorState,
   draft,
-  testingConnection,
-  testResult,
   errorMessage,
   updatePreferencesMutation,
   toggleProviderMutation,
@@ -77,7 +73,6 @@ export function ProvidersDialog({
   openAddEditor,
   resetEditorState,
   updateDraft,
-  handleTestConnection,
   handleSaveProvider,
   handleCreateProvider,
 }: ProvidersDialogProps) {
@@ -111,7 +106,7 @@ export function ProvidersDialog({
               API Connections & Keys
             </DialogTitle>
             <DialogDescription className="mt-1 text-pretty">
-              Add OpenAI-compatible connections or toggle default server models.
+              Add OpenRouter connections or toggle default server models.
             </DialogDescription>
           </div>
           <DialogClose
@@ -267,9 +262,6 @@ export function ProvidersDialog({
                           }
                           updateDraft={updateDraft}
                           onCancel={resetEditorState}
-                          onTestConnection={handleTestConnection}
-                          testingConnection={testingConnection}
-                          testResult={testResult}
                           onSubmit={handleSaveProvider}
                           submitPending={saveProviderMutation.isPending}
                         />
@@ -308,9 +300,6 @@ export function ProvidersDialog({
                   }
                   updateDraft={updateDraft}
                   onCancel={resetEditorState}
-                  onTestConnection={handleTestConnection}
-                  testingConnection={testingConnection}
-                  testResult={testResult}
                   onSubmit={handleCreateProvider}
                   submitPending={createProviderMutation.isPending}
                 />

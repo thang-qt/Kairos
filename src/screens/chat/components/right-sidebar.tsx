@@ -30,12 +30,7 @@ type ExportFormat = 'markdown' | 'json' | 'text'
 export type RightSidebarTab = 'options' | 'model'
 export type RightSidebarModelSettings = Pick<
   ConversationSettings,
-  | 'model'
-  | 'systemPrompt'
-  | 'temperature'
-  | 'topP'
-  | 'maxOutputTokens'
-  | 'thinkingLevel'
+  'model' | 'systemPrompt' | 'webSearch'
 >
 
 type RightSidebarProps = {

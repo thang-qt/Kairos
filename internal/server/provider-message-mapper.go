@@ -43,13 +43,26 @@ func normalizeModel(value string) string {
 	return strings.TrimSpace(value)
 }
 
-func buildAssistantContent(thinking string, text string) []chatMessageContentPart {
-	content := make([]chatMessageContentPart, 0, 2)
+func buildAssistantContent(
+	thinking string,
+	text string,
+	toolCalls []ProviderToolCall,
+) []chatMessageContentPart {
+	content := make([]chatMessageContentPart, 0, 2+len(toolCalls))
 	if normalizedThinking := strings.TrimSpace(thinking); normalizedThinking != "" {
 		content = append(content, newThinkingContentPart(normalizedThinking))
 	}
 	if normalizedText := strings.TrimSpace(text); normalizedText != "" {
 		content = append(content, newTextContentPart(normalizedText))
+	}
+	for _, toolCall := range toolCalls {
+		if strings.TrimSpace(toolCall.ID) == "" &&
+			strings.TrimSpace(toolCall.Name) == "" &&
+			strings.TrimSpace(toolCall.ArgsJSON) == "" &&
+			len(toolCall.Args) == 0 {
+			continue
+		}
+		content = append(content, newToolCallContentPart(toolCall))
 	}
 	return content
 }
@@ -127,6 +140,68 @@ func buildUsageDetails(result ChatGenerationResult) map[string]any {
 	}
 }
 
+func buildGenerationDetails(result ChatGenerationResult) map[string]any {
+	details := make(map[string]any)
+	for key, value := range result.Details {
+		if value != nil {
+			details[key] = value
+		}
+	}
+	if usageDetails := buildUsageDetails(result); usageDetails != nil {
+		details["usage"] = usageDetails
+	}
+	if len(result.ToolCalls) > 0 {
+		details["toolCalls"] = providerToolCallsDetails(result.ToolCalls)
+	}
+	if len(details) == 0 {
+		return nil
+	}
+	return details
+}
+
+func mergeProviderToolCalls(
+	current []ProviderToolCall,
+	next []ProviderToolCall,
+) []ProviderToolCall {
+	if len(next) == 0 {
+		return current
+	}
+	merged := append([]ProviderToolCall(nil), current...)
+	for _, toolCall := range next {
+		index := -1
+		for candidateIndex, candidate := range merged {
+			if strings.TrimSpace(toolCall.ID) != "" &&
+				strings.TrimSpace(candidate.ID) == strings.TrimSpace(toolCall.ID) {
+				index = candidateIndex
+				break
+			}
+		}
+		if index < 0 {
+			merged = append(merged, toolCall)
+			continue
+		}
+		if strings.TrimSpace(toolCall.Name) != "" {
+			merged[index].Name = strings.TrimSpace(toolCall.Name)
+		}
+		if strings.TrimSpace(toolCall.ArgsJSON) != "" {
+			merged[index].ArgsJSON = strings.TrimSpace(toolCall.ArgsJSON)
+		}
+		if len(toolCall.Args) > 0 {
+			merged[index].Args = toolCall.Args
+		}
+	}
+	return merged
+}
+
+func buildProviderWebSearchOptions(
+	enabled bool,
+) *ProviderWebSearchOptions {
+	if !enabled {
+		return nil
+	}
+	return &ProviderWebSearchOptions{}
+}
+
 func buildRunEvent(
 	record runRecord,
 	session sessionRecord,
@@ -182,8 +257,9 @@ func buildProviderMessages(
 			continue
 		}
 		messages = append(messages, ProviderMessage{
-			Role:  role,
-			Parts: parts,
+			Role:       role,
+			Parts:      parts,
+			ToolCallID: strings.TrimSpace(stringValueFromMap(message, "toolCallId")),
 		})
 	}
 	return messages
@@ -218,6 +294,14 @@ func extractProviderMessageParts(value any) []ProviderMessagePart {
 				Type:     "image",
 				MimeType: mimeType,
 				Content:  content,
+			})
+		case "toolCall":
+			parts = append(parts, ProviderMessagePart{
+				Type:     "toolCall",
+				ID:       strings.TrimSpace(item.ID),
+				Name:     strings.TrimSpace(item.Name),
+				Args:     item.Args,
+				ArgsJSON: strings.TrimSpace(item.ArgsJSON),
 			})
 		}
 	}
