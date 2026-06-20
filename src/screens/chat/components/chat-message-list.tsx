@@ -1,13 +1,4 @@
-import {
-  memo,
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-} from 'react'
-import { useHotkey } from '@tanstack/react-hotkeys'
+import { memo, useCallback, useLayoutEffect, useMemo, useRef } from 'react'
 import {
   getGatewayMessageId,
   getToolCallsFromMessage,
@@ -24,6 +15,13 @@ import {
 } from '@/components/prompt-kit/chat-container'
 import { TypingIndicator } from '@/components/prompt-kit/typing-indicator'
 import { useChatSettingsStore } from '@/hooks/use-chat-settings'
+import { useChatScrollControl } from '../hooks/use-chat-scroll-control'
+import { useMessageNavigation } from '../hooks/use-message-navigation'
+import {
+  findPreviousClonePoint,
+  collectLinkedToolCallIds,
+  isLinkedToolResultMessage,
+} from './chat-message-list-utils'
 
 type ChatMessageListProps = {
   messages: Array<GatewayMessage>
@@ -84,157 +82,9 @@ function ChatMessageListComponent({
   const wideMode = useChatSettingsStore((state) => state.settings.wideMode)
   const anchorRef = useRef<HTMLDivElement | null>(null)
   const lastUserRef = useRef<HTMLDivElement | null>(null)
-  const [viewportNode, setViewportNode] = useState<HTMLDivElement | null>(null)
-  const [shortcutsHelpOpen, setShortcutsHelpOpen] = useState(false)
-
-  const navigateMessage = useCallback(
-    function navigateMessage(direction: 'up' | 'down') {
-      if (!viewportNode) return
-      const nodes = Array.from(
-        viewportNode.querySelectorAll('[data-message-item]'),
-      ) as Array<HTMLElement>
-      if (nodes.length === 0) return
-
-      // Find which node is currently active (closest to viewport top)
-      const threshold = viewportNode.scrollTop + headerHeight + 24
-      let activeIndex = -1
-
-      for (let i = 0; i < nodes.length; i += 1) {
-        if (nodes[i].offsetTop <= threshold) {
-          activeIndex = i
-        } else {
-          break
-        }
-      }
-      let targetIndex = activeIndex
-      let shouldScrollToBottom = false
-      if (direction === 'up') {
-        const currentNode = nodes[activeIndex]
-        if (
-          currentNode &&
-          viewportNode.scrollTop >
-            currentNode.offsetTop - headerHeight - 12 + 10
-        ) {
-          targetIndex = activeIndex
-        } else {
-          targetIndex = Math.max(0, activeIndex - 1)
-        }
-      } else {
-        if (activeIndex === nodes.length - 1) {
-          shouldScrollToBottom = true
-        } else {
-          targetIndex = Math.min(nodes.length - 1, activeIndex + 1)
-        }
-      }
-
-      if (shouldScrollToBottom) {
-        viewportNode.scrollTo({
-          top: viewportNode.scrollHeight - viewportNode.clientHeight,
-          behavior: 'smooth',
-        })
-      } else {
-        const targetNode = nodes[targetIndex]
-        if (!targetNode) return
-
-        const viewportRect = viewportNode.getBoundingClientRect()
-        const nodeRect = targetNode.getBoundingClientRect()
-        viewportNode.scrollTo({
-          top:
-            viewportNode.scrollTop +
-            nodeRect.top -
-            viewportRect.top -
-            headerHeight -
-            12,
-          behavior: 'smooth',
-        })
-      }
-    },
-    [viewportNode, headerHeight],
-  )
-
-  useHotkey(
-    'Alt+ArrowUp',
-    function handleAltArrowUp(event) {
-      event.preventDefault()
-      navigateMessage('up')
-    },
-    { preventDefault: true },
-  )
-
-  useHotkey(
-    'Alt+ArrowDown',
-    function handleAltArrowDown(event) {
-      event.preventDefault()
-      navigateMessage('down')
-    },
-    { preventDefault: true },
-  )
-
-  useHotkey('K', function handleKeyK(event) {
-    if (isEditableTarget(event.target)) return
-    event.preventDefault()
-    if (!viewportNode) return
-    viewportNode.scrollBy({
-      top: -100,
-      behavior: 'smooth',
-    })
-  })
-
-  useHotkey('J', function handleKeyJ(event) {
-    if (isEditableTarget(event.target)) return
-    event.preventDefault()
-    if (!viewportNode) return
-    viewportNode.scrollBy({
-      top: 100,
-      behavior: 'smooth',
-    })
-  })
-
-  useHotkey('[', function handleLeftBracket(event) {
-    if (isEditableTarget(event.target)) return
-    event.preventDefault()
-    navigateMessage('up')
-  })
-
-  useHotkey(']', function handleRightBracket(event) {
-    if (isEditableTarget(event.target)) return
-    event.preventDefault()
-    navigateMessage('down')
-  })
-
-  useHotkey({ key: '?', shift: true }, function handleQuestionMark(event) {
-    if (isEditableTarget(event.target)) return
-    event.preventDefault()
-    setShortcutsHelpOpen((prev) => !prev)
-  })
   const userTurnRefsRef = useRef(
     new Map<string, React.RefObject<HTMLDivElement | null>>(),
   )
-  const prevPinRef = useRef(pinToTop)
-  const prevUserIndexRef = useRef<number | undefined>(undefined)
-  const pendingRestoreSessionKeyRef = useRef<string | undefined>(undefined)
-
-  const [visibleCount, setVisibleCount] = useState(30)
-  const prevLengthRef = useRef(messages.length)
-
-  if (typeof restoreScrollTop === 'number' && sessionKey) {
-    pendingRestoreSessionKeyRef.current = sessionKey
-  }
-
-  // Reset when session changes
-  useLayoutEffect(() => {
-    setVisibleCount(30)
-    prevLengthRef.current = messages.length
-  }, [sessionKey])
-
-  // Increase visibleCount when new messages are appended at the end
-  useLayoutEffect(() => {
-    const diff = messages.length - prevLengthRef.current
-    if (diff > 0) {
-      setVisibleCount((prev) => prev + diff)
-    }
-    prevLengthRef.current = messages.length
-  }, [messages.length])
 
   function getMessageKey(message: GatewayMessage, index: number): string {
     return (
@@ -288,6 +138,29 @@ function ChatMessageListComponent({
       toolResultsByCallId: nextToolResultsByCallId,
     }
   }, [messages])
+
+  const {
+    viewportNode,
+    handleViewportNodeChange,
+    visibleCount,
+    pendingRestoreSessionKeyRef,
+  } = useChatScrollControl({
+    displayMessages,
+    loading,
+    pinToTop,
+    sessionKey,
+    headerHeight,
+    lastUserRef,
+  })
+
+  const { shortcutsHelpOpen, setShortcutsHelpOpen } = useMessageNavigation({
+    viewportNode,
+    headerHeight,
+  })
+
+  if (typeof restoreScrollTop === 'number' && sessionKey) {
+    pendingRestoreSessionKeyRef.current = sessionKey
+  }
 
   const slicedMessages = useMemo(() => {
     return displayMessages.slice(-visibleCount)
@@ -348,34 +221,6 @@ function ChatMessageListComponent({
     [],
   )
 
-  const handleScroll = useCallback(() => {
-    const viewport = viewportNode
-    if (!viewport) return
-
-    if (viewport.scrollTop < 80 && visibleCount < displayMessages.length) {
-      const prevScrollHeight = viewport.scrollHeight
-      const prevScrollTop = viewport.scrollTop
-
-      setVisibleCount((prev) => {
-        const next = Math.min(displayMessages.length, prev + 30)
-        requestAnimationFrame(() => {
-          const nextScrollHeight = viewport.scrollHeight
-          viewport.scrollTop =
-            prevScrollTop + (nextScrollHeight - prevScrollHeight)
-        })
-        return next
-      })
-    }
-  }, [viewportNode, visibleCount, displayMessages.length])
-
-  useEffect(() => {
-    const viewport = viewportNode
-    if (!viewport) return
-
-    viewport.addEventListener('scroll', handleScroll, { passive: true })
-    return () => viewport.removeEventListener('scroll', handleScroll)
-  }, [viewportNode, handleScroll])
-
   useLayoutEffect(() => {
     if (typeof slicedLastUserIndex !== 'number') {
       lastUserRef.current = null
@@ -386,13 +231,6 @@ function ChatMessageListComponent({
     const messageId = getMessageKey(lastUserMessage, slicedLastUserIndex)
     lastUserRef.current = getOrCreateUserTurnRef(messageId).current
   }, [slicedMessages, slicedLastUserIndex])
-
-  const handleViewportNodeChange = useCallback(
-    function handleViewportNodeChange(node: HTMLDivElement | null) {
-      setViewportNode(node)
-    },
-    [],
-  )
 
   const getTurnNode = useCallback(function getTurnNode(turnId: string) {
     return userTurnRefsRef.current.get(turnId)?.current ?? null
@@ -408,81 +246,6 @@ function ChatMessageListComponent({
     },
     [onClone],
   )
-
-  useLayoutEffect(() => {
-    const viewport = viewportNode
-    if (!viewport) return
-
-    let firstFrame = 0
-    let secondFrame = 0
-
-    function scheduleScroll(applyScroll: () => void) {
-      applyScroll()
-      if (typeof window === 'undefined') return
-      firstFrame = window.requestAnimationFrame(function applyFirstFrame() {
-        applyScroll()
-        secondFrame = window.requestAnimationFrame(function applySecondFrame() {
-          applyScroll()
-        })
-      })
-    }
-
-    const scrollNodeToViewportStart = function scrollNodeToViewportStart(
-      node: HTMLElement,
-      offset: number,
-    ) {
-      const viewportRect = viewport.getBoundingClientRect()
-      const nodeRect = node.getBoundingClientRect()
-      viewport.scrollTop += nodeRect.top - viewportRect.top - offset
-    }
-
-    if (
-      pendingRestoreSessionKeyRef.current &&
-      pendingRestoreSessionKeyRef.current === sessionKey
-    ) {
-      pendingRestoreSessionKeyRef.current = undefined
-      return
-    }
-
-    if (loading) return
-    if (pinToTop) {
-      const shouldPin =
-        !prevPinRef.current || prevUserIndexRef.current !== slicedLastUserIndex
-      prevPinRef.current = true
-      prevUserIndexRef.current = slicedLastUserIndex
-      if (shouldPin && lastUserRef.current) {
-        const lastUserNode = lastUserRef.current
-        scheduleScroll(function scrollLastUserToTop() {
-          scrollNodeToViewportStart(lastUserNode, headerHeight)
-        })
-      }
-      return function cleanupScrollFrames() {
-        window.cancelAnimationFrame(firstFrame)
-        window.cancelAnimationFrame(secondFrame)
-      }
-    }
-
-    prevPinRef.current = false
-    prevUserIndexRef.current = slicedLastUserIndex
-    scheduleScroll(function scrollToBottom() {
-      viewport.scrollTop = Math.max(
-        0,
-        viewport.scrollHeight - viewport.clientHeight,
-      )
-    })
-    return function cleanupScrollFrames() {
-      window.cancelAnimationFrame(firstFrame)
-      window.cancelAnimationFrame(secondFrame)
-    }
-  }, [
-    slicedMessages,
-    headerHeight,
-    slicedLastUserIndex,
-    loading,
-    pinToTop,
-    sessionKey,
-    viewportNode,
-  ])
 
   function renderMessage(
     chatMessage: GatewayMessage,
@@ -684,51 +447,10 @@ function areChatMessageListEqual(
   )
 }
 
-function findPreviousClonePoint(
-  messages: Array<GatewayMessage>,
-  index: number,
-): GatewayMessage | undefined {
-  for (let previousIndex = index - 1; previousIndex >= 0; previousIndex -= 1) {
-    const message = messages[previousIndex]
-    if (message.role === 'toolResult') continue
-    if (getGatewayMessageId(message)) return message
-  }
-  return undefined
-}
-
-function isEditableTarget(target: EventTarget | null): boolean {
-  if (!(target instanceof HTMLElement)) return false
-  const tag = target.tagName.toLowerCase()
-  if (tag === 'input' || tag === 'textarea' || tag === 'select') return true
-  return target.isContentEditable
-}
-
-export function collectLinkedToolCallIds(
-  messages: Array<GatewayMessage>,
-): Set<string> {
-  const linkedToolCallIds = new Set<string>()
-  for (const message of messages) {
-    if (message.role !== 'assistant') continue
-    const toolCalls = getToolCallsFromMessage(message)
-    for (const toolCall of toolCalls) {
-      const toolCallId =
-        typeof toolCall.id === 'string' ? toolCall.id.trim() : ''
-      if (!toolCallId) continue
-      linkedToolCallIds.add(toolCallId)
-    }
-  }
-  return linkedToolCallIds
-}
-
-export function isLinkedToolResultMessage(
-  message: GatewayMessage,
-  linkedToolCallIds: ReadonlySet<string>,
-): boolean {
-  if (message.role !== 'toolResult') return false
-  const toolCallId =
-    typeof message.toolCallId === 'string' ? message.toolCallId.trim() : ''
-  return toolCallId.length > 0 && linkedToolCallIds.has(toolCallId)
-}
+export {
+  collectLinkedToolCallIds,
+  isLinkedToolResultMessage,
+} from './chat-message-list-utils'
 
 const MemoizedChatMessageList = memo(
   ChatMessageListComponent,
