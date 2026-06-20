@@ -4,14 +4,11 @@ import {
   Add01Icon,
   Cancel01Icon,
   Delete02Icon,
-  Loading03Icon,
   PencilEdit02Icon,
-  Tick02Icon,
   Settings01Icon,
 } from '@hugeicons/core-free-icons'
 import { AnimatePresence, motion } from 'motion/react'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import {
   DialogClose,
@@ -22,6 +19,7 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
+import { ProviderEditorForm } from './provider-editor-form'
 
 type ProviderEditorState =
   | {
@@ -261,109 +259,20 @@ export function ProvidersDialog({
                         transition={{ duration: 0.15 }}
                         className="overflow-hidden"
                       >
-                        <div className="border-t border-primary-200/65 p-4 bg-primary-50/10 space-y-3">
-                          <div className="flex items-center justify-between">
-                            <span className="text-xs font-medium text-primary-850">
-                              Edit Provider Credentials
-                            </span>
-                            <Button
-                              size="icon-sm"
-                              variant="ghost"
-                              onClick={resetEditorState}
-                              className="text-primary-500 hover:bg-primary-100 h-6 w-6"
-                            >
-                              <HugeiconsIcon
-                                icon={Cancel01Icon}
-                                size={16}
-                                strokeWidth={1.5}
-                              />
-                            </Button>
-                          </div>
-                          <div className="space-y-2.5">
-                            <Input
-                              placeholder="Friendly Label"
-                              value={draft.label}
-                              onChange={function handleChange(event) {
-                                updateDraft('label', event.target.value)
-                              }}
-                            />
-                            <Input
-                              placeholder="Base URL Endpoint"
-                              value={draft.baseURL}
-                              disabled={!capabilities?.canAddCustomBaseUrl}
-                              onChange={function handleChange(event) {
-                                updateDraft('baseURL', event.target.value)
-                              }}
-                            />
-                            <Input
-                              placeholder="API Key (Hidden)"
-                              type="password"
-                              value={draft.apiKey}
-                              onChange={function handleChange(event) {
-                                updateDraft('apiKey', event.target.value)
-                              }}
-                            />
-                            <p className="text-[10px] text-primary-400">
-                              Leave empty to keep current secret.
-                            </p>
-                          </div>
-
-                          {testResult ? (
-                            <div
-                              className={cn(
-                                'flex items-center gap-2 text-xs py-1.5 px-3 rounded-lg border',
-                                testResult.success
-                                  ? 'bg-primary-50 border-primary-200 text-primary-800'
-                                  : 'bg-red-50 border-red-200 text-red-700',
-                              )}
-                            >
-                              <HugeiconsIcon
-                                icon={
-                                  testResult.success ? Tick02Icon : Cancel01Icon
-                                }
-                                size={16}
-                                strokeWidth={1.5}
-                              />
-                              <span className="truncate">
-                                {testResult.message}
-                              </span>
-                            </div>
-                          ) : null}
-
-                          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between pt-2">
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={handleTestConnection}
-                              disabled={testingConnection}
-                              className="h-8 border-primary-200 w-full sm:w-auto"
-                            >
-                              {testingConnection ? (
-                                <HugeiconsIcon
-                                  icon={Loading03Icon}
-                                  size={16}
-                                  strokeWidth={1.5}
-                                  className="animate-spin"
-                                />
-                              ) : (
-                                'Test Connection'
-                              )}
-                            </Button>
-                            <Button
-                              size="sm"
-                              onClick={handleSaveProvider}
-                              disabled={saveProviderMutation.isPending}
-                              className="h-8 gap-1 w-full sm:w-auto"
-                            >
-                              <HugeiconsIcon
-                                icon={Tick02Icon}
-                                size={16}
-                                strokeWidth={1.5}
-                              />
-                              <span>Save Changes</span>
-                            </Button>
-                          </div>
-                        </div>
+                        <ProviderEditorForm
+                          mode="edit"
+                          draft={draft}
+                          canAddCustomBaseUrl={
+                            capabilities?.canAddCustomBaseUrl ?? true
+                          }
+                          updateDraft={updateDraft}
+                          onCancel={resetEditorState}
+                          onTestConnection={handleTestConnection}
+                          testingConnection={testingConnection}
+                          testResult={testResult}
+                          onSubmit={handleSaveProvider}
+                          submitPending={saveProviderMutation.isPending}
+                        />
                       </motion.div>
                     )}
                   </AnimatePresence>
@@ -391,103 +300,20 @@ export function ProvidersDialog({
                   </span>
                 </button>
               ) : (
-                <div className="rounded-xl border border-primary-300 bg-surface p-4 space-y-3 transition-all duration-200">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-medium text-primary-955 uppercase tracking-wider">
-                      Add Custom Provider
-                    </span>
-                    <Button
-                      size="icon-sm"
-                      variant="ghost"
-                      onClick={resetEditorState}
-                      className="text-primary-500 hover:bg-primary-100 h-6 w-6"
-                    >
-                      <HugeiconsIcon
-                        icon={Cancel01Icon}
-                        size={16}
-                        strokeWidth={1.5}
-                      />
-                    </Button>
-                  </div>
-
-                  <div className="space-y-2.5">
-                    <Input
-                      placeholder="Provider Label"
-                      value={draft.label}
-                      onChange={function handleChange(event) {
-                        updateDraft('label', event.target.value)
-                      }}
-                    />
-                    <Input
-                      placeholder="Base URL Endpoint"
-                      value={draft.baseURL}
-                      disabled={!capabilities.canAddCustomBaseUrl}
-                      onChange={function handleChange(event) {
-                        updateDraft('baseURL', event.target.value)
-                      }}
-                    />
-                    <Input
-                      placeholder="API Key / Token Secret"
-                      type="password"
-                      value={draft.apiKey}
-                      onChange={function handleChange(event) {
-                        updateDraft('apiKey', event.target.value)
-                      }}
-                    />
-                  </div>
-
-                  {testResult ? (
-                    <div
-                      className={cn(
-                        'flex items-center gap-2 text-xs py-1.5 px-3 rounded-lg border',
-                        testResult.success
-                          ? 'bg-primary-50 border-primary-200 text-primary-800'
-                          : 'bg-red-50 border-red-200 text-red-700',
-                      )}
-                    >
-                      <HugeiconsIcon
-                        icon={testResult.success ? Tick02Icon : Cancel01Icon}
-                        size={16}
-                        strokeWidth={1.5}
-                      />
-                      <span className="truncate">{testResult.message}</span>
-                    </div>
-                  ) : null}
-
-                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between pt-1">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={handleTestConnection}
-                      disabled={testingConnection}
-                      className="h-8 border-primary-200 w-full sm:w-auto"
-                    >
-                      {testingConnection ? (
-                        <HugeiconsIcon
-                          icon={Loading03Icon}
-                          size={16}
-                          strokeWidth={1.5}
-                          className="animate-spin"
-                        />
-                      ) : (
-                        'Test Connection'
-                      )}
-                    </Button>
-                    <Button
-                      size="sm"
-                      onClick={handleCreateProvider}
-                      disabled={createProviderMutation.isPending}
-                      className="h-8 gap-1 w-full sm:w-auto"
-                    >
-                      <HugeiconsIcon
-                        icon={Add01Icon}
-                        size={16}
-                        strokeWidth={1.5}
-                      />
-                      <span>Add Provider</span>
-                    </Button>
-                  </div>
-                </div>
+                <ProviderEditorForm
+                  mode="add"
+                  draft={draft}
+                  canAddCustomBaseUrl={
+                    capabilities?.canAddCustomBaseUrl ?? true
+                  }
+                  updateDraft={updateDraft}
+                  onCancel={resetEditorState}
+                  onTestConnection={handleTestConnection}
+                  testingConnection={testingConnection}
+                  testResult={testResult}
+                  onSubmit={handleCreateProvider}
+                  submitPending={createProviderMutation.isPending}
+                />
               )}
             </div>
           ) : null}
