@@ -82,6 +82,7 @@ function ChatMessageListComponent({
   const wideMode = useChatSettingsStore((state) => state.settings.wideMode)
   const anchorRef = useRef<HTMLDivElement | null>(null)
   const lastUserRef = useRef<HTMLDivElement | null>(null)
+  const responseAfterLastUserRef = useRef<HTMLDivElement | null>(null)
   const userTurnRefsRef = useRef(
     new Map<string, React.RefObject<HTMLDivElement | null>>(),
   )
@@ -139,6 +140,13 @@ function ChatMessageListComponent({
     }
   }, [messages])
 
+  const latestUserIndex = useMemo(() => {
+    for (let index = displayMessages.length - 1; index >= 0; index -= 1) {
+      if (displayMessages[index].role === 'user') return index
+    }
+    return undefined
+  }, [displayMessages])
+
   const {
     viewportNode,
     handleViewportNodeChange,
@@ -150,7 +158,9 @@ function ChatMessageListComponent({
     pinToTop,
     sessionKey,
     headerHeight,
+    slicedLastUserIndex: latestUserIndex,
     lastUserRef,
+    responseAfterLastUserRef,
   })
 
   const { shortcutsHelpOpen, setShortcutsHelpOpen } = useMessageNavigation({
@@ -170,10 +180,12 @@ function ChatMessageListComponent({
     slicedConversationTurns,
     slicedLastAssistantIndex,
     slicedLastUserIndex,
+    slicedResponseAfterLastUserIndex,
   } = useMemo(() => {
     const nextConversationTurns: Array<{ id: string; preview: string }> = []
     let nextLastAssistantIndex: number | undefined
     let nextLastUserIndex: number | undefined
+    let nextResponseAfterLastUserIndex: number | undefined
 
     for (let index = 0; index < slicedMessages.length; index += 1) {
       const message = slicedMessages[index]
@@ -189,7 +201,14 @@ function ChatMessageListComponent({
           })
         }
         nextLastUserIndex = index
+        nextResponseAfterLastUserIndex = undefined
         continue
+      }
+      if (
+        typeof nextLastUserIndex === 'number' &&
+        typeof nextResponseAfterLastUserIndex !== 'number'
+      ) {
+        nextResponseAfterLastUserIndex = index
       }
       nextLastAssistantIndex = index
     }
@@ -198,6 +217,7 @@ function ChatMessageListComponent({
       slicedConversationTurns: nextConversationTurns,
       slicedLastAssistantIndex: nextLastAssistantIndex,
       slicedLastUserIndex: nextLastUserIndex,
+      slicedResponseAfterLastUserIndex: nextResponseAfterLastUserIndex,
     }
   }, [slicedMessages, showConversationNavigator])
 
@@ -224,13 +244,18 @@ function ChatMessageListComponent({
   useLayoutEffect(() => {
     if (typeof slicedLastUserIndex !== 'number') {
       lastUserRef.current = null
+      responseAfterLastUserRef.current = null
       return
     }
 
     const lastUserMessage = slicedMessages[slicedLastUserIndex]
     const messageId = getMessageKey(lastUserMessage, slicedLastUserIndex)
     lastUserRef.current = getOrCreateUserTurnRef(messageId).current
-  }, [slicedMessages, slicedLastUserIndex])
+
+    if (typeof slicedResponseAfterLastUserIndex !== 'number') {
+      responseAfterLastUserRef.current = null
+    }
+  }, [slicedMessages, slicedLastUserIndex, slicedResponseAfterLastUserIndex])
 
   const getTurnNode = useCallback(function getTurnNode(turnId: string) {
     return userTurnRefsRef.current.get(turnId)?.current ?? null
@@ -264,9 +289,12 @@ function ChatMessageListComponent({
       chatMessage.role === 'assistant' &&
       getToolCallsFromMessage(chatMessage).length > 0
     const isUserMessage = chatMessage.role === 'user'
+    const isResponseAfterLastUser = index === slicedResponseAfterLastUserIndex
     const wrapperRef = isUserMessage
       ? getOrCreateUserTurnRef(messageKey)
-      : options?.wrapperRef
+      : isResponseAfterLastUser
+        ? responseAfterLastUserRef
+        : options?.wrapperRef
     const wrapperScrollMarginTop = isUserMessage
       ? headerHeight + 12
       : options?.wrapperScrollMarginTop
@@ -336,6 +364,7 @@ function ChatMessageListComponent({
     headerHeight,
     slicedLastAssistantIndex,
     slicedLastUserIndex,
+    slicedResponseAfterLastUserIndex,
     modelLabelById,
     onClone,
     onDeleteUserTurn,

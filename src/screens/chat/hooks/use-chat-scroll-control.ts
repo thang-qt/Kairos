@@ -15,6 +15,7 @@ type UseChatScrollControlInput = {
   headerHeight: number
   slicedLastUserIndex?: number
   lastUserRef: React.MutableRefObject<HTMLDivElement | null>
+  responseAfterLastUserRef?: React.MutableRefObject<HTMLDivElement | null>
 }
 
 const pendingRestoreSessionKeyRef = { current: undefined } as {
@@ -29,12 +30,14 @@ export function useChatScrollControl({
   headerHeight,
   slicedLastUserIndex,
   lastUserRef,
+  responseAfterLastUserRef,
 }: UseChatScrollControlInput) {
   const [viewportNode, setViewportNode] = useState<HTMLDivElement | null>(null)
   const [visibleCount, setVisibleCount] = useState(30)
   const prevLengthRef = useRef(displayMessages.length)
   const prevPinRef = useRef(pinToTop)
   const prevUserIndexRef = useRef<number | undefined>(undefined)
+  const pendingResponsePinUserIndexRef = useRef<number | undefined>(undefined)
 
   // Reset when session changes
   useLayoutEffect(() => {
@@ -93,11 +96,14 @@ export function useChatScrollControl({
     let firstFrame = 0
     let secondFrame = 0
 
-    function scheduleScroll(applyScroll: () => void) {
-      applyScroll()
-      if (typeof window === 'undefined') return
-      firstFrame = window.requestAnimationFrame(function applyFirstFrame() {
+    function scheduleScroll(applyScroll: () => boolean) {
+      if (typeof window === 'undefined') {
         applyScroll()
+        return
+      }
+
+      firstFrame = window.requestAnimationFrame(function applyFirstFrame() {
+        if (applyScroll()) return
         secondFrame = window.requestAnimationFrame(function applySecondFrame() {
           applyScroll()
         })
@@ -110,7 +116,10 @@ export function useChatScrollControl({
     ) {
       const viewportRect = viewport.getBoundingClientRect()
       const nodeRect = node.getBoundingClientRect()
-      viewport.scrollTop += nodeRect.top - viewportRect.top - offset
+      const delta = nodeRect.top - viewportRect.top - offset
+      if (Math.abs(delta) < 1) return false
+      viewport.scrollTop = Math.max(0, viewport.scrollTop + delta)
+      return true
     }
 
     if (
@@ -127,10 +136,35 @@ export function useChatScrollControl({
         !prevPinRef.current || prevUserIndexRef.current !== slicedLastUserIndex
       prevPinRef.current = true
       prevUserIndexRef.current = slicedLastUserIndex
-      if (shouldPin && lastUserRef.current) {
-        const lastUserNode = lastUserRef.current
-        scheduleScroll(function scrollLastUserToTop() {
-          scrollNodeToViewportStart(lastUserNode, headerHeight)
+      if (shouldPin) {
+        scheduleScroll(function scrollLastUserOrResponseToTop() {
+          const lastUserNode = lastUserRef.current
+          if (!lastUserNode) return false
+
+          const visibleHeight = Math.max(0, viewport.clientHeight - headerHeight)
+          const longMessageThreshold = Math.max(240, visibleHeight * 0.45)
+          const isLongUserMessage =
+            lastUserNode.getBoundingClientRect().height > longMessageThreshold
+
+          if (isLongUserMessage) {
+            const responseNode = responseAfterLastUserRef?.current
+            if (responseNode) {
+              pendingResponsePinUserIndexRef.current = undefined
+              return scrollNodeToViewportStart(responseNode, headerHeight + 12)
+            }
+            pendingResponsePinUserIndexRef.current = slicedLastUserIndex
+          }
+
+          return scrollNodeToViewportStart(lastUserNode, headerHeight + 12)
+        })
+      } else if (
+        pendingResponsePinUserIndexRef.current === slicedLastUserIndex &&
+        responseAfterLastUserRef?.current
+      ) {
+        const responseNode = responseAfterLastUserRef.current
+        pendingResponsePinUserIndexRef.current = undefined
+        scheduleScroll(function scrollResponseToTop() {
+          return scrollNodeToViewportStart(responseNode, headerHeight + 12)
         })
       }
       return function cleanupScrollFrames() {
@@ -142,10 +176,13 @@ export function useChatScrollControl({
     prevPinRef.current = false
     prevUserIndexRef.current = slicedLastUserIndex
     scheduleScroll(function scrollToBottom() {
-      viewport.scrollTop = Math.max(
+      const nextScrollTop = Math.max(
         0,
         viewport.scrollHeight - viewport.clientHeight,
       )
+      if (Math.abs(viewport.scrollTop - nextScrollTop) < 1) return false
+      viewport.scrollTop = nextScrollTop
+      return true
     })
     return function cleanupScrollFrames() {
       window.cancelAnimationFrame(firstFrame)
@@ -160,6 +197,7 @@ export function useChatScrollControl({
     sessionKey,
     viewportNode,
     lastUserRef,
+    responseAfterLastUserRef,
   ])
 
   return {
