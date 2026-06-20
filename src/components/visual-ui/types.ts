@@ -1,7 +1,6 @@
 export type VisualUiNode = {
   type?: string
   children?: Array<VisualUiNode>
-  text?: string
   value?: unknown
   title?: string
   label?: string
@@ -12,7 +11,6 @@ export type VisualUiNode = {
   options?: Array<string | { label?: string; value?: string }>
   selected?: string
   tone?: 'default' | 'info' | 'success' | 'warning' | 'error'
-  style?: 'title' | 'body' | 'caption'
   action?: VisualUiAction
   variant?: 'primary' | 'secondary' | 'ghost'
 }

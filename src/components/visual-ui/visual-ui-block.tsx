@@ -19,7 +19,31 @@ type SelectOption = {
 }
 
 function textValue(node: VisualUiNode) {
-  return String(node.value ?? node.text ?? node.label ?? '')
+  return String(node.value ?? node.label ?? '')
+}
+
+function MarkdownText({
+  children,
+  className,
+  inline = false,
+}: {
+  children: string
+  className?: string
+  inline?: boolean
+}) {
+  return (
+    <Markdown
+      className={cn(
+        'bg-transparent text-inherit',
+        inline
+          ? 'inline-flex flex-row gap-0 [&_p]:inline [&_p]:text-inherit [&_p]:leading-normal [&_strong]:text-inherit [&_em]:text-inherit [&_a]:text-inherit'
+          : 'w-full',
+        className,
+      )}
+    >
+      {children}
+    </Markdown>
+  )
 }
 
 function childrenOf(node: VisualUiNode) {
@@ -215,35 +239,21 @@ function VisualUiRenderer({ source, onCallback }: VisualUiBlockProps) {
         return (
           <div key={key} className="flex flex-col gap-2.5">
             {node.title ? (
-              <div className="text-sm font-medium text-primary-950">
+              <MarkdownText
+                inline
+                className="text-sm font-medium text-primary-950"
+              >
                 {node.title}
-              </div>
+              </MarkdownText>
             ) : null}
             {node.description ? (
-              <div className="text-base leading-relaxed text-primary-700">
+              <MarkdownText className="text-base leading-relaxed text-primary-700 [&_p]:text-primary-700">
                 {node.description}
-              </div>
+              </MarkdownText>
             ) : null}
             {childrenOf(node).map(renderNode)}
           </div>
         )
-      case 'text': {
-        const style = node.style || 'body'
-        return (
-          <Markdown
-            key={key}
-            className={cn(
-              'text-primary-950 bg-transparent w-full',
-              style === 'title' && '[&_p]:text-base [&_p]:font-medium',
-              style === 'body' && '[&_p]:text-base [&_p]:leading-relaxed',
-              style === 'caption' &&
-                '[&_p]:text-xs [&_p]:leading-relaxed [&_p]:text-primary-600',
-            )}
-          >
-            {textValue(node)}
-          </Markdown>
-        )
-      }
       case 'button':
         return (
           <Button
@@ -265,14 +275,16 @@ function VisualUiRenderer({ source, onCallback }: VisualUiBlockProps) {
               runAction(node.action)
             }}
           >
-            {node.label || 'Continue'}
+            <MarkdownText inline>{node.label || 'Continue'}</MarkdownText>
           </Button>
         )
       case 'input':
         return (
           <label key={key} className="flex flex-col gap-1.5">
             {node.label ? (
-              <span className="text-xs text-primary-700">{node.label}</span>
+              <MarkdownText inline className="text-xs text-primary-700">
+                {node.label}
+              </MarkdownText>
             ) : null}
             <Input
               nativeInput
@@ -289,9 +301,12 @@ function VisualUiRenderer({ source, onCallback }: VisualUiBlockProps) {
             key={key}
             className="flex items-center justify-between gap-3 rounded-[10px] border border-primary-200 bg-surface px-3 py-2"
           >
-            <span className="min-w-0 text-sm text-primary-950">
-              {node.label}
-            </span>
+            <MarkdownText
+              inline
+              className="min-w-0 text-sm text-primary-950"
+            >
+              {node.label ?? ''}
+            </MarkdownText>
             <Switch
               checked={checked}
               onCheckedChange={(next) => setValue(node.id, next)}
@@ -304,7 +319,9 @@ function VisualUiRenderer({ source, onCallback }: VisualUiBlockProps) {
         return (
           <label key={key} className="flex flex-col gap-1.5">
             {node.label ? (
-              <span className="text-xs text-primary-700">{node.label}</span>
+              <MarkdownText inline className="text-xs text-primary-700">
+                {node.label}
+              </MarkdownText>
             ) : null}
             <select
               className="h-8.5 rounded-lg border border-primary-200 bg-surface px-3 text-sm text-primary-950 shadow-xs/5 outline-none focus-visible:border-primary-500 focus-visible:ring-[3px] focus-visible:ring-primary-500/24"
@@ -341,7 +358,7 @@ function VisualUiRenderer({ source, onCallback }: VisualUiBlockProps) {
                       onCallback?.(option.label || option.value)
                   }}
                 >
-                  {option.label}
+                  <MarkdownText inline>{option.label}</MarkdownText>
                 </Button>
               )
             })}
@@ -358,9 +375,11 @@ function VisualUiRenderer({ source, onCallback }: VisualUiBlockProps) {
             )}
           >
             {node.title ? (
-              <div className="font-medium">{node.title}</div>
+              <MarkdownText inline className="font-medium">
+                {node.title}
+              </MarkdownText>
             ) : null}
-            {textValue(node) ? <div>{textValue(node)}</div> : null}
+            {textValue(node) ? <MarkdownText>{textValue(node)}</MarkdownText> : null}
           </div>
         )
       default:
@@ -394,7 +413,7 @@ function VisualUiRenderer({ source, onCallback }: VisualUiBlockProps) {
               )
             }
           >
-            Submit
+            <MarkdownText inline>Submit</MarkdownText>
           </Button>
         </div>
       ) : null}
