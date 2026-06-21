@@ -5,6 +5,7 @@ import { ModelsProvidersPanel } from './components/models-providers-panel'
 import { AppearanceSettingsPanel } from './components/appearance-settings-panel'
 import { DisplaySettingsPanel } from './components/display-settings-panel'
 import { AccountSettingsPanel } from './components/account-settings-panel'
+import { WebToolsSettingsPanel } from './components/web-tools-settings-panel'
 import {
   SettingsSidebar,
   getSettingsTabLabel,
@@ -18,7 +19,7 @@ import {
   setChatUiState,
 } from '@/screens/chat/chat-ui'
 
-export type SettingsTab = 'account' | 'models' | 'appearance' | 'display'
+export type SettingsTab = 'account' | 'models' | 'web-tools' | 'appearance' | 'display'
 
 type SettingsScreenProps = {
   activeTab: SettingsTab
@@ -31,6 +32,9 @@ function renderTabPanel(activeTab: SettingsTab) {
   }
   if (activeTab === 'models') {
     return <ModelsProvidersPanel />
+  }
+  if (activeTab === 'web-tools') {
+    return <WebToolsSettingsPanel />
   }
   if (activeTab === 'appearance') {
     return <AppearanceSettingsPanel />

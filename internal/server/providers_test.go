@@ -54,21 +54,24 @@ func (driver *countingProviderDriver) callCount() int {
 	return driver.calls
 }
 
-func TestBuildOpenRouterChatRequestUsesServerToolsForWebSearch(t *testing.T) {
+func TestBuildOpenRouterChatRequestUsesProviderNeutralTools(t *testing.T) {
 	request := buildOpenRouterChatRequest(ChatGenerationRequest{
-		Model:     "openai/gpt-5.2",
-		Messages:  []ProviderMessage{{Role: "user", Parts: []ProviderMessagePart{{Type: "text", Text: "What happened today?"}}}},
-		WebSearch: &ProviderWebSearchOptions{},
+		Model:    "openai/gpt-5.2",
+		Messages: []ProviderMessage{{Role: "user", Parts: []ProviderMessagePart{{Type: "text", Text: "What happened today?"}}}},
+		Tools:    buildWebTools(true),
 	})
 
 	if len(request.Tools) != 2 {
 		t.Fatalf("tools length = %d, want 2", len(request.Tools))
 	}
-	if request.Tools[0].Type != openrouter.ToolType("openrouter:web_search") {
-		t.Fatalf("tool 0 type = %q, want openrouter:web_search", request.Tools[0].Type)
+	if request.Tools[0].Type != openrouter.ToolTypeFunction {
+		t.Fatalf("tool 0 type = %q, want function", request.Tools[0].Type)
 	}
-	if request.Tools[1].Type != openrouter.ToolType("openrouter:web_fetch") {
-		t.Fatalf("tool 1 type = %q, want openrouter:web_fetch", request.Tools[1].Type)
+	if request.Tools[0].Function == nil || request.Tools[0].Function.Name != webSearchToolName {
+		t.Fatalf("tool 0 function = %#v, want web_search", request.Tools[0].Function)
+	}
+	if request.Tools[1].Function == nil || request.Tools[1].Function.Name != webFetchToolName {
+		t.Fatalf("tool 1 function = %#v, want web_fetch", request.Tools[1].Function)
 	}
 	if len(request.Plugins) != 0 {
 		t.Fatalf("plugins length = %d, want 0", len(request.Plugins))

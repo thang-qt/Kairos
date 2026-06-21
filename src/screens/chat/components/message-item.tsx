@@ -100,6 +100,17 @@ function MessageItemComponent({
   const searchToolPart = isAssistant
     ? mapSearchDetailsToToolPart(message)
     : null
+  const firstWebToolCall = isAssistant
+    ? assistantParts.find(function findWebToolCall(part) {
+        return (
+          part.type === 'toolCall' &&
+          (part.name === 'web_search' || part.name === 'web_fetch')
+        )
+      })
+    : undefined
+  const firstWebToolCallId =
+    firstWebToolCall?.type === 'toolCall' ? firstWebToolCall.id : undefined
+  const searchToolRenderedInCall = Boolean(firstWebToolCallId)
   const assistantIsStreaming = Boolean(message.__streamRunId)
 
   function handleStartEdit() {
@@ -208,6 +219,20 @@ function MessageItemComponent({
       ? toolResultsByCallId?.get(part.id)
       : undefined
     const toolPart = mapToolCallToToolPart(part, resultMessage)
+    if (
+      (part.name === 'web_search' || part.name === 'web_fetch') &&
+      (!firstWebToolCallId || part.id === firstWebToolCallId)
+    ) {
+      return (
+        <div
+          key={`tool-${part.id || index}`}
+          className="w-full max-w-[900px] mt-1"
+        >
+          <WebToolCards message={message} />
+        </div>
+      )
+    }
+    if (part.name === 'web_search' || part.name === 'web_fetch') return null
     return (
       <div
         key={`tool-${part.id || index}`}
@@ -290,7 +315,7 @@ function MessageItemComponent({
 
       {isAssistant && assistantParts.map(renderAssistantPart)}
 
-      {isAssistant && showToolMessages && searchToolPart ? (
+      {isAssistant && showToolMessages && searchToolPart && !searchToolRenderedInCall ? (
         <WebToolCards message={message} />
       ) : null}
 

@@ -30,8 +30,10 @@ type ProviderEditorState =
       providerId: string
     }
 
+type ProviderKind = 'openrouter' | 'openai'
+
 type ProviderDraftState = {
-  kind: 'openrouter'
+  kind: ProviderKind
   label: string
   baseURL: string
   apiKey: string
@@ -52,7 +54,10 @@ type ProvidersDialogProps = {
   openEditEditor: (provider: any) => void
   openAddEditor: () => void
   resetEditorState: () => void
-  updateDraft: (key: keyof ProviderDraftState, value: string) => void
+  updateDraft: <TKey extends keyof ProviderDraftState>(
+    key: TKey,
+    value: ProviderDraftState[TKey],
+  ) => void
   handleSaveProvider: () => void
   handleCreateProvider: () => void
 }
@@ -106,7 +111,8 @@ export function ProvidersDialog({
               API Connections & Keys
             </DialogTitle>
             <DialogDescription className="mt-1 text-pretty">
-              Add OpenRouter connections or toggle default server models.
+              Add OpenRouter or OpenAI-compatible connections, or toggle default
+              server models.
             </DialogDescription>
           </div>
           <DialogClose
@@ -186,6 +192,7 @@ export function ProvidersDialog({
                         </span>
                       </div>
                       <div className="truncate text-xs text-primary-500 mt-1 font-mono">
+                        {provider.kind ? `${provider.kind} · ` : ''}
                         {provider.baseUrl || 'Internal'}
                       </div>
                     </div>

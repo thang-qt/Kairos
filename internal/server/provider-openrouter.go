@@ -23,11 +23,10 @@ type OpenRouterDriver struct {
 }
 
 func defaultProviderDrivers() map[string]ProviderDriver {
-	driver := &OpenRouterDriver{
-		httpClient: &http.Client{Timeout: 30 * time.Second},
-	}
+	httpClient := &http.Client{Timeout: 30 * time.Second}
 	return map[string]ProviderDriver{
-		openRouterProviderKind: driver,
+		openRouterProviderKind: &OpenRouterDriver{httpClient: httpClient},
+		openAIProviderKind:     &OpenAICompatibleDriver{httpClient: httpClient},
 	}
 }
 
@@ -138,12 +137,6 @@ func buildOpenRouterChatRequest(request ChatGenerationRequest) openrouter.ChatCo
 	}
 	if request.ToolChoice != nil {
 		chatRequest.ToolChoice = request.ToolChoice
-	}
-	if request.WebSearch != nil {
-		chatRequest.Tools = append(chatRequest.Tools,
-			openrouter.Tool{Type: openrouter.ToolType("openrouter:web_search")},
-			openrouter.Tool{Type: openrouter.ToolType("openrouter:web_fetch")},
-		)
 	}
 	applyOpenRouterAdvancedOptions(&chatRequest, request.Advanced)
 	if len(request.Plugins) > 0 {

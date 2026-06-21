@@ -46,13 +46,6 @@ export function useChatStream({
     onChatEvent?.(payload)
 
     const payloadState = typeof payload.state === 'string' ? payload.state : ''
-    if (
-      payloadState === 'final' ||
-      payloadState === 'error' ||
-      payloadState === 'aborted'
-    ) {
-      refreshHistoryRef.current()
-    }
 
     const authoritativeSession =
       payload.session && typeof payload.session === 'object'
@@ -142,6 +135,14 @@ export function useChatStream({
         activeFriendlyId,
         nextMessage,
       )
+    }
+
+    if (
+      payloadState === 'final' ||
+      payloadState === 'error' ||
+      payloadState === 'aborted'
+    ) {
+      refreshHistoryRef.current()
     }
   })
 

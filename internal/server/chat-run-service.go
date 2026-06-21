@@ -51,6 +51,7 @@ type ChatRunService struct {
 	db          *sql.DB
 	chat        *ChatService
 	providers   *ProviderService
+	webSettings *WebToolSettingsService
 	broker      *RunBroker
 	runMu       sync.Mutex
 	runCancels  map[string]context.CancelFunc
@@ -61,12 +62,14 @@ func NewChatRunService(
 	db *sql.DB,
 	chat *ChatService,
 	providers *ProviderService,
+	webSettings *WebToolSettingsService,
 	broker *RunBroker,
 ) *ChatRunService {
 	return &ChatRunService{
 		db:          db,
 		chat:        chat,
 		providers:   providers,
+		webSettings: webSettings,
 		broker:      broker,
 		runCancels:  make(map[string]context.CancelFunc),
 		sessionRuns: make(map[string]map[string]struct{}),

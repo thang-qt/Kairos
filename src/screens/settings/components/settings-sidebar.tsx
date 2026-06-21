@@ -31,6 +31,10 @@ const SETTINGS_TABS: Array<{
     label: 'Models & Providers',
   },
   {
+    id: 'web-tools',
+    label: 'Web Tools',
+  },
+  {
     id: 'appearance',
     label: 'Appearance',
   },

@@ -35,6 +35,7 @@ type App struct {
 	chat       *ChatService
 	runs       *ChatRunService
 	providers  *ProviderService
+	webTools   *WebToolSettingsService
 	capability CapabilitySet
 }
 
@@ -79,8 +80,9 @@ func NewApp(config Config) (*App, error) {
 	}
 	chat := NewChatService(db)
 	providers := NewProviderService(db, config)
+	webTools := NewWebToolSettingsService(db, config)
 	runBroker := NewRunBroker()
-	runs := NewChatRunService(db, chat, providers, runBroker)
+	runs := NewChatRunService(db, chat, providers, webTools, runBroker)
 
 	app := &App{
 		config:    config,
@@ -89,6 +91,7 @@ func NewApp(config Config) (*App, error) {
 		chat:      chat,
 		runs:      runs,
 		providers: providers,
+		webTools:  webTools,
 		capability: CapabilitySet{
 			Auth: AuthCapabilities{
 				Enabled:       config.AuthEnabled,
@@ -127,6 +130,8 @@ func (app *App) Handler() http.Handler {
 	mux.HandleFunc("PATCH /api/me/password", app.handleChangePassword)
 	mux.HandleFunc("GET /api/me/preferences", app.handleGetPreferences)
 	mux.HandleFunc("PATCH /api/me/preferences", app.handleUpdatePreferences)
+	mux.HandleFunc("GET /api/me/web-tools", app.handleGetWebToolSettings)
+	mux.HandleFunc("PATCH /api/me/web-tools", app.handleUpdateWebToolSettings)
 	mux.HandleFunc("GET /api/providers", app.handleListProviders)
 	mux.HandleFunc("POST /api/providers", app.handleCreateProvider)
 	mux.HandleFunc("PATCH /api/providers/{providerId}", app.handleUpdateProvider)

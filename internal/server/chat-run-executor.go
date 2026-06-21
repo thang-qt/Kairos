@@ -23,6 +23,8 @@ func (service *ChatRunService) runAsync(
 	}()
 }
 
+const maxToolLoopRounds = 12
+
 func (service *ChatRunService) executeRun(
 	ctx context.Context,
 	record runRecord,
@@ -65,79 +67,119 @@ func (service *ChatRunService) executeRun(
 		Description: provider.Record.Label,
 	}
 	minAssistantTimestamp := latestMessageTimestamp(history) + 1
-	result, err := driver.GenerateChatStream(
-		ctx,
-		provider,
-		ChatGenerationRequest{
-			Model:        model.ID,
-			SystemPrompt: input.SystemPrompt,
-			WebSearch:    buildProviderWebSearchOptions(input.WebSearch),
-			Messages:     buildProviderMessages(history, input.SystemPrompt),
-			Advanced:     input.Advanced,
-		},
-		func(delta ChatGenerationDelta) error {
-			if delta.Thinking != "" {
-				accumulatedThinking += delta.Thinking
-			}
-			if delta.Text != "" {
-				accumulatedText += delta.Text
-			}
-			if len(delta.ToolCalls) > 0 {
-				accumulatedToolCalls = mergeProviderToolCalls(
-					accumulatedToolCalls,
-					delta.ToolCalls,
-				)
-			}
-			content := buildAssistantContent(accumulatedThinking, accumulatedText, accumulatedToolCalls)
-			if len(content) == 0 {
-				return nil
-			}
-			service.broker.Publish(
-				record.SessionID,
-				buildRunEvent(
-					record,
-					session,
-					"delta",
-					"",
-					buildAssistantMessage(
-						record.AssistantMessageID,
-						displayModel,
-						time.Now().UnixMilli(),
-						content,
-					),
-				),
-			)
-			return nil
-		},
-	)
-	if err != nil {
-		if errors.Is(err, context.Canceled) {
-			abortedTimestamp := maxInt64(time.Now().UnixMilli(), minAssistantTimestamp)
-			abortedMessage := buildAssistantMessage(
-				record.AssistantMessageID,
-				displayModel,
-				abortedTimestamp,
-				buildAssistantContent(accumulatedThinking, accumulatedText, accumulatedToolCalls),
-			)
-			service.publishRunAborted(ctx, record, session, abortedMessage)
+	messages := buildProviderMessages(history, input.SystemPrompt)
+	tools := buildWebTools(input.WebSearch)
+	webRuntime := NewWebToolRuntimeFromEnv()
+	if input.WebSearch && service.webSettings != nil {
+		resolvedRuntime, runtimeErr := service.webSettings.ResolveRuntime(ctx, record.UserID)
+		if runtimeErr != nil {
+			service.publishRunError(ctx, record, session, runtimeErr)
 			return
 		}
-		service.publishRunError(ctx, record, session, err)
+		webRuntime = resolvedRuntime
+	}
+	webToolEvents := make([]map[string]any, 0)
+	persistedToolCalls := make([]ProviderToolCall, 0)
+	var result ChatGenerationResult
+	for round := 0; round < maxToolLoopRounds; round++ {
+		result, err = driver.GenerateChatStream(
+			ctx,
+			provider,
+			ChatGenerationRequest{
+				Model:        model.ID,
+				SystemPrompt: input.SystemPrompt,
+				Messages:     messages,
+				Tools:        tools,
+				ToolChoice:   toolChoiceForTools(tools),
+				WebSearch:    buildProviderWebSearchOptions(input.WebSearch),
+				Advanced:     input.Advanced,
+			},
+			func(delta ChatGenerationDelta) error {
+				if delta.Thinking != "" {
+					accumulatedThinking += delta.Thinking
+				}
+				if delta.Text != "" {
+					accumulatedText += delta.Text
+				}
+				if len(delta.ToolCalls) > 0 {
+					accumulatedToolCalls = mergeProviderToolCalls(
+						accumulatedToolCalls,
+						delta.ToolCalls,
+					)
+				}
+				content := buildAssistantContent(accumulatedThinking, accumulatedText, accumulatedToolCalls)
+				if len(content) == 0 {
+					return nil
+				}
+				service.broker.Publish(
+					record.SessionID,
+					buildRunEvent(
+						record,
+						session,
+						"delta",
+						"",
+						buildAssistantMessage(
+							record.AssistantMessageID,
+							displayModel,
+							time.Now().UnixMilli(),
+							content,
+						),
+					),
+				)
+				return nil
+			},
+		)
+		if err != nil {
+			if errors.Is(err, context.Canceled) {
+				abortedTimestamp := maxInt64(time.Now().UnixMilli(), minAssistantTimestamp)
+				abortedMessage := buildAssistantMessage(
+					record.AssistantMessageID,
+					displayModel,
+					abortedTimestamp,
+					buildAssistantContent(accumulatedThinking, accumulatedText, accumulatedToolCalls),
+				)
+				service.publishRunAborted(ctx, record, session, abortedMessage)
+				return
+			}
+			service.publishRunError(ctx, record, session, err)
+			return
+		}
+		displayModel = displayModel.withProviderResult(result)
+		accumulatedThinking = firstNonEmpty(result.ThinkingText, accumulatedThinking)
+		accumulatedToolCalls = mergeProviderToolCalls(accumulatedToolCalls, result.ToolCalls)
+		if len(result.ToolCalls) == 0 {
+			break
+		}
+		persistedToolCalls = mergeProviderToolCalls(persistedToolCalls, result.ToolCalls)
+		messages = append(messages, ProviderMessage{Role: "assistant", Parts: providerPartsFromResult(result)})
+		for _, call := range result.ToolCalls {
+			toolResult, toolErr := webRuntime.Execute(ctx, call)
+			webToolEvents = append(webToolEvents, webToolEventDetails(call, toolResult, toolErr))
+			messages = append(messages, providerToolResultMessage(call, toolResult, toolErr))
+		}
+		accumulatedText = ""
+		accumulatedThinking = ""
+		accumulatedToolCalls = nil
+	}
+	if len(result.ToolCalls) > 0 {
+		service.publishRunError(ctx, record, session, fmt.Errorf("tool loop exceeded maximum rounds (%d)", maxToolLoopRounds))
 		return
 	}
-	displayModel = displayModel.withProviderResult(result)
-	accumulatedThinking = firstNonEmpty(result.ThinkingText, accumulatedThinking)
-	accumulatedToolCalls = mergeProviderToolCalls(accumulatedToolCalls, result.ToolCalls)
 
 	finalTimestamp := maxInt64(time.Now().UnixMilli(), minAssistantTimestamp)
 	finalMessage := buildAssistantMessage(
 		record.AssistantMessageID,
 		displayModel,
 		finalTimestamp,
-		buildAssistantContent(accumulatedThinking, result.OutputText, accumulatedToolCalls),
+		buildAssistantContentWithToolCallsBeforeText(accumulatedThinking, result.OutputText, mergeProviderToolCalls(persistedToolCalls, accumulatedToolCalls)),
 	)
 	if generationDetails := buildGenerationDetails(result); generationDetails != nil {
+		if len(webToolEvents) > 0 {
+			generationDetails["webTools"] = webToolEvents
+		}
 		finalMessage["details"] = generationDetails
+	} else if len(webToolEvents) > 0 {
+		finalMessage["details"] = map[string]any{"webTools": webToolEvents}
 	}
 
 	sessionSummary, err := service.chat.appendMessage(ctx, session, finalMessage, finalTimestamp)

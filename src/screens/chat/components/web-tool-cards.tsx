@@ -1,13 +1,10 @@
 import { HugeiconsIcon } from '@hugeicons/react'
-import {
-  ArrowDown01Icon,
-  LinkSquare02Icon,
-  Search01Icon,
-} from '@hugeicons/core-free-icons'
+import { ArrowDown01Icon, LinkSquare02Icon } from '@hugeicons/core-free-icons'
 import type { GatewayMessage } from '../types'
 import {
   hostnameFromURL,
   searchSourceCardsFromMessage,
+  webToolEventCardsFromMessage,
   webToolRequestCount,
 } from './web-tool-utils'
 import {
@@ -15,56 +12,149 @@ import {
   CollapsiblePanel,
   CollapsibleTrigger,
 } from '@/components/ui/collapsible'
+import { Button } from '@/components/ui/button'
 
 export function WebToolCards({ message }: { message: GatewayMessage }) {
   const sources = searchSourceCardsFromMessage(message)
+  const events = webToolEventCardsFromMessage(message)
   const requestCount = webToolRequestCount(message)
 
-  if (sources.length === 0 && !requestCount) return null
+  if (sources.length === 0 && events.length === 0 && !requestCount) return null
 
+  const runningEvents = events.filter((event) => event.state === 'running')
   const sourceLabel =
     sources.length > 0
       ? `${sources.length} source${sources.length === 1 ? '' : 's'}`
-      : 'used'
+      : null
+  const fetchCount = events.filter((event) => event.name === 'web_fetch').length
   const requestLabel = requestCount
     ? `${requestCount} search${requestCount === 1 ? '' : 'es'}`
     : null
+  const fetchLabel = fetchCount
+    ? `${fetchCount} fetch${fetchCount === 1 ? '' : 'es'}`
+    : null
+  const latestEvent = runningEvents.at(-1) ?? events.at(-1)
+  const latestInput = latestEvent?.query ?? latestEvent?.url
+  const latestLabel =
+    latestEvent?.name === 'web_fetch' ? 'web_fetch' : 'web_search'
+  const latestStatus =
+    latestEvent?.state === 'running'
+      ? latestEvent.name === 'web_fetch'
+        ? 'fetching…'
+        : 'searching…'
+      : null
 
   return (
-    <div className="w-full max-w-[900px] mt-2">
+    <div className="w-full max-w-[900px] mt-1">
       <Collapsible defaultOpen={false}>
-        <CollapsibleTrigger className="group/web-tools -mx-1 inline-flex h-8 max-w-full items-center gap-2 rounded-full border border-primary-200 bg-primary-50/80 px-3 py-1 text-sm text-primary-700 shadow-xs hover:border-primary-300 hover:bg-primary-100 hover:text-primary-900 data-panel-open:rounded-lg">
-          <HugeiconsIcon icon={Search01Icon} size={15} strokeWidth={1.6} />
-          <span className="font-medium text-primary-900">Web tools</span>
-          <span className="text-primary-500">·</span>
-          <span className="truncate text-xs text-primary-600">
-            {[requestLabel, sourceLabel].filter(Boolean).join(' · ')}
+        <CollapsibleTrigger
+          render={
+            <Button
+              variant="ghost"
+              className="group/web-tools h-auto max-w-full gap-1.5 px-1.5 py-0.5 -mx-2 text-left"
+            />
+          }
+        >
+          <span className="shrink-0 text-sm font-medium text-primary-900">
+            {latestLabel}
           </span>
+          {latestStatus ? (
+            <>
+              <span className="shrink-0 text-primary-400">·</span>
+              <span className="shrink-0 text-xs text-primary-500">
+                {latestStatus}
+              </span>
+            </>
+          ) : null}
+          {latestInput ? (
+            <>
+              <span className="shrink-0 text-primary-400">·</span>
+              <span className="min-w-0 truncate text-xs text-primary-600">
+                {latestInput}
+              </span>
+            </>
+          ) : null}
+          {[requestLabel, fetchLabel, sourceLabel].filter(Boolean).length > 0 ? (
+            <>
+              <span className="shrink-0 text-primary-400">·</span>
+              <span className="shrink-0 text-xs text-primary-500">
+                {[requestLabel, fetchLabel, sourceLabel]
+                  .filter(Boolean)
+                  .join(' · ')}
+              </span>
+            </>
+          ) : null}
           <HugeiconsIcon
             icon={ArrowDown01Icon}
             size={14}
             strokeWidth={1.5}
-            className="ml-0.5 text-primary-600 transition-transform duration-150 group-data-panel-open/web-tools:rotate-180"
+            className="shrink-0 text-primary-900 transition-transform duration-150 group-data-panel-open/web-tools:rotate-180"
           />
         </CollapsibleTrigger>
 
-        <CollapsiblePanel className="mt-1" contentClassName="pt-1">
-          <div className="rounded-xl border border-primary-200 bg-primary-50/70 p-3 shadow-xs">
-            {sources.length > 0 ? (
-              <div className="grid gap-2 sm:grid-cols-2">
-                {sources.map((source) => {
-                  const host = hostnameFromURL(source.url)
-                  return (
-                    <a
-                      key={source.url}
-                      href={source.url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="group rounded-lg border border-primary-200 bg-white/70 p-3 transition-colors hover:border-primary-300 hover:bg-white"
+        <CollapsiblePanel className="mt-1">
+          <div className="space-y-2 rounded-xl border border-primary-200/70 bg-primary-100/45 p-2 shadow-xs">
+            {events.length > 0 ? (
+              <div className="rounded-lg border border-primary-200/70 bg-surface p-3 shadow-xs/5">
+                <h4 className="mb-2 text-xs font-medium text-primary-600">
+                  Calls
+                </h4>
+                <div className="space-y-1.5 font-mono text-xs text-primary-800">
+                  {events.map((event, index) => (
+                    <div
+                      key={event.id || `${event.name}-${index}`}
+                      className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5"
                     >
-                      <div className="mb-1 flex items-start justify-between gap-2">
-                        <div className="min-w-0 text-sm font-medium text-primary-900 group-hover:underline">
-                          <span className="line-clamp-2">{source.title}</span>
+                      <span className="text-primary-500">
+                        {event.name === 'web_fetch' ? 'fetch' : 'search'}:
+                      </span>
+                      <span className="min-w-0 break-words text-primary-700">
+                        {event.query ?? event.url ?? '(no input)'}
+                        {event.error ? (
+                          <span className="ml-2 text-red-700">failed</span>
+                        ) : event.state === 'running' ? (
+                          <span className="ml-2 text-primary-400">running…</span>
+                        ) : null}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
+            {sources.length > 0 ? (
+              <div className="rounded-lg border border-primary-200/70 bg-surface p-3 shadow-xs/5">
+                <h4 className="mb-2 text-xs font-medium text-primary-600">
+                  Sources
+                </h4>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {sources.map((source) => {
+                    const host = hostnameFromURL(source.url)
+                    return (
+                      <a
+                        key={source.url}
+                        href={source.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="group grid grid-cols-[auto_1fr_auto] gap-2 rounded-lg border border-primary-200/80 bg-surface/90 p-2.5 shadow-xs/5 transition-colors hover:border-primary-300 hover:bg-surface"
+                      >
+                        <div className="flex size-5 items-center justify-center rounded-full bg-surface text-xs font-medium text-primary-700 shadow-xs/5 ring-1 ring-primary-200/80">
+                          {sources.indexOf(source) + 1}
+                        </div>
+                        <div className="min-w-0">
+                          <div className="text-sm font-medium text-primary-900 group-hover:underline">
+                            <span className="line-clamp-1">{source.title}</span>
+                          </div>
+                          {host ? (
+                            <div className="mt-0.5 truncate font-mono text-xs text-primary-500">
+                              {host}
+                            </div>
+                          ) : null}
+                          {source.content ? (
+                            <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-primary-700">
+                              {source.content}
+                            </p>
+                          ) : null}
                         </div>
                         <HugeiconsIcon
                           icon={LinkSquare02Icon}
@@ -72,26 +162,16 @@ export function WebToolCards({ message }: { message: GatewayMessage }) {
                           strokeWidth={1.6}
                           className="mt-0.5 shrink-0 text-primary-500"
                         />
-                      </div>
-                      {host ? (
-                        <div className="mb-2 truncate font-mono text-xs text-primary-500">
-                          {host}
-                        </div>
-                      ) : null}
-                      {source.content ? (
-                        <p className="line-clamp-3 text-xs leading-relaxed text-primary-700">
-                          {source.content}
-                        </p>
-                      ) : null}
-                    </a>
-                  )
-                })}
+                      </a>
+                    )
+                  })}
+                </div>
               </div>
-            ) : (
-              <div className="rounded-lg border border-primary-200 bg-white/70 px-3 py-2 text-sm text-primary-700">
-                Search was used for this response.
+            ) : events.length === 0 ? (
+              <div className="rounded-lg border border-primary-200/70 bg-surface p-3 text-sm text-primary-700 shadow-xs/5">
+                Web search is enabled for this response.
               </div>
-            )}
+            ) : null}
           </div>
         </CollapsiblePanel>
       </Collapsible>

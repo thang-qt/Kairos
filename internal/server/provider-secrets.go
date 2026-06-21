@@ -11,7 +11,15 @@ import (
 )
 
 func (service *ProviderService) encryptSecret(plaintext string) string {
-	block, err := aes.NewCipher(service.encryptionKey[:])
+	return encryptSecretWithKey(service.encryptionKey, plaintext)
+}
+
+func (service *ProviderService) decryptSecret(ciphertext string) (string, error) {
+	return decryptSecretWithKey(service.encryptionKey, ciphertext)
+}
+
+func encryptSecretWithKey(encryptionKey [32]byte, plaintext string) string {
+	block, err := aes.NewCipher(encryptionKey[:])
 	if err != nil {
 		panic(err)
 	}
@@ -27,12 +35,12 @@ func (service *ProviderService) encryptSecret(plaintext string) string {
 	return base64.StdEncoding.EncodeToString(append(nonce, sealed...))
 }
 
-func (service *ProviderService) decryptSecret(ciphertext string) (string, error) {
+func decryptSecretWithKey(encryptionKey [32]byte, ciphertext string) (string, error) {
 	decoded, err := base64.StdEncoding.DecodeString(ciphertext)
 	if err != nil {
 		return "", fmt.Errorf("decode encrypted secret: %w", err)
 	}
-	block, err := aes.NewCipher(service.encryptionKey[:])
+	block, err := aes.NewCipher(encryptionKey[:])
 	if err != nil {
 		return "", fmt.Errorf("create cipher: %w", err)
 	}

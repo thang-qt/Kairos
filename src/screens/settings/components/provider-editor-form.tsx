@@ -4,8 +4,10 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
 
+type ProviderKind = 'openrouter' | 'openai'
+
 type ProviderDraftState = {
-  kind: 'openrouter'
+  kind: ProviderKind
   label: string
   baseURL: string
   apiKey: string
@@ -15,7 +17,10 @@ type ProviderEditorFormProps = {
   mode: 'add' | 'edit'
   draft: ProviderDraftState
   canAddCustomBaseUrl: boolean
-  updateDraft: (key: keyof ProviderDraftState, value: string) => void
+  updateDraft: <TKey extends keyof ProviderDraftState>(
+    key: TKey,
+    value: ProviderDraftState[TKey],
+  ) => void
   onCancel: () => void
   onSubmit: () => void
   submitPending: boolean
@@ -56,7 +61,23 @@ export function ProviderEditorForm({
       </div>
 
       <div className="space-y-2.5">
-        <Input value="OpenRouter" disabled aria-label="Provider type" />
+        <div className="space-y-1.5">
+          <label className="text-xs font-medium text-primary-600">
+            Provider type
+          </label>
+          <select
+            value={draft.kind}
+            disabled={isEdit}
+            aria-label="Provider type"
+            className="h-10 w-full rounded-lg border border-primary-200 bg-surface px-3 text-sm text-primary-900 outline-none transition-colors hover:border-primary-300 focus:border-primary-400 disabled:cursor-not-allowed disabled:opacity-60"
+            onChange={function handleChange(event) {
+              updateDraft('kind', event.target.value as ProviderKind)
+            }}
+          >
+            <option value="openrouter">OpenRouter</option>
+            <option value="openai">OpenAI compatible</option>
+          </select>
+        </div>
         <Input
           placeholder={isEdit ? 'Friendly Label' : 'Provider Label'}
           value={draft.label}
@@ -65,7 +86,11 @@ export function ProviderEditorForm({
           }}
         />
         <Input
-          placeholder="Base URL Endpoint"
+          placeholder={
+            draft.kind === 'openai'
+              ? 'https://api.openai.com/v1'
+              : 'https://openrouter.ai/api/v1'
+          }
           value={draft.baseURL}
           disabled={!canAddCustomBaseUrl}
           onChange={function handleChange(event) {

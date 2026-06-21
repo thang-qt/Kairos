@@ -6,6 +6,7 @@ import { SettingsScreen } from '@/screens/settings/settings-screen'
 const SETTINGS_TABS = new Set<SettingsTab>([
   'account',
   'models',
+  'web-tools',
   'appearance',
   'display',
 ])

@@ -127,12 +127,28 @@ export type UpdatePreferencesPayload = {
   titleGenerationModelId?: string
 }
 
+export type WebToolSettings = {
+  provider: 'exa'
+  apiKeyConfigured: boolean
+  searchMaxResults: number
+  fetchMaxCharacters: number
+}
+
+export type UpdateWebToolSettingsPayload = {
+  provider?: 'exa'
+  apiKey?: string
+  clearApiKey?: boolean
+  searchMaxResults?: number
+  fetchMaxCharacters?: number
+}
+
 export const appQueryKeys = {
   capabilities: ['app', 'capabilities'] as const,
   me: ['app', 'me'] as const,
   providers: ['app', 'providers'] as const,
   models: ['app', 'models'] as const,
   preferences: ['app', 'preferences'] as const,
+  webTools: ['app', 'web-tools'] as const,
 } as const
 
 export async function fetchAppCapabilities(): Promise<AppCapabilities> {
@@ -298,6 +314,29 @@ export async function deleteProvider(providerId: string): Promise<void> {
   await parseJSON(response)
 }
 
+export async function fetchWebToolSettings(): Promise<WebToolSettings> {
+  const response = await fetch('/api/me/web-tools', {
+    credentials: 'include',
+  })
+  const data = await parseJSON<{ settings: WebToolSettings }>(response)
+  return data.settings
+}
+
+export async function updateWebToolSettings(
+  payload: UpdateWebToolSettingsPayload,
+): Promise<WebToolSettings> {
+  const response = await fetch('/api/me/web-tools', {
+    method: 'PATCH',
+    credentials: 'include',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  })
+  const data = await parseJSON<{ settings: WebToolSettings }>(response)
+  return data.settings
+}
+
 export async function updatePreferences(
   payload: UpdatePreferencesPayload,
 ): Promise<UserPreferences> {
@@ -377,6 +416,15 @@ export function usePreferencesQuery() {
   return useQuery({
     queryKey: appQueryKeys.preferences,
     queryFn: fetchPreferences,
+    staleTime: 1000 * 30,
+    retry: false,
+  })
+}
+
+export function useWebToolSettingsQuery() {
+  return useQuery({
+    queryKey: appQueryKeys.webTools,
+    queryFn: fetchWebToolSettings,
     staleTime: 1000 * 30,
     retry: false,
   })

@@ -94,8 +94,8 @@ func LoadConfig() (Config, error) {
 			return Config{}, errors.New("ADMIN_PASSWORD or ADMIN_PASSWORD_HASH is required when BOOTSTRAP_ADMIN is true")
 		}
 	}
-	if config.SystemProviderKind != "" && config.SystemProviderKind != openRouterProviderKind {
-		return Config{}, errors.New("SYSTEM_PROVIDER_1_KIND must be openrouter")
+	if config.SystemProviderKind != "" && config.SystemProviderKind != openRouterProviderKind && config.SystemProviderKind != openAIProviderKind {
+		return Config{}, errors.New("SYSTEM_PROVIDER_1_KIND must be openrouter or openai")
 	}
 	if config.ProviderEncryptionSecretKey == "" {
 		// Development and tests get a deterministic fallback. Production should

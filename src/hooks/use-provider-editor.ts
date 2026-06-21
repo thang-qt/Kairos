@@ -19,17 +19,32 @@ export type ProviderEditorState =
       providerId: string
     }
 
+export type ProviderKind = 'openrouter' | 'openai'
+
 export type ProviderDraftState = {
-  kind: 'openrouter'
+  kind: ProviderKind
   label: string
   baseURL: string
   apiKey: string
 }
 
+export const providerKindDefaults: Record<
+  ProviderKind,
+  { label: string; baseURL: string }
+> = {
+  openrouter: {
+    label: 'OpenRouter',
+    baseURL: 'https://openrouter.ai/api/v1',
+  },
+  openai: {
+    label: 'OpenAI Compatible',
+    baseURL: 'https://api.openai.com/v1',
+  },
+}
+
 export const defaultProviderDraft = {
   kind: 'openrouter',
-  label: 'OpenRouter',
-  baseURL: 'https://openrouter.ai/api/v1',
+  ...providerKindDefaults.openrouter,
 } as const
 
 export function createEmptyProviderDraft(): ProviderDraftState {
@@ -75,6 +90,7 @@ export function useProviderEditor(options?: { canSyncModels?: boolean }) {
 
   function openEditEditor(provider: {
     id: string
+    kind?: string
     label: string
     baseUrl?: string
   }) {
@@ -83,7 +99,7 @@ export function useProviderEditor(options?: { canSyncModels?: boolean }) {
       providerId: provider.id,
     })
     setDraft({
-      kind: 'openrouter',
+      kind: provider.kind === 'openai' ? 'openai' : 'openrouter',
       label: provider.label,
       baseURL: provider.baseUrl ?? '',
       apiKey: '',
@@ -96,6 +112,24 @@ export function useProviderEditor(options?: { canSyncModels?: boolean }) {
     value: ProviderDraftState[TKey],
   ) {
     setDraft(function handleDraft(previous) {
+      if (key === 'kind') {
+        const nextKind = value as ProviderKind
+        const defaults = providerKindDefaults[nextKind]
+        const previousDefaults = providerKindDefaults[previous.kind]
+        return {
+          ...previous,
+          kind: nextKind,
+          label:
+            previous.label.trim() === '' || previous.label === previousDefaults.label
+              ? defaults.label
+              : previous.label,
+          baseURL:
+            previous.baseURL.trim() === '' ||
+            previous.baseURL === previousDefaults.baseURL
+              ? defaults.baseURL
+              : previous.baseURL,
+        }
+      }
       return {
         ...previous,
         [key]: value,
