@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"sync"
 	"testing"
+	"time"
 
 	openrouter "github.com/revrost/go-openrouter"
 )
@@ -521,6 +522,17 @@ func TestCustomModelAddAndDelete(t *testing.T) {
 	if addResult.Model.ID != "custom-llama-3" || !addResult.Model.IsCustom || addResult.Model.Name != "My Custom Llama" {
 		t.Fatalf("unexpected added model metadata: %#v", addResult.Model)
 	}
+	if addResult.Model.Created <= 0 || addResult.Model.Created > time.Now().Unix()+1 {
+		t.Fatalf("custom model created timestamp = %d, want unix seconds", addResult.Model.Created)
+	}
+
+	if _, err := testServer.app.db.Exec(`
+		UPDATE provider_models
+		SET created = created * 1000
+		WHERE provider_ref = ? AND model_id = ?
+	`, "system:default", "custom-llama-3"); err != nil {
+		t.Fatalf("seed legacy custom model created timestamp error = %v", err)
+	}
 
 	// 2. List models and verify it exists
 	listResponse := performJSONRequest(t, testServer.handler, http.MethodGet, "/api/models", nil, []*http.Cookie{cookie})
@@ -534,6 +546,9 @@ func TestCustomModelAddAndDelete(t *testing.T) {
 			found = true
 			if !m.IsCustom || m.ContextWindow != 4096 {
 				t.Fatalf("custom model loaded incorrectly: %#v", m)
+			}
+			if m.Created <= 0 || m.Created > time.Now().Unix()+1 {
+				t.Fatalf("custom model created timestamp = %d, want normalized unix seconds", m.Created)
 			}
 			break
 		}

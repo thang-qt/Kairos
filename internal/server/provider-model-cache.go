@@ -155,7 +155,7 @@ func (service *ProviderService) loadProviderModelRows(
 			ProviderModel{
 				ID:            strings.TrimSpace(row.ModelID),
 				Object:        defaultModelObject(row.Object),
-				Created:       row.Created,
+				Created:       normalizeModelCreated(row.Created, row.IsCustom),
 				OwnedBy:       strings.TrimSpace(row.OwnedBy),
 				Name:          strings.TrimSpace(row.Name),
 				Description:   strings.TrimSpace(row.Description),
@@ -171,6 +171,13 @@ func (service *ProviderService) loadProviderModelRows(
 	}
 
 	return modelsByProvider, nil
+}
+
+func normalizeModelCreated(created int64, isCustom bool) int64 {
+	if !isCustom || created < 10_000_000_000 {
+		return created
+	}
+	return created / 1000
 }
 
 func (service *ProviderService) refreshVisibleProviderModels(

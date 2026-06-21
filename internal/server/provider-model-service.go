@@ -222,7 +222,8 @@ func (service *ProviderService) AddCustomModel(
 		return ProviderModel{}, err
 	}
 
-	now := time.Now().UnixMilli()
+	now := time.Now().Unix()
+	fetchedAt := time.Now().UnixMilli()
 	if _, err := service.db.ExecContext(ctx, `
 		INSERT INTO provider_models(
 			user_id,
@@ -243,7 +244,7 @@ func (service *ProviderService) AddCustomModel(
 			description = excluded.description,
 			context_window = excluded.context_window,
 			is_custom = 1
-	`, userID, providerRef, modelID, now, provider.Record.Label, name, description, maxInt64(input.ContextWindow, 0), now); err != nil {
+	`, userID, providerRef, modelID, now, provider.Record.Label, name, description, maxInt64(input.ContextWindow, 0), fetchedAt); err != nil {
 		return ProviderModel{}, fmt.Errorf("add custom model: %w", err)
 	}
 
