@@ -25,6 +25,13 @@ func (service *ChatRunService) runAsync(
 
 const maxToolLoopRounds = 12
 
+type roundSummary struct {
+	Round    int      `json:"round"`
+	Text     string   `json:"text,omitempty"`
+	Thinking string   `json:"thinking,omitempty"`
+	ToolIDs  []string `json:"toolIds,omitempty"`
+}
+
 func (service *ChatRunService) executeRun(
 	ctx context.Context,
 	record runRecord,
@@ -68,7 +75,7 @@ func (service *ChatRunService) executeRun(
 	}
 	minAssistantTimestamp := latestMessageTimestamp(history) + 1
 	messages := buildProviderMessages(history, input.SystemPrompt)
-	tools := buildWebTools(input.WebSearch)
+	tools := buildRuntimeTools(input.WebSearch, input.MathTools)
 	webRuntime := NewWebToolRuntimeFromEnv()
 	if input.WebSearch && service.webSettings != nil {
 		resolvedRuntime, runtimeErr := service.webSettings.ResolveRuntime(ctx, record.UserID)
@@ -78,8 +85,10 @@ func (service *ChatRunService) executeRun(
 		}
 		webRuntime = resolvedRuntime
 	}
+	toolEvents := make([]map[string]any, 0)
 	webToolEvents := make([]map[string]any, 0)
 	persistedToolCalls := make([]ProviderToolCall, 0)
+	roundSummaries := make([]roundSummary, 0)
 	var result ChatGenerationResult
 	for round := 0; round < maxToolLoopRounds; round++ {
 		result, err = driver.GenerateChatStream(
@@ -107,7 +116,21 @@ func (service *ChatRunService) executeRun(
 						delta.ToolCalls,
 					)
 				}
-				content := buildAssistantContent(accumulatedThinking, accumulatedText, accumulatedToolCalls)
+				displayText := accumulatedText
+				// While the model is selecting and calling tools, its reasoning
+				// text belongs inside the trace (roundSummaries) rather than in
+				// the main message body. Suppress displayText whenever the
+				// current round includes tool calls OR we're already in a
+				// multi-round tool loop (persistedToolCalls > 0) so inter-round
+				// reasoning doesn't leak as standalone message text.
+				if len(accumulatedToolCalls) > 0 || len(persistedToolCalls) > 0 {
+					displayText = ""
+				}
+				content := buildAssistantContentWithToolCallsBeforeText(
+					accumulatedThinking,
+					displayText,
+					mergeProviderToolCalls(persistedToolCalls, accumulatedToolCalls),
+				)
 				if len(content) == 0 {
 					return nil
 				}
@@ -136,8 +159,13 @@ func (service *ChatRunService) executeRun(
 					record.AssistantMessageID,
 					displayModel,
 					abortedTimestamp,
-					buildAssistantContent(accumulatedThinking, accumulatedText, accumulatedToolCalls),
+					buildAssistantContentWithToolCallsBeforeText(
+						accumulatedThinking,
+						accumulatedText,
+						mergeProviderToolCalls(persistedToolCalls, accumulatedToolCalls),
+					),
 				)
+				attachRunToolDetails(abortedMessage, toolEvents, webToolEvents, roundSummaries)
 				service.publishRunAborted(ctx, record, session, abortedMessage)
 				return
 			}
@@ -151,12 +179,43 @@ func (service *ChatRunService) executeRun(
 			break
 		}
 		persistedToolCalls = mergeProviderToolCalls(persistedToolCalls, result.ToolCalls)
+		rsummary := roundSummary{Round: round}
+		if t := strings.TrimSpace(accumulatedText); t != "" {
+			rsummary.Text = t
+		}
+		if t := strings.TrimSpace(accumulatedThinking); t != "" {
+			rsummary.Thinking = t
+		}
+		for _, call := range result.ToolCalls {
+			if id := strings.TrimSpace(call.ID); id != "" {
+				rsummary.ToolIDs = append(rsummary.ToolIDs, id)
+			}
+		}
+		roundSummaries = append(roundSummaries, rsummary)
 		messages = append(messages, ProviderMessage{Role: "assistant", Parts: providerPartsFromResult(result)})
 		for _, call := range result.ToolCalls {
+			toolStartedAt := time.Now().UnixMilli()
 			toolResult, toolErr := webRuntime.Execute(ctx, call)
-			webToolEvents = append(webToolEvents, webToolEventDetails(call, toolResult, toolErr))
+			toolFinishedAt := time.Now().UnixMilli()
+			toolEvent := webToolEventDetails(call, toolResult, toolErr, toolStartedAt, toolFinishedAt)
+			toolEvents = append(toolEvents, toolEvent)
+			if isWebToolName(call.Name) {
+				webToolEvents = append(webToolEvents, toolEvent)
+			}
 			messages = append(messages, providerToolResultMessage(call, toolResult, toolErr))
 		}
+		toolDeltaContent := buildAssistantContentWithToolCallsBeforeText(accumulatedThinking, "", persistedToolCalls)
+		toolDeltaMessage := buildAssistantMessage(
+			record.AssistantMessageID,
+			displayModel,
+			time.Now().UnixMilli(),
+			toolDeltaContent,
+		)
+		attachRunToolDetails(toolDeltaMessage, toolEvents, webToolEvents, roundSummaries)
+		service.broker.Publish(
+			record.SessionID,
+			buildRunEvent(record, session, "delta", "", toolDeltaMessage),
+		)
 		accumulatedText = ""
 		accumulatedThinking = ""
 		accumulatedToolCalls = nil
@@ -167,20 +226,17 @@ func (service *ChatRunService) executeRun(
 	}
 
 	finalTimestamp := maxInt64(time.Now().UnixMilli(), minAssistantTimestamp)
+	finalContent := buildAssistantContentWithToolCallsBeforeText(accumulatedThinking, result.OutputText, mergeProviderToolCalls(persistedToolCalls, accumulatedToolCalls))
 	finalMessage := buildAssistantMessage(
 		record.AssistantMessageID,
 		displayModel,
 		finalTimestamp,
-		buildAssistantContentWithToolCallsBeforeText(accumulatedThinking, result.OutputText, mergeProviderToolCalls(persistedToolCalls, accumulatedToolCalls)),
+		finalContent,
 	)
 	if generationDetails := buildGenerationDetails(result); generationDetails != nil {
-		if len(webToolEvents) > 0 {
-			generationDetails["webTools"] = webToolEvents
-		}
 		finalMessage["details"] = generationDetails
-	} else if len(webToolEvents) > 0 {
-		finalMessage["details"] = map[string]any{"webTools": webToolEvents}
 	}
+	attachRunToolDetails(finalMessage, toolEvents, webToolEvents, roundSummaries)
 
 	sessionSummary, err := service.chat.appendMessage(ctx, session, finalMessage, finalTimestamp)
 	if err != nil {

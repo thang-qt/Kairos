@@ -6,7 +6,7 @@ import {
   upsertSessionSummary,
 } from '../chat-queries'
 import type { QueryClient } from '@tanstack/react-query'
-import type { GatewayMessage, MessageContent } from '../types'
+import type { GatewayMessage } from '../types'
 import type { ChatEvent } from '@/lib/chat-backend'
 import { getChatBackend } from '@/lib/chat-backend'
 
@@ -55,12 +55,20 @@ export function useChatStream({
       upsertSessionSummary(queryClient, authoritativeSession)
     }
 
+    const payloadSessionKey =
+      typeof payload.sessionKey === 'string' ? payload.sessionKey : ''
+
     if (!payload.message || typeof payload.message !== 'object') {
+      if (
+        payloadState === 'final' ||
+        payloadState === 'error' ||
+        payloadState === 'aborted'
+      ) {
+        refreshHistoryRef.current()
+      }
       return
     }
 
-    const payloadSessionKey =
-      typeof payload.sessionKey === 'string' ? payload.sessionKey : ''
     if (
       payloadSessionKey &&
       resolvedSessionKey &&
@@ -199,61 +207,20 @@ function mergeStreamMessage(
     return nextMessage
   }
 
-  if (nextContent.length === 0) {
-    return { ...previousMessage, ...nextMessage }
-  }
-
-  return {
-    ...previousMessage,
-    ...nextMessage,
-    content: mergeMessageContent(previousContent, nextContent),
-  }
-}
-
-function mergeMessageContent(
-  previousContent: Array<MessageContent>,
-  nextContent: Array<MessageContent>,
-): Array<MessageContent> {
-  const mergedByIdentity = new Map<string, MessageContent>()
-  const orderedKeys: Array<string> = []
-
-  function upsertPart(part: MessageContent) {
-    const identity = partIdentity(part)
-    if (!mergedByIdentity.has(identity)) {
-      orderedKeys.push(identity)
+  // Each streaming delta carries the full accumulated content snapshot.
+  // When the next delta has content, use it as the authoritative source
+  // instead of merging with previous content. This prevents stale parts
+  // (e.g. reasoning text suppressed after tool calls appear) from
+  // persisting in the merged message.
+  if (nextContent.length > 0) {
+    return {
+      ...previousMessage,
+      ...nextMessage,
+      content: nextContent,
     }
-    mergedByIdentity.set(identity, part)
   }
 
-  for (const part of previousContent) {
-    upsertPart(part)
-  }
-  for (const part of nextContent) {
-    upsertPart(part)
-  }
-
-  return orderedKeys
-    .map((key) => mergedByIdentity.get(key))
-    .filter((part): part is MessageContent => Boolean(part))
-}
-
-function partIdentity(part: MessageContent): string {
-  switch (part.type) {
-    case 'text':
-      return 'text'
-    case 'thinking':
-      return 'thinking'
-    case 'toolCall': {
-      const toolCallId = normalizeString((part as { id?: unknown }).id)
-      const toolName = normalizeString((part as { name?: unknown }).name)
-      if (toolCallId || toolName) {
-        return `toolCall:${toolCallId}:${toolName}`
-      }
-      return `toolCall:${JSON.stringify(part)}`
-    }
-    default:
-      return 'unknown'
-  }
+  return { ...previousMessage, ...nextMessage }
 }
 
 function findStreamMessageIndex(

@@ -31,6 +31,7 @@ export type ChatSendMessageInput = {
   model?: string
   systemPrompt?: string
   webSearch?: boolean
+  mathTools?: boolean
   advanced?: ChatRequestAdvancedSettings
   idempotencyKey?: string
   clientId?: string
@@ -43,6 +44,7 @@ export type ChatCreateConversationInput = {
   model?: string
   systemPrompt?: string
   webSearch?: boolean
+  mathTools?: boolean
   advanced?: ChatRequestAdvancedSettings
   idempotencyKey?: string
   clientId?: string
@@ -85,6 +87,7 @@ export type ChatEditUserMessageInput = {
   model?: string
   systemPrompt?: string
   webSearch?: boolean
+  mathTools?: boolean
   advanced?: ChatRequestAdvancedSettings
   clientId?: string
 }

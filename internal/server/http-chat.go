@@ -16,6 +16,7 @@ type createSessionRequest struct {
 	Model          string               `json:"model"`
 	SystemPrompt   string               `json:"systemPrompt"`
 	WebSearch      bool                 `json:"webSearch"`
+	MathTools      bool                 `json:"mathTools"`
 	Advanced       *ChatAdvancedOptions `json:"advanced"`
 	IdempotencyKey string               `json:"idempotencyKey"`
 	ClientID       string               `json:"clientId"`
@@ -27,6 +28,7 @@ type sendMessageRequest struct {
 	Model          string               `json:"model"`
 	SystemPrompt   string               `json:"systemPrompt"`
 	WebSearch      bool                 `json:"webSearch"`
+	MathTools      bool                 `json:"mathTools"`
 	Advanced       *ChatAdvancedOptions `json:"advanced"`
 	IdempotencyKey string               `json:"idempotencyKey"`
 	ClientID       string               `json:"clientId"`
@@ -98,6 +100,7 @@ func (app *App) handleCreateSession(writer http.ResponseWriter, request *http.Re
 			Model:          payload.Model,
 			SystemPrompt:   payload.SystemPrompt,
 			WebSearch:      payload.WebSearch,
+			MathTools:      payload.MathTools,
 			Advanced:       payload.Advanced,
 			IdempotencyKey: payload.IdempotencyKey,
 			ClientID:       payload.ClientID,
@@ -240,6 +243,7 @@ func (app *App) handleSendMessage(writer http.ResponseWriter, request *http.Requ
 		Model:          payload.Model,
 		SystemPrompt:   payload.SystemPrompt,
 		WebSearch:      payload.WebSearch,
+		MathTools:      payload.MathTools,
 		Advanced:       payload.Advanced,
 		IdempotencyKey: payload.IdempotencyKey,
 		ClientID:       payload.ClientID,
@@ -328,6 +332,7 @@ func (app *App) handleEditUserMessage(writer http.ResponseWriter, request *http.
 		Model:        payload.Model,
 		SystemPrompt: payload.SystemPrompt,
 		WebSearch:    payload.WebSearch,
+		MathTools:    payload.MathTools,
 		Advanced:     payload.Advanced,
 		ClientID:     payload.ClientID,
 		Attachments:  attachments,

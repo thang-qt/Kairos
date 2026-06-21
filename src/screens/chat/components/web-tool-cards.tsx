@@ -14,10 +14,16 @@ import {
 } from '@/components/ui/collapsible'
 import { Button } from '@/components/ui/button'
 
-export function WebToolCards({ message }: { message: GatewayMessage }) {
-  const sources = searchSourceCardsFromMessage(message)
-  const events = webToolEventCardsFromMessage(message)
-  const requestCount = webToolRequestCount(message)
+export function WebToolCards({
+  message,
+  toolCallIds,
+}: {
+  message: GatewayMessage
+  toolCallIds?: ReadonlyArray<string>
+}) {
+  const sources = searchSourceCardsFromMessage(message, toolCallIds)
+  const events = webToolEventCardsFromMessage(message, toolCallIds)
+  const requestCount = webToolRequestCount(message, toolCallIds)
 
   if (sources.length === 0 && events.length === 0 && !requestCount) return null
 
@@ -74,7 +80,8 @@ export function WebToolCards({ message }: { message: GatewayMessage }) {
               </span>
             </>
           ) : null}
-          {[requestLabel, fetchLabel, sourceLabel].filter(Boolean).length > 0 ? (
+          {[requestLabel, fetchLabel, sourceLabel].filter(Boolean).length >
+          0 ? (
             <>
               <span className="shrink-0 text-primary-400">·</span>
               <span className="shrink-0 text-xs text-primary-500">
@@ -113,7 +120,9 @@ export function WebToolCards({ message }: { message: GatewayMessage }) {
                         {event.error ? (
                           <span className="ml-2 text-red-700">failed</span>
                         ) : event.state === 'running' ? (
-                          <span className="ml-2 text-primary-400">running…</span>
+                          <span className="ml-2 text-primary-400">
+                            running…
+                          </span>
                         ) : null}
                       </span>
                     </div>

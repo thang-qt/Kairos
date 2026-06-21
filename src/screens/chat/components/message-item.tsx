@@ -17,9 +17,9 @@ import { Tool } from '@/components/prompt-kit/tool'
 import { useChatSettingsStore } from '@/hooks/use-chat-settings'
 import { cn } from '@/lib/utils'
 import { MessageItemEditor } from './message-item-editor'
-import { WebToolCards } from './web-tool-cards'
+import { ToolSteps } from './tool-steps'
+import { useAssistantToolTrace } from './use-assistant-tool-trace'
 import {
-  mapToolCallToToolPart,
   mapSearchDetailsToToolPart,
   mapStandaloneToolResultToToolPart,
   assistantPartRenderOrder,
@@ -30,6 +30,7 @@ import {
   toolCallsSignature,
   toolResultsSignature,
   toolResultSignature,
+  runtimeToolDetailsSignature,
 } from './message-item-utils'
 
 export {
@@ -100,18 +101,21 @@ function MessageItemComponent({
   const searchToolPart = isAssistant
     ? mapSearchDetailsToToolPart(message)
     : null
-  const firstWebToolCall = isAssistant
-    ? assistantParts.find(function findWebToolCall(part) {
-        return (
-          part.type === 'toolCall' &&
-          (part.name === 'web_search' || part.name === 'web_fetch')
-        )
-      })
-    : undefined
-  const firstWebToolCallId =
-    firstWebToolCall?.type === 'toolCall' ? firstWebToolCall.id : undefined
-  const searchToolRenderedInCall = Boolean(firstWebToolCallId)
   const assistantIsStreaming = Boolean(message.__streamRunId)
+  const {
+    firstToolPartIndex,
+    lastToolPartIndex,
+    leadingToolReasoning,
+    roundSummaries,
+    toolSteps,
+  } = useAssistantToolTrace({
+    message,
+    assistantParts,
+    isAssistant,
+    assistantIsStreaming,
+    searchToolPart,
+    toolResultsByCallId,
+  })
 
   function handleStartEdit() {
     setEditDraft(text)
@@ -143,6 +147,9 @@ function MessageItemComponent({
     if (part.type === 'thinking') {
       const thinking = String(part.thinking ?? '')
       if (!thinking || !showReasoningBlocks) return null
+      // When tool steps/reasoning trace are present, keep reasoning inside the
+      // same chain instead of rendering a separate spinning block above it.
+      if (toolSteps.length > 0 || leadingToolReasoning) return null
       const isStreaming = assistantIsStreaming
       const hasRealContent = assistantParts.some(function checkPart(p) {
         if (p.type === 'text') {
@@ -164,6 +171,26 @@ function MessageItemComponent({
     if (part.type === 'text') {
       const chunk = String(part.text ?? '')
       if (!chunk.trim()) return null
+      // When roundSummaries are present, all inter-round text has already been
+      // captured in the summaries and is rendered inside the trace. Only the
+      // final response text (after the last tool call) should render standalone.
+      if (
+        roundSummaries.length > 0 &&
+        lastToolPartIndex >= 0 &&
+        index <= lastToolPartIndex
+      ) {
+        return null
+      }
+      // Pre-tool prose is folded into ToolSteps.leadingReasoning so it stays
+      // in the same trace/chain as the tool calls instead of rendering as a
+      // separate assistant text block above the chain.
+      if (
+        leadingToolReasoning &&
+        roundSummaries.length === 0 &&
+        (firstToolPartIndex === -1 || firstToolPartIndex > index)
+      ) {
+        return null
+      }
       if (!visualUiBlocks) {
         return (
           <Message key={`text-${index}`}>
@@ -214,33 +241,7 @@ function MessageItemComponent({
     }
 
     if (part.type !== 'toolCall') return null
-    if (!showToolMessages) return null
-    const resultMessage = part.id
-      ? toolResultsByCallId?.get(part.id)
-      : undefined
-    const toolPart = mapToolCallToToolPart(part, resultMessage)
-    if (
-      (part.name === 'web_search' || part.name === 'web_fetch') &&
-      (!firstWebToolCallId || part.id === firstWebToolCallId)
-    ) {
-      return (
-        <div
-          key={`tool-${part.id || index}`}
-          className="w-full max-w-[900px] mt-1"
-        >
-          <WebToolCards message={message} />
-        </div>
-      )
-    }
-    if (part.name === 'web_search' || part.name === 'web_fetch') return null
-    return (
-      <div
-        key={`tool-${part.id || index}`}
-        className="w-full max-w-[900px] mt-1"
-      >
-        <Tool toolPart={toolPart} defaultOpen={false} />
-      </div>
-    )
+    return null
   }
 
   return (
@@ -313,11 +314,16 @@ function MessageItemComponent({
         </div>
       ) : null}
 
-      {isAssistant && assistantParts.map(renderAssistantPart)}
-
-      {isAssistant && showToolMessages && searchToolPart && !searchToolRenderedInCall ? (
-        <WebToolCards message={message} />
+      {isAssistant && showToolMessages ? (
+        <ToolSteps
+          steps={toolSteps}
+          running={assistantIsStreaming}
+          roundSummaries={roundSummaries}
+          leadingReasoning={showReasoningBlocks ? leadingToolReasoning : ''}
+        />
       ) : null}
+
+      {isAssistant && assistantParts.map(renderAssistantPart)}
 
       {isAssistant && (
         <MessageActionsBar
@@ -435,6 +441,18 @@ function areMessagesEqual(
   // No need to check settings here as the hook will cause a re-render
   // and areMessagesEqual is for props only.
   // However, memo components with hooks will re-render if the hook state changes.
+  if (
+    JSON.stringify(prevProps.message.details?.roundSummaries) !==
+    JSON.stringify(nextProps.message.details?.roundSummaries)
+  ) {
+    return false
+  }
+  if (
+    runtimeToolDetailsSignature(prevProps.message) !==
+    runtimeToolDetailsSignature(nextProps.message)
+  ) {
+    return false
+  }
   return true
 }
 

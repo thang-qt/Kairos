@@ -120,7 +120,8 @@ export function useProviderEditor(options?: { canSyncModels?: boolean }) {
           ...previous,
           kind: nextKind,
           label:
-            previous.label.trim() === '' || previous.label === previousDefaults.label
+            previous.label.trim() === '' ||
+            previous.label === previousDefaults.label
               ? defaults.label
               : previous.label,
           baseURL:

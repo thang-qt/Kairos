@@ -23,7 +23,13 @@ function getErrorMessage(error: unknown, fallback: string) {
   return fallback
 }
 
-function InlineMessage({ tone, message }: { tone: MessageTone; message: string }) {
+function InlineMessage({
+  tone,
+  message,
+}: {
+  tone: MessageTone
+  message: string
+}) {
   return (
     <div
       className={cn(
@@ -117,11 +123,17 @@ export function WebToolsSettingsPanel() {
             </p>
           </div>
 
-          <form onSubmit={handleSubmit} className="flex max-w-2xl flex-col gap-4">
+          <form
+            onSubmit={handleSubmit}
+            className="flex max-w-2xl flex-col gap-4"
+          >
             <div className="rounded-lg border border-primary-200 bg-primary-50/60 px-3 py-2 text-sm text-primary-700">
-              Provider: <span className="font-medium text-primary-950">Exa</span>
+              Provider:{' '}
+              <span className="font-medium text-primary-950">Exa</span>
               {configured ? (
-                <span className="ml-2 text-primary-600">API key configured</span>
+                <span className="ml-2 text-primary-600">
+                  API key configured
+                </span>
               ) : (
                 <span className="ml-2 text-red-700">API key missing</span>
               )}
@@ -148,8 +160,8 @@ export function WebToolsSettingsPanel() {
                 }}
               />
               <p className="text-xs text-primary-500">
-                Stored encrypted in the local database. Environment EXA_API_KEY is
-                still used only when no per-user setting exists.
+                Stored encrypted in the local database. Environment EXA_API_KEY
+                is still used only when no per-user setting exists.
               </p>
             </div>
 

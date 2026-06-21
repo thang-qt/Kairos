@@ -58,20 +58,25 @@ func TestBuildOpenRouterChatRequestUsesProviderNeutralTools(t *testing.T) {
 	request := buildOpenRouterChatRequest(ChatGenerationRequest{
 		Model:    "openai/gpt-5.2",
 		Messages: []ProviderMessage{{Role: "user", Parts: []ProviderMessagePart{{Type: "text", Text: "What happened today?"}}}},
-		Tools:    buildWebTools(true),
+		Tools:    buildRuntimeTools(true, true),
 	})
 
-	if len(request.Tools) != 2 {
-		t.Fatalf("tools length = %d, want 2", len(request.Tools))
+	if len(request.Tools) != 3 {
+		t.Fatalf("tools length = %d, want 3", len(request.Tools))
 	}
-	if request.Tools[0].Type != openrouter.ToolTypeFunction {
-		t.Fatalf("tool 0 type = %q, want function", request.Tools[0].Type)
+	seen := make(map[string]bool)
+	for index, tool := range request.Tools {
+		if tool.Type != openrouter.ToolTypeFunction {
+			t.Fatalf("tool %d type = %q, want function", index, tool.Type)
+		}
+		if tool.Function != nil {
+			seen[tool.Function.Name] = true
+		}
 	}
-	if request.Tools[0].Function == nil || request.Tools[0].Function.Name != webSearchToolName {
-		t.Fatalf("tool 0 function = %#v, want web_search", request.Tools[0].Function)
-	}
-	if request.Tools[1].Function == nil || request.Tools[1].Function.Name != webFetchToolName {
-		t.Fatalf("tool 1 function = %#v, want web_fetch", request.Tools[1].Function)
+	for _, name := range []string{mathEvalToolName, webSearchToolName, webFetchToolName} {
+		if !seen[name] {
+			t.Fatalf("missing function tool %q in %#v", name, seen)
+		}
 	}
 	if len(request.Plugins) != 0 {
 		t.Fatalf("plugins length = %d, want 0", len(request.Plugins))

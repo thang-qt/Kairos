@@ -19,7 +19,12 @@ import {
   setChatUiState,
 } from '@/screens/chat/chat-ui'
 
-export type SettingsTab = 'account' | 'models' | 'web-tools' | 'appearance' | 'display'
+export type SettingsTab =
+  | 'account'
+  | 'models'
+  | 'web-tools'
+  | 'appearance'
+  | 'display'
 
 type SettingsScreenProps = {
   activeTab: SettingsTab

@@ -45,6 +45,7 @@ type UseChatMutationsInput = {
   resolvedConversationModel: string
   resolvedSystemPrompt: string
   resolvedWebSearch: boolean
+  resolvedMathTools: boolean
   resolvedAdvancedSettings?: ChatRequestAdvancedSettings
   beginGeneration: () => void
   finishGeneration: () => void
@@ -66,6 +67,7 @@ export function useChatMutations({
   resolvedConversationModel,
   resolvedSystemPrompt,
   resolvedWebSearch,
+  resolvedMathTools,
   resolvedAdvancedSettings,
   beginGeneration,
   finishGeneration,
@@ -96,6 +98,7 @@ export function useChatMutations({
       modelOverride?: string,
       systemPromptOverride?: string,
       webSearchOverride?: boolean,
+      mathToolsOverride?: boolean,
       advancedOverride?: ChatRequestAdvancedSettings,
       attachments?: Array<AttachmentFile>,
       clientIdOverride?: string,
@@ -141,6 +144,8 @@ export function useChatMutations({
           : resolvedSystemPrompt
       const webSearch =
         webSearchOverride !== undefined ? webSearchOverride : resolvedWebSearch
+      const mathTools =
+        mathToolsOverride !== undefined ? mathToolsOverride : resolvedMathTools
       const advanced =
         advancedOverride !== undefined
           ? advancedOverride
@@ -155,6 +160,7 @@ export function useChatMutations({
           model,
           systemPrompt,
           webSearch,
+          mathTools,
           advanced,
           idempotencyKey,
           clientId: clientIdOverride || optimisticClientId || undefined,
@@ -203,6 +209,7 @@ export function useChatMutations({
       resolvedConversationModel,
       resolvedSystemPrompt,
       resolvedWebSearch,
+      resolvedMathTools,
       resolvedAdvancedSettings,
       setPinToTop,
       startRun,
@@ -243,6 +250,7 @@ export function useChatMutations({
             model: resolvedConversationModel,
             systemPrompt: resolvedSystemPrompt,
             webSearch: resolvedWebSearch,
+            mathTools: resolvedMathTools,
             advanced: resolvedAdvancedSettings,
             idempotencyKey: clientId,
             clientId,
@@ -327,6 +335,7 @@ export function useChatMutations({
         undefined,
         undefined,
         undefined,
+        undefined,
         attachments,
       )
     },
@@ -343,6 +352,7 @@ export function useChatMutations({
       resolvedConversationModel,
       resolvedSystemPrompt,
       resolvedWebSearch,
+      resolvedMathTools,
       resolvedAdvancedSettings,
       sendMessage,
       beginGeneration,
@@ -370,6 +380,9 @@ export function useChatMutations({
             text,
             true,
             resolvedConversationModel,
+            undefined,
+            undefined,
+            resolvedMathTools,
           )
         }
       }
@@ -379,6 +392,7 @@ export function useChatMutations({
       activeSessionKey,
       displayMessages,
       resolvedConversationModel,
+      resolvedMathTools,
       sendMessage,
     ],
   )
@@ -509,6 +523,7 @@ export function useChatMutations({
           model: resolvedConversationModel,
           systemPrompt: resolvedSystemPrompt,
           webSearch: resolvedWebSearch,
+          mathTools: resolvedMathTools,
           advanced: resolvedAdvancedSettings,
           clientId,
         })
@@ -554,6 +569,7 @@ export function useChatMutations({
       resolvedConversationModel,
       resolvedSystemPrompt,
       resolvedWebSearch,
+      resolvedMathTools,
       resolvedAdvancedSettings,
       setPinToTop,
       startRun,
@@ -616,6 +632,9 @@ export function useChatMutations({
         body,
         false,
         resolvedConversationModel,
+        undefined,
+        undefined,
+        resolvedMathTools,
       )
     },
     [
@@ -625,6 +644,7 @@ export function useChatMutations({
       hasAvailableModel,
       isNewChat,
       resolvedConversationModel,
+      resolvedMathTools,
       resolvedSessionKey,
       sendMessage,
     ],

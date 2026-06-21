@@ -190,7 +190,7 @@ type openAIStreamOptions struct {
 
 type openAIMessage struct {
 	Role       string           `json:"role"`
-	Content    any              `json:"content,omitempty"`
+	Content    any              `json:"content"`
 	ToolCallID string           `json:"tool_call_id,omitempty"`
 	ToolCalls  []openAIToolCall `json:"tool_calls,omitempty"`
 }
@@ -331,7 +331,13 @@ func buildOpenAIAssistantMessage(message ProviderMessage) openAIMessage {
 		}
 		toolCalls = append(toolCalls, openAIToolCall{ID: strings.TrimSpace(part.ID), Type: "function", Function: openAIFunctionCall{Name: strings.TrimSpace(part.Name), Arguments: providerToolCallArguments(part)}})
 	}
-	return openAIMessage{Role: "assistant", Content: collectProviderMessageText(message.Parts), ToolCalls: toolCalls}
+	var content any = ""
+	if text := collectProviderMessageText(message.Parts); text != "" {
+		content = text
+	} else if len(toolCalls) > 0 {
+		content = nil
+	}
+	return openAIMessage{Role: "assistant", Content: content, ToolCalls: toolCalls}
 }
 
 func buildOpenAIContent(parts []ProviderMessagePart) any {

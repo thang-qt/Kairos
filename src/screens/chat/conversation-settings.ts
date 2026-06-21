@@ -8,6 +8,7 @@ export type ConversationSettings = {
   model: string
   systemPrompt: string
   webSearch: boolean
+  mathTools: boolean
   advanced: ConversationAdvancedSettings
 }
 
@@ -59,6 +60,7 @@ export const defaultConversationSettings: ConversationSettings = {
   model: '',
   systemPrompt: '',
   webSearch: true,
+  mathTools: true,
   advanced: {
     reasoning: false,
     reasoningEffort: 'medium',

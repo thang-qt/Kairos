@@ -16,6 +16,7 @@ type ModelSettingsValue = {
   model: string
   systemPrompt: string
   webSearch: boolean
+  mathTools: boolean
   advanced: ConversationAdvancedSettings
 }
 
@@ -241,10 +242,10 @@ export function ModelSettingsPanel({
         </FieldBlock>
       </PanelSection>
 
-      <PanelSection title="Web tools">
+      <PanelSection title="Tools">
         <FieldBlock
-          label="Search and fetch"
-          description="Allows OpenRouter to search the web and fetch URLs for the next turn."
+          label="Web search and fetch"
+          description="Allow Kairos to search the web and fetch URLs for the next turn."
         >
           <div className="flex items-center justify-between gap-3 rounded-lg border border-primary-200 px-3 py-2">
             <div className="min-w-0 flex-1">
@@ -252,13 +253,35 @@ export function ModelSettingsPanel({
                 Use web tools
               </div>
               <div className="text-pretty text-xs text-primary-500">
-                Adds OpenRouter web search and web fetch server tools.
+                Adds provider-neutral web_search and web_fetch tools.
               </div>
             </div>
             <Switch
               checked={value.webSearch}
               onCheckedChange={function handleCheckedChange(checked) {
                 onChange({ webSearch: checked })
+              }}
+            />
+          </div>
+        </FieldBlock>
+
+        <FieldBlock
+          label="Math"
+          description="Allow Kairos to evaluate math expressions with the math.js web service."
+        >
+          <div className="flex items-center justify-between gap-3 rounded-lg border border-primary-200 px-3 py-2">
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-sm text-primary-800">
+                Use math tools
+              </div>
+              <div className="text-pretty text-xs text-primary-500">
+                Adds math_eval for calculations, units, matrices, and functions.
+              </div>
+            </div>
+            <Switch
+              checked={value.mathTools}
+              onCheckedChange={function handleCheckedChange(checked) {
+                onChange({ mathTools: checked })
               }}
             />
           </div>

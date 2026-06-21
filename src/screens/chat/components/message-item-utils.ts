@@ -19,9 +19,18 @@ type MessageModelMetadata = {
 export function mapToolCallToToolPart(
   toolCall: ToolCallContent,
   resultMessage: GatewayMessage | undefined,
+  assistantMessage?: GatewayMessage,
 ): ToolPart {
-  const hasResult = resultMessage !== undefined
-  const isError = resultMessage?.isError ?? false
+  const resultText = toolResultText(resultMessage)
+  const output = toolCallOutput(
+    toolCall,
+    resultMessage,
+    resultText,
+    assistantMessage,
+  )
+  const outputError = normalizedString(output?.error)
+  const hasResult = resultMessage !== undefined || output !== undefined
+  const isError = resultMessage?.isError ?? Boolean(outputError)
 
   let state: ToolPart['state']
   if (!hasResult) {
@@ -32,20 +41,11 @@ export function mapToolCallToToolPart(
     state = 'output-available'
   }
 
-  const resultText = toolResultText(resultMessage)
-
   // Extract error text from result message content
   let errorText: string | undefined
   if (isError) {
-    errorText = resultText || 'Unknown error'
+    errorText = resultText || outputError || 'Unknown error'
   }
-
-  const output =
-    resultMessage?.details && typeof resultMessage.details === 'object'
-      ? resultMessage.details
-      : resultText
-        ? { text: resultText }
-        : undefined
 
   return {
     type: toolCall.name || 'unknown',
@@ -55,6 +55,69 @@ export function mapToolCallToToolPart(
     toolCallId: toolCall.id,
     errorText,
   }
+}
+
+function toolCallOutput(
+  toolCall: ToolCallContent,
+  resultMessage: GatewayMessage | undefined,
+  resultText: string,
+  assistantMessage?: GatewayMessage,
+): Record<string, unknown> | undefined {
+  const details = detailsRecord(resultMessage?.details)
+  const persistedResult = persistedToolResult(
+    toolCall,
+    resultMessage,
+    assistantMessage,
+  )
+  if (persistedResult) return persistedResult
+  if (details) return details
+  if (resultText) return parseToolResultText(resultText)
+  return undefined
+}
+
+function persistedToolResult(
+  toolCall: ToolCallContent,
+  resultMessage: GatewayMessage | undefined,
+  assistantMessage: GatewayMessage | undefined,
+): Record<string, unknown> | undefined {
+  const callId = normalizedString(toolCall.id)
+  if (!callId || resultMessage) return undefined
+  const messageDetails = detailsRecord(assistantMessage?.details)
+  const events = Array.isArray(messageDetails?.tools)
+    ? messageDetails.tools
+    : []
+  for (const event of events) {
+    const record = detailsRecord(event)
+    if (normalizedString(record?.id) !== callId) continue
+    const result = detailsRecord(record?.result)
+    if (result) {
+      const durationMs = normalizedNumber(record?.durationMs)
+      return durationMs === undefined ? result : { ...result, durationMs }
+    }
+    const error = normalizedString(record?.error)
+    if (error) return { error }
+  }
+  return undefined
+}
+
+function parseToolResultText(
+  text: string,
+): Record<string, unknown> | undefined {
+  try {
+    const parsed = JSON.parse(text)
+    const record = detailsRecord(parsed)
+    if (record) return record
+  } catch {
+    // fall through to plain text output
+  }
+  return { text }
+}
+
+export function runtimeToolDetailsSignature(message: GatewayMessage): string {
+  const details = detailsRecord(message.details)
+  if (!details) return ''
+  const tools = Array.isArray(details.tools) ? details.tools : []
+  return tools.length > 0 ? JSON.stringify(tools) : ''
 }
 
 export function toolResultText(
@@ -195,6 +258,11 @@ export function normalizedString(value: unknown): string | null {
   if (typeof value !== 'string') return null
   const trimmed = value.trim()
   return trimmed.length > 0 ? trimmed : null
+}
+
+function normalizedNumber(value: unknown): number | undefined {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return undefined
+  return value
 }
 
 export function detailsRecord(

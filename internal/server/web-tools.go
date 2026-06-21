@@ -64,10 +64,18 @@ func NewWebToolRuntime(config WebToolRuntimeConfig) *WebToolRuntime {
 	}
 }
 
-func buildWebTools(enabled bool) []ProviderTool {
-	if !enabled {
-		return nil
+func buildRuntimeTools(webSearchEnabled bool, mathToolsEnabled bool) []ProviderTool {
+	tools := make([]ProviderTool, 0, 3)
+	if mathToolsEnabled {
+		tools = append(tools, buildMathTools()...)
 	}
+	if webSearchEnabled {
+		tools = append(tools, buildWebTools()...)
+	}
+	return tools
+}
+
+func buildWebTools() []ProviderTool {
 	return []ProviderTool{
 		{
 			Name:        webSearchToolName,
@@ -104,6 +112,10 @@ func (runtime *WebToolRuntime) Execute(ctx context.Context, call ProviderToolCal
 		args = parseToolCallArguments(call.ArgsJSON)
 	}
 	switch strings.TrimSpace(call.Name) {
+	case mathEvalToolName:
+		expr := strings.TrimSpace(stringFromAny(args["expr"]))
+		precision := intFromAny(args["precision"], 0)
+		return runtime.evalMathJS(ctx, expr, precision)
 	case webSearchToolName:
 		query := strings.TrimSpace(stringFromAny(args["query"]))
 		if query == "" {

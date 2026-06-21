@@ -126,6 +126,7 @@ export function ChatScreen({
         .join('\n\n')
     : resolvedSystemPromptBase
   const resolvedWebSearch = conversationSettings.webSearch
+  const resolvedMathTools = conversationSettings.mathTools
   const resolvedAdvancedSettings = buildChatRequestAdvancedSettings(
     conversationSettings.advanced,
   )
@@ -272,6 +273,7 @@ export function ChatScreen({
     resolvedConversationModel,
     resolvedSystemPrompt,
     resolvedWebSearch,
+    resolvedMathTools,
     resolvedAdvancedSettings,
     beginGeneration,
     finishGeneration,

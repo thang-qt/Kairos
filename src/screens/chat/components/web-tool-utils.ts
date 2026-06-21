@@ -13,31 +13,41 @@ export type WebToolEventCard = {
   query?: string
   url?: string
   error?: string
+  durationMs?: number
   state: 'running' | 'complete'
 }
 
 export function webToolEventCardsFromMessage(
   message: GatewayMessage,
+  toolCallIds?: ReadonlyArray<string>,
 ): Array<WebToolEventCard> {
   const events: Array<WebToolEventCard> = []
   const seen = new Set<string>()
+  const allowedIds = normalizedIdSet(toolCallIds)
   const details = detailsRecord(message.details)
 
   if (details) {
     for (const event of webToolEventsFromDetails(details)) {
+      const name = normalizedString(event.name) ?? 'web_tool'
+      if (name !== 'web_search' && name !== 'web_fetch') continue
       const args = detailsRecord(event.arguments)
       const result = detailsRecord(event.result)
       const id = normalizedString(event.id) ?? undefined
+      if (allowedIds && (!id || !allowedIds.has(id))) continue
       if (id) seen.add(id)
       events.push({
         id,
-        name: normalizedString(event.name) ?? 'web_tool',
+        name,
         query:
           normalizedString(args?.query) ??
           normalizedString(result?.query) ??
           undefined,
-        url: normalizedString(args?.url) ?? normalizedString(result?.url) ?? undefined,
+        url:
+          normalizedString(args?.url) ??
+          normalizedString(result?.url) ??
+          undefined,
         error: normalizedString(event.error) ?? undefined,
+        durationMs: normalizedNumber(event.durationMs),
         state: 'complete',
       })
     }
@@ -51,6 +61,7 @@ export function webToolEventCardsFromMessage(
     ) {
       continue
     }
+    if (allowedIds && (!part.id || !allowedIds.has(part.id))) continue
     if (part.id && seen.has(part.id)) continue
     const args = part.arguments ?? parsePartialJsonObject(part.partialJson)
     events.push({
@@ -67,16 +78,30 @@ export function webToolEventCardsFromMessage(
 
 export function searchSourceCardsFromMessage(
   message: GatewayMessage,
+  toolCallIds?: ReadonlyArray<string>,
 ): Array<SearchSourceCard> {
   const details = detailsRecord(message.details)
   if (!details) return []
 
   const cards = new Map<string, SearchSourceCard>()
+  const allowedIds = normalizedIdSet(toolCallIds)
 
   for (const event of webToolEventsFromDetails(details)) {
     const name = normalizedString(event.name)
-    if (name !== 'web_search') continue
+    if (name !== 'web_search' && name !== 'web_fetch') continue
+    const id = normalizedString(event.id) ?? undefined
+    if (allowedIds && (!id || !allowedIds.has(id))) continue
     const result = detailsRecord(event.result)
+    if (name === 'web_fetch') {
+      const url = normalizedString(result?.url)
+      if (!url || cards.has(url)) continue
+      cards.set(url, {
+        title: normalizedString(result?.title) ?? hostnameFromURL(url) ?? url,
+        url,
+        content: normalizedString(result?.text) ?? undefined,
+      })
+      continue
+    }
     const results = Array.isArray(result?.results) ? result.results : []
     for (const item of results) {
       const record = detailsRecord(item)
@@ -89,6 +114,8 @@ export function searchSourceCardsFromMessage(
       })
     }
   }
+
+  if (allowedIds) return Array.from(cards.values())
 
   const annotations = Array.isArray(details.annotations)
     ? details.annotations
@@ -119,14 +146,19 @@ export function searchSourceCardsFromMessage(
   return Array.from(cards.values())
 }
 
-export function webToolRequestCount(message: GatewayMessage): number | null {
+export function webToolRequestCount(
+  message: GatewayMessage,
+  toolCallIds?: ReadonlyArray<string>,
+): number | null {
   const details = detailsRecord(message.details)
-  const webToolSearches = webToolEventCardsFromMessage(message).filter(
-    function isSearch(event) {
-      return event.name === 'web_search'
-    },
-  ).length
+  const webToolSearches = webToolEventCardsFromMessage(
+    message,
+    toolCallIds,
+  ).filter(function isSearch(event) {
+    return event.name === 'web_search'
+  }).length
   if (webToolSearches > 0) return webToolSearches
+  if (normalizedIdSet(toolCallIds)) return null
 
   const usage = detailsRecord(details?.usage)
   const serverToolUse = detailsRecord(usage?.server_tool_use)
@@ -204,10 +236,25 @@ function parsePartialJsonObject(
   }
 }
 
+function normalizedIdSet(
+  values: ReadonlyArray<string> | undefined,
+): Set<string> | null {
+  if (!values || values.length === 0) return null
+  const ids = values
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0)
+  return ids.length > 0 ? new Set(ids) : null
+}
+
 function normalizedString(value: unknown): string | null {
   if (typeof value !== 'string') return null
   const trimmed = value.trim()
   return trimmed.length > 0 ? trimmed : null
+}
+
+function normalizedNumber(value: unknown): number | undefined {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return undefined
+  return value
 }
 
 function webToolEventsFromDetails(

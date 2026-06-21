@@ -18,6 +18,7 @@ type SendMessageInput struct {
 	Model          string               `json:"model"`
 	SystemPrompt   string               `json:"systemPrompt"`
 	WebSearch      bool                 `json:"webSearch"`
+	MathTools      bool                 `json:"mathTools"`
 	Advanced       *ChatAdvancedOptions `json:"advanced"`
 	IdempotencyKey string               `json:"idempotencyKey"`
 	ClientID       string               `json:"clientId"`
