@@ -1,9 +1,11 @@
 import { memo, useCallback, useLayoutEffect, useMemo, useRef } from 'react'
 import {
   getGatewayMessageId,
+  getMessageTimestamp,
   getToolCallsFromMessage,
   textFromMessage,
 } from '../utils'
+import { DateDivider } from './date-divider'
 import { MessageItem } from './message-item'
 import { ConversationNavigator } from './conversation-navigator'
 import { ShortcutsHelpDialog } from './shortcuts-help-dialog'
@@ -274,6 +276,15 @@ function ChatMessageListComponent({
     [onClone],
   )
 
+  function shouldShowDateDivider(index: number): boolean {
+    if (index <= 0) return false
+
+    const currentTimestamp = getMessageTimestamp(slicedMessages[index])
+    const previousTimestamp = getMessageTimestamp(slicedMessages[index - 1])
+
+    return !isSameLocalDay(currentTimestamp, previousTimestamp)
+  }
+
   function renderMessage(
     chatMessage: GatewayMessage,
     index: number,
@@ -306,21 +317,25 @@ function ChatMessageListComponent({
       : undefined
 
     return (
-      <MessageItem
-        key={messageKey}
-        message={chatMessage}
-        toolResultsByCallId={hasToolCalls ? toolResultsByCallId : undefined}
-        forceActionsVisible={forceActionsVisible}
-        modelLabelById={modelLabelById}
-        wrapperRef={wrapperRef}
-        wrapperClassName={options?.wrapperClassName}
-        wrapperScrollMarginTop={wrapperScrollMarginTop}
-        onClone={onClone ? handleClone : undefined}
-        previousMessageId={previousMessageId}
-        onEdit={onEditUserTurn}
-        onDelete={onDeleteUserTurn}
-        onVisualUiCallback={onVisualUiCallback}
-      />
+      <div key={messageKey} className="contents">
+        {shouldShowDateDivider(index) ? (
+          <DateDivider timestamp={getMessageTimestamp(chatMessage)} />
+        ) : null}
+        <MessageItem
+          message={chatMessage}
+          toolResultsByCallId={hasToolCalls ? toolResultsByCallId : undefined}
+          forceActionsVisible={forceActionsVisible}
+          modelLabelById={modelLabelById}
+          wrapperRef={wrapperRef}
+          wrapperClassName={options?.wrapperClassName}
+          wrapperScrollMarginTop={wrapperScrollMarginTop}
+          onClone={onClone ? handleClone : undefined}
+          previousMessageId={previousMessageId}
+          onEdit={onEditUserTurn}
+          onDelete={onDeleteUserTurn}
+          onVisualUiCallback={onVisualUiCallback}
+        />
+      </div>
     )
   }
 
@@ -448,6 +463,17 @@ function ChatMessageListComponent({
         onOpenChange={setShortcutsHelpOpen}
       />
     </>
+  )
+}
+
+function isSameLocalDay(leftTimestamp: number, rightTimestamp: number) {
+  const left = new Date(leftTimestamp)
+  const right = new Date(rightTimestamp)
+
+  return (
+    left.getFullYear() === right.getFullYear() &&
+    left.getMonth() === right.getMonth() &&
+    left.getDate() === right.getDate()
   )
 }
 
