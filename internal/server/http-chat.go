@@ -11,24 +11,26 @@ type sessionsResponse struct {
 }
 
 type createSessionRequest struct {
-	Label          string              `json:"label"`
-	Message        string              `json:"message"`
-	Model          string              `json:"model"`
-	SystemPrompt   string              `json:"systemPrompt"`
-	WebSearch      bool                `json:"webSearch"`
-	IdempotencyKey string              `json:"idempotencyKey"`
-	ClientID       string              `json:"clientId"`
-	Attachments    []AttachmentPayload `json:"attachments"`
+	Label          string               `json:"label"`
+	Message        string               `json:"message"`
+	Model          string               `json:"model"`
+	SystemPrompt   string               `json:"systemPrompt"`
+	WebSearch      bool                 `json:"webSearch"`
+	Advanced       *ChatAdvancedOptions `json:"advanced"`
+	IdempotencyKey string               `json:"idempotencyKey"`
+	ClientID       string               `json:"clientId"`
+	Attachments    []AttachmentPayload  `json:"attachments"`
 }
 
 type sendMessageRequest struct {
-	Message        string              `json:"message"`
-	Model          string              `json:"model"`
-	SystemPrompt   string              `json:"systemPrompt"`
-	WebSearch      bool                `json:"webSearch"`
-	IdempotencyKey string              `json:"idempotencyKey"`
-	ClientID       string              `json:"clientId"`
-	Attachments    []AttachmentPayload `json:"attachments"`
+	Message        string               `json:"message"`
+	Model          string               `json:"model"`
+	SystemPrompt   string               `json:"systemPrompt"`
+	WebSearch      bool                 `json:"webSearch"`
+	Advanced       *ChatAdvancedOptions `json:"advanced"`
+	IdempotencyKey string               `json:"idempotencyKey"`
+	ClientID       string               `json:"clientId"`
+	Attachments    []AttachmentPayload  `json:"attachments"`
 }
 
 type cloneSessionRequest struct {
@@ -96,6 +98,7 @@ func (app *App) handleCreateSession(writer http.ResponseWriter, request *http.Re
 			Model:          payload.Model,
 			SystemPrompt:   payload.SystemPrompt,
 			WebSearch:      payload.WebSearch,
+			Advanced:       payload.Advanced,
 			IdempotencyKey: payload.IdempotencyKey,
 			ClientID:       payload.ClientID,
 			Attachments:    payload.Attachments,
@@ -237,6 +240,7 @@ func (app *App) handleSendMessage(writer http.ResponseWriter, request *http.Requ
 		Model:          payload.Model,
 		SystemPrompt:   payload.SystemPrompt,
 		WebSearch:      payload.WebSearch,
+		Advanced:       payload.Advanced,
 		IdempotencyKey: payload.IdempotencyKey,
 		ClientID:       payload.ClientID,
 		Attachments:    payload.Attachments,
@@ -324,6 +328,7 @@ func (app *App) handleEditUserMessage(writer http.ResponseWriter, request *http.
 		Model:        payload.Model,
 		SystemPrompt: payload.SystemPrompt,
 		WebSearch:    payload.WebSearch,
+		Advanced:     payload.Advanced,
 		ClientID:     payload.ClientID,
 		Attachments:  attachments,
 	})

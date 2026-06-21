@@ -301,10 +301,7 @@ function VisualUiRenderer({ source, onCallback }: VisualUiBlockProps) {
             key={key}
             className="flex items-center justify-between gap-3 rounded-[10px] border border-primary-200 bg-surface px-3 py-2"
           >
-            <MarkdownText
-              inline
-              className="min-w-0 text-sm text-primary-950"
-            >
+            <MarkdownText inline className="min-w-0 text-sm text-primary-950">
               {node.label ?? ''}
             </MarkdownText>
             <Switch
@@ -379,7 +376,9 @@ function VisualUiRenderer({ source, onCallback }: VisualUiBlockProps) {
                 {node.title}
               </MarkdownText>
             ) : null}
-            {textValue(node) ? <MarkdownText>{textValue(node)}</MarkdownText> : null}
+            {textValue(node) ? (
+              <MarkdownText>{textValue(node)}</MarkdownText>
+            ) : null}
           </div>
         )
       default:

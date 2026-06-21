@@ -73,6 +73,7 @@ func (service *ChatRunService) executeRun(
 			SystemPrompt: input.SystemPrompt,
 			WebSearch:    buildProviderWebSearchOptions(input.WebSearch),
 			Messages:     buildProviderMessages(history, input.SystemPrompt),
+			Advanced:     input.Advanced,
 		},
 		func(delta ChatGenerationDelta) error {
 			if delta.Thinking != "" {

@@ -3,6 +3,7 @@ import type {
   HistoryResponse,
   SessionMeta,
 } from '@/screens/chat/types'
+import type { ChatRequestAdvancedSettings } from '@/screens/chat/conversation-settings'
 
 export type ChatConversation = SessionMeta
 
@@ -30,6 +31,7 @@ export type ChatSendMessageInput = {
   model?: string
   systemPrompt?: string
   webSearch?: boolean
+  advanced?: ChatRequestAdvancedSettings
   idempotencyKey?: string
   clientId?: string
   attachments?: Array<ChatAttachmentPayload>
@@ -41,6 +43,7 @@ export type ChatCreateConversationInput = {
   model?: string
   systemPrompt?: string
   webSearch?: boolean
+  advanced?: ChatRequestAdvancedSettings
   idempotencyKey?: string
   clientId?: string
   attachments?: Array<ChatAttachmentPayload>
@@ -82,6 +85,7 @@ export type ChatEditUserMessageInput = {
   model?: string
   systemPrompt?: string
   webSearch?: boolean
+  advanced?: ChatRequestAdvancedSettings
   clientId?: string
 }
 

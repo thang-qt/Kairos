@@ -1,4 +1,9 @@
 import type { ProviderModel } from '@/lib/app-api'
+import type {
+  ConversationAdvancedSettings,
+  ReasoningEffort,
+} from '../conversation-settings'
+import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import {
   formatContextWindow,
@@ -11,6 +16,7 @@ type ModelSettingsValue = {
   model: string
   systemPrompt: string
   webSearch: boolean
+  advanced: ConversationAdvancedSettings
 }
 
 type ModelSettingsPanelProps = {
@@ -72,6 +78,74 @@ function ModelInfoRow({ label, value }: { label: string; value: string }) {
   )
 }
 
+function SettingCard({
+  label,
+  description,
+  checked,
+  onCheckedChange,
+  children,
+}: {
+  label: string
+  description: string
+  checked: boolean
+  onCheckedChange: (checked: boolean) => void
+  children?: React.ReactNode
+}) {
+  return (
+    <div className="space-y-3 rounded-lg border border-primary-200 px-3 py-2">
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-sm text-primary-800">{label}</div>
+          <div className="text-pretty text-xs text-primary-500">
+            {description}
+          </div>
+        </div>
+        <Switch checked={checked} onCheckedChange={onCheckedChange} />
+      </div>
+      {checked && children ? (
+        <div className="space-y-3 border-t border-primary-200 pt-3">
+          {children}
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+function NumberField({
+  label,
+  value,
+  min,
+  max,
+  step,
+  onChange,
+}: {
+  label: string
+  value: number
+  min: number
+  max: number
+  step: number
+  onChange: (value: number) => void
+}) {
+  return (
+    <label className="grid grid-cols-[minmax(0,1fr)_5.5rem] items-center gap-3 text-sm text-primary-800">
+      <span className="truncate">{label}</span>
+      <Input
+        nativeInput
+        type="number"
+        min={min}
+        max={max}
+        step={step}
+        value={value}
+        onChange={function handleChange(event) {
+          onChange(Number(event.target.value))
+        }}
+        className="tabular-nums"
+        aria-label={label}
+      />
+    </label>
+  )
+}
+
 function findSelectedModel(
   models: Array<ProviderModel>,
   selectedModelId: string,
@@ -101,6 +175,7 @@ export function ModelSettingsPanel({
         selectedModelId || 'No model selected',
       )
   const modelDescription = selectedModel?.description?.trim()
+  const advanced = value.advanced
 
   return (
     <div className="pb-4">
@@ -186,6 +261,149 @@ export function ModelSettingsPanel({
                 onChange({ webSearch: checked })
               }}
             />
+          </div>
+        </FieldBlock>
+      </PanelSection>
+
+      <PanelSection title="Advanced">
+        <FieldBlock
+          label="Request options"
+          description="Advanced options are omitted from requests until their switch is enabled."
+        >
+          <div className="space-y-3">
+            <SettingCard
+              label="Reasoning"
+              description="Send reasoning controls for compatible models."
+              checked={advanced.reasoning}
+              onCheckedChange={function handleReasoningChange(checked) {
+                onChange({ advanced: { ...advanced, reasoning: checked } })
+              }}
+            >
+              <label className="grid grid-cols-[minmax(0,1fr)_8rem] items-center gap-3 text-sm text-primary-800">
+                <span className="truncate">Effort</span>
+                <select
+                  value={advanced.reasoningEffort}
+                  onChange={function handleEffortChange(event) {
+                    onChange({
+                      advanced: {
+                        ...advanced,
+                        reasoningEffort: event.target.value as ReasoningEffort,
+                      },
+                    })
+                  }}
+                  className="h-8 rounded-lg border border-primary-200 bg-surface px-2 text-sm text-primary-900 outline-none focus:border-primary-500"
+                  aria-label="Reasoning effort"
+                >
+                  <option value="low">Low</option>
+                  <option value="medium">Medium</option>
+                  <option value="high">High</option>
+                </select>
+              </label>
+            </SettingCard>
+
+            <SettingCard
+              label="Sampling"
+              description="Override temperature, nucleus sampling, and top-k."
+              checked={advanced.sampling}
+              onCheckedChange={function handleSamplingChange(checked) {
+                onChange({ advanced: { ...advanced, sampling: checked } })
+              }}
+            >
+              <NumberField
+                label="Temperature"
+                value={advanced.temperature}
+                min={0}
+                max={2}
+                step={0.1}
+                onChange={function handleTemperatureChange(nextValue) {
+                  onChange({
+                    advanced: { ...advanced, temperature: nextValue },
+                  })
+                }}
+              />
+              <NumberField
+                label="Top P"
+                value={advanced.topP}
+                min={0}
+                max={1}
+                step={0.05}
+                onChange={function handleTopPChange(nextValue) {
+                  onChange({ advanced: { ...advanced, topP: nextValue } })
+                }}
+              />
+              <NumberField
+                label="Top K"
+                value={advanced.topK}
+                min={0}
+                max={1000}
+                step={1}
+                onChange={function handleTopKChange(nextValue) {
+                  onChange({ advanced: { ...advanced, topK: nextValue } })
+                }}
+              />
+            </SettingCard>
+
+            <SettingCard
+              label="Penalties"
+              description="Override frequency and presence penalties."
+              checked={advanced.penalties}
+              onCheckedChange={function handlePenaltiesChange(checked) {
+                onChange({ advanced: { ...advanced, penalties: checked } })
+              }}
+            >
+              <NumberField
+                label="Frequency"
+                value={advanced.frequencyPenalty}
+                min={-2}
+                max={2}
+                step={0.1}
+                onChange={function handleFrequencyPenaltyChange(nextValue) {
+                  onChange({
+                    advanced: {
+                      ...advanced,
+                      frequencyPenalty: nextValue,
+                    },
+                  })
+                }}
+              />
+              <NumberField
+                label="Presence"
+                value={advanced.presencePenalty}
+                min={-2}
+                max={2}
+                step={0.1}
+                onChange={function handlePresencePenaltyChange(nextValue) {
+                  onChange({
+                    advanced: {
+                      ...advanced,
+                      presencePenalty: nextValue,
+                    },
+                  })
+                }}
+              />
+            </SettingCard>
+
+            <SettingCard
+              label="Max output"
+              description="Request a maximum number of generated tokens."
+              checked={advanced.maxTokens}
+              onCheckedChange={function handleMaxTokensChange(checked) {
+                onChange({ advanced: { ...advanced, maxTokens: checked } })
+              }}
+            >
+              <NumberField
+                label="Tokens"
+                value={advanced.maxTokensValue}
+                min={1}
+                max={200000}
+                step={1}
+                onChange={function handleMaxTokensValueChange(nextValue) {
+                  onChange({
+                    advanced: { ...advanced, maxTokensValue: nextValue },
+                  })
+                }}
+              />
+            </SettingCard>
           </div>
         </FieldBlock>
       </PanelSection>

@@ -13,14 +13,37 @@ import (
 )
 
 type SendMessageInput struct {
-	FriendlyID     string              `json:"-"`
-	Message        string              `json:"message"`
-	Model          string              `json:"model"`
-	SystemPrompt   string              `json:"systemPrompt"`
-	WebSearch      bool                `json:"webSearch"`
-	IdempotencyKey string              `json:"idempotencyKey"`
-	ClientID       string              `json:"clientId"`
-	Attachments    []AttachmentPayload `json:"attachments"`
+	FriendlyID     string               `json:"-"`
+	Message        string               `json:"message"`
+	Model          string               `json:"model"`
+	SystemPrompt   string               `json:"systemPrompt"`
+	WebSearch      bool                 `json:"webSearch"`
+	Advanced       *ChatAdvancedOptions `json:"advanced"`
+	IdempotencyKey string               `json:"idempotencyKey"`
+	ClientID       string               `json:"clientId"`
+	Attachments    []AttachmentPayload  `json:"attachments"`
+}
+
+type ChatAdvancedOptions struct {
+	Reasoning *ChatReasoningOptions `json:"reasoning"`
+	Sampling  *ChatSamplingOptions  `json:"sampling"`
+	Penalties *ChatPenaltyOptions   `json:"penalties"`
+	MaxTokens *int                  `json:"maxTokens"`
+}
+
+type ChatReasoningOptions struct {
+	Effort string `json:"effort"`
+}
+
+type ChatSamplingOptions struct {
+	Temperature *float32 `json:"temperature"`
+	TopP        *float32 `json:"topP"`
+	TopK        *int     `json:"topK"`
+}
+
+type ChatPenaltyOptions struct {
+	FrequencyPenalty *float32 `json:"frequencyPenalty"`
+	PresencePenalty  *float32 `json:"presencePenalty"`
 }
 
 type AttachmentPayload struct {

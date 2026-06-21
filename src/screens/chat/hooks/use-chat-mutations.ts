@@ -24,6 +24,7 @@ import type { CloneMessagePayload } from '../components/chat-message-list'
 import type { QueryClient } from '@tanstack/react-query'
 import type { AttachmentFile } from '@/components/attachment-button'
 import type { ChatComposerHelpers } from '../components/chat-composer'
+import type { ChatRequestAdvancedSettings } from '../conversation-settings'
 import type { GatewayMessage } from '../types'
 
 type UserTurnDeleteState = {
@@ -44,6 +45,7 @@ type UseChatMutationsInput = {
   resolvedConversationModel: string
   resolvedSystemPrompt: string
   resolvedWebSearch: boolean
+  resolvedAdvancedSettings?: ChatRequestAdvancedSettings
   beginGeneration: () => void
   finishGeneration: () => void
   startRun: (runId: string) => void
@@ -64,6 +66,7 @@ export function useChatMutations({
   resolvedConversationModel,
   resolvedSystemPrompt,
   resolvedWebSearch,
+  resolvedAdvancedSettings,
   beginGeneration,
   finishGeneration,
   startRun,
@@ -93,6 +96,7 @@ export function useChatMutations({
       modelOverride?: string,
       systemPromptOverride?: string,
       webSearchOverride?: boolean,
+      advancedOverride?: ChatRequestAdvancedSettings,
       attachments?: Array<AttachmentFile>,
       clientIdOverride?: string,
     ) {
@@ -137,6 +141,10 @@ export function useChatMutations({
           : resolvedSystemPrompt
       const webSearch =
         webSearchOverride !== undefined ? webSearchOverride : resolvedWebSearch
+      const advanced =
+        advancedOverride !== undefined
+          ? advancedOverride
+          : resolvedAdvancedSettings
       const idempotencyKey =
         clientIdOverride || optimisticClientId || randomUUID()
       void backend
@@ -147,6 +155,7 @@ export function useChatMutations({
           model,
           systemPrompt,
           webSearch,
+          advanced,
           idempotencyKey,
           clientId: clientIdOverride || optimisticClientId || undefined,
           attachments: attachmentsPayload,
@@ -194,6 +203,7 @@ export function useChatMutations({
       resolvedConversationModel,
       resolvedSystemPrompt,
       resolvedWebSearch,
+      resolvedAdvancedSettings,
       setPinToTop,
       startRun,
     ],
@@ -233,6 +243,7 @@ export function useChatMutations({
             model: resolvedConversationModel,
             systemPrompt: resolvedSystemPrompt,
             webSearch: resolvedWebSearch,
+            advanced: resolvedAdvancedSettings,
             idempotencyKey: clientId,
             clientId,
             attachments: attachmentsPayload,
@@ -315,6 +326,7 @@ export function useChatMutations({
         resolvedConversationModel,
         undefined,
         undefined,
+        undefined,
         attachments,
       )
     },
@@ -331,6 +343,7 @@ export function useChatMutations({
       resolvedConversationModel,
       resolvedSystemPrompt,
       resolvedWebSearch,
+      resolvedAdvancedSettings,
       sendMessage,
       beginGeneration,
       finishGeneration,
@@ -496,6 +509,7 @@ export function useChatMutations({
           model: resolvedConversationModel,
           systemPrompt: resolvedSystemPrompt,
           webSearch: resolvedWebSearch,
+          advanced: resolvedAdvancedSettings,
           clientId,
         })
         updateHistoryMessageByClientId(
@@ -540,6 +554,7 @@ export function useChatMutations({
       resolvedConversationModel,
       resolvedSystemPrompt,
       resolvedWebSearch,
+      resolvedAdvancedSettings,
       setPinToTop,
       startRun,
     ],

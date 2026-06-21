@@ -145,10 +145,74 @@ func buildOpenRouterChatRequest(request ChatGenerationRequest) openrouter.ChatCo
 			openrouter.Tool{Type: openrouter.ToolType("openrouter:web_fetch")},
 		)
 	}
+	applyOpenRouterAdvancedOptions(&chatRequest, request.Advanced)
 	if len(request.Plugins) > 0 {
 		chatRequest.Plugins = append(chatRequest.Plugins, buildOpenRouterPlugins(request.Plugins)...)
 	}
 	return chatRequest
+}
+
+func applyOpenRouterAdvancedOptions(chatRequest *openrouter.ChatCompletionRequest, advanced *ChatAdvancedOptions) {
+	if advanced == nil {
+		return
+	}
+	if advanced.Reasoning != nil {
+		effort := normalizeReasoningEffort(advanced.Reasoning.Effort)
+		chatRequest.Reasoning = &openrouter.ChatCompletionReasoning{
+			Effort: &effort,
+		}
+	}
+	if advanced.Sampling != nil {
+		if advanced.Sampling.Temperature != nil {
+			chatRequest.Temperature = clampFloat32(*advanced.Sampling.Temperature, 0, 2)
+		}
+		if advanced.Sampling.TopP != nil {
+			chatRequest.TopP = clampFloat32(*advanced.Sampling.TopP, 0, 1)
+		}
+		if advanced.Sampling.TopK != nil && *advanced.Sampling.TopK > 0 {
+			chatRequest.TopK = clampInt(*advanced.Sampling.TopK, 0, 1000)
+		}
+	}
+	if advanced.Penalties != nil {
+		if advanced.Penalties.FrequencyPenalty != nil {
+			chatRequest.FrequencyPenalty = clampFloat32(*advanced.Penalties.FrequencyPenalty, -2, 2)
+		}
+		if advanced.Penalties.PresencePenalty != nil {
+			chatRequest.PresencePenalty = clampFloat32(*advanced.Penalties.PresencePenalty, -2, 2)
+		}
+	}
+	if advanced.MaxTokens != nil && *advanced.MaxTokens > 0 {
+		chatRequest.MaxTokens = clampInt(*advanced.MaxTokens, 1, 200000)
+	}
+}
+
+func normalizeReasoningEffort(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "low", "medium", "high":
+		return strings.ToLower(strings.TrimSpace(value))
+	default:
+		return "medium"
+	}
+}
+
+func clampFloat32(value float32, minValue float32, maxValue float32) float32 {
+	if value < minValue {
+		return minValue
+	}
+	if value > maxValue {
+		return maxValue
+	}
+	return value
+}
+
+func clampInt(value int, minValue int, maxValue int) int {
+	if value < minValue {
+		return minValue
+	}
+	if value > maxValue {
+		return maxValue
+	}
+	return value
 }
 
 func buildOpenRouterMessages(messages []ProviderMessage) []openrouter.ChatCompletionMessage {

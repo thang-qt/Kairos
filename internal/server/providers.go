@@ -170,6 +170,7 @@ type ChatGenerationRequest struct {
 	ToolChoice   any
 	WebSearch    *ProviderWebSearchOptions
 	Plugins      []ProviderPlugin
+	Advanced     *ChatAdvancedOptions
 }
 
 type ChatGenerationDelta struct {

@@ -27,6 +27,7 @@ import { useChatRuns } from './hooks/use-chat-runs'
 import { useChatRestoration } from './hooks/use-chat-restoration'
 import { useChatMutations } from './hooks/use-chat-mutations'
 import {
+  buildChatRequestAdvancedSettings,
   normalizeConversationTextSetting,
   resolveConversationModelID,
   useConversationSettings,
@@ -125,6 +126,9 @@ export function ChatScreen({
         .join('\n\n')
     : resolvedSystemPromptBase
   const resolvedWebSearch = conversationSettings.webSearch
+  const resolvedAdvancedSettings = buildChatRequestAdvancedSettings(
+    conversationSettings.advanced,
+  )
   const { isMobile } = useChatMobile(queryClient)
   const {
     sessionsQuery,
@@ -268,6 +272,7 @@ export function ChatScreen({
     resolvedConversationModel,
     resolvedSystemPrompt,
     resolvedWebSearch,
+    resolvedAdvancedSettings,
     beginGeneration,
     finishGeneration,
     startRun,

@@ -8,6 +8,39 @@ export type ConversationSettings = {
   model: string
   systemPrompt: string
   webSearch: boolean
+  advanced: ConversationAdvancedSettings
+}
+
+export type ReasoningEffort = 'low' | 'medium' | 'high'
+
+export type ConversationAdvancedSettings = {
+  reasoning: boolean
+  reasoningEffort: ReasoningEffort
+  sampling: boolean
+  temperature: number
+  topP: number
+  topK: number
+  penalties: boolean
+  frequencyPenalty: number
+  presencePenalty: number
+  maxTokens: boolean
+  maxTokensValue: number
+}
+
+export type ChatRequestAdvancedSettings = {
+  reasoning?: {
+    effort?: ReasoningEffort
+  }
+  sampling?: {
+    temperature?: number
+    topP?: number
+    topK?: number
+  }
+  penalties?: {
+    frequencyPenalty?: number
+    presencePenalty?: number
+  }
+  maxTokens?: number
 }
 
 type ConversationSettingsState = {
@@ -26,6 +59,19 @@ export const defaultConversationSettings: ConversationSettings = {
   model: '',
   systemPrompt: '',
   webSearch: true,
+  advanced: {
+    reasoning: false,
+    reasoningEffort: 'medium',
+    sampling: false,
+    temperature: 0.7,
+    topP: 1,
+    topK: 0,
+    penalties: false,
+    frequencyPenalty: 0,
+    presencePenalty: 0,
+    maxTokens: false,
+    maxTokensValue: 4096,
+  },
 }
 
 export const useConversationSettingsStore = create<ConversationSettingsState>()(
@@ -45,11 +91,9 @@ export const useConversationSettingsStore = create<ConversationSettingsState>()(
         })),
       copyConversationSettings: (sourceConversationId, targetConversationId) =>
         set((state) => {
-          const sourceSettings = {
-            ...defaultConversationSettings,
-            ...(state.conversations[sourceConversationId] ??
-              defaultConversationSettings),
-          }
+          const sourceSettings = normalizeConversationSettings(
+            state.conversations[sourceConversationId],
+          )
 
           return {
             conversations: {
@@ -73,10 +117,7 @@ export function useConversationSettings(conversationId: string) {
   )
   const settings = useMemo(
     function buildSettings() {
-      return {
-        ...defaultConversationSettings,
-        ...storedSettings,
-      }
+      return normalizeConversationSettings(storedSettings)
     },
     [storedSettings],
   )
@@ -99,6 +140,19 @@ export function copyConversationSettings(
   useConversationSettingsStore
     .getState()
     .copyConversationSettings(sourceConversationId, targetConversationId)
+}
+
+function normalizeConversationSettings(
+  settings: Partial<ConversationSettings> | undefined,
+): ConversationSettings {
+  return {
+    ...defaultConversationSettings,
+    ...settings,
+    advanced: {
+      ...defaultConversationSettings.advanced,
+      ...settings?.advanced,
+    },
+  }
 }
 
 export function resolveConversationModelID(
@@ -153,6 +207,48 @@ export function resolveConversationModelID(
   }
 
   return ''
+}
+
+export function buildChatRequestAdvancedSettings(
+  settings: ConversationAdvancedSettings,
+): ChatRequestAdvancedSettings | undefined {
+  const advanced: ChatRequestAdvancedSettings = {}
+
+  if (settings.reasoning) {
+    advanced.reasoning = {
+      effort: settings.reasoningEffort,
+    }
+  }
+
+  if (settings.sampling) {
+    advanced.sampling = {
+      temperature: clampNumber(settings.temperature, 0, 2),
+      topP: clampNumber(settings.topP, 0, 1),
+    }
+    if (settings.topK > 0) {
+      advanced.sampling.topK = Math.floor(clampNumber(settings.topK, 0, 1000))
+    }
+  }
+
+  if (settings.penalties) {
+    advanced.penalties = {
+      frequencyPenalty: clampNumber(settings.frequencyPenalty, -2, 2),
+      presencePenalty: clampNumber(settings.presencePenalty, -2, 2),
+    }
+  }
+
+  if (settings.maxTokens) {
+    advanced.maxTokens = Math.floor(
+      clampNumber(settings.maxTokensValue, 1, 200000),
+    )
+  }
+
+  return Object.keys(advanced).length > 0 ? advanced : undefined
+}
+
+function clampNumber(value: number, min: number, max: number) {
+  if (!Number.isFinite(value)) return min
+  return Math.min(Math.max(value, min), max)
 }
 
 export function normalizeConversationTextSetting(value: string): string {

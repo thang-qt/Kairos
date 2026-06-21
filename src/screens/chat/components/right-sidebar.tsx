@@ -32,7 +32,7 @@ type ExportFormat = 'markdown' | 'json' | 'text'
 export type RightSidebarTab = 'options' | 'model'
 export type RightSidebarModelSettings = Pick<
   ConversationSettings,
-  'model' | 'systemPrompt' | 'webSearch'
+  'model' | 'systemPrompt' | 'webSearch' | 'advanced'
 >
 
 type RightSidebarProps = {
