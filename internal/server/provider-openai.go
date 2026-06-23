@@ -177,6 +177,7 @@ type openAIChatCompletionRequest struct {
 	StreamOptions    *openAIStreamOptions `json:"stream_options,omitempty"`
 	Tools            []openAITool         `json:"tools,omitempty"`
 	ToolChoice       any                  `json:"tool_choice,omitempty"`
+	ReasoningEffort  string               `json:"reasoning_effort,omitempty"`
 	Temperature      *float32             `json:"temperature,omitempty"`
 	TopP             *float32             `json:"top_p,omitempty"`
 	FrequencyPenalty *float32             `json:"frequency_penalty,omitempty"`
@@ -277,6 +278,9 @@ func buildOpenAIChatRequest(request ChatGenerationRequest) openAIChatCompletionR
 func applyOpenAIAdvancedOptions(chatRequest *openAIChatCompletionRequest, advanced *ChatAdvancedOptions) {
 	if advanced == nil {
 		return
+	}
+	if advanced.Reasoning != nil {
+		chatRequest.ReasoningEffort = normalizeReasoningEffort(advanced.Reasoning.Effort)
 	}
 	if advanced.Sampling != nil {
 		if advanced.Sampling.Temperature != nil {

@@ -166,6 +166,80 @@ func TestBuildOpenRouterChatRequestAppliesAdvancedOptions(t *testing.T) {
 	}
 }
 
+func TestBuildOpenAIChatRequestOmitsAdvancedOptionsByDefault(t *testing.T) {
+	request := buildOpenAIChatRequest(ChatGenerationRequest{
+		Model:    "gpt-5.2",
+		Messages: []ProviderMessage{{Role: "user", Parts: []ProviderMessagePart{{Type: "text", Text: "Hello"}}}},
+	})
+
+	if request.ReasoningEffort != "" {
+		t.Fatalf("reasoning_effort = %q, want empty", request.ReasoningEffort)
+	}
+	if request.Temperature != nil {
+		t.Fatalf("temperature = %v, want nil", *request.Temperature)
+	}
+	if request.TopP != nil {
+		t.Fatalf("top_p = %v, want nil", *request.TopP)
+	}
+	if request.MaxTokens != nil {
+		t.Fatalf("max_tokens = %v, want nil", *request.MaxTokens)
+	}
+	if request.FrequencyPenalty != nil {
+		t.Fatalf("frequency_penalty = %v, want nil", *request.FrequencyPenalty)
+	}
+	if request.PresencePenalty != nil {
+		t.Fatalf("presence_penalty = %v, want nil", *request.PresencePenalty)
+	}
+}
+
+func TestBuildOpenAIChatRequestAppliesSupportedAdvancedOptions(t *testing.T) {
+	temperature := float32(0.8)
+	topP := float32(0.9)
+	topK := 40
+	frequencyPenalty := float32(0.2)
+	presencePenalty := float32(0.3)
+	maxTokens := 2048
+
+	request := buildOpenAIChatRequest(ChatGenerationRequest{
+		Model:    "gpt-5.2",
+		Messages: []ProviderMessage{{Role: "user", Parts: []ProviderMessagePart{{Type: "text", Text: "Hello"}}}},
+		Advanced: &ChatAdvancedOptions{
+			Reasoning: &ChatReasoningOptions{
+				Effort: "high",
+			},
+			Sampling: &ChatSamplingOptions{
+				Temperature: &temperature,
+				TopP:        &topP,
+				TopK:        &topK,
+			},
+			Penalties: &ChatPenaltyOptions{
+				FrequencyPenalty: &frequencyPenalty,
+				PresencePenalty:  &presencePenalty,
+			},
+			MaxTokens: &maxTokens,
+		},
+	})
+
+	if request.ReasoningEffort != "high" {
+		t.Fatalf("reasoning_effort = %q, want high", request.ReasoningEffort)
+	}
+	if request.Temperature == nil || *request.Temperature != temperature {
+		t.Fatalf("temperature = %v, want %v", request.Temperature, temperature)
+	}
+	if request.TopP == nil || *request.TopP != topP {
+		t.Fatalf("top_p = %v, want %v", request.TopP, topP)
+	}
+	if request.FrequencyPenalty == nil || *request.FrequencyPenalty != frequencyPenalty {
+		t.Fatalf("frequency_penalty = %v, want %v", request.FrequencyPenalty, frequencyPenalty)
+	}
+	if request.PresencePenalty == nil || *request.PresencePenalty != presencePenalty {
+		t.Fatalf("presence_penalty = %v, want %v", request.PresencePenalty, presencePenalty)
+	}
+	if request.MaxTokens == nil || *request.MaxTokens != maxTokens {
+		t.Fatalf("max_tokens = %v, want %v", request.MaxTokens, maxTokens)
+	}
+}
+
 func TestCreateListUpdateAndDeleteProvider(t *testing.T) {
 	testServer := newTestApp(t, nil)
 	cookie := signupAndRequireCookie(t, testServer, "providers@example.com")
