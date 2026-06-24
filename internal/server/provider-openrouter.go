@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"slices"
 	"strings"
-	"time"
 
 	openrouter "github.com/revrost/go-openrouter"
 )
@@ -23,7 +22,10 @@ type OpenRouterDriver struct {
 }
 
 func defaultProviderDrivers() map[string]ProviderDriver {
-	httpClient := &http.Client{Timeout: 30 * time.Second}
+	// Chat completion streams can legitimately stay open for longer than a
+	// fixed client timeout. Cancellation is controlled by the request context so
+	// long-running streams are not interrupted while reading the response body.
+	httpClient := &http.Client{}
 	return map[string]ProviderDriver{
 		openRouterProviderKind: &OpenRouterDriver{httpClient: httpClient},
 		openAIProviderKind:     &OpenAICompatibleDriver{httpClient: httpClient},
