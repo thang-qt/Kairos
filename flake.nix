@@ -2,7 +2,7 @@
   description = "Kairos";
 
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.11";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-26.05";
     flake-utils.url = "github:numtide/flake-utils";
   };
 
@@ -314,9 +314,16 @@
               src
               ;
             pnpm = pkgs.pnpm_9;
-            fetcherVersion = 3;
-            hash = "sha256-8Gg/FMP73+7IlE7mkHsmJ+8gMquZ5wQIM0k+57Z3JvY=";
+            fetcherVersion = 4;
+            prePnpmInstall = ''
+              rm -f .npmrc
+            '';
+            hash = "sha256-QrYxtoZ3cWRjyoRL5xHdj+YFe5nM+0d72I3DfpWV7vA=";
           };
+
+          postPatch = ''
+            rm -f .npmrc
+          '';
 
           buildPhase = ''
             runHook preBuild
@@ -332,11 +339,11 @@
           '';
         });
 
-        app = pkgs.buildGo124Module {
+        app = pkgs.buildGo125Module {
           pname = "kairos";
           inherit version src;
 
-          vendorHash = "sha256-A2FGgsAxr7w5KG4nBEge4omTUhoHazDGb/VQxdYVb+k=";
+          vendorHash = "sha256-SVK2Drkw/UeDIdCCLWWSgbxPccP10b1nXMmw+1cGY9w=";
           subPackages = [ "./cmd/kairosd" ];
 
           preBuild = ''
@@ -359,7 +366,7 @@
           name = "kairos-dev-shell";
 
           packages = [
-            pkgs.go_1_24
+            pkgs.go_1_25
             pkgs.nodejs
             pkgs.pnpm_9
             pkgs.git
