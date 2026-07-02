@@ -17,8 +17,6 @@ import type { ConversationSettings } from '../conversation-settings'
 import type { ProviderModel } from '@/lib/app-api'
 import { Button } from '@/components/ui/button'
 import { ExportMenu } from '@/components/export-menu'
-import { Switch } from '@/components/ui/switch'
-import { useChatSettings } from '@/hooks/use-chat-settings'
 import { cn } from '@/lib/utils'
 import {
   TooltipContent,
@@ -151,7 +149,6 @@ function OptionsPanel({
 }) {
   const { pinSession } = usePinSession()
   const { renameSession } = useRenameSession()
-  const { settings, updateSettings } = useChatSettings()
   const [renameDialogOpen, setRenameDialogOpen] = useState(false)
   const sessionTitle =
     activeSession?.label ||
@@ -221,19 +218,6 @@ function OptionsPanel({
         </SettingsRow>
       </PanelSection>
 
-      <PanelSection title="Chat display">
-        <SettingsRow
-          label="Visual UI blocks"
-          description="Render safe JSON component blocks from visual-ui fences"
-        >
-          <Switch
-            checked={settings.visualUiBlocks}
-            onCheckedChange={function handleVisualUiBlocksChange(checked) {
-              updateSettings({ visualUiBlocks: checked })
-            }}
-          />
-        </SettingsRow>
-      </PanelSection>
       <SessionRenameDialog
         open={renameDialogOpen}
         onOpenChange={setRenameDialogOpen}

@@ -45,7 +45,6 @@ type ChatMessageListProps = {
     currentText: string,
   ) => void | Promise<void>
   onDeleteUserTurn?: (messageId: string, currentText: string) => void
-  onVisualUiCallback?: (message: string) => void
   onScrollTopChange?: (scrollTop: number) => void
   restoreScrollTop?: number | null
   restoreKey?: string
@@ -76,7 +75,6 @@ function ChatMessageListComponent({
   onClone,
   onEditUserTurn,
   onDeleteUserTurn,
-  onVisualUiCallback,
   onScrollTopChange,
   restoreScrollTop,
   restoreKey,
@@ -333,7 +331,6 @@ function ChatMessageListComponent({
           previousMessageId={previousMessageId}
           onEdit={onEditUserTurn}
           onDelete={onDeleteUserTurn}
-          onVisualUiCallback={onVisualUiCallback}
         />
       </div>
     )
@@ -387,7 +384,6 @@ function ChatMessageListComponent({
     onClone,
     onDeleteUserTurn,
     onEditUserTurn,
-    onVisualUiCallback,
     toolResultsByCallId,
   ])
 
@@ -498,7 +494,6 @@ function areChatMessageListEqual(
     prev.onClone === next.onClone &&
     prev.onEditUserTurn === next.onEditUserTurn &&
     prev.onDeleteUserTurn === next.onDeleteUserTurn &&
-    prev.onVisualUiCallback === next.onVisualUiCallback &&
     prev.onScrollTopChange === next.onScrollTopChange &&
     prev.restoreScrollTop === next.restoreScrollTop &&
     prev.restoreKey === next.restoreKey &&
