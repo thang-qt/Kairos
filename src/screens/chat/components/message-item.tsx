@@ -17,11 +17,12 @@ import { Tool } from '@/components/prompt-kit/tool'
 import { useChatSettingsStore } from '@/hooks/use-chat-settings'
 import { cn } from '@/lib/utils'
 import { MessageItemEditor } from './message-item-editor'
-import { ToolSteps } from './tool-steps'
+import { ToolStepItem, ToolSteps } from './tool-steps'
 import { useAssistantToolTrace } from './use-assistant-tool-trace'
 import {
   mapSearchDetailsToToolPart,
   mapStandaloneToolResultToToolPart,
+  mapToolCallToToolPart,
   assistantPartRenderOrder,
   imagesFromMessage,
   modelFromMessage,
@@ -144,23 +145,20 @@ function MessageItemComponent({
   }
 
   function renderAssistantPart(part: MessageContentPart, index: number) {
+    const shouldCollapseToolTrace = !assistantIsStreaming
+
     if (part.type === 'thinking') {
       const thinking = String(part.thinking ?? '')
       if (!thinking || !showReasoningBlocks) return null
       // When tool steps/reasoning trace are present, keep reasoning inside the
       // same chain instead of rendering a separate spinning block above it.
-      if (toolSteps.length > 0 || leadingToolReasoning) return null
-      const isStreaming = assistantIsStreaming
-      const hasRealContent = assistantParts.some(function checkPart(p) {
-        if (p.type === 'text') {
-          return String(p.text ?? '').trim().length > 0
-        }
-        if (p.type === 'toolCall') {
-          return true
-        }
-        return false
-      })
-      const isThinking = isStreaming && !hasRealContent
+      if (
+        shouldCollapseToolTrace &&
+        (toolSteps.length > 0 || leadingToolReasoning)
+      ) {
+        return null
+      }
+      const isThinking = assistantIsStreaming
       return (
         <div key={`thinking-${index}`} className="w-full max-w-[900px]">
           <Thinking content={thinking} isThinking={isThinking} />
@@ -174,22 +172,24 @@ function MessageItemComponent({
       // When roundSummaries are present, all inter-round text has already been
       // captured in the summaries and is rendered inside the trace. Only the
       // final response text (after the last tool call) should render standalone.
-      if (
-        roundSummaries.length > 0 &&
-        lastToolPartIndex >= 0 &&
-        index <= lastToolPartIndex
-      ) {
-        return null
-      }
-      // Pre-tool prose is folded into ToolSteps.leadingReasoning so it stays
-      // in the same trace/chain as the tool calls instead of rendering as a
-      // separate assistant text block above the chain.
-      if (
-        leadingToolReasoning &&
-        roundSummaries.length === 0 &&
-        (firstToolPartIndex === -1 || firstToolPartIndex > index)
-      ) {
-        return null
+      if (shouldCollapseToolTrace) {
+        if (
+          roundSummaries.length > 0 &&
+          lastToolPartIndex >= 0 &&
+          index <= lastToolPartIndex
+        ) {
+          return null
+        }
+        // Pre-tool prose is folded into ToolSteps.leadingReasoning so it stays
+        // in the same trace/chain as the tool calls instead of rendering as a
+        // separate assistant text block above the chain.
+        if (
+          leadingToolReasoning &&
+          roundSummaries.length === 0 &&
+          (firstToolPartIndex === -1 || firstToolPartIndex > index)
+        ) {
+          return null
+        }
       }
       if (!visualUiBlocks) {
         return (
@@ -241,7 +241,38 @@ function MessageItemComponent({
     }
 
     if (part.type !== 'toolCall') return null
-    return null
+    if (!showToolMessages || shouldCollapseToolTrace) return null
+
+    if (part.name === 'web_search' || part.name === 'web_fetch') {
+      return (
+        <div key={`web-tool-${index}`} className="w-full max-w-[900px] mt-1">
+          <ToolStepItem
+            step={{
+              kind: 'web',
+              key: `web-tool-${part.id || index}`,
+              message,
+              toolCallIds: part.id ? [part.id] : undefined,
+            }}
+          />
+        </div>
+      )
+    }
+
+    const resultMessage = part.id
+      ? toolResultsByCallId?.get(part.id)
+      : undefined
+    const toolPart = mapToolCallToToolPart(part, resultMessage, message)
+    return (
+      <div key={`tool-${index}`} className="w-full max-w-[900px] mt-1">
+        <ToolStepItem
+          step={{
+            kind: 'tool',
+            key: `tool-${part.id || index}`,
+            toolPart,
+          }}
+        />
+      </div>
+    )
   }
 
   return (
@@ -314,10 +345,10 @@ function MessageItemComponent({
         </div>
       ) : null}
 
-      {isAssistant && showToolMessages ? (
+      {isAssistant && showToolMessages && !assistantIsStreaming ? (
         <ToolSteps
           steps={toolSteps}
-          running={assistantIsStreaming}
+          running={false}
           roundSummaries={roundSummaries}
           leadingReasoning={showReasoningBlocks ? leadingToolReasoning : ''}
         />

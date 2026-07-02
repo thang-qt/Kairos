@@ -117,20 +117,20 @@ func (service *ChatRunService) executeRun(
 					)
 				}
 				displayText := accumulatedText
-				// While the model is selecting and calling tools, its reasoning
-				// text belongs inside the trace (roundSummaries) rather than in
-				// the main message body. Suppress displayText whenever the
-				// current round includes tool calls OR we're already in a
-				// multi-round tool loop (persistedToolCalls > 0) so inter-round
-				// reasoning doesn't leak as standalone message text.
-				if len(accumulatedToolCalls) > 0 || len(persistedToolCalls) > 0 {
-					displayText = ""
-				}
 				content := buildAssistantContentWithToolCallsBeforeText(
 					accumulatedThinking,
 					displayText,
 					mergeProviderToolCalls(persistedToolCalls, accumulatedToolCalls),
 				)
+				if len(persistedToolCalls) > 0 {
+					content = buildAssistantToolLoopStreamingContent(
+						roundSummaries,
+						persistedToolCalls,
+						accumulatedThinking,
+						accumulatedToolCalls,
+						displayText,
+					)
+				}
 				if len(content) == 0 {
 					return nil
 				}
@@ -204,7 +204,7 @@ func (service *ChatRunService) executeRun(
 			}
 			messages = append(messages, providerToolResultMessage(call, toolResult, toolErr))
 		}
-		toolDeltaContent := buildAssistantContentWithToolCallsBeforeText(accumulatedThinking, "", persistedToolCalls)
+		toolDeltaContent := buildAssistantToolLoopSnapshotContent(roundSummaries, persistedToolCalls)
 		toolDeltaMessage := buildAssistantMessage(
 			record.AssistantMessageID,
 			displayModel,
@@ -260,6 +260,69 @@ func (service *ChatRunService) executeRun(
 		record.SessionID,
 		buildRunEventWithSession(record, session, "final", "", finalMessage, &sessionSummary),
 	)
+}
+
+func buildAssistantToolLoopSnapshotContent(
+	summaries []roundSummary,
+	toolCalls []ProviderToolCall,
+) []chatMessageContentPart {
+	return buildAssistantToolLoopStreamingContent(summaries, toolCalls, "", nil, "")
+}
+
+func buildAssistantToolLoopStreamingContent(
+	summaries []roundSummary,
+	priorToolCalls []ProviderToolCall,
+	currentThinking string,
+	currentToolCalls []ProviderToolCall,
+	text string,
+) []chatMessageContentPart {
+	content := make([]chatMessageContentPart, 0, len(priorToolCalls)+len(currentToolCalls)+len(summaries)+2)
+	consumedToolCalls := 0
+	for _, summary := range summaries {
+		if thinking := strings.TrimSpace(summary.Thinking); thinking != "" {
+			content = append(content, newThinkingContentPart(thinking))
+		}
+		toolCount := len(summary.ToolIDs)
+		if toolCount == 0 && consumedToolCalls < len(priorToolCalls) {
+			toolCount = 1
+		}
+		for i := 0; i < toolCount && consumedToolCalls < len(priorToolCalls); i++ {
+			toolCall := priorToolCalls[consumedToolCalls]
+			consumedToolCalls++
+			if providerToolCallIsEmpty(toolCall) {
+				continue
+			}
+			content = append(content, newToolCallContentPart(toolCall))
+		}
+	}
+	for consumedToolCalls < len(priorToolCalls) {
+		toolCall := priorToolCalls[consumedToolCalls]
+		consumedToolCalls++
+		if providerToolCallIsEmpty(toolCall) {
+			continue
+		}
+		content = append(content, newToolCallContentPart(toolCall))
+	}
+	if thinking := strings.TrimSpace(currentThinking); thinking != "" {
+		content = append(content, newThinkingContentPart(thinking))
+	}
+	for _, toolCall := range currentToolCalls {
+		if providerToolCallIsEmpty(toolCall) {
+			continue
+		}
+		content = append(content, newToolCallContentPart(toolCall))
+	}
+	if normalizedText := strings.TrimSpace(text); normalizedText != "" {
+		content = append(content, newTextContentPart(normalizedText))
+	}
+	return content
+}
+
+func providerToolCallIsEmpty(toolCall ProviderToolCall) bool {
+	return strings.TrimSpace(toolCall.ID) == "" &&
+		strings.TrimSpace(toolCall.Name) == "" &&
+		strings.TrimSpace(toolCall.ArgsJSON) == "" &&
+		len(toolCall.Args) == 0
 }
 
 func (service *ChatRunService) publishRunError(

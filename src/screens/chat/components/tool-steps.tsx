@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { HugeiconsIcon } from '@hugeicons/react'
 import {
   Brain03Icon,
@@ -200,8 +201,9 @@ function ReasoningTraceItem({
   )
 }
 
-function ToolStepItem({ step }: { step: ToolStep }) {
-  const details = stepDetails(step)
+export function ToolStepItem({ step }: { step: ToolStep }) {
+  const [sourcesExpanded, setSourcesExpanded] = useState(false)
+  const details = stepDetails(step, sourcesExpanded)
   return (
     <div className="space-y-1.5">
       <div className="flex min-w-0 items-center gap-2 text-sm">
@@ -211,7 +213,11 @@ function ToolStepItem({ step }: { step: ToolStep }) {
         <span className="min-w-0 flex-1 truncate font-medium text-primary-800">
           {stepTitle(step)}
         </span>
-        <StepRightContent step={step} />
+        <StepRightContent
+          step={step}
+          sourcesExpanded={sourcesExpanded}
+          onToggleSources={() => setSourcesExpanded((value) => !value)}
+        />
       </div>
       {details ? (
         <div className="ml-8 rounded-lg border border-primary-200/70 bg-surface/80 p-3 text-xs text-primary-700 shadow-xs/5">
@@ -221,8 +227,24 @@ function ToolStepItem({ step }: { step: ToolStep }) {
     </div>
   )
 }
-function StepRightContent({ step }: { step: ToolStep }) {
-  if (step.kind === 'web') return <WebResultChips step={step} />
+function StepRightContent({
+  step,
+  sourcesExpanded,
+  onToggleSources,
+}: {
+  step: ToolStep
+  sourcesExpanded: boolean
+  onToggleSources: () => void
+}) {
+  if (step.kind === 'web') {
+    return (
+      <WebResultChips
+        step={step}
+        expanded={sourcesExpanded}
+        onToggleExpanded={onToggleSources}
+      />
+    )
+  }
   return (
     <span className="shrink-0 text-xs text-primary-500">
       {stepRightLabel(step)}
@@ -230,20 +252,26 @@ function StepRightContent({ step }: { step: ToolStep }) {
   )
 }
 
-function stepDetails(step: ToolStep) {
-  if (step.kind === 'web') return null
+function stepDetails(step: ToolStep, sourcesExpanded = false) {
+  if (step.kind === 'web') {
+    return sourcesExpanded ? <WebSourceCards step={step} /> : null
+  }
   if (step.toolPart.type === 'math_eval') return null
   return <GenericToolStepDetails toolPart={step.toolPart} />
 }
 
 function WebResultChips({
   step,
+  expanded,
+  onToggleExpanded,
 }: {
   step: Extract<ToolStep, { kind: 'web' }>
+  expanded: boolean
+  onToggleExpanded: () => void
 }) {
   const events = webToolEventCardsFromMessage(step.message, step.toolCallIds)
   const sources = searchSourceCardsFromMessage(step.message, step.toolCallIds)
-  const chips = sources.length > 0 ? sources.slice(0, 4) : []
+  const chips = sources.slice(0, 4)
   const event = events[events.length - 1]
   if (chips.length === 0) {
     return (
@@ -289,15 +317,62 @@ function WebResultChips({
           </TooltipRoot>
         ))}
         {sources.length > chips.length ? (
-          <span className="rounded-full bg-primary-100 px-2 py-0.5 text-xs text-primary-500">
-            +{sources.length - chips.length}
-          </span>
+          <button
+            type="button"
+            className="rounded-full bg-primary-100 px-2 py-0.5 text-xs text-primary-500 transition-colors hover:bg-primary-200 hover:text-primary-700"
+            onClick={(event) => {
+              event.preventDefault()
+              event.stopPropagation()
+              onToggleExpanded()
+            }}
+          >
+            {expanded ? 'hide sources' : `+${sources.length - chips.length}`}
+          </button>
         ) : null}
         {event?.state === 'running' ? (
           <span className="text-xs text-primary-500">running…</span>
         ) : null}
       </div>
     </TooltipProvider>
+  )
+}
+
+function WebSourceCards({
+  step,
+}: {
+  step: Extract<ToolStep, { kind: 'web' }>
+}) {
+  const sources = searchSourceCardsFromMessage(step.message, step.toolCallIds)
+  if (sources.length === 0) return null
+  return (
+    <div className="grid gap-2 sm:grid-cols-2">
+      {sources.map((source) => {
+        const host = hostnameFromURL(source.url)
+        return (
+          <a
+            key={source.url}
+            href={source.url}
+            target="_blank"
+            rel="noreferrer"
+            className="group rounded-lg border border-primary-200/80 bg-surface/90 p-2.5 shadow-xs/5 transition-colors hover:border-primary-300 hover:bg-surface"
+          >
+            <div className="text-sm font-medium text-primary-900 group-hover:underline">
+              <span className="line-clamp-1">{source.title}</span>
+            </div>
+            {host ? (
+              <div className="mt-0.5 truncate font-mono text-xs text-primary-500">
+                {host}
+              </div>
+            ) : null}
+            {source.content ? (
+              <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-primary-700">
+                {source.content}
+              </p>
+            ) : null}
+          </a>
+        )
+      })}
+    </div>
   )
 }
 

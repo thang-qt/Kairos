@@ -1308,3 +1308,29 @@ func TestStopSessionRunPublishesAbortedEventAndKeepsPartialAssistantHistory(t *t
 		t.Fatalf("assistant content after stop = %T, want partial content", historyPayload.Messages[1]["content"])
 	}
 }
+
+func TestBuildAssistantToolLoopStreamingContentOrdersNewThinkingAfterTools(t *testing.T) {
+	content := buildAssistantToolLoopStreamingContent(
+		[]roundSummary{{Round: 0, Thinking: "first round thinking", ToolIDs: []string{"call-1"}}},
+		[]ProviderToolCall{{ID: "call-1", Name: "web_search", Args: map[string]any{"query": "kairos"}}},
+		"second round thinking",
+		[]ProviderToolCall{{ID: "call-2", Name: "web_fetch", Args: map[string]any{"url": "https://example.com"}}},
+		"",
+	)
+
+	if len(content) != 4 {
+		t.Fatalf("content length = %d, want 4", len(content))
+	}
+	if content[0].Type != "thinking" || content[0].Thinking != "first round thinking" {
+		t.Fatalf("content[0] = %#v, want first thinking", content[0])
+	}
+	if content[1].Type != "toolCall" || content[1].ID != "call-1" {
+		t.Fatalf("content[1] = %#v, want first tool call", content[1])
+	}
+	if content[2].Type != "thinking" || content[2].Thinking != "second round thinking" {
+		t.Fatalf("content[2] = %#v, want second thinking after first tool", content[2])
+	}
+	if content[3].Type != "toolCall" || content[3].ID != "call-2" {
+		t.Fatalf("content[3] = %#v, want second tool call", content[3])
+	}
+}
