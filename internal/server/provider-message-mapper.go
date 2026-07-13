@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 )
 
 func buildUserMessage(
@@ -256,6 +257,33 @@ func buildRunEventWithSession(
 	}
 }
 
+func buildEffectiveSystemPrompt(
+	systemPrompt string,
+	history []map[string]any,
+	now time.Time,
+) string {
+	currentTime := now.UTC().Format("2006-01-02 15:04:05 MST")
+	runtimeLines := []string{
+		"Runtime context:",
+		fmt.Sprintf("- Current time: %s.", currentTime),
+	}
+	if idleGap := previousMessageIdleGap(history); idleGap >= 24*time.Hour {
+		runtimeLines = append(
+			runtimeLines,
+			fmt.Sprintf(
+				"- The previous message in this chat was %s ago. If relevant, gently account for the time gap without overemphasizing it.",
+				formatApproximateDuration(idleGap),
+			),
+		)
+	}
+
+	runtimeContext := strings.Join(runtimeLines, "\n")
+	if normalizedSystemPrompt := strings.TrimSpace(systemPrompt); normalizedSystemPrompt != "" {
+		return normalizedSystemPrompt + "\n\n" + runtimeContext
+	}
+	return runtimeContext
+}
+
 func buildProviderMessages(
 	history []map[string]any,
 	systemPrompt string,
@@ -340,6 +368,33 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func previousMessageIdleGap(messages []map[string]any) time.Duration {
+	if len(messages) < 2 {
+		return 0
+	}
+	currentTimestamp := int64Value(messages[len(messages)-1]["timestamp"])
+	previousTimestamp := int64Value(messages[len(messages)-2]["timestamp"])
+	if currentTimestamp <= 0 || previousTimestamp <= 0 || currentTimestamp <= previousTimestamp {
+		return 0
+	}
+	return time.Duration(currentTimestamp-previousTimestamp) * time.Millisecond
+}
+
+func formatApproximateDuration(duration time.Duration) string {
+	days := int(duration.Hours() / 24)
+	if days >= 2 {
+		return fmt.Sprintf("about %d days", days)
+	}
+	if days == 1 {
+		return "about 1 day"
+	}
+	hours := int(duration.Hours())
+	if hours >= 2 {
+		return fmt.Sprintf("about %d hours", hours)
+	}
+	return "about 1 hour"
 }
 
 func latestMessageTimestamp(messages []map[string]any) int64 {

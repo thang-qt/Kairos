@@ -74,7 +74,8 @@ func (service *ChatRunService) executeRun(
 		Description: provider.Record.Label,
 	}
 	minAssistantTimestamp := latestMessageTimestamp(history) + 1
-	messages := buildProviderMessages(history, input.SystemPrompt)
+	effectiveSystemPrompt := buildEffectiveSystemPrompt(input.SystemPrompt, history, time.Now())
+	messages := buildProviderMessages(history, effectiveSystemPrompt)
 	tools := buildRuntimeTools(input.WebSearch, input.MathTools)
 	webRuntime := NewWebToolRuntimeFromEnv()
 	if input.WebSearch && service.webSettings != nil {
@@ -96,7 +97,7 @@ func (service *ChatRunService) executeRun(
 			provider,
 			ChatGenerationRequest{
 				Model:        model.ID,
-				SystemPrompt: input.SystemPrompt,
+				SystemPrompt: effectiveSystemPrompt,
 				Messages:     messages,
 				Tools:        tools,
 				ToolChoice:   toolChoiceForTools(tools),

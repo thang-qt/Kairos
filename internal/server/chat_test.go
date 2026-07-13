@@ -749,8 +749,8 @@ func TestSendMessagePassesModelSettingsToProvider(t *testing.T) {
 	if capturedRequest.Model != "test-model" {
 		t.Fatalf("request model = %q, want test-model", capturedRequest.Model)
 	}
-	if capturedRequest.SystemPrompt != "You are terse and precise." {
-		t.Fatalf("request system prompt = %q, want configured system prompt", capturedRequest.SystemPrompt)
+	if !strings.HasPrefix(capturedRequest.SystemPrompt, "You are terse and precise.\n\nRuntime context:\n- Current time: ") {
+		t.Fatalf("request system prompt = %q, want configured system prompt with runtime context", capturedRequest.SystemPrompt)
 	}
 	if capturedRequest.WebSearch == nil {
 		t.Fatalf("request web search = nil, want enabled")
@@ -761,8 +761,8 @@ func TestSendMessagePassesModelSettingsToProvider(t *testing.T) {
 	if capturedRequest.Messages[0].Role != "system" {
 		t.Fatalf("first request message role = %q, want system", capturedRequest.Messages[0].Role)
 	}
-	if capturedRequest.Messages[0].Parts[0].Text != "You are terse and precise." {
-		t.Fatalf("first request message text = %q, want configured system prompt", capturedRequest.Messages[0].Parts[0].Text)
+	if capturedRequest.Messages[0].Parts[0].Text != capturedRequest.SystemPrompt {
+		t.Fatalf("first request message text = %q, want effective system prompt", capturedRequest.Messages[0].Parts[0].Text)
 	}
 }
 
@@ -838,15 +838,26 @@ func (driver fakeProviderDriver) ListModels(
 	return append([]ProviderModel(nil), driver.models...), nil
 }
 
+func isFakeTitleGenerationRequest(request ChatGenerationRequest) bool {
+	if len(request.Messages) == 0 || strings.TrimSpace(request.Messages[0].Role) != "system" {
+		return false
+	}
+	if len(request.Messages[0].Parts) == 0 {
+		return false
+	}
+	return strings.Contains(
+		request.Messages[0].Parts[0].Text,
+		"conversation title generator",
+	)
+}
+
 func (driver fakeProviderDriver) GenerateChatStream(
 	ctx context.Context,
 	_ resolvedProvider,
 	request ChatGenerationRequest,
 	onDelta func(delta ChatGenerationDelta) error,
 ) (ChatGenerationResult, error) {
-	isTitleRequest :=
-		len(request.Messages) > 0 &&
-			strings.TrimSpace(request.Messages[0].Role) == "system"
+	isTitleRequest := isFakeTitleGenerationRequest(request)
 	output := driver.output
 	if isTitleRequest && driver.titleOutput != "" {
 		output = driver.titleOutput
