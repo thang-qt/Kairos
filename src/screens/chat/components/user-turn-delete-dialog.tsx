@@ -9,6 +9,15 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 
+const maxDeletePreviewLength = 160
+
+function formatDeletePreview(value: string): string {
+  const normalized = value.trim().replace(/\s+/g, ' ')
+  if (normalized.length === 0) return 'this message'
+  if (normalized.length <= maxDeletePreviewLength) return normalized
+  return normalized.slice(0, maxDeletePreviewLength - 1).trimEnd() + '…'
+}
+
 type UserTurnDeleteDialogProps = {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -24,8 +33,7 @@ export function UserTurnDeleteDialog({
   onConfirm,
   onCancel,
 }: UserTurnDeleteDialogProps) {
-  const preview =
-    messagePreview.trim().length > 0 ? messagePreview.trim() : 'this message'
+  const preview = formatDeletePreview(messagePreview)
 
   return (
     <AlertDialogRoot open={open} onOpenChange={onOpenChange}>
