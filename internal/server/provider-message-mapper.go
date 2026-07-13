@@ -261,8 +261,10 @@ func buildEffectiveSystemPrompt(
 	systemPrompt string,
 	history []map[string]any,
 	now time.Time,
+	clientTime string,
+	clientTimeZone string,
 ) string {
-	currentTime := now.UTC().Format("2006-01-02 15:04:05 MST")
+	currentTime := formatRuntimeCurrentTime(now, clientTime, clientTimeZone)
 	runtimeLines := []string{
 		"Runtime context:",
 		fmt.Sprintf("- Current time: %s.", currentTime),
@@ -368,6 +370,21 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func formatRuntimeCurrentTime(now time.Time, clientTime string, clientTimeZone string) string {
+	parsedClientTime, err := time.Parse(time.RFC3339Nano, strings.TrimSpace(clientTime))
+	if err == nil {
+		if location, loadErr := time.LoadLocation(strings.TrimSpace(clientTimeZone)); loadErr == nil {
+			return fmt.Sprintf(
+				"%s (%s, from the user's browser)",
+				parsedClientTime.In(location).Format("2006-01-02 15:04:05 MST"),
+				strings.TrimSpace(clientTimeZone),
+			)
+		}
+		return parsedClientTime.UTC().Format("2006-01-02 15:04:05 MST") + " (from the user's browser)"
+	}
+	return now.UTC().Format("2006-01-02 15:04:05 MST") + " (server fallback)"
 }
 
 func previousMessageIdleGap(messages []map[string]any) time.Duration {

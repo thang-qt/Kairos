@@ -13,6 +13,20 @@ type SessionsPayload = {
   sessions: Array<SessionMeta>
 }
 
+type ClientRuntimeContext = {
+  clientTime: string
+  clientTimeZone?: string
+}
+
+function getClientRuntimeContext(): ClientRuntimeContext {
+  const clientTime = new Date().toISOString()
+  const clientTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone
+  return {
+    clientTime,
+    clientTimeZone,
+  }
+}
+
 type SessionMutationPayload = {
   sessionKey: string
   key: string
@@ -73,6 +87,7 @@ export function createHTTPChatBackend(): ChatBackend {
       return parseJSON<HistoryResponse>(response)
     },
     async createConversation(input?: ChatCreateConversationInput) {
+      const runtimeContext = getClientRuntimeContext()
       const response = await fetch('/api/sessions', {
         method: 'POST',
         credentials: 'include',
@@ -89,6 +104,9 @@ export function createHTTPChatBackend(): ChatBackend {
           advanced: input?.advanced,
           idempotencyKey: input?.idempotencyKey,
           clientId: input?.clientId,
+          clientTime: input?.clientTime || runtimeContext.clientTime,
+          clientTimeZone:
+            input?.clientTimeZone || runtimeContext.clientTimeZone,
           attachments: input?.attachments,
         }),
       })
@@ -147,6 +165,7 @@ export function createHTTPChatBackend(): ChatBackend {
       await parseJSON(response)
     },
     async sendMessage(input) {
+      const runtimeContext = getClientRuntimeContext()
       const response = await fetch(
         `/api/sessions/${encodeURIComponent(input.friendlyId)}/messages`,
         {
@@ -164,6 +183,9 @@ export function createHTTPChatBackend(): ChatBackend {
             advanced: input.advanced,
             idempotencyKey: input.idempotencyKey,
             clientId: input.clientId,
+            clientTime: input.clientTime || runtimeContext.clientTime,
+            clientTimeZone:
+              input.clientTimeZone || runtimeContext.clientTimeZone,
             attachments: input.attachments,
           }),
         },
@@ -187,6 +209,7 @@ export function createHTTPChatBackend(): ChatBackend {
       return parseJSON<SessionMutationPayload>(response)
     },
     async editUserMessage(input) {
+      const runtimeContext = getClientRuntimeContext()
       const response = await fetch(
         `/api/sessions/${encodeURIComponent(input.sourceFriendlyId)}/messages/${encodeURIComponent(input.messageId)}/edit`,
         {
@@ -203,6 +226,9 @@ export function createHTTPChatBackend(): ChatBackend {
             mathTools: input.mathTools,
             advanced: input.advanced,
             clientId: input.clientId,
+            clientTime: input.clientTime || runtimeContext.clientTime,
+            clientTimeZone:
+              input.clientTimeZone || runtimeContext.clientTimeZone,
           }),
         },
       )

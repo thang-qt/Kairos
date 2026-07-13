@@ -20,6 +20,8 @@ type createSessionRequest struct {
 	Advanced       *ChatAdvancedOptions `json:"advanced"`
 	IdempotencyKey string               `json:"idempotencyKey"`
 	ClientID       string               `json:"clientId"`
+	ClientTime     string               `json:"clientTime"`
+	ClientTimeZone string               `json:"clientTimeZone"`
 	Attachments    []AttachmentPayload  `json:"attachments"`
 }
 
@@ -32,6 +34,8 @@ type sendMessageRequest struct {
 	Advanced       *ChatAdvancedOptions `json:"advanced"`
 	IdempotencyKey string               `json:"idempotencyKey"`
 	ClientID       string               `json:"clientId"`
+	ClientTime     string               `json:"clientTime"`
+	ClientTimeZone string               `json:"clientTimeZone"`
 	Attachments    []AttachmentPayload  `json:"attachments"`
 }
 
@@ -104,6 +108,8 @@ func (app *App) handleCreateSession(writer http.ResponseWriter, request *http.Re
 			Advanced:       payload.Advanced,
 			IdempotencyKey: payload.IdempotencyKey,
 			ClientID:       payload.ClientID,
+			ClientTime:     payload.ClientTime,
+			ClientTimeZone: payload.ClientTimeZone,
 			Attachments:    payload.Attachments,
 		})
 		if err != nil {
@@ -247,6 +253,8 @@ func (app *App) handleSendMessage(writer http.ResponseWriter, request *http.Requ
 		Advanced:       payload.Advanced,
 		IdempotencyKey: payload.IdempotencyKey,
 		ClientID:       payload.ClientID,
+		ClientTime:     payload.ClientTime,
+		ClientTimeZone: payload.ClientTimeZone,
 		Attachments:    payload.Attachments,
 	})
 	if err != nil {
@@ -327,15 +335,17 @@ func (app *App) handleEditUserMessage(writer http.ResponseWriter, request *http.
 	}
 
 	result, err := app.runs.StartRun(request.Context(), user.ID, SendMessageInput{
-		FriendlyID:   session.FriendlyID,
-		Message:      payload.Message,
-		Model:        payload.Model,
-		SystemPrompt: payload.SystemPrompt,
-		WebSearch:    payload.WebSearch,
-		MathTools:    payload.MathTools,
-		Advanced:     payload.Advanced,
-		ClientID:     payload.ClientID,
-		Attachments:  attachments,
+		FriendlyID:     session.FriendlyID,
+		Message:        payload.Message,
+		Model:          payload.Model,
+		SystemPrompt:   payload.SystemPrompt,
+		WebSearch:      payload.WebSearch,
+		MathTools:      payload.MathTools,
+		Advanced:       payload.Advanced,
+		ClientID:       payload.ClientID,
+		ClientTime:     payload.ClientTime,
+		ClientTimeZone: payload.ClientTimeZone,
+		Attachments:    attachments,
 	})
 	if err != nil {
 		switch {

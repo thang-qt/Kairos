@@ -22,6 +22,8 @@ type SendMessageInput struct {
 	Advanced       *ChatAdvancedOptions `json:"advanced"`
 	IdempotencyKey string               `json:"idempotencyKey"`
 	ClientID       string               `json:"clientId"`
+	ClientTime     string               `json:"clientTime"`
+	ClientTimeZone string               `json:"clientTimeZone"`
 	Attachments    []AttachmentPayload  `json:"attachments"`
 }
 

@@ -74,7 +74,7 @@ func (service *ChatRunService) executeRun(
 		Description: provider.Record.Label,
 	}
 	minAssistantTimestamp := latestMessageTimestamp(history) + 1
-	effectiveSystemPrompt := buildEffectiveSystemPrompt(input.SystemPrompt, history, time.Now())
+	effectiveSystemPrompt := buildEffectiveSystemPrompt(input.SystemPrompt, history, time.Now(), input.ClientTime, input.ClientTimeZone)
 	messages := buildProviderMessages(history, effectiveSystemPrompt)
 	tools := buildRuntimeTools(input.WebSearch, input.MathTools)
 	webRuntime := NewWebToolRuntimeFromEnv()

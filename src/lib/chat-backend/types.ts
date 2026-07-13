@@ -35,6 +35,8 @@ export type ChatSendMessageInput = {
   advanced?: ChatRequestAdvancedSettings
   idempotencyKey?: string
   clientId?: string
+  clientTime?: string
+  clientTimeZone?: string
   attachments?: Array<ChatAttachmentPayload>
 }
 
@@ -48,6 +50,8 @@ export type ChatCreateConversationInput = {
   advanced?: ChatRequestAdvancedSettings
   idempotencyKey?: string
   clientId?: string
+  clientTime?: string
+  clientTimeZone?: string
   attachments?: Array<ChatAttachmentPayload>
 }
 
@@ -90,6 +94,8 @@ export type ChatEditUserMessageInput = {
   mathTools?: boolean
   advanced?: ChatRequestAdvancedSettings
   clientId?: string
+  clientTime?: string
+  clientTimeZone?: string
 }
 
 export type ChatDeleteUserMessageInput = {
