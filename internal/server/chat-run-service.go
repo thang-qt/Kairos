@@ -152,6 +152,11 @@ func (service *ChatRunService) StartRun(
 	}
 	defer transaction.Rollback()
 
+	session, err = service.chat.removeTrailingUserMessageExec(ctx, transaction, session)
+	if err != nil {
+		return SendMessageResult{}, err
+	}
+
 	if _, err := service.chat.appendMessageWithOptionsExec(
 		ctx,
 		transaction,

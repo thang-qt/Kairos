@@ -68,6 +68,7 @@ type appendMessageOptions struct {
 
 type sqlExecutor interface {
 	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
 }
 
 func NewChatService(db *sql.DB) *ChatService {
@@ -456,6 +457,86 @@ func (service *ChatService) appendMessageWithOptions(
 		timestamp,
 		options,
 	)
+}
+
+func (service *ChatService) removeTrailingUserMessageExec(
+	ctx context.Context,
+	exec sqlExecutor,
+	session sessionRecord,
+) (sessionRecord, error) {
+	var storageID string
+	var messageJSON string
+	var timestamp int64
+	err := exec.QueryRowContext(ctx, `
+		SELECT id, message_json, timestamp
+		FROM chat_messages
+		WHERE session_id = ?
+		ORDER BY timestamp DESC, created_at DESC, id DESC
+		LIMIT 1
+	`, session.ID).Scan(&storageID, &messageJSON, &timestamp)
+	if errors.Is(err, sql.ErrNoRows) {
+		return session, nil
+	}
+	if err != nil {
+		return sessionRecord{}, fmt.Errorf("load trailing message: %w", err)
+	}
+
+	var message map[string]any
+	if err := json.Unmarshal([]byte(messageJSON), &message); err != nil {
+		return sessionRecord{}, fmt.Errorf("decode trailing message: %w", err)
+	}
+	if stringValueFromMap(message, "role") != "user" {
+		return session, nil
+	}
+
+	if _, err := exec.ExecContext(ctx, `
+		DELETE FROM chat_messages
+		WHERE session_id = ? AND id = ?
+	`, session.ID, storageID); err != nil {
+		return sessionRecord{}, fmt.Errorf("delete trailing user message: %w", err)
+	}
+
+	var previousMessageJSON string
+	var previousTimestamp int64
+	previousErr := exec.QueryRowContext(ctx, `
+		SELECT message_json, timestamp
+		FROM chat_messages
+		WHERE session_id = ?
+		ORDER BY timestamp DESC, created_at DESC, id DESC
+		LIMIT 1
+	`, session.ID).Scan(&previousMessageJSON, &previousTimestamp)
+
+	lastMessageJSON := sql.NullString{}
+	updatedAt := time.Now().UnixMilli()
+	if previousErr == nil {
+		lastMessageJSON = nullableString(previousMessageJSON)
+		updatedAt = previousTimestamp
+	} else if !errors.Is(previousErr, sql.ErrNoRows) {
+		return sessionRecord{}, fmt.Errorf("load previous message after dedupe: %w", previousErr)
+	}
+
+	totalTokens := maxInt64(0, session.TotalTokens-approximateMessageTokens(message))
+	derivedTitle := session.DerivedTitle
+	if !lastMessageJSON.Valid {
+		derivedTitle = sql.NullString{}
+	}
+	if _, err := exec.ExecContext(ctx, `
+		UPDATE chat_sessions
+		SET
+			last_message_json = ?,
+			updated_at = ?,
+			derived_title = ?,
+			total_tokens = ?
+		WHERE id = ? AND user_id = ?
+	`, lastMessageJSON, updatedAt, derivedTitle, totalTokens, session.ID, session.UserID); err != nil {
+		return sessionRecord{}, fmt.Errorf("update session after dedupe: %w", err)
+	}
+
+	session.LastMessageJSON = lastMessageJSON
+	session.UpdatedAt = updatedAt
+	session.DerivedTitle = derivedTitle
+	session.TotalTokens = totalTokens
+	return session, nil
 }
 
 func (service *ChatService) appendMessageWithOptionsExec(

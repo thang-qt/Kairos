@@ -332,6 +332,61 @@ func TestDeleteUserMessageUpdatesThread(t *testing.T) {
 	}
 }
 
+func TestSendMessageReplacesTrailingUserMessage(t *testing.T) {
+	testServer := newTestApp(t, func(config *Config) {
+		config.SystemProviderEnabled = true
+		config.SystemProviderLabel = "Server Default"
+		config.SystemProviderStaticModels = []string{"test-model"}
+	})
+	testServer.app.providers.drivers[openRouterProviderKind] = fakeProviderDriver{
+		models: []ProviderModel{
+			{
+				ID:            "test-model",
+				Object:        "model",
+				OwnedBy:       "test",
+				ProviderRef:   "system:system-default",
+				ProviderLabel: "Server Default",
+			},
+		},
+		output: "Second answer",
+	}
+	cookie := signupAndRequireCookie(t, testServer, "dedupe-user-turn@example.com")
+
+	createResponse := performJSONRequest(t, testServer.handler, http.MethodPost, "/api/sessions", createSessionRequest{
+		Label: "Dedupe Source",
+	}, []*http.Cookie{cookie})
+	assertStatusCode(t, createResponse, http.StatusCreated)
+
+	var created sessionMutationResponse
+	decodeResponseJSON(t, createResponse, &created)
+	seedSessionMessages(t, testServer, created.SessionKey, []map[string]any{
+		newUserTextMessage("First draft"),
+	})
+
+	sendResponse := performJSONRequest(t, testServer.handler, http.MethodPost, "/api/sessions/"+created.FriendlyID+"/messages", sendMessageRequest{
+		Message: "Second draft",
+		Model:   "test-model",
+	}, []*http.Cookie{cookie})
+	assertStatusCode(t, sendResponse, http.StatusOK)
+
+	waitForAssistantMessage(t, testServer, cookie, created.FriendlyID)
+
+	historyResponse := performJSONRequest(t, testServer.handler, http.MethodGet, "/api/sessions/"+created.FriendlyID+"/history", nil, []*http.Cookie{cookie})
+	assertStatusCode(t, historyResponse, http.StatusOK)
+
+	var historyPayload HistoryPayload
+	decodeResponseJSON(t, historyResponse, &historyPayload)
+	if len(historyPayload.Messages) != 2 {
+		t.Fatalf("history message count after dedupe = %d, want 2", len(historyPayload.Messages))
+	}
+	if historyPayload.Messages[0]["role"] != "user" {
+		t.Fatalf("first message role = %v, want user", historyPayload.Messages[0]["role"])
+	}
+	if text := textContentFromMessage(historyPayload.Messages[0]); text != "Second draft" {
+		t.Fatalf("first user message text = %q, want second draft", text)
+	}
+}
+
 func TestEditUserMessageUpdatesThreadAndRuns(t *testing.T) {
 	testServer := newTestApp(t, func(config *Config) {
 		config.SystemProviderEnabled = true
