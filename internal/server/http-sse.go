@@ -3,7 +3,10 @@ package server
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
+	"strconv"
+	"strings"
 )
 
 func (app *App) handleSessionEvents(writer http.ResponseWriter, request *http.Request) {
@@ -38,10 +41,22 @@ func (app *App) handleSessionEvents(writer http.ResponseWriter, request *http.Re
 	_, _ = writer.Write([]byte(": connected\n\n"))
 	flusher.Flush()
 
-	streamErr := app.runs.StreamSession(request.Context(), user.ID, friendlyID, func(event ChatEvent) error {
+	afterCursor := int64(0)
+	if rawLastEventID := strings.TrimSpace(request.Header.Get("Last-Event-ID")); rawLastEventID != "" {
+		if parsed, err := strconv.ParseInt(rawLastEventID, 10, 64); err == nil && parsed > 0 {
+			afterCursor = parsed
+		}
+	}
+
+	streamErr := app.runs.StreamSessionFromCursor(request.Context(), user.ID, friendlyID, afterCursor, func(event ChatEvent) error {
 		payload, err := json.Marshal(event)
 		if err != nil {
 			return err
+		}
+		if event.Cursor > 0 {
+			if _, err := fmt.Fprintf(writer, "id: %d\n", event.Cursor); err != nil {
+				return err
+			}
 		}
 		if _, err := writer.Write([]byte("data: ")); err != nil {
 			return err

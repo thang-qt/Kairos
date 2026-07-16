@@ -6,19 +6,22 @@ import (
 )
 
 type ChatEvent struct {
-	RunID      string          `json:"runId,omitempty"`
-	SessionKey string          `json:"sessionKey,omitempty"`
-	FriendlyID string          `json:"friendlyId,omitempty"`
-	State      string          `json:"state,omitempty"`
-	Error      string          `json:"error,omitempty"`
-	Message    map[string]any  `json:"message,omitempty"`
-	Session    *SessionSummary `json:"session,omitempty"`
+	Cursor       int64           `json:"cursor,omitempty"`
+	RunID        string          `json:"runId,omitempty"`
+	SessionKey   string          `json:"sessionKey,omitempty"`
+	FriendlyID   string          `json:"friendlyId,omitempty"`
+	State        string          `json:"state,omitempty"`
+	Error        string          `json:"error,omitempty"`
+	ActiveRunIDs []string        `json:"activeRunIds,omitempty"`
+	Message      map[string]any  `json:"message,omitempty"`
+	Session      *SessionSummary `json:"session,omitempty"`
 }
 
 type RunBroker struct {
-	mu           sync.RWMutex
+	mu           sync.Mutex
 	subscribers  map[string]map[chan ChatEvent]struct{}
 	recentEvents map[string][]bufferedChatEvent
+	cursors      map[string]int64
 }
 
 type bufferedChatEvent struct {
@@ -34,63 +37,79 @@ func NewRunBroker() *RunBroker {
 	return &RunBroker{
 		subscribers:  make(map[string]map[chan ChatEvent]struct{}),
 		recentEvents: make(map[string][]bufferedChatEvent),
+		cursors:      make(map[string]int64),
 	}
 }
 
 func (broker *RunBroker) Publish(sessionID string, event ChatEvent) {
 	broker.mu.Lock()
+	broker.cursors[sessionID]++
+	event.Cursor = broker.cursors[sessionID]
 	broker.recentEvents[sessionID] = broker.appendRecentEvent(
 		broker.recentEvents[sessionID],
 		event,
 	)
-	sessionSubscribers := broker.subscribers[sessionID]
-	channels := make([]chan ChatEvent, 0, len(sessionSubscribers))
-	for channel := range sessionSubscribers {
-		channels = append(channels, channel)
-	}
-	broker.mu.Unlock()
-
-	for _, channel := range channels {
+	for channel := range broker.subscribers[sessionID] {
 		select {
 		case channel <- event:
 		default:
+			delete(broker.subscribers[sessionID], channel)
+			close(channel)
 		}
 	}
+	if len(broker.subscribers[sessionID]) == 0 {
+		delete(broker.subscribers, sessionID)
+	}
+	broker.mu.Unlock()
 }
 
-func (broker *RunBroker) Subscribe(sessionID string) (<-chan ChatEvent, func()) {
-	channel := make(chan ChatEvent, 16)
-
+func (broker *RunBroker) Subscribe(
+	sessionID string,
+	afterCursor int64,
+	reconcile ChatEvent,
+) (chan ChatEvent, func()) {
 	broker.mu.Lock()
-	if broker.subscribers[sessionID] == nil {
-		broker.subscribers[sessionID] = make(map[chan ChatEvent]struct{})
-	}
-	broker.subscribers[sessionID][channel] = struct{}{}
 	recentEvents := broker.pruneRecentEvents(broker.recentEvents[sessionID])
 	if len(recentEvents) == 0 {
 		delete(broker.recentEvents, sessionID)
 	} else {
 		broker.recentEvents[sessionID] = recentEvents
 	}
-	broker.mu.Unlock()
 
-	for _, recentEvent := range recentEvents {
-		select {
-		case channel <- recentEvent.event:
-		default:
-		}
+	replay := make([]ChatEvent, 0, len(recentEvents)+1)
+	if reconcile.State != "" {
+		replay = append(replay, reconcile)
 	}
+	for _, recentEvent := range recentEvents {
+		if afterCursor > 0 && recentEvent.event.Cursor <= afterCursor {
+			continue
+		}
+		replay = append(replay, recentEvent.event)
+	}
+
+	bufferSize := max(16, len(replay)+16)
+	channel := make(chan ChatEvent, bufferSize)
+	for _, event := range replay {
+		channel <- event
+	}
+	if broker.subscribers[sessionID] == nil {
+		broker.subscribers[sessionID] = make(map[chan ChatEvent]struct{})
+	}
+	broker.subscribers[sessionID][channel] = struct{}{}
+	broker.mu.Unlock()
 
 	return channel, func() {
 		broker.mu.Lock()
 		if sessionSubscribers := broker.subscribers[sessionID]; sessionSubscribers != nil {
-			delete(sessionSubscribers, channel)
+			if _, ok := sessionSubscribers[channel]; ok {
+				delete(sessionSubscribers, channel)
+				close(channel)
+			}
 			if len(sessionSubscribers) == 0 {
 				delete(broker.subscribers, sessionID)
 			}
 		}
 		broker.mu.Unlock()
-		close(channel)
 	}
 }
 

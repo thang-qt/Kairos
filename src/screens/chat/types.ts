@@ -43,6 +43,7 @@ export type MessageContent =
   | ImageContent
 
 export type GatewayMessage = {
+  id?: string
   role?: string
   model?: string
   modelName?: string
@@ -53,8 +54,12 @@ export type GatewayMessage = {
   details?: Record<string, unknown>
   isError?: boolean
   timestamp?: number
+  runId?: string
+  roundIndex?: number
+  messageIndex?: number
   [key: string]: unknown
   __optimisticId?: string
+  __streamRunId?: string | null
 }
 
 export type SessionSummary = {

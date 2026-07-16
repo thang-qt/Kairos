@@ -126,11 +126,13 @@ export type ChatConversationRunResult = ChatConversationResult & {
 }
 
 export type ChatEvent = {
+  cursor?: number
   runId?: string
   sessionKey?: string
   friendlyId?: string
-  state?: 'delta' | 'final' | 'error' | 'aborted' | 'title'
+  state?: 'delta' | 'final' | 'error' | 'aborted' | 'title' | 'reconcile'
   error?: string
+  activeRunIds?: Array<string>
   message?: GatewayMessage
   session?: SessionMeta
 }
@@ -139,6 +141,8 @@ export type ChatSubscription = {
   sessionKey?: string
   friendlyId?: string
   onEvent: (event: ChatEvent) => void
+  onReconnect?: () => void
+  onReconcile?: (event: ChatEvent) => void
 }
 
 export type ChatBackend = {

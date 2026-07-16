@@ -50,12 +50,17 @@ type runRecord struct {
 	AssistantMessageID string
 }
 
+type toolExecutor interface {
+	Execute(ctx context.Context, call ProviderToolCall) (WebToolResult, error)
+}
+
 type ChatRunService struct {
 	db          *sql.DB
 	chat        *ChatService
 	providers   *ProviderService
 	webSettings *WebToolSettingsService
 	broker      *RunBroker
+	toolRuntime func(ctx context.Context, userID string, input SendMessageInput) (toolExecutor, error)
 	runMu       sync.Mutex
 	runCancels  map[string]context.CancelFunc
 	sessionRuns map[string]map[string]struct{}
@@ -68,7 +73,7 @@ func NewChatRunService(
 	webSettings *WebToolSettingsService,
 	broker *RunBroker,
 ) *ChatRunService {
-	return &ChatRunService{
+	service := &ChatRunService{
 		db:          db,
 		chat:        chat,
 		providers:   providers,
@@ -77,6 +82,24 @@ func NewChatRunService(
 		runCancels:  make(map[string]context.CancelFunc),
 		sessionRuns: make(map[string]map[string]struct{}),
 	}
+	service.toolRuntime = service.defaultToolRuntime
+	return service
+}
+
+func (service *ChatRunService) defaultToolRuntime(
+	ctx context.Context,
+	userID string,
+	input SendMessageInput,
+) (toolExecutor, error) {
+	runtime := NewWebToolRuntimeFromEnv()
+	if input.WebSearch && service.webSettings != nil {
+		resolvedRuntime, err := service.webSettings.ResolveRuntime(ctx, userID)
+		if err != nil {
+			return nil, err
+		}
+		runtime = resolvedRuntime
+	}
+	return runtime, nil
 }
 
 func (service *ChatRunService) StartRun(
@@ -223,12 +246,31 @@ func (service *ChatRunService) StreamSession(
 	friendlyID string,
 	onEvent func(ChatEvent) error,
 ) error {
+	return service.StreamSessionFromCursor(ctx, userID, friendlyID, 0, onEvent)
+}
+
+func (service *ChatRunService) StreamSessionFromCursor(
+	ctx context.Context,
+	userID string,
+	friendlyID string,
+	afterCursor int64,
+	onEvent func(ChatEvent) error,
+) error {
 	session, err := service.chat.findSessionByFriendlyID(ctx, userID, friendlyID)
 	if err != nil {
 		return err
 	}
 
-	channel, unsubscribe := service.broker.Subscribe(session.ID)
+	activeRunIDs, err := service.activeRunIDsForSession(ctx, session.ID)
+	if err != nil {
+		return err
+	}
+
+	channel, unsubscribe := service.broker.Subscribe(
+		session.ID,
+		afterCursor,
+		ChatEvent{State: "reconcile", ActiveRunIDs: activeRunIDs},
+	)
 	defer unsubscribe()
 
 	for {
@@ -271,20 +313,61 @@ func (service *ChatRunService) CancelSessionRuns(
 		return false, nil
 	}
 
-	cancels := make([]context.CancelFunc, 0, len(runIDs))
+	type runCancel struct {
+		runID  string
+		cancel context.CancelFunc
+	}
+	cancels := make([]runCancel, 0, len(runIDs))
 	for runID := range runIDs {
 		cancel := service.runCancels[runID]
 		if cancel != nil {
-			cancels = append(cancels, cancel)
+			cancels = append(cancels, runCancel{runID: runID, cancel: cancel})
 		}
 	}
 	service.runMu.Unlock()
 
-	for _, cancel := range cancels {
-		cancel()
+	stopped := false
+	for _, item := range cancels {
+		claimed, err := service.claimRunAborted(ctx, item.runID)
+		if err != nil {
+			return stopped, err
+		}
+		if claimed {
+			stopped = true
+		}
+		item.cancel()
 	}
 
-	return len(cancels) > 0, nil
+	return stopped || len(cancels) > 0, nil
+}
+
+func (service *ChatRunService) activeRunIDsForSession(
+	ctx context.Context,
+	sessionID string,
+) ([]string, error) {
+	rows, err := service.db.QueryContext(ctx, `
+		SELECT id
+		FROM chat_runs
+		WHERE session_id = ? AND status = 'running'
+		ORDER BY started_at ASC, id ASC
+	`, sessionID)
+	if err != nil {
+		return nil, fmt.Errorf("list active runs: %w", err)
+	}
+	defer rows.Close()
+
+	runIDs := []string{}
+	for rows.Next() {
+		var runID string
+		if err := rows.Scan(&runID); err != nil {
+			return nil, fmt.Errorf("scan active run: %w", err)
+		}
+		runIDs = append(runIDs, runID)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate active runs: %w", err)
+	}
+	return runIDs, nil
 }
 
 func (service *ChatRunService) insertRun(

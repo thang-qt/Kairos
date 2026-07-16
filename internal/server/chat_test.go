@@ -266,6 +266,15 @@ func TestCloneSessionCopiesMessages(t *testing.T) {
 	if clonedSummary == nil {
 		t.Fatal("cloned session summary not found")
 	}
+	if cloned.Title != "Clone Source (forked)" {
+		t.Fatalf("clone response title = %q, want forked source title", cloned.Title)
+	}
+	if clonedSummary.Title != "Clone Source (forked)" {
+		t.Fatalf("clone list title = %q, want forked source title", clonedSummary.Title)
+	}
+	if clonedSummary.Label != "" {
+		t.Fatalf("clone list label = %q, want empty", clonedSummary.Label)
+	}
 
 	historyResponse := performJSONRequest(t, testServer.handler, http.MethodGet, "/api/sessions/"+cloned.FriendlyID+"/history", nil, []*http.Cookie{cookie})
 	assertStatusCode(t, historyResponse, http.StatusOK)

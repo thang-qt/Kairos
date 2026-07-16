@@ -19,11 +19,14 @@ import { TypingIndicator } from '@/components/prompt-kit/typing-indicator'
 import { useChatSettingsStore } from '@/hooks/use-chat-settings'
 import { useChatScrollControl } from '../hooks/use-chat-scroll-control'
 import { useMessageNavigation } from '../hooks/use-message-navigation'
+import { cn } from '@/lib/utils'
 import {
+  activeAssistantRunBounds,
   findPreviousClonePoint,
-  collectLinkedToolCallIds,
-  isLinkedToolResultMessage,
+  projectChatMessages,
 } from './chat-message-list-utils'
+
+const EMPTY_ACTIVE_RUN_IDS = new Set<string>()
 
 type ChatMessageListProps = {
   messages: Array<GatewayMessage>
@@ -33,6 +36,7 @@ type ChatMessageListProps = {
   notice?: React.ReactNode
   noticePosition?: 'start' | 'end'
   waitingForResponse: boolean
+  activeRunIds?: ReadonlySet<string>
   sessionKey?: string
   modelLabelById: ReadonlyMap<string, string>
   pinToTop: boolean
@@ -66,6 +70,7 @@ function ChatMessageListComponent({
   notice,
   noticePosition = 'start',
   waitingForResponse,
+  activeRunIds = EMPTY_ACTIVE_RUN_IDS,
   sessionKey,
   modelLabelById,
   pinToTop,
@@ -105,87 +110,22 @@ function ChatMessageListComponent({
 
   const { displayMessages, toolChainsByFinalMessageID, toolResultsByCallId } =
     useMemo(() => {
-      const linkedToolCallIds = collectLinkedToolCallIds(messages)
-      const nextToolResultsByCallId = new Map<string, GatewayMessage>()
-
-      for (const message of messages) {
-        if (message.role !== 'toolResult') continue
-        const toolCallId = message.toolCallId
-        if (typeof toolCallId === 'string' && toolCallId.trim().length > 0) {
-          nextToolResultsByCallId.set(toolCallId, message)
-        }
-      }
-
-      const nextDisplayMessages: Array<GatewayMessage> = []
+      const projection = projectChatMessages(messages, activeRunIds)
       const activeIds = new Set<string>()
-
-      for (const message of messages) {
-        if (
-          isLinkedToolResultMessage(message, linkedToolCallIds) ||
-          (message.role === 'toolResult' &&
-            typeof message.toolCallId === 'string' &&
-            message.toolCallId.trim().length > 0)
-        ) {
-          continue
-        }
-
-        nextDisplayMessages.push(message)
-        const index = nextDisplayMessages.length - 1
-
-        if (message.role === 'user') {
+      projection.displayMessages.forEach(
+        function collectUserRefs(message, index) {
+          if (message.role !== 'user') return
           const messageId = getMessageKey(message, index)
           activeIds.add(messageId)
           getOrCreateUserTurnRef(messageId)
-        }
-      }
-
-      const toolChainsByFinalMessageID = new Map<
-        string,
-        Array<GatewayMessage>
-      >()
-      const groupedToolMessageIDs = new Set<string>()
-      let pendingToolTurns: Array<GatewayMessage> = []
-
-      for (const message of nextDisplayMessages) {
-        if (
-          message.role === 'assistant' &&
-          getToolCallsFromMessage(message).length > 0
-        ) {
-          pendingToolTurns.push(message)
-          continue
-        }
-        if (
-          message.role === 'assistant' &&
-          !waitingForResponse &&
-          !message.__streamRunId &&
-          pendingToolTurns.length > 0
-        ) {
-          const messageID = getGatewayMessageId(message)
-          if (messageID) {
-            toolChainsByFinalMessageID.set(messageID, pendingToolTurns)
-            for (const toolTurn of pendingToolTurns) {
-              const toolTurnID = getGatewayMessageId(toolTurn)
-              if (toolTurnID) groupedToolMessageIDs.add(toolTurnID)
-            }
-          }
-        }
-        pendingToolTurns = []
-      }
-
+        },
+      )
       for (const existingId of userTurnRefsRef.current.keys()) {
         if (activeIds.has(existingId)) continue
         userTurnRefsRef.current.delete(existingId)
       }
-
-      return {
-        displayMessages: nextDisplayMessages.filter(
-          (message) =>
-            !groupedToolMessageIDs.has(getGatewayMessageId(message) ?? ''),
-        ),
-        toolChainsByFinalMessageID,
-        toolResultsByCallId: nextToolResultsByCallId,
-      }
-    }, [messages, waitingForResponse])
+      return projection
+    }, [messages, activeRunIds])
 
   const latestUserIndex = useMemo(() => {
     for (let index = displayMessages.length - 1; index >= 0; index -= 1) {
@@ -268,22 +208,12 @@ function ChatMessageListComponent({
     }
   }, [slicedMessages, showConversationNavigator])
 
-  const activeAssistantResponse = useMemo(() => {
-    if (!waitingForResponse) return null
-    const startIndex =
-      typeof slicedLastUserIndex === 'number' ? slicedLastUserIndex + 1 : 0
-    const assistantIndexes: number[] = []
-    for (let index = startIndex; index < slicedMessages.length; index += 1) {
-      if (slicedMessages[index].role === 'assistant') {
-        assistantIndexes.push(index)
-      }
-    }
-    if (assistantIndexes.length === 0) return null
-    return {
-      firstIndex: assistantIndexes[0],
-      lastIndex: assistantIndexes[assistantIndexes.length - 1],
-    }
-  }, [slicedLastUserIndex, slicedMessages, waitingForResponse])
+  const activeAssistantResponses = useMemo(
+    function getActiveAssistantResponses() {
+      return activeAssistantRunBounds(slicedMessages, activeRunIds)
+    },
+    [activeRunIds, slicedMessages],
+  )
 
   const showTypingIndicator =
     waitingForResponse &&
@@ -355,11 +285,15 @@ function ChatMessageListComponent({
     },
   ) {
     const messageKey = getMessageKey(chatMessage, index)
+    const messageRunId =
+      typeof (chatMessage.runId ?? chatMessage.__streamRunId) === 'string'
+        ? String(chatMessage.runId ?? chatMessage.__streamRunId).trim()
+        : ''
+    const activeAssistantResponse = messageRunId
+      ? activeAssistantResponses.get(messageRunId)
+      : undefined
     const isActiveAssistantRound =
-      chatMessage.role === 'assistant' &&
-      activeAssistantResponse !== null &&
-      index >= activeAssistantResponse.firstIndex &&
-      index <= activeAssistantResponse.lastIndex
+      chatMessage.role === 'assistant' && activeAssistantResponse !== undefined
     const isAssistantContinuation =
       isActiveAssistantRound && index > activeAssistantResponse.firstIndex
     const hasFollowingAssistantRound =
@@ -403,7 +337,10 @@ function ChatMessageListComponent({
           showAssistantActions={!hasFollowingAssistantRound}
           modelLabelById={modelLabelById}
           wrapperRef={wrapperRef}
-          wrapperClassName={options?.wrapperClassName}
+          wrapperClassName={cn(
+            options?.wrapperClassName,
+            isAssistantContinuation && '-mt-5',
+          )}
           wrapperScrollMarginTop={wrapperScrollMarginTop}
           onClone={onClone ? handleClone : undefined}
           previousMessageId={previousMessageId}
@@ -452,7 +389,7 @@ function ChatMessageListComponent({
     }
   }, [
     slicedMessages,
-    activeAssistantResponse,
+    activeAssistantResponses,
     groupStartIndex,
     hasGroup,
     headerHeight,
@@ -510,7 +447,7 @@ function ChatMessageListComponent({
             <>
               {renderedMessages.beforeGroup}
               <div
-                className="flex flex-col space-y-6"
+                className="flex flex-col gap-6"
                 style={{
                   minHeight: `${Math.max(0, pinGroupMinHeight - 24)}px`,
                 }}
@@ -565,6 +502,7 @@ function areChatMessageListEqual(
     prev.notice === next.notice &&
     prev.noticePosition === next.noticePosition &&
     prev.waitingForResponse === next.waitingForResponse &&
+    prev.activeRunIds === next.activeRunIds &&
     prev.sessionKey === next.sessionKey &&
     prev.modelLabelById === next.modelLabelById &&
     prev.pinToTop === next.pinToTop &&
@@ -583,8 +521,10 @@ function areChatMessageListEqual(
 }
 
 export {
+  activeAssistantRunBounds,
   collectLinkedToolCallIds,
   isLinkedToolResultMessage,
+  projectChatMessages,
 } from './chat-message-list-utils'
 
 const MemoizedChatMessageList = memo(

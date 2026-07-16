@@ -5,15 +5,23 @@ import { useChatGenerationGuard } from './use-chat-generation-guard'
 
 type UseChatRunsInput = {
   refreshHistory: () => void
+  scopeKey?: string
 }
 
-export function useChatRuns({ refreshHistory }: UseChatRunsInput) {
+export function useChatRuns({
+  refreshHistory,
+  scopeKey = '',
+}: UseChatRunsInput) {
   const [waitingForResponse, setWaitingForResponse] = useState(() =>
     hasPendingGeneration(),
+  )
+  const [activeRunIds, setActiveRunIds] = useState<ReadonlySet<string>>(
+    () => new Set(),
   )
   const pendingRunIdsRef = useRef(new Set<string>())
   const completedRunIdsRef = useRef(new Set<string>())
   const pendingRunTimersRef = useRef(new Map<string, number>())
+  const scopeKeyRef = useRef(scopeKey)
 
   const beginGeneration = useCallback(function beginGeneration() {
     setPendingGeneration(true)
@@ -35,6 +43,7 @@ export function useChatRuns({ refreshHistory }: UseChatRunsInput) {
       }
       pendingRunTimersRef.current.delete(runId)
       pendingRunIdsRef.current.delete(runId)
+      setActiveRunIds(new Set(pendingRunIdsRef.current))
       if (pendingRunIdsRef.current.size === 0) {
         finishGeneration()
       }
@@ -52,6 +61,7 @@ export function useChatRuns({ refreshHistory }: UseChatRunsInput) {
         return
       }
       pendingRunIdsRef.current.add(runId)
+      setActiveRunIds(new Set(pendingRunIdsRef.current))
       const existingTimer = pendingRunTimersRef.current.get(runId)
       if (typeof existingTimer === 'number') {
         window.clearTimeout(existingTimer)
@@ -59,6 +69,7 @@ export function useChatRuns({ refreshHistory }: UseChatRunsInput) {
       const timeout = window.setTimeout(() => {
         pendingRunTimersRef.current.delete(runId)
         pendingRunIdsRef.current.delete(runId)
+        setActiveRunIds(new Set(pendingRunIdsRef.current))
         refreshHistory()
         if (pendingRunIdsRef.current.size === 0) {
           finishGeneration()
@@ -78,10 +89,40 @@ export function useChatRuns({ refreshHistory }: UseChatRunsInput) {
       pendingRunTimersRef.current.clear()
       pendingRunIdsRef.current.clear()
       completedRunIdsRef.current.clear()
+      setActiveRunIds(new Set())
       finishGeneration()
     },
     [finishGeneration],
   )
+
+  const reconcileActiveRunIds = useCallback(
+    function reconcileActiveRunIds(runIds: Array<string>) {
+      const nextRunIds = new Set(
+        runIds.map((runId) => runId.trim()).filter((runId) => runId.length > 0),
+      )
+      for (const [runId, timer] of pendingRunTimersRef.current) {
+        if (nextRunIds.has(runId)) continue
+        window.clearTimeout(timer)
+        pendingRunTimersRef.current.delete(runId)
+      }
+      pendingRunIdsRef.current = nextRunIds
+      completedRunIdsRef.current.clear()
+      setActiveRunIds(new Set(nextRunIds))
+      if (nextRunIds.size > 0) {
+        beginGeneration()
+      } else {
+        finishGeneration()
+      }
+    },
+    [beginGeneration, finishGeneration],
+  )
+
+  useEffect(() => {
+    if (scopeKeyRef.current !== scopeKey) {
+      scopeKeyRef.current = scopeKey
+      finishAllRuns()
+    }
+  }, [finishAllRuns, scopeKey])
 
   useEffect(() => {
     return function cleanupRuns() {
@@ -96,10 +137,12 @@ export function useChatRuns({ refreshHistory }: UseChatRunsInput) {
   })
 
   return {
+    activeRunIds,
     beginGeneration,
     finishAllRuns,
     finishGeneration,
     finishRun,
+    reconcileActiveRunIds,
     setWaitingForResponse,
     startRun,
     waitingForResponse,

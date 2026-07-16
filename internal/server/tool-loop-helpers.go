@@ -1,9 +1,6 @@
 package server
 
-import (
-	"encoding/json"
-	"strings"
-)
+import "strings"
 
 func toolChoiceForTools(tools []ProviderTool) any {
 	if len(tools) == 0 {
@@ -38,25 +35,25 @@ func providerPartsFromResult(result ChatGenerationResult) []ProviderMessagePart 
 }
 
 func providerToolResultMessage(call ProviderToolCall, result WebToolResult, toolErr error) ProviderMessage {
-	payload := map[string]any{
-		"tool": strings.TrimSpace(call.Name),
-	}
-	if toolErr != nil {
-		payload["error"] = strings.TrimSpace(toolErr.Error())
-	} else if result.Details != nil {
-		payload["result"] = result.Details
-	} else {
-		payload["result"] = result.Content
-	}
-	encoded, _ := json.Marshal(payload)
+	return providerToolResultMessageFromText(call, canonicalToolResultText(result, toolErr))
+}
+
+func providerToolResultMessageFromText(call ProviderToolCall, text string) ProviderMessage {
 	return ProviderMessage{
 		Role:       "tool",
 		ToolCallID: strings.TrimSpace(call.ID),
 		Parts: []ProviderMessagePart{{
 			Type: "text",
-			Text: string(encoded),
+			Text: strings.TrimSpace(text),
 		}},
 	}
+}
+
+func canonicalToolResultText(result WebToolResult, toolErr error) string {
+	if toolErr != nil {
+		return strings.TrimSpace(toolErr.Error())
+	}
+	return strings.TrimSpace(result.Content)
 }
 
 func buildToolResultMessage(
@@ -67,20 +64,48 @@ func buildToolResultMessage(
 	timestamp int64,
 	durationMs int64,
 ) map[string]any {
-	content := result.Content
-	if toolErr != nil {
-		content = strings.TrimSpace(toolErr.Error())
-	}
-	return chatMessage{
+	return buildToolResultMessageWithLineage(
+		messageID,
+		call,
+		result,
+		toolErr,
+		timestamp,
+		durationMs,
+		"",
+		-1,
+		-1,
+	)
+}
+
+func buildToolResultMessageWithLineage(
+	messageID string,
+	call ProviderToolCall,
+	result WebToolResult,
+	toolErr error,
+	timestamp int64,
+	durationMs int64,
+	runID string,
+	roundIndex int,
+	messageIndex int,
+) map[string]any {
+	message := chatMessage{
 		ID:         messageID,
 		Role:       "toolResult",
+		RunID:      strings.TrimSpace(runID),
 		Timestamp:  timestamp,
-		Content:    []chatMessageContentPart{newTextContentPart(content)},
+		Content:    []chatMessageContentPart{newTextContentPart(canonicalToolResultText(result, toolErr))},
 		Details:    toolResultDetails(call, result, toolErr, durationMs),
 		ToolCallID: strings.TrimSpace(call.ID),
 		ToolName:   strings.TrimSpace(call.Name),
 		IsError:    toolErr != nil,
-	}.toMap()
+	}
+	if roundIndex >= 0 {
+		message.RoundIndex = intPointer(roundIndex)
+	}
+	if messageIndex >= 0 {
+		message.MessageIndex = intPointer(messageIndex)
+	}
+	return message.toMap()
 }
 
 func toolResultDetails(

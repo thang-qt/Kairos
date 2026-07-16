@@ -211,7 +211,7 @@ function ChatContainerContent({
           wide ? 'sm:max-w-[900px]' : 'sm:max-w-[768px]',
         )}
       >
-        <div className="flex flex-col space-y-6">{children}</div>
+        <div className="flex flex-col gap-6">{children}</div>
       </div>
     </div>
   )

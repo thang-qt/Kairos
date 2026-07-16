@@ -74,15 +74,32 @@ func buildAssistantMessage(
 	timestamp int64,
 	content []chatMessageContentPart,
 ) map[string]any {
-	return chatMessage{
+	return buildAssistantMessageWithLineage(messageID, displayModel, timestamp, content, "", -1)
+}
+
+func buildAssistantMessageWithLineage(
+	messageID string,
+	displayModel assistantModelDisplay,
+	timestamp int64,
+	content []chatMessageContentPart,
+	runID string,
+	roundIndex int,
+) map[string]any {
+	message := chatMessage{
 		ID:               messageID,
 		Role:             "assistant",
 		Model:            displayModel.ID,
 		ModelName:        displayModel.Name,
 		ModelDescription: displayModel.Description,
+		RunID:            strings.TrimSpace(runID),
 		Timestamp:        timestamp,
 		Content:          content,
-	}.toMap()
+	}
+	if roundIndex >= 0 {
+		message.RoundIndex = intPointer(roundIndex)
+		message.MessageIndex = intPointer(0)
+	}
+	return message.toMap()
 }
 
 type assistantModelDisplay struct {
@@ -221,6 +238,10 @@ func buildRunEventWithSession(
 	message map[string]any,
 	summary *SessionSummary,
 ) ChatEvent {
+	if message != nil && strings.TrimSpace(stringValueFromMap(message, "runId")) == "" {
+		message = cloneMap(message)
+		message["runId"] = record.ID
+	}
 	return ChatEvent{
 		RunID:      record.ID,
 		SessionKey: session.ID,
@@ -230,6 +251,14 @@ func buildRunEventWithSession(
 		Message:    message,
 		Session:    summary,
 	}
+}
+
+func cloneMap(value map[string]any) map[string]any {
+	cloned := make(map[string]any, len(value))
+	for key, item := range value {
+		cloned[key] = item
+	}
+	return cloned
 }
 
 func buildEffectiveSystemPrompt(
@@ -401,6 +430,10 @@ func latestMessageTimestamp(messages []map[string]any) int64 {
 		}
 	}
 	return latest
+}
+
+func intPointer(value int) *int {
+	return &value
 }
 
 func maxInt64(left int64, right int64) int64 {

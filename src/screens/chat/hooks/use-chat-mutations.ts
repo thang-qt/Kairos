@@ -16,7 +16,10 @@ import {
 } from '../chat-queries'
 import { getGatewayMessageId } from '../utils'
 import { setRecentSession } from '../pending-send'
-import { copyConversationSettings } from '../conversation-settings'
+import {
+  clearConversationModelOverride,
+  copyConversationSettings,
+} from '../conversation-settings'
 import { getChatBackend } from '@/lib/chat-backend'
 import { randomUUID } from '@/lib/utils'
 
@@ -263,6 +266,7 @@ export function useChatMutations({
               throw new Error('Invalid conversation response')
             }
             copyConversationSettings(activeFriendlyId || 'new', friendlyId)
+            clearConversationModelOverride('new')
             setRecentSession(friendlyId)
             upsertSessionSummary(queryClient, {
               ...result,
@@ -441,6 +445,7 @@ export function useChatMutations({
 
       if (isUserTurn && !cloneAtMessageId) {
         stashCloneComposerDraft('new', payload.currentText)
+        clearConversationModelOverride('new')
         clearHistoryMessages(queryClient, 'new', 'new')
         storeCloneScrollRestore()
         navigate({ to: '/new' })

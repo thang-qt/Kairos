@@ -27,6 +27,7 @@ import { useChatRuns } from './hooks/use-chat-runs'
 import { useChatRestoration } from './hooks/use-chat-restoration'
 import { useChatMutations } from './hooks/use-chat-mutations'
 import {
+  beginFreshNewChat,
   buildChatRequestAdvancedSettings,
   normalizeConversationTextSetting,
   resolveConversationModelID,
@@ -205,14 +206,16 @@ export function ChatScreen({
   const hideUi = shouldRedirectToNew || isRedirecting
 
   const {
+    activeRunIds,
     beginGeneration,
     finishAllRuns,
     finishGeneration,
     finishRun,
+    reconcileActiveRunIds,
     setWaitingForResponse,
     startRun,
     waitingForResponse,
-  } = useChatRuns({ refreshHistory })
+  } = useChatRuns({ refreshHistory, scopeKey: activeCanonicalKey })
 
   const {
     restoreScrollTop,
@@ -271,6 +274,7 @@ export function ChatScreen({
     setStreamError(null)
     setWaitingForResponse(false)
     setPinToTop(false)
+    beginFreshNewChat()
     clearHistoryMessages(queryClient, 'new', 'new')
     navigate({ to: '/new' })
     if (isMobile) {
@@ -365,6 +369,9 @@ export function ChatScreen({
       const state = typeof payload.state === 'string' ? payload.state : ''
       const streamErrorMessage =
         typeof payload.error === 'string' ? payload.error.trim() : ''
+      if (state === 'reconcile' && Array.isArray(payload.activeRunIds)) {
+        reconcileActiveRunIds(payload.activeRunIds)
+      }
       if (runId && state === 'delta') {
         startRun(runId)
       }
@@ -485,6 +492,7 @@ export function ChatScreen({
             notice={backendNotice}
             noticePosition="end"
             waitingForResponse={waitingForResponse}
+            activeRunIds={activeRunIds}
             sessionKey={activeCanonicalKey}
             modelLabelById={modelLabelById}
             pinToTop={pinToTop}

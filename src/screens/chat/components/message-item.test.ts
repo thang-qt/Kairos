@@ -7,6 +7,7 @@ import {
   mapStandaloneToolResultToToolPart,
   modelFromMessage,
 } from './message-item'
+import { toolChainMessagesSignature } from './message-item-utils'
 import type { GatewayMessage } from '../types'
 
 const modelLabelById = new Map([
@@ -64,6 +65,31 @@ describe('assistantPartRenderOrder', function () {
       'text',
       'toolCall',
     ])
+  })
+})
+
+describe('toolChainMessagesSignature', function () {
+  it('changes when intermediate assistant prose changes', function () {
+    const first: GatewayMessage = {
+      id: 'round-1',
+      role: 'assistant',
+      runId: 'run-1',
+      content: [
+        { type: 'text', text: 'I will search first.' },
+        { type: 'toolCall', id: 'call-1', name: 'web_search' },
+      ],
+    }
+    const second: GatewayMessage = {
+      ...first,
+      content: [
+        { type: 'text', text: 'I will search a different thing.' },
+        { type: 'toolCall', id: 'call-1', name: 'web_search' },
+      ],
+    }
+
+    expect(toolChainMessagesSignature([first], undefined)).not.toBe(
+      toolChainMessagesSignature([second], undefined),
+    )
   })
 })
 

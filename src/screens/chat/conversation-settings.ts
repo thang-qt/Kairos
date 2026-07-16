@@ -54,6 +54,7 @@ type ConversationSettingsState = {
     sourceConversationId: string,
     targetConversationId: string,
   ) => void
+  clearConversationModelOverride: (conversationId: string) => void
 }
 
 export const defaultConversationSettings: ConversationSettings = {
@@ -106,6 +107,20 @@ export const useConversationSettingsStore = create<ConversationSettingsState>()(
             },
           }
         }),
+      clearConversationModelOverride: (conversationId) =>
+        set((state) => {
+          const current = state.conversations[conversationId]
+          if (!current || current.model === '') return state
+          return {
+            conversations: {
+              ...state.conversations,
+              [conversationId]: {
+                ...current,
+                model: '',
+              },
+            },
+          }
+        }),
     }),
     {
       name: 'kairos-conversation-settings',
@@ -142,6 +157,16 @@ export function copyConversationSettings(
   useConversationSettingsStore
     .getState()
     .copyConversationSettings(sourceConversationId, targetConversationId)
+}
+
+export function clearConversationModelOverride(conversationId: string) {
+  useConversationSettingsStore
+    .getState()
+    .clearConversationModelOverride(conversationId)
+}
+
+export function beginFreshNewChat() {
+  clearConversationModelOverride('new')
 }
 
 function normalizeConversationSettings(

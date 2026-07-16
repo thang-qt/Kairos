@@ -9,6 +9,7 @@ import {
 import { AnimatePresence, motion } from 'motion/react'
 import { memo } from 'react'
 import { Link, useNavigate } from '@tanstack/react-router'
+import { beginFreshNewChat } from '../conversation-settings'
 import { useSidebarActions } from '../hooks/use-sidebar-actions'
 import { SessionRenameDialog } from './sidebar/session-rename-dialog'
 import { SessionDeleteDialog } from './sidebar/session-delete-dialog'
@@ -105,6 +106,7 @@ function ChatSidebarComponent({
             >
               <Link
                 to="/new"
+                onClick={beginFreshNewChat}
                 className={cn(
                   buttonVariants({ variant: 'ghost', size: 'sm' }),
                   'w-full pl-1.5 justify-start',

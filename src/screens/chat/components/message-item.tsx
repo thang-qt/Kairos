@@ -32,7 +32,9 @@ import {
   toolCallsSignature,
   toolResultsSignature,
   toolResultSignature,
+  toolChainMessagesSignature,
 } from './message-item-utils'
+import { toolResultLookupKey } from './chat-message-list-utils'
 
 export {
   mapStandaloneToolResultToToolPart,
@@ -129,7 +131,9 @@ function MessageItemComponent({
           if (part.type !== 'toolCall') continue
 
           const resultMessage = part.id
-            ? toolResultsByCallId?.get(part.id)
+            ? (toolResultsByCallId?.get(
+                toolResultLookupKey(sourceMessage, part.id),
+              ) ?? toolResultsByCallId?.get(part.id))
             : undefined
           if (part.name === 'web_search' || part.name === 'web_fetch') {
             const step: ToolStep = {
@@ -213,7 +217,8 @@ function MessageItemComponent({
     if (!showToolMessages) return null
 
     const resultMessage = part.id
-      ? toolResultsByCallId?.get(part.id)
+      ? (toolResultsByCallId?.get(toolResultLookupKey(message, part.id)) ??
+        toolResultsByCallId?.get(part.id))
       : undefined
     const step: ToolStep =
       part.name === 'web_search' || part.name === 'web_fetch'
@@ -396,6 +401,18 @@ function areMessagesEqual(
   if (
     toolResultsSignature(prevProps.message, prevProps.toolResultsByCallId) !==
     toolResultsSignature(nextProps.message, nextProps.toolResultsByCallId)
+  ) {
+    return false
+  }
+  if (
+    toolChainMessagesSignature(
+      prevProps.toolChainMessages,
+      prevProps.toolResultsByCallId,
+    ) !==
+    toolChainMessagesSignature(
+      nextProps.toolChainMessages,
+      nextProps.toolResultsByCallId,
+    )
   ) {
     return false
   }

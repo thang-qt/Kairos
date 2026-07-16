@@ -9,6 +9,9 @@ type chatMessage struct {
 	ModelName        string
 	ModelDescription string
 	ClientID         string
+	RunID            string
+	RoundIndex       *int
+	MessageIndex     *int
 	Timestamp        int64
 	Content          []chatMessageContentPart
 	Details          map[string]any
@@ -86,6 +89,15 @@ func (message chatMessage) toMap() map[string]any {
 	}
 	if message.ClientID != "" {
 		value["clientId"] = message.ClientID
+	}
+	if message.RunID != "" {
+		value["runId"] = message.RunID
+	}
+	if message.RoundIndex != nil {
+		value["roundIndex"] = *message.RoundIndex
+	}
+	if message.MessageIndex != nil {
+		value["messageIndex"] = *message.MessageIndex
 	}
 	if message.Timestamp > 0 {
 		value["timestamp"] = message.Timestamp

@@ -1,11 +1,41 @@
 import { describe, expect, it } from 'vitest'
 import {
+  activeAssistantRunBounds,
   collectLinkedToolCallIds,
   isLinkedToolResultMessage,
+  projectChatMessages,
 } from './chat-message-list'
 import type { GatewayMessage } from '../types'
 
 describe('linked tool results', function () {
+  it('treats assistant rounds from one active run as one visual response', function () {
+    const messages: Array<GatewayMessage> = [
+      { id: 'user', role: 'user', content: [{ type: 'text', text: 'go' }] },
+      {
+        id: 'round-1',
+        role: 'assistant',
+        runId: 'run-1',
+        content: [{ type: 'toolCall', id: 'call-1', name: 'math_eval' }],
+      },
+      {
+        id: 'round-2',
+        role: 'assistant',
+        runId: 'run-1',
+        content: [{ type: 'toolCall', id: 'call-2', name: 'web_search' }],
+      },
+      {
+        id: 'other-run',
+        role: 'assistant',
+        runId: 'run-2',
+        content: [{ type: 'text', text: 'unrelated' }],
+      },
+    ]
+
+    expect(activeAssistantRunBounds(messages, new Set(['run-1']))).toEqual(
+      new Map([['run-1', { firstIndex: 1, lastIndex: 2 }]]),
+    )
+  })
+
   it('identifies tool results that belong to assistant tool calls', function () {
     const messages: Array<GatewayMessage> = [
       {
@@ -34,5 +64,71 @@ describe('linked tool results', function () {
 
     expect(isLinkedToolResultMessage(messages[1], linkedIds)).toBe(true)
     expect(isLinkedToolResultMessage(messages[2], linkedIds)).toBe(false)
+  })
+
+  it('groups only inactive messages with the same durable run id', function () {
+    const messages: Array<GatewayMessage> = [
+      {
+        id: 'assistant-tool-a',
+        role: 'assistant',
+        runId: 'run-a',
+        content: [{ type: 'toolCall', id: 'call-a', name: 'math_eval' }],
+      },
+      {
+        id: 'tool-a',
+        role: 'toolResult',
+        runId: 'run-a',
+        toolCallId: 'call-a',
+        content: [{ type: 'text', text: '4' }],
+      },
+      {
+        id: 'assistant-final-a',
+        role: 'assistant',
+        runId: 'run-a',
+        content: [{ type: 'text', text: 'done' }],
+      },
+      {
+        id: 'assistant-tool-b',
+        role: 'assistant',
+        runId: 'run-b',
+        content: [{ type: 'toolCall', id: 'call-b', name: 'math_eval' }],
+      },
+      {
+        id: 'assistant-final-b',
+        role: 'assistant',
+        runId: 'run-b',
+        content: [{ type: 'text', text: 'still streaming' }],
+      },
+    ]
+
+    const projected = projectChatMessages(messages, new Set(['run-b']))
+
+    expect(projected.displayMessages.map((message) => message.id)).toEqual([
+      'assistant-final-a',
+      'assistant-tool-b',
+      'assistant-final-b',
+    ])
+    expect(
+      projected.toolChainsByFinalMessageID.get('assistant-final-a'),
+    ).toEqual([messages[0]])
+    expect(projected.toolChainsByFinalMessageID.has('assistant-final-b')).toBe(
+      false,
+    )
+  })
+
+  it('keeps orphan tool results as standalone messages', function () {
+    const messages: Array<GatewayMessage> = [
+      {
+        id: 'orphan-result',
+        role: 'toolResult',
+        runId: 'run-a',
+        toolCallId: 'missing-call',
+        content: [{ type: 'text', text: 'orphan' }],
+      },
+    ]
+
+    expect(projectChatMessages(messages, new Set()).displayMessages).toEqual(
+      messages,
+    )
   })
 })

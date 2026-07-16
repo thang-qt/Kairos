@@ -1,4 +1,4 @@
-import { getToolCallsFromMessage } from '../utils'
+import { getToolCallsFromMessage, textFromMessage } from '../utils'
 import type {
   GatewayMessage,
   ImageContent,
@@ -220,12 +220,29 @@ export function toolResultsSignature(
   if (!toolResultsByCallId) return ''
   const toolCalls = getToolCallsFromMessage(message)
   if (toolCalls.length === 0) return ''
+  const runId = typeof message.runId === 'string' ? message.runId : ''
   return toolCalls
     .map((toolCall) => {
       if (!toolCall.id) return 'missing'
-      return toolResultSignature(toolResultsByCallId.get(toolCall.id))
+      const keyed = runId ? `${runId}\u0000${toolCall.id}` : toolCall.id
+      return toolResultSignature(
+        toolResultsByCallId.get(keyed) ?? toolResultsByCallId.get(toolCall.id),
+      )
     })
     .join('||')
+}
+
+export function toolChainMessagesSignature(
+  messages: Array<GatewayMessage> | undefined,
+  toolResultsByCallId: Map<string, GatewayMessage> | undefined,
+): string {
+  if (!messages?.length) return ''
+  return messages
+    .map(
+      (message) =>
+        `${message.id ?? ''}:${textFromMessage(message)}:${thinkingFromMessage(message) ?? ''}:${toolCallsSignature(message)}:${toolResultsSignature(message, toolResultsByCallId)}`,
+    )
+    .join('##')
 }
 
 export function thinkingFromMessage(msg: GatewayMessage): string | null {

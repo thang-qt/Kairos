@@ -253,6 +253,18 @@ export function createHTTPChatBackend(): ChatBackend {
         `/api/sessions/${encodeURIComponent(friendlyId)}/events`,
       )
 
+      let opened = false
+      let closed = false
+
+      function handleOpen() {
+        if (closed) return
+        if (opened) {
+          subscription.onReconnect?.()
+          return
+        }
+        opened = true
+      }
+
       function handleMessage(event: MessageEvent<string>) {
         if (typeof event.data !== 'string' || event.data.trim().length === 0) {
           return
@@ -261,6 +273,9 @@ export function createHTTPChatBackend(): ChatBackend {
         try {
           const payload = JSON.parse(event.data)
           subscription.onEvent(payload)
+          if (payload?.state === 'reconcile') {
+            subscription.onReconcile?.(payload)
+          }
         } catch {
           // Ignore malformed stream payloads.
         }
@@ -272,10 +287,13 @@ export function createHTTPChatBackend(): ChatBackend {
         // stream for later turns in the same conversation.
       }
 
+      eventSource.addEventListener('open', handleOpen)
       eventSource.addEventListener('message', handleMessage as EventListener)
       eventSource.addEventListener('error', handleError)
 
       return function unsubscribe() {
+        closed = true
+        eventSource.removeEventListener('open', handleOpen)
         eventSource.removeEventListener(
           'message',
           handleMessage as EventListener,

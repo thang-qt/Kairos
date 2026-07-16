@@ -23,6 +23,7 @@ type UseChatStreamInput = {
     sessionKey?: string
     state?: string
     error?: string
+    activeRunIds?: Array<string>
     message?: GatewayMessage
   }) => void
 }
@@ -60,6 +61,7 @@ export function useChatStream({
 
     if (!payload.message || typeof payload.message !== 'object') {
       if (
+        payloadState === 'reconcile' ||
         payloadState === 'final' ||
         payloadState === 'error' ||
         payloadState === 'aborted'
@@ -82,6 +84,11 @@ export function useChatStream({
       typeof payload.runId === 'string' ? payload.runId : undefined
     const nextMessage: GatewayMessage = {
       ...payload.message,
+      runId:
+        typeof payload.message.runId === 'string' &&
+        payload.message.runId.trim().length > 0
+          ? payload.message.runId
+          : streamRunId,
       __streamRunId: payloadState === 'delta' ? streamRunId : null,
     }
 
@@ -171,6 +178,8 @@ export function useChatStream({
       sessionKey,
       friendlyId: activeFriendlyId,
       onEvent: handleChatEvent,
+      onReconnect: () => refreshHistoryRef.current(),
+      onReconcile: () => refreshHistoryRef.current(),
     })
 
     unsubscribeRef.current = unsubscribe

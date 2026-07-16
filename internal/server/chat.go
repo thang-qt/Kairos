@@ -52,14 +52,17 @@ type sessionRecord struct {
 }
 
 type messageRecord struct {
-	StorageID   string
-	MessageID   string
-	Role        string
-	ContentJSON string
-	MessageJSON string
-	Timestamp   int64
-	CreatedAt   int64
-	Message     map[string]any
+	StorageID    string
+	MessageID    string
+	Role         string
+	ContentJSON  string
+	MessageJSON  string
+	Timestamp    int64
+	CreatedAt    int64
+	RunID        sql.NullString
+	RoundIndex   sql.NullInt64
+	MessageIndex sql.NullInt64
+	Message      map[string]any
 }
 
 type appendMessageOptions struct {
@@ -459,6 +462,46 @@ func (service *ChatService) appendMessageWithOptions(
 	)
 }
 
+func (service *ChatService) appendMessagesWithOptions(
+	ctx context.Context,
+	session sessionRecord,
+	messages []map[string]any,
+	options appendMessageOptions,
+) (SessionSummary, error) {
+	if len(messages) == 0 {
+		return sessionRecordToSummary(session)
+	}
+	transaction, err := service.db.BeginTx(ctx, nil)
+	if err != nil {
+		return SessionSummary{}, fmt.Errorf("begin append messages tx: %w", err)
+	}
+	defer transaction.Rollback()
+
+	var summary SessionSummary
+	current := session
+	for _, message := range messages {
+		timestamp := int64Value(message["timestamp"])
+		if timestamp == 0 {
+			timestamp = time.Now().UnixMilli()
+			message["timestamp"] = timestamp
+		}
+		summary, err = service.appendMessageWithOptionsExec(ctx, transaction, current, message, timestamp, options)
+		if err != nil {
+			return SessionSummary{}, err
+		}
+		current.LastMessageJSON = nullableJSONObject(message)
+		current.UpdatedAt = summary.UpdatedAt
+		current.TotalTokens = summary.TotalTokens
+		if summary.DerivedTitle != "" {
+			current.DerivedTitle = nullableString(summary.DerivedTitle)
+		}
+	}
+	if err := transaction.Commit(); err != nil {
+		return SessionSummary{}, fmt.Errorf("commit append messages tx: %w", err)
+	}
+	return summary, nil
+}
+
 func (service *ChatService) removeTrailingUserMessageExec(
 	ctx context.Context,
 	exec sqlExecutor,
@@ -578,11 +621,14 @@ func (service *ChatService) appendMessageWithOptionsExec(
 			details_json,
 			is_error,
 			timestamp,
+			run_id,
+			round_index,
+			message_index,
 			message_json,
 			created_at
 		)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, messageIDFromMap(message), session.ID, stringValueFromMap(message, "role"), stringValueFromMap(message, "model"), stringValueFromMap(message, "modelName"), stringValueFromMap(message, "modelDescription"), contentJSON, stringValueFromMap(message, "toolCallId"), stringValueFromMap(message, "toolName"), nullableJSONObject(message["details"]), boolAsInt(boolValueFromMap(message, "isError")), timestamp, string(messageJSON), now); err != nil {
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, messageIDFromMap(message), session.ID, stringValueFromMap(message, "role"), stringValueFromMap(message, "model"), stringValueFromMap(message, "modelName"), stringValueFromMap(message, "modelDescription"), contentJSON, stringValueFromMap(message, "toolCallId"), stringValueFromMap(message, "toolName"), nullableJSONObject(message["details"]), boolAsInt(boolValueFromMap(message, "isError")), timestamp, nullableString(stringValueFromMap(message, "runId")), nullableInt64FromMap(message, "roundIndex"), nullableInt64FromMap(message, "messageIndex"), string(messageJSON), now); err != nil {
 		return SessionSummary{}, fmt.Errorf("insert chat message: %w", err)
 	}
 
@@ -703,7 +749,10 @@ func (service *ChatService) listMessageRecords(
 			content_json,
 			message_json,
 			timestamp,
-			created_at
+			created_at,
+			run_id,
+			round_index,
+			message_index
 		FROM chat_messages
 		WHERE session_id = ?
 		ORDER BY timestamp ASC, created_at ASC, id ASC
@@ -723,6 +772,9 @@ func (service *ChatService) listMessageRecords(
 			&record.MessageJSON,
 			&record.Timestamp,
 			&record.CreatedAt,
+			&record.RunID,
+			&record.RoundIndex,
+			&record.MessageIndex,
 		); err != nil {
 			return nil, fmt.Errorf("scan message: %w", err)
 		}
@@ -751,6 +803,7 @@ func (service *ChatService) createClonedSession(
 	friendlyID := newFriendlyID()
 
 	derivedTitle := deriveTitleFromMessages(messageRecords)
+	forkedTitle := forkedCloneTitle(source, derivedTitle)
 	totalTokens := countMessageRecordTokens(messageRecords)
 	var lastMessageJSON sql.NullString
 	if len(messageRecords) > 0 {
@@ -778,8 +831,8 @@ func (service *ChatService) createClonedSession(
 				total_tokens,
 				context_tokens
 			)
-			VALUES (?, ?, ?, NULL, ?, NULL, ?, ?, ?, ?, ?, ?)
-		`, sessionID, source.UserID, friendlyID, nullableString(derivedTitle), 0, now, now, lastMessageJSON, totalTokens, source.ContextTokens); err != nil {
+			VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?)
+		`, sessionID, source.UserID, friendlyID, nullableString(forkedTitle), nullableString(derivedTitle), 0, now, now, lastMessageJSON, totalTokens, source.ContextTokens); err != nil {
 		return SessionSummary{}, fmt.Errorf("create clone session: %w", err)
 	}
 
@@ -791,11 +844,14 @@ func (service *ChatService) createClonedSession(
 				role,
 				content_json,
 				timestamp,
+				run_id,
+				round_index,
+				message_index,
 				message_json,
 				created_at
 			)
-			VALUES (?, ?, ?, ?, ?, ?, ?)
-		`, newID(), sessionID, messageRecord.Role, messageRecord.ContentJSON, messageRecord.Timestamp, messageRecord.MessageJSON, now); err != nil {
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		`, newID(), sessionID, messageRecord.Role, messageRecord.ContentJSON, messageRecord.Timestamp, messageRecord.RunID, messageRecord.RoundIndex, messageRecord.MessageIndex, messageRecord.MessageJSON, now); err != nil {
 			return SessionSummary{}, fmt.Errorf("copy clone message: %w", err)
 		}
 	}
@@ -807,6 +863,7 @@ func (service *ChatService) createClonedSession(
 	return SessionSummary{
 		Key:           sessionID,
 		FriendlyID:    friendlyID,
+		Title:         forkedTitle,
 		DerivedTitle:  derivedTitle,
 		IsPinned:      false,
 		UpdatedAt:     now,
@@ -918,7 +975,41 @@ func deriveTitleFromMessages(records []messageRecord) string {
 	return ""
 }
 
+func forkedCloneTitle(source sessionRecord, copiedDerivedTitle string) string {
+	base := firstNonEmpty(
+		nullStringValue(source.Label),
+		nullStringValue(source.Title),
+		nullStringValue(source.DerivedTitle),
+		copiedDerivedTitle,
+	)
+	if base == "" {
+		return ""
+	}
+	for {
+		trimmed := strings.TrimSpace(base)
+		if !strings.HasSuffix(strings.ToLower(trimmed), " (forked)") {
+			base = trimmed
+			break
+		}
+		base = strings.TrimSpace(trimmed[:len(trimmed)-len(" (forked)")])
+		if base == "" {
+			return ""
+		}
+	}
+	return base + " (forked)"
+}
+
 func countMessageRecordTokens(records []messageRecord) int64 {
+	for index := len(records) - 1; index >= 0; index -= 1 {
+		message := records[index].Message
+		if stringValueFromMap(message, "role") != "assistant" {
+			continue
+		}
+		usage := mapValueFromMap(mapValueFromMap(message, "details"), "usage")
+		if total := int64Value(usage["totalTokens"]); total > 0 {
+			return total
+		}
+	}
 	var total int64
 	for _, record := range records {
 		total += approximateMessageTokens(record.Message)
@@ -1060,6 +1151,45 @@ func boolValueFromMap(value map[string]any, key string) bool {
 	}
 	enabled, ok := raw.(bool)
 	return ok && enabled
+}
+
+func mapValueFromMap(value map[string]any, key string) map[string]any {
+	raw, ok := value[key]
+	if !ok {
+		return nil
+	}
+	mapped, ok := raw.(map[string]any)
+	if !ok {
+		return nil
+	}
+	return mapped
+}
+
+func nullableInt64FromMap(value map[string]any, key string) sql.NullInt64 {
+	parsed := int64Value(value[key])
+	if parsed == 0 {
+		switch typed := value[key].(type) {
+		case int:
+			if typed == 0 {
+				return sql.NullInt64{Int64: 0, Valid: true}
+			}
+		case int64:
+			if typed == 0 {
+				return sql.NullInt64{Int64: 0, Valid: true}
+			}
+		case float64:
+			if typed == 0 {
+				return sql.NullInt64{Int64: 0, Valid: true}
+			}
+		case json.Number:
+			if typed.String() == "0" {
+				return sql.NullInt64{Int64: 0, Valid: true}
+			}
+		default:
+			return sql.NullInt64{}
+		}
+	}
+	return sql.NullInt64{Int64: parsed, Valid: true}
 }
 
 func boolAsInt(value bool) int {
