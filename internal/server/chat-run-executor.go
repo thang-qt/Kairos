@@ -23,7 +23,10 @@ func (service *ChatRunService) runAsync(
 	}()
 }
 
-const maxToolLoopRounds = 12
+const (
+	defaultMaxToolCalls = 24
+	maxToolCallLimit    = 100
+)
 
 type roundSummary struct {
 	Round    int      `json:"round"`
@@ -77,6 +80,14 @@ func (service *ChatRunService) executeRun(
 	effectiveSystemPrompt := buildEffectiveSystemPrompt(input.SystemPrompt, history, time.Now(), input.ClientTime, input.ClientTimeZone)
 	messages := buildProviderMessages(history, effectiveSystemPrompt)
 	tools := buildRuntimeTools(input.WebSearch, input.MathTools)
+	toolCallLimit := defaultMaxToolCalls
+	if len(tools) > 0 && service.webSettings != nil {
+		toolCallLimit, err = service.webSettings.ResolveToolCallLimit(ctx, record.UserID)
+		if err != nil {
+			service.publishRunError(ctx, record, session, err)
+			return
+		}
+	}
 	webRuntime := NewWebToolRuntimeFromEnv()
 	if input.WebSearch && service.webSettings != nil {
 		resolvedRuntime, runtimeErr := service.webSettings.ResolveRuntime(ctx, record.UserID)
@@ -91,7 +102,7 @@ func (service *ChatRunService) executeRun(
 	persistedToolCalls := make([]ProviderToolCall, 0)
 	roundSummaries := make([]roundSummary, 0)
 	var result ChatGenerationResult
-	for round := 0; round < maxToolLoopRounds; round++ {
+	for round := 0; round < toolCallLimit; round++ {
 		result, err = driver.GenerateChatStream(
 			ctx,
 			provider,
@@ -222,7 +233,7 @@ func (service *ChatRunService) executeRun(
 		accumulatedToolCalls = nil
 	}
 	if len(result.ToolCalls) > 0 {
-		service.publishRunError(ctx, record, session, fmt.Errorf("tool loop exceeded maximum rounds (%d)", maxToolLoopRounds))
+		service.publishRunError(ctx, record, session, fmt.Errorf("tool loop exceeded maximum tool-call rounds (%d)", toolCallLimit))
 		return
 	}
 

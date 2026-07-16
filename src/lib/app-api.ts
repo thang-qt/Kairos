@@ -132,6 +132,7 @@ export type WebToolSettings = {
   apiKeyConfigured: boolean
   searchMaxResults: number
   fetchMaxCharacters: number
+  toolCallLimit: number
 }
 
 export type UpdateWebToolSettingsPayload = {
@@ -140,6 +141,7 @@ export type UpdateWebToolSettingsPayload = {
   clearApiKey?: boolean
   searchMaxResults?: number
   fetchMaxCharacters?: number
+  toolCallLimit?: number
 }
 
 export const appQueryKeys = {

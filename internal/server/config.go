@@ -3,6 +3,7 @@ package server
 import (
 	"crypto/sha256"
 	"errors"
+	"fmt"
 	"os"
 	"strconv"
 	"strings"
@@ -38,10 +39,15 @@ type Config struct {
 	SystemProviderModelSync     bool
 	SystemProviderStaticModels  []string
 	ProviderEncryptionSecretKey string
+	MaxToolCalls                int
 }
 
 func LoadConfig() (Config, error) {
 	sessionTTLHours, err := getEnvInt("SESSION_TTL_HOURS", 24*30)
+	if err != nil {
+		return Config{}, err
+	}
+	maxToolCalls, err := getEnvInt("MAX_TOOL_CALLS", defaultMaxToolCalls)
 	if err != nil {
 		return Config{}, err
 	}
@@ -75,6 +81,7 @@ func LoadConfig() (Config, error) {
 		SystemProviderModelSync:     getEnvBool("SYSTEM_PROVIDER_1_MODEL_SYNC", true),
 		SystemProviderStaticModels:  splitCSVEnv("SYSTEM_PROVIDER_1_MODELS"),
 		ProviderEncryptionSecretKey: strings.TrimSpace(os.Getenv("PROVIDER_SECRET_KEY")),
+		MaxToolCalls:                maxToolCalls,
 	}
 
 	if config.CookieName == "" {
@@ -82,6 +89,9 @@ func LoadConfig() (Config, error) {
 	}
 	if config.SessionTTL <= 0 {
 		return Config{}, errors.New("SESSION_TTL_HOURS must be greater than zero")
+	}
+	if config.MaxToolCalls < 1 || config.MaxToolCalls > maxToolCallLimit {
+		return Config{}, fmt.Errorf("MAX_TOOL_CALLS must be between 1 and %d", maxToolCallLimit)
 	}
 	if !config.AuthEnabled && config.AllowSignup {
 		return Config{}, errors.New("ALLOW_SIGNUP cannot be true when AUTH_ENABLED is false")

@@ -29,6 +29,7 @@ Common settings:
 
 - `HTTP_ADDR` for the server bind address
 - `KAIROS_DB_PATH` for the SQLite database path
+- `MAX_TOOL_CALLS` for the default maximum tool-call rounds per response (users can override it in **Web tools** settings)
 - `AUTH_ENABLED` to enable authentication
 - `ALLOW_SIGNUP` to allow or block self-service signup
 - `PROVIDER_SECRET_KEY` for encrypting stored provider credentials

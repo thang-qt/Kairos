@@ -63,6 +63,7 @@ export function WebToolsSettingsPanel() {
   const [clearApiKey, setClearApiKey] = useState(false)
   const [searchMaxResults, setSearchMaxResults] = useState('5')
   const [fetchMaxCharacters, setFetchMaxCharacters] = useState('10000')
+  const [toolCallLimit, setToolCallLimit] = useState('24')
   const [message, setMessage] = useState<{
     tone: MessageTone
     text: string
@@ -75,6 +76,7 @@ export function WebToolsSettingsPanel() {
       }
       setSearchMaxResults(String(settingsQuery.data.searchMaxResults))
       setFetchMaxCharacters(String(settingsQuery.data.fetchMaxCharacters))
+      setToolCallLimit(String(settingsQuery.data.toolCallLimit))
     },
     [settingsQuery.data],
   )
@@ -104,6 +106,7 @@ export function WebToolsSettingsPanel() {
       clearApiKey,
       searchMaxResults: Number.parseInt(searchMaxResults, 10),
       fetchMaxCharacters: Number.parseInt(fetchMaxCharacters, 10),
+      toolCallLimit: Number.parseInt(toolCallLimit, 10),
     })
   }
 
@@ -181,7 +184,7 @@ export function WebToolsSettingsPanel() {
               </label>
             ) : null}
 
-            <div className="grid gap-4 sm:grid-cols-2">
+            <div className="grid gap-4 sm:grid-cols-3">
               <div className="flex flex-col gap-1.5">
                 <FieldLabel
                   htmlFor="web-search-max-results"
@@ -220,6 +223,24 @@ export function WebToolsSettingsPanel() {
                 />
                 <p className="text-xs text-primary-500">
                   Allowed range: 1,000–50,000.
+                </p>
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <FieldLabel htmlFor="tool-call-limit" label="Tool-call limit" />
+                <Input
+                  id="tool-call-limit"
+                  type="number"
+                  nativeInput
+                  min={1}
+                  max={100}
+                  value={toolCallLimit}
+                  onChange={function handleChange(event) {
+                    setToolCallLimit(readValue(event))
+                  }}
+                />
+                <p className="text-xs text-primary-500">
+                  Maximum tool-call rounds per response. Allowed range: 1–100.
                 </p>
               </div>
             </div>
