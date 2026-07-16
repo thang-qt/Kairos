@@ -223,17 +223,14 @@ function mergeStreamMessage(
   return { ...previousMessage, ...nextMessage }
 }
 
-function findStreamMessageIndex(
+export function findStreamMessageIndex(
   messages: Array<GatewayMessage>,
   targetMessage: GatewayMessage,
   streamRunId: string,
 ): number {
   const targetId = getMessageId(targetMessage)
   if (targetId) {
-    const byId = messages.findIndex(
-      (message) => getMessageId(message) === targetId,
-    )
-    if (byId >= 0) return byId
+    return messages.findIndex((message) => getMessageId(message) === targetId)
   }
 
   const targetRole = normalizeString(targetMessage.role)

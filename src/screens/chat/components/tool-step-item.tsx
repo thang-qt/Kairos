@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import { HugeiconsIcon } from '@hugeicons/react'
 import {
-  Brain03Icon,
   Calculator01Icon,
   GlobalSearchIcon,
   ToolsIcon,
@@ -15,7 +14,7 @@ import {
   ChainOfThoughtStep,
   ChainOfThoughtTrigger,
 } from '@/components/prompt-kit/chain-of-thought'
-import type { GatewayMessage, RoundSummary } from '../types'
+import type { GatewayMessage } from '../types'
 import {
   TooltipContent,
   TooltipProvider,
@@ -41,86 +40,65 @@ export type ToolStep =
       toolCallIds?: string[]
     }
 
-type ToolStepsProps = {
-  steps: Array<ToolStep>
-  running?: boolean
-  defaultOpen?: boolean
-  roundSummaries?: RoundSummary[]
-  leadingReasoning?: string
-}
-
-type RoundGroup = {
-  summary: RoundSummary
-  steps: Array<ToolStep>
-}
-
-function groupStepsByRound(
-  steps: Array<ToolStep>,
-  summaries: Array<RoundSummary>,
-): Array<RoundGroup> {
-  const groups: Array<RoundGroup> = summaries.map((summary) => ({
-    summary,
-    steps: [],
-  }))
-  const toolIdToGroupIndex = new Map<string, number>()
-  summaries.forEach(function buildMap(summary, groupIndex) {
-    for (const id of summary.toolIds ?? []) {
-      toolIdToGroupIndex.set(id, groupIndex)
-    }
-  })
-  for (const step of steps) {
-    const groupIndex = stepToolCallIds(step)
-      .map((callId) => toolIdToGroupIndex.get(callId))
-      .find((index) => index !== undefined)
-    const group =
-      groupIndex !== undefined ? groups[groupIndex] : groups[groups.length - 1]
-    if (group) group.steps.push(step)
-  }
-  return groups
-}
-
-type TraceItem =
+export type ToolChainItem =
   | {
-      kind: 'reasoning'
+      kind: 'text'
       key: string
-      title: string
-      body: string
+      text: string
     }
   | {
       kind: 'step'
       step: ToolStep
     }
 
-export function ToolSteps({
-  steps,
-  running = false,
-  defaultOpen = false,
-  roundSummaries,
-  leadingReasoning,
-}: ToolStepsProps) {
-  const traceItems = buildTraceItems(steps, roundSummaries, leadingReasoning)
-  if (traceItems.length === 0) return null
-  const traceCount = traceItems.length
-  const latest = latestStep(steps)
-  const duration = totalDurationMs(steps)
-  const triggerText =
-    running && latest ? stepTitle(latest) : compactSummary(duration, running)
+type ToolChainProps = {
+  items: Array<ToolChainItem>
+  modelLabel?: string | null
+}
+
+export function ToolChain({ items, modelLabel }: ToolChainProps) {
+  const steps = items.flatMap(function collectSteps(item) {
+    return item.kind === 'step' ? [item.step] : []
+  })
+  if (steps.length === 0) return null
+  const toolCount = steps.length
+  const durationMs = totalToolDurationMs(steps)
+  const label =
+    durationMs > 0
+      ? `Worked for ${formatDuration(durationMs)}`
+      : toolCount === 1
+        ? 'Used 1 tool'
+        : `Used ${toolCount} tools`
 
   return (
-    <div className="w-full max-w-[900px] mt-1">
+    <div className="w-full max-w-[900px] py-1">
+      {modelLabel ? (
+        <div className="mb-1 flex items-center gap-2 text-sm text-primary-800">
+          <span className="font-mono font-medium text-primary-900">
+            {modelLabel}
+          </span>
+        </div>
+      ) : null}
       <ChainOfThought>
-        <ChainOfThoughtStep defaultOpen={defaultOpen}>
+        <ChainOfThoughtStep>
           <ChainOfThoughtTrigger
-            className="px-0 text-primary-500 hover:text-primary-600"
-            right={traceCount === 1 ? '1 step' : String(traceCount) + ' steps'}
+            className="px-1 text-primary-500 hover:text-primary-700"
+            right={toolCount === 1 ? '1 step' : `${toolCount} steps`}
           >
-            {triggerText}
+            {label}
           </ChainOfThoughtTrigger>
           <ChainOfThoughtContent>
-            {traceItems.map((item, index) => (
-              <ChainOfThoughtItem key={traceItemKey(item, index)}>
-                {item.kind === 'reasoning' ? (
-                  <ReasoningTraceItem item={item} />
+            {items.map((item) => (
+              <ChainOfThoughtItem
+                key={item.kind === 'text' ? item.key : item.step.key}
+              >
+                {item.kind === 'text' ? (
+                  <MessageContent
+                    markdown
+                    className="bg-transparent p-0 text-primary-700"
+                  >
+                    {item.text}
+                  </MessageContent>
                 ) : (
                   <ToolStepItem step={item.step} />
                 )}
@@ -133,72 +111,30 @@ export function ToolSteps({
   )
 }
 
-function buildTraceItems(
-  steps: Array<ToolStep>,
-  roundSummaries: RoundSummary[] | undefined,
-  leadingReasoning: string | undefined,
-): Array<TraceItem> {
-  if (roundSummaries && roundSummaries.length > 0) {
-    const groups = groupStepsByRound(steps, roundSummaries)
-    return groups.flatMap((group) => {
-      const items: Array<TraceItem> = []
-      const text = group.summary.text?.trim() ?? ''
-      const thinking = group.summary.thinking?.trim() ?? ''
-      const body = [text, thinking].filter(Boolean).join('\n\n')
-      if (body) {
-        items.push({
-          kind: 'reasoning',
-          key: 'reasoning-round-' + String(group.summary.round),
-          title: 'Thinking',
-          body,
-        })
-      }
-      items.push(
-        ...group.steps.map((step) => ({ kind: 'step' as const, step })),
+function totalToolDurationMs(steps: Array<ToolStep>) {
+  return steps.reduce(function sum(total, step) {
+    if (step.kind === 'web') {
+      return (
+        total +
+        webToolEventCardsFromMessage(step.message, step.toolCallIds).reduce(
+          (eventTotal, event) => eventTotal + (event.durationMs ?? 0),
+          0,
+        )
       )
-      return items
-    })
-  }
-
-  const items: Array<TraceItem> = []
-  const reasoning = leadingReasoning?.trim() ?? ''
-  if (reasoning) {
-    items.push({
-      kind: 'reasoning',
-      key: 'leading-reasoning',
-      title: 'Thinking',
-      body: reasoning,
-    })
-  }
-  items.push(...steps.map((step) => ({ kind: 'step' as const, step })))
-  return items
+    }
+    const duration = step.toolPart.output?.durationMs
+    return (
+      total +
+      (typeof duration === 'number' && Number.isFinite(duration) ? duration : 0)
+    )
+  }, 0)
 }
 
-function traceItemKey(item: TraceItem, index: number) {
-  if (item.kind === 'reasoning') return item.key
-  return item.step.key || 'step-' + String(index)
-}
-
-function ReasoningTraceItem({
-  item,
-}: {
-  item: Extract<TraceItem, { kind: 'reasoning' }>
-}) {
-  return (
-    <div className="space-y-1.5">
-      <div className="flex min-w-0 items-start gap-2 text-sm">
-        <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-primary-100 text-primary-600">
-          <HugeiconsIcon icon={Brain03Icon} size={13} strokeWidth={1.7} />{' '}
-        </span>
-        <MessageContent
-          markdown
-          className="min-w-0 flex-1 bg-transparent p-0 text-sm text-primary-800"
-        >
-          {item.body}
-        </MessageContent>
-      </div>
-    </div>
-  )
+function formatDuration(durationMs: number) {
+  if (durationMs < 1000) return `${Math.max(1, Math.round(durationMs))}ms`
+  const seconds = durationMs / 1000
+  if (seconds < 10) return `${seconds.toFixed(1)}s`
+  return `${Math.round(seconds)}s`
 }
 
 export function ToolStepItem({ step }: { step: ToolStep }) {
@@ -400,52 +336,10 @@ function JsonDetails({ value }: { value: unknown }) {
   )
 }
 
-function latestStep(steps: Array<ToolStep>) {
-  return steps[steps.length - 1]
-}
-
-function stepToolCallIds(step: ToolStep): string[] {
-  if (step.kind === 'tool') {
-    return step.toolPart.toolCallId ? [step.toolPart.toolCallId] : []
-  }
-  return step.toolCallIds ?? []
-}
-
-function totalDurationMs(steps: Array<ToolStep>) {
-  return steps.reduce(function sum(total, step) {
-    if (step.kind === 'web') {
-      return (
-        total +
-        webToolEventCardsFromMessage(step.message, step.toolCallIds).reduce(
-          (eventTotal, event) => eventTotal + (event.durationMs ?? 0),
-          0,
-        )
-      )
-    }
-    const duration = step.toolPart.output?.durationMs
-    return (
-      total +
-      (typeof duration === 'number' && Number.isFinite(duration) ? duration : 0)
-    )
-  }, 0)
-}
-
-function formatDuration(durationMs: number) {
-  if (durationMs < 1000) return `${Math.max(1, Math.round(durationMs))}ms`
-  const seconds = durationMs / 1000
-  if (seconds < 10) return `${seconds.toFixed(1)}s`
-  return `${Math.round(seconds)}s`
-}
-
 function stepIcon(step: ToolStep) {
   if (step.kind === 'web') return GlobalSearchIcon
   if (step.toolPart.type === 'math_eval') return Calculator01Icon
   return ToolsIcon
-}
-
-function compactSummary(durationMs: number, running: boolean) {
-  if (running) return 'Working'
-  return durationMs > 0 ? `Worked for ${formatDuration(durationMs)}` : 'Worked'
 }
 
 function stepTitle(step: ToolStep) {

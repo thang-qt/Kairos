@@ -1,4 +1,4 @@
-import { memo, useState } from 'react'
+import { memo, useMemo, useState } from 'react'
 import {
   getGatewayMessageId,
   getMessageTimestamp,
@@ -16,21 +16,22 @@ import { Tool } from '@/components/prompt-kit/tool'
 import { useChatSettingsStore } from '@/hooks/use-chat-settings'
 import { cn } from '@/lib/utils'
 import { MessageItemEditor } from './message-item-editor'
-import { ToolStepItem, ToolSteps } from './tool-steps'
-import { useAssistantToolTrace } from './use-assistant-tool-trace'
 import {
-  mapSearchDetailsToToolPart,
+  ToolChain,
+  ToolStepItem,
+  type ToolChainItem,
+  type ToolStep,
+} from './tool-step-item'
+import {
   mapStandaloneToolResultToToolPart,
   mapToolCallToToolPart,
   assistantPartRenderOrder,
   imagesFromMessage,
   modelFromMessage,
-  searchDetailsSignature,
   thinkingFromMessage,
   toolCallsSignature,
   toolResultsSignature,
   toolResultSignature,
-  runtimeToolDetailsSignature,
 } from './message-item-utils'
 
 export {
@@ -41,9 +42,12 @@ export {
 
 type MessageItemProps = {
   message: GatewayMessage
+  toolChainMessages?: Array<GatewayMessage>
   toolResultsByCallId?: Map<string, GatewayMessage>
   modelLabelById: ReadonlyMap<string, string>
   forceActionsVisible?: boolean
+  showAssistantModel?: boolean
+  showAssistantActions?: boolean
   wrapperRef?: React.RefObject<HTMLDivElement | null>
   wrapperClassName?: string
   wrapperScrollMarginTop?: number
@@ -59,9 +63,12 @@ type MessageItemProps = {
 
 function MessageItemComponent({
   message,
+  toolChainMessages,
   toolResultsByCallId,
   modelLabelById,
   forceActionsVisible = false,
+  showAssistantModel = true,
+  showAssistantActions = true,
   wrapperRef,
   wrapperClassName,
   wrapperScrollMarginTop,
@@ -93,24 +100,61 @@ function MessageItemComponent({
     : null
 
   const assistantParts = Array.isArray(message.content) ? message.content : []
-  const searchToolPart = isAssistant
-    ? mapSearchDetailsToToolPart(message)
-    : null
   const assistantIsStreaming = Boolean(message.__streamRunId)
-  const {
-    firstToolPartIndex,
-    lastToolPartIndex,
-    leadingToolReasoning,
-    roundSummaries,
-    toolSteps,
-  } = useAssistantToolTrace({
-    message,
-    assistantParts,
-    isAssistant,
-    assistantIsStreaming,
-    searchToolPart,
-    toolResultsByCallId,
-  })
+  const toolTurn = useMemo(
+    function buildToolTurn() {
+      const items: Array<ToolChainItem> = []
+      const sourceMessages =
+        toolChainMessages && toolChainMessages.length > 0
+          ? toolChainMessages
+          : [message]
+
+      for (const sourceMessage of sourceMessages) {
+        const content = Array.isArray(sourceMessage.content)
+          ? sourceMessage.content
+          : []
+        for (let index = 0; index < content.length; index += 1) {
+          const part = content[index]
+          if (part.type === 'text') {
+            const value = String(part.text ?? '').trim()
+            if (value) {
+              items.push({
+                kind: 'text',
+                key: `text-${getGatewayMessageId(sourceMessage) || index}-${index}`,
+                text: value,
+              })
+            }
+            continue
+          }
+          if (part.type !== 'toolCall') continue
+
+          const resultMessage = part.id
+            ? toolResultsByCallId?.get(part.id)
+            : undefined
+          if (part.name === 'web_search' || part.name === 'web_fetch') {
+            const step: ToolStep = {
+              kind: 'web',
+              key: `web-tool-${part.id || index}`,
+              message: resultMessage ?? sourceMessage,
+              toolCallIds: part.id ? [part.id] : undefined,
+            }
+            items.push({ kind: 'step', step })
+            continue
+          }
+          const step: ToolStep = {
+            kind: 'tool',
+            key: `tool-${part.id || index}`,
+            toolPart: mapToolCallToToolPart(part, resultMessage, sourceMessage),
+          }
+          items.push({ kind: 'step', step })
+        }
+      }
+
+      return { items }
+    },
+    [message, toolChainMessages, toolResultsByCallId],
+  )
+  const hasToolChainMessages = Boolean(toolChainMessages?.length)
 
   function handleStartEdit() {
     setEditDraft(text)
@@ -139,19 +183,9 @@ function MessageItemComponent({
   }
 
   function renderAssistantPart(part: MessageContentPart, index: number) {
-    const shouldCollapseToolTrace = !assistantIsStreaming
-
     if (part.type === 'thinking') {
       const thinking = String(part.thinking ?? '')
       if (!thinking || !showReasoningBlocks) return null
-      // When tool steps/reasoning trace are present, keep reasoning inside the
-      // same chain instead of rendering a separate spinning block above it.
-      if (
-        shouldCollapseToolTrace &&
-        (toolSteps.length > 0 || leadingToolReasoning)
-      ) {
-        return null
-      }
       const isThinking = assistantIsStreaming
       return (
         <div key={`thinking-${index}`} className="w-full max-w-[900px]">
@@ -163,28 +197,6 @@ function MessageItemComponent({
     if (part.type === 'text') {
       const chunk = String(part.text ?? '')
       if (!chunk.trim()) return null
-      // When roundSummaries are present, all inter-round text has already been
-      // captured in the summaries and is rendered inside the trace. Only the
-      // final response text (after the last tool call) should render standalone.
-      if (shouldCollapseToolTrace) {
-        if (
-          roundSummaries.length > 0 &&
-          lastToolPartIndex >= 0 &&
-          index <= lastToolPartIndex
-        ) {
-          return null
-        }
-        // Pre-tool prose is folded into ToolSteps.leadingReasoning so it stays
-        // in the same trace/chain as the tool calls instead of rendering as a
-        // separate assistant text block above the chain.
-        if (
-          leadingToolReasoning &&
-          roundSummaries.length === 0 &&
-          (firstToolPartIndex === -1 || firstToolPartIndex > index)
-        ) {
-          return null
-        }
-      }
       return (
         <Message key={`text-${index}`}>
           <MessageContent
@@ -198,36 +210,27 @@ function MessageItemComponent({
     }
 
     if (part.type !== 'toolCall') return null
-    if (!showToolMessages || shouldCollapseToolTrace) return null
-
-    if (part.name === 'web_search' || part.name === 'web_fetch') {
-      return (
-        <div key={`web-tool-${index}`} className="w-full max-w-[900px] mt-1">
-          <ToolStepItem
-            step={{
-              kind: 'web',
-              key: `web-tool-${part.id || index}`,
-              message,
-              toolCallIds: part.id ? [part.id] : undefined,
-            }}
-          />
-        </div>
-      )
-    }
+    if (!showToolMessages) return null
 
     const resultMessage = part.id
       ? toolResultsByCallId?.get(part.id)
       : undefined
-    const toolPart = mapToolCallToToolPart(part, resultMessage, message)
-    return (
-      <div key={`tool-${index}`} className="w-full max-w-[900px] mt-1">
-        <ToolStepItem
-          step={{
+    const step: ToolStep =
+      part.name === 'web_search' || part.name === 'web_fetch'
+        ? {
+            kind: 'web',
+            key: `web-tool-${part.id || index}`,
+            message: resultMessage ?? message,
+            toolCallIds: part.id ? [part.id] : undefined,
+          }
+        : {
             kind: 'tool',
             key: `tool-${part.id || index}`,
-            toolPart,
-          }}
-        />
+            toolPart: mapToolCallToToolPart(part, resultMessage, message),
+          }
+    return (
+      <div key={step.key} className="w-full max-w-[900px] mt-1">
+        <ToolStepItem step={step} />
       </div>
     )
   }
@@ -294,7 +297,7 @@ function MessageItemComponent({
         </div>
       )}
 
-      {isAssistant && model ? (
+      {isAssistant && showAssistantModel && model ? (
         <div className="flex items-center gap-2 text-sm text-primary-800">
           <span className="font-mono font-medium text-primary-900">
             {model}
@@ -302,18 +305,13 @@ function MessageItemComponent({
         </div>
       ) : null}
 
-      {isAssistant && showToolMessages && !assistantIsStreaming ? (
-        <ToolSteps
-          steps={toolSteps}
-          running={false}
-          roundSummaries={roundSummaries}
-          leadingReasoning={showReasoningBlocks ? leadingToolReasoning : ''}
-        />
+      {isAssistant && hasToolChainMessages && showToolMessages ? (
+        <ToolChain items={toolTurn.items} />
       ) : null}
 
       {isAssistant && assistantParts.map(renderAssistantPart)}
 
-      {isAssistant && (
+      {isAssistant && showAssistantActions && (
         <MessageActionsBar
           text={text}
           timestamp={timestamp}
@@ -357,6 +355,12 @@ function areMessagesEqual(
   if (prevProps.forceActionsVisible !== nextProps.forceActionsVisible) {
     return false
   }
+  if (prevProps.showAssistantModel !== nextProps.showAssistantModel) {
+    return false
+  }
+  if (prevProps.showAssistantActions !== nextProps.showAssistantActions) {
+    return false
+  }
   if (prevProps.wrapperClassName !== nextProps.wrapperClassName) return false
   if (prevProps.wrapperRef !== nextProps.wrapperRef) return false
   if (prevProps.wrapperScrollMarginTop !== nextProps.wrapperScrollMarginTop) {
@@ -396,12 +400,6 @@ function areMessagesEqual(
     return false
   }
   if (
-    searchDetailsSignature(prevProps.message) !==
-    searchDetailsSignature(nextProps.message)
-  ) {
-    return false
-  }
-  if (
     (prevProps.message.role === 'toolResult' ||
       nextProps.message.role === 'toolResult') &&
     toolResultSignature(prevProps.message) !==
@@ -427,18 +425,6 @@ function areMessagesEqual(
   // No need to check settings here as the hook will cause a re-render
   // and areMessagesEqual is for props only.
   // However, memo components with hooks will re-render if the hook state changes.
-  if (
-    JSON.stringify(prevProps.message.details?.roundSummaries) !==
-    JSON.stringify(nextProps.message.details?.roundSummaries)
-  ) {
-    return false
-  }
-  if (
-    runtimeToolDetailsSignature(prevProps.message) !==
-    runtimeToolDetailsSignature(nextProps.message)
-  ) {
-    return false
-  }
   return true
 }
 

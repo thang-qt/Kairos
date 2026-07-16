@@ -92,10 +92,3 @@ export type SessionMeta = {
   totalTokens?: number
   contextTokens?: number
 }
-
-export type RoundSummary = {
-  round: number
-  text?: string
-  thinking?: string
-  toolIds?: string[]
-}

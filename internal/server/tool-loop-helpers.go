@@ -59,6 +59,62 @@ func providerToolResultMessage(call ProviderToolCall, result WebToolResult, tool
 	}
 }
 
+func buildToolResultMessage(
+	messageID string,
+	call ProviderToolCall,
+	result WebToolResult,
+	toolErr error,
+	timestamp int64,
+	durationMs int64,
+) map[string]any {
+	content := result.Content
+	if toolErr != nil {
+		content = strings.TrimSpace(toolErr.Error())
+	}
+	return chatMessage{
+		ID:         messageID,
+		Role:       "toolResult",
+		Timestamp:  timestamp,
+		Content:    []chatMessageContentPart{newTextContentPart(content)},
+		Details:    toolResultDetails(call, result, toolErr, durationMs),
+		ToolCallID: strings.TrimSpace(call.ID),
+		ToolName:   strings.TrimSpace(call.Name),
+		IsError:    toolErr != nil,
+	}.toMap()
+}
+
+func toolResultDetails(
+	call ProviderToolCall,
+	result WebToolResult,
+	toolErr error,
+	durationMs int64,
+) map[string]any {
+	if !isWebToolName(call.Name) {
+		details := make(map[string]any, len(result.Details)+1)
+		for key, value := range result.Details {
+			details[key] = value
+		}
+		if durationMs > 0 {
+			details["durationMs"] = durationMs
+		}
+		return details
+	}
+	event := map[string]any{
+		"id":        strings.TrimSpace(call.ID),
+		"name":      strings.TrimSpace(call.Name),
+		"arguments": call.Args,
+	}
+	if durationMs > 0 {
+		event["durationMs"] = durationMs
+	}
+	if toolErr != nil {
+		event["error"] = strings.TrimSpace(toolErr.Error())
+	} else {
+		event["result"] = result.Details
+	}
+	return map[string]any{"webTools": []map[string]any{event}}
+}
+
 func isWebToolName(name string) bool {
 	switch strings.TrimSpace(name) {
 	case webSearchToolName, webFetchToolName:
@@ -66,76 +122,4 @@ func isWebToolName(name string) bool {
 	default:
 		return false
 	}
-}
-
-func buildRuntimeToolDetails(toolEvents []map[string]any, webToolEvents []map[string]any) map[string]any {
-	details := make(map[string]any)
-	if len(toolEvents) > 0 {
-		details["tools"] = toolEvents
-	}
-	if len(webToolEvents) > 0 {
-		details["webTools"] = webToolEvents
-	}
-	if len(details) == 0 {
-		return nil
-	}
-	return details
-}
-
-func attachRunToolDetails(message map[string]any, toolEvents []map[string]any, webToolEvents []map[string]any, roundSummaries []roundSummary) {
-	if len(message) == 0 {
-		return
-	}
-	var details map[string]any
-	if existing, ok := message["details"].(map[string]any); ok {
-		details = existing
-	} else {
-		details = make(map[string]any)
-	}
-	if toolDetails := buildRuntimeToolDetails(toolEvents, webToolEvents); toolDetails != nil {
-		for key, value := range toolDetails {
-			details[key] = value
-		}
-	}
-	if len(roundSummaries) > 0 {
-		details["roundSummaries"] = roundSummaries
-	}
-	if len(details) > 0 {
-		message["details"] = details
-	}
-}
-
-func webToolEventDetails(call ProviderToolCall, result WebToolResult, toolErr error, startedAt int64, finishedAt int64) map[string]any {
-	event := map[string]any{
-		"id":        strings.TrimSpace(call.ID),
-		"name":      strings.TrimSpace(call.Name),
-		"arguments": call.Args,
-	}
-	if startedAt > 0 {
-		event["startedAt"] = startedAt
-	}
-	if finishedAt > 0 {
-		event["finishedAt"] = finishedAt
-	}
-	if startedAt > 0 && finishedAt >= startedAt {
-		event["durationMs"] = finishedAt - startedAt
-	}
-	if strings.TrimSpace(call.ArgsJSON) != "" {
-		event["partialJson"] = strings.TrimSpace(call.ArgsJSON)
-	}
-	if toolErr != nil {
-		event["error"] = strings.TrimSpace(toolErr.Error())
-		return event
-	}
-	if result.Details != nil {
-		event["result"] = result.Details
-	} else if strings.TrimSpace(result.Content) != "" {
-		var decoded any
-		if err := json.Unmarshal([]byte(result.Content), &decoded); err == nil {
-			event["result"] = decoded
-		} else {
-			event["result"] = result.Content
-		}
-	}
-	return event
 }

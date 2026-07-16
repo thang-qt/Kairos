@@ -175,20 +175,20 @@ func TestBuildOpenAIChatRequestOmitsAdvancedOptionsByDefault(t *testing.T) {
 	if request.ReasoningEffort != "" {
 		t.Fatalf("reasoning_effort = %q, want empty", request.ReasoningEffort)
 	}
-	if request.Temperature != nil {
-		t.Fatalf("temperature = %v, want nil", *request.Temperature)
+	if request.Temperature.Valid() {
+		t.Fatalf("temperature = %v, want unset", request.Temperature.Value)
 	}
-	if request.TopP != nil {
-		t.Fatalf("top_p = %v, want nil", *request.TopP)
+	if request.TopP.Valid() {
+		t.Fatalf("top_p = %v, want unset", request.TopP.Value)
 	}
-	if request.MaxTokens != nil {
-		t.Fatalf("max_tokens = %v, want nil", *request.MaxTokens)
+	if request.MaxTokens.Valid() {
+		t.Fatalf("max_tokens = %v, want unset", request.MaxTokens.Value)
 	}
-	if request.FrequencyPenalty != nil {
-		t.Fatalf("frequency_penalty = %v, want nil", *request.FrequencyPenalty)
+	if request.FrequencyPenalty.Valid() {
+		t.Fatalf("frequency_penalty = %v, want unset", request.FrequencyPenalty.Value)
 	}
-	if request.PresencePenalty != nil {
-		t.Fatalf("presence_penalty = %v, want nil", *request.PresencePenalty)
+	if request.PresencePenalty.Valid() {
+		t.Fatalf("presence_penalty = %v, want unset", request.PresencePenalty.Value)
 	}
 }
 
@@ -223,19 +223,19 @@ func TestBuildOpenAIChatRequestAppliesSupportedAdvancedOptions(t *testing.T) {
 	if request.ReasoningEffort != "high" {
 		t.Fatalf("reasoning_effort = %q, want high", request.ReasoningEffort)
 	}
-	if request.Temperature == nil || *request.Temperature != temperature {
+	if !request.Temperature.Valid() || request.Temperature.Value != float64(temperature) {
 		t.Fatalf("temperature = %v, want %v", request.Temperature, temperature)
 	}
-	if request.TopP == nil || *request.TopP != topP {
+	if !request.TopP.Valid() || request.TopP.Value != float64(topP) {
 		t.Fatalf("top_p = %v, want %v", request.TopP, topP)
 	}
-	if request.FrequencyPenalty == nil || *request.FrequencyPenalty != frequencyPenalty {
+	if !request.FrequencyPenalty.Valid() || request.FrequencyPenalty.Value != float64(frequencyPenalty) {
 		t.Fatalf("frequency_penalty = %v, want %v", request.FrequencyPenalty, frequencyPenalty)
 	}
-	if request.PresencePenalty == nil || *request.PresencePenalty != presencePenalty {
+	if !request.PresencePenalty.Valid() || request.PresencePenalty.Value != float64(presencePenalty) {
 		t.Fatalf("presence_penalty = %v, want %v", request.PresencePenalty, presencePenalty)
 	}
-	if request.MaxTokens == nil || *request.MaxTokens != maxTokens {
+	if !request.MaxTokens.Valid() || request.MaxTokens.Value != int64(maxTokens) {
 		t.Fatalf("max_tokens = %v, want %v", request.MaxTokens, maxTokens)
 	}
 }

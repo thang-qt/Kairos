@@ -49,46 +49,21 @@ func buildAssistantContent(
 	text string,
 	toolCalls []ProviderToolCall,
 ) []chatMessageContentPart {
-	return buildAssistantContentOrdered(thinking, text, toolCalls, false)
-}
-
-func buildAssistantContentWithToolCallsBeforeText(
-	thinking string,
-	text string,
-	toolCalls []ProviderToolCall,
-) []chatMessageContentPart {
-	return buildAssistantContentOrdered(thinking, text, toolCalls, true)
-}
-
-func buildAssistantContentOrdered(
-	thinking string,
-	text string,
-	toolCalls []ProviderToolCall,
-	toolCallsBeforeText bool,
-) []chatMessageContentPart {
 	content := make([]chatMessageContentPart, 0, 2+len(toolCalls))
 	if normalizedThinking := strings.TrimSpace(thinking); normalizedThinking != "" {
 		content = append(content, newThinkingContentPart(normalizedThinking))
 	}
-	appendToolCalls := func() {
-		for _, toolCall := range toolCalls {
-			if strings.TrimSpace(toolCall.ID) == "" &&
-				strings.TrimSpace(toolCall.Name) == "" &&
-				strings.TrimSpace(toolCall.ArgsJSON) == "" &&
-				len(toolCall.Args) == 0 {
-				continue
-			}
-			content = append(content, newToolCallContentPart(toolCall))
-		}
-	}
-	if toolCallsBeforeText {
-		appendToolCalls()
-	}
 	if normalizedText := strings.TrimSpace(text); normalizedText != "" {
 		content = append(content, newTextContentPart(normalizedText))
 	}
-	if !toolCallsBeforeText {
-		appendToolCalls()
+	for _, toolCall := range toolCalls {
+		if strings.TrimSpace(toolCall.ID) == "" &&
+			strings.TrimSpace(toolCall.Name) == "" &&
+			strings.TrimSpace(toolCall.ArgsJSON) == "" &&
+			len(toolCall.Args) == 0 {
+			continue
+		}
+		content = append(content, newToolCallContentPart(toolCall))
 	}
 	return content
 }
@@ -304,6 +279,9 @@ func buildProviderMessages(
 	}
 	for _, message := range history {
 		role := strings.TrimSpace(stringValueFromMap(message, "role"))
+		if role == "toolResult" {
+			role = "tool"
+		}
 		if role == "" {
 			continue
 		}

@@ -12,6 +12,9 @@ type chatMessage struct {
 	Timestamp        int64
 	Content          []chatMessageContentPart
 	Details          map[string]any
+	ToolCallID       string
+	ToolName         string
+	IsError          bool
 }
 
 type chatMessageContentPart struct {
@@ -89,6 +92,15 @@ func (message chatMessage) toMap() map[string]any {
 	}
 	if len(message.Details) > 0 {
 		value["details"] = message.Details
+	}
+	if message.ToolCallID != "" {
+		value["toolCallId"] = message.ToolCallID
+	}
+	if message.ToolName != "" {
+		value["toolName"] = message.ToolName
+	}
+	if message.IsError {
+		value["isError"] = true
 	}
 	return value
 }

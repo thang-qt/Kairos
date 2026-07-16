@@ -135,6 +135,61 @@ describe('modelFromMessage', function () {
 })
 
 describe('MessageItem', function () {
+  it('renders an ungrouped tool turn naturally', function () {
+    const message: GatewayMessage = {
+      role: 'assistant',
+      model: 'gpt-4.1',
+      content: [
+        { type: 'text', text: 'I will check that.' },
+        {
+          type: 'toolCall',
+          id: 'call-1',
+          name: 'math_eval',
+          arguments: { expr: '2 + 2' },
+        },
+        { type: 'text', text: 'Next, I will verify another value.' },
+        {
+          type: 'toolCall',
+          id: 'call-2',
+          name: 'math_eval',
+          arguments: { expr: '3 + 3' },
+        },
+      ],
+    }
+    const toolResultsByCallId = new Map<string, GatewayMessage>([
+      [
+        'call-1',
+        {
+          role: 'toolResult',
+          toolCallId: 'call-1',
+          toolName: 'math_eval',
+          content: [{ type: 'text', text: '4' }],
+        },
+      ],
+      [
+        'call-2',
+        {
+          role: 'toolResult',
+          toolCallId: 'call-2',
+          toolName: 'math_eval',
+          content: [{ type: 'text', text: '6' }],
+        },
+      ],
+    ])
+
+    const html = renderToStaticMarkup(
+      React.createElement(MessageItem, {
+        message,
+        toolResultsByCallId,
+        modelLabelById,
+      }),
+    )
+
+    expect(html).toContain('GPT-4.1')
+    expect(html).toContain('Calculating: 2 + 2')
+    expect(html).toContain('Calculating: 3 + 3')
+  })
+
   it('preserves user message line breaks in the rendered bubble', function () {
     const message: GatewayMessage = {
       role: 'user',

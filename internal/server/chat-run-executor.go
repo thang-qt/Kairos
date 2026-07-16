@@ -28,13 +28,6 @@ const (
 	maxToolCallLimit    = 100
 )
 
-type roundSummary struct {
-	Round    int      `json:"round"`
-	Text     string   `json:"text,omitempty"`
-	Thinking string   `json:"thinking,omitempty"`
-	ToolIDs  []string `json:"toolIds,omitempty"`
-}
-
 func (service *ChatRunService) executeRun(
 	ctx context.Context,
 	record runRecord,
@@ -59,24 +52,35 @@ func (service *ChatRunService) executeRun(
 
 	driver := service.providers.drivers[provider.Record.Kind]
 	if driver == nil {
-		service.publishRunError(
-			ctx,
-			record,
-			session,
-			fmt.Errorf("unsupported provider kind: %s", provider.Record.Kind),
-		)
+		service.publishRunError(ctx, record, session, fmt.Errorf("unsupported provider kind: %s", provider.Record.Kind))
 		return
 	}
 
-	accumulatedText := ""
-	accumulatedThinking := ""
-	accumulatedToolCalls := []ProviderToolCall{}
 	displayModel := assistantModelDisplay{
 		ID:          model.ID,
 		Name:        firstNonEmpty(model.Name, model.ID),
 		Description: provider.Record.Label,
 	}
-	minAssistantTimestamp := latestMessageTimestamp(history) + 1
+	nextTimestamp := latestMessageTimestamp(history) + 1
+	newTimestamp := func() int64 {
+		timestamp := maxInt64(time.Now().UnixMilli(), nextTimestamp)
+		nextTimestamp = timestamp + 1
+		return timestamp
+	}
+	appendMessage := func(message map[string]any, timestamp int64, skipDerivedTitle bool) (SessionSummary, error) {
+		summary, err := service.chat.appendMessageWithOptions(
+			ctx,
+			session,
+			message,
+			timestamp,
+			appendMessageOptions{SkipDerivedTitle: skipDerivedTitle},
+		)
+		if err == nil {
+			session.TotalTokens = summary.TotalTokens
+		}
+		return summary, err
+	}
+
 	effectiveSystemPrompt := buildEffectiveSystemPrompt(input.SystemPrompt, history, time.Now(), input.ClientTime, input.ClientTimeZone)
 	messages := buildProviderMessages(history, effectiveSystemPrompt)
 	tools := buildRuntimeTools(input.WebSearch, input.MathTools)
@@ -97,12 +101,13 @@ func (service *ChatRunService) executeRun(
 		}
 		webRuntime = resolvedRuntime
 	}
-	toolEvents := make([]map[string]any, 0)
-	webToolEvents := make([]map[string]any, 0)
-	persistedToolCalls := make([]ProviderToolCall, 0)
-	roundSummaries := make([]roundSummary, 0)
+
+	assistantMessageID := record.AssistantMessageID
 	var result ChatGenerationResult
 	for round := 0; round < toolCallLimit; round++ {
+		accumulatedText := ""
+		accumulatedThinking := ""
+		accumulatedToolCalls := []ProviderToolCall{}
 		result, err = driver.GenerateChatStream(
 			ctx,
 			provider,
@@ -116,225 +121,100 @@ func (service *ChatRunService) executeRun(
 				Advanced:     input.Advanced,
 			},
 			func(delta ChatGenerationDelta) error {
-				if delta.Thinking != "" {
-					accumulatedThinking += delta.Thinking
-				}
-				if delta.Text != "" {
-					accumulatedText += delta.Text
-				}
-				if len(delta.ToolCalls) > 0 {
-					accumulatedToolCalls = mergeProviderToolCalls(
-						accumulatedToolCalls,
-						delta.ToolCalls,
-					)
-				}
-				displayText := accumulatedText
-				content := buildAssistantContentWithToolCallsBeforeText(
-					accumulatedThinking,
-					displayText,
-					mergeProviderToolCalls(persistedToolCalls, accumulatedToolCalls),
-				)
-				if len(persistedToolCalls) > 0 {
-					content = buildAssistantToolLoopStreamingContent(
-						roundSummaries,
-						persistedToolCalls,
-						accumulatedThinking,
-						accumulatedToolCalls,
-						displayText,
-					)
-				}
+				accumulatedThinking += delta.Thinking
+				accumulatedText += delta.Text
+				accumulatedToolCalls = mergeProviderToolCalls(accumulatedToolCalls, delta.ToolCalls)
+				content := buildAssistantContent(accumulatedThinking, accumulatedText, accumulatedToolCalls)
 				if len(content) == 0 {
 					return nil
 				}
 				service.broker.Publish(
 					record.SessionID,
-					buildRunEvent(
-						record,
-						session,
-						"delta",
-						"",
-						buildAssistantMessage(
-							record.AssistantMessageID,
-							displayModel,
-							time.Now().UnixMilli(),
-							content,
-						),
-					),
+					buildRunEvent(record, session, "delta", "", buildAssistantMessage(assistantMessageID, displayModel, newTimestamp(), content)),
 				)
 				return nil
 			},
 		)
 		if err != nil {
 			if errors.Is(err, context.Canceled) {
-				abortedTimestamp := maxInt64(time.Now().UnixMilli(), minAssistantTimestamp)
-				abortedMessage := buildAssistantMessage(
-					record.AssistantMessageID,
-					displayModel,
-					abortedTimestamp,
-					buildAssistantContentWithToolCallsBeforeText(
-						accumulatedThinking,
-						accumulatedText,
-						mergeProviderToolCalls(persistedToolCalls, accumulatedToolCalls),
-					),
-				)
-				attachRunToolDetails(abortedMessage, toolEvents, webToolEvents, roundSummaries)
-				service.publishRunAborted(ctx, record, session, abortedMessage)
+				content := buildAssistantContent(accumulatedThinking, accumulatedText, accumulatedToolCalls)
+				if len(content) == 0 {
+					service.publishRunAborted(ctx, record, session, nil)
+					return
+				}
+				service.publishRunAborted(ctx, record, session, buildAssistantMessage(assistantMessageID, displayModel, newTimestamp(), content))
 				return
 			}
 			service.publishRunError(ctx, record, session, err)
 			return
 		}
+
 		displayModel = displayModel.withProviderResult(result)
 		accumulatedThinking = firstNonEmpty(result.ThinkingText, accumulatedThinking)
 		accumulatedToolCalls = mergeProviderToolCalls(accumulatedToolCalls, result.ToolCalls)
-		if len(result.ToolCalls) == 0 {
-			break
-		}
-		persistedToolCalls = mergeProviderToolCalls(persistedToolCalls, result.ToolCalls)
-		rsummary := roundSummary{Round: round}
-		if t := strings.TrimSpace(accumulatedText); t != "" {
-			rsummary.Text = t
-		}
-		if t := strings.TrimSpace(accumulatedThinking); t != "" {
-			rsummary.Thinking = t
-		}
-		for _, call := range result.ToolCalls {
-			if id := strings.TrimSpace(call.ID); id != "" {
-				rsummary.ToolIDs = append(rsummary.ToolIDs, id)
-			}
-		}
-		roundSummaries = append(roundSummaries, rsummary)
-		messages = append(messages, ProviderMessage{Role: "assistant", Parts: providerPartsFromResult(result)})
-		for _, call := range result.ToolCalls {
-			toolStartedAt := time.Now().UnixMilli()
-			toolResult, toolErr := webRuntime.Execute(ctx, call)
-			toolFinishedAt := time.Now().UnixMilli()
-			toolEvent := webToolEventDetails(call, toolResult, toolErr, toolStartedAt, toolFinishedAt)
-			toolEvents = append(toolEvents, toolEvent)
-			if isWebToolName(call.Name) {
-				webToolEvents = append(webToolEvents, toolEvent)
-			}
-			messages = append(messages, providerToolResultMessage(call, toolResult, toolErr))
-		}
-		toolDeltaContent := buildAssistantToolLoopSnapshotContent(roundSummaries, persistedToolCalls)
-		toolDeltaMessage := buildAssistantMessage(
-			record.AssistantMessageID,
+		assistantMessage := buildAssistantMessage(
+			assistantMessageID,
 			displayModel,
-			time.Now().UnixMilli(),
-			toolDeltaContent,
+			newTimestamp(),
+			buildAssistantContent(accumulatedThinking, result.OutputText, accumulatedToolCalls),
 		)
-		attachRunToolDetails(toolDeltaMessage, toolEvents, webToolEvents, roundSummaries)
-		service.broker.Publish(
-			record.SessionID,
-			buildRunEvent(record, session, "delta", "", toolDeltaMessage),
-		)
-		accumulatedText = ""
-		accumulatedThinking = ""
-		accumulatedToolCalls = nil
-	}
-	if len(result.ToolCalls) > 0 {
-		service.publishRunError(ctx, record, session, fmt.Errorf("tool loop exceeded maximum tool-call rounds (%d)", toolCallLimit))
-		return
-	}
+		if generationDetails := buildGenerationDetails(result); generationDetails != nil {
+			assistantMessage["details"] = generationDetails
+		}
 
-	finalTimestamp := maxInt64(time.Now().UnixMilli(), minAssistantTimestamp)
-	finalContent := buildAssistantContentWithToolCallsBeforeText(accumulatedThinking, result.OutputText, mergeProviderToolCalls(persistedToolCalls, accumulatedToolCalls))
-	finalMessage := buildAssistantMessage(
-		record.AssistantMessageID,
-		displayModel,
-		finalTimestamp,
-		finalContent,
-	)
-	if generationDetails := buildGenerationDetails(result); generationDetails != nil {
-		finalMessage["details"] = generationDetails
-	}
-	attachRunToolDetails(finalMessage, toolEvents, webToolEvents, roundSummaries)
+		if len(result.ToolCalls) == 0 {
+			sessionSummary, err := appendMessage(assistantMessage, int64Value(assistantMessage["timestamp"]), false)
+			if err != nil {
+				service.publishRunError(ctx, record, session, err)
+				return
+			}
+			if result.TotalTokens > 0 {
+				if err := service.chat.UpdateSessionTotalTokens(ctx, session.ID, session.UserID, result.TotalTokens); err != nil {
+					service.publishRunError(ctx, record, session, err)
+					return
+				}
+				session.TotalTokens = result.TotalTokens
+				sessionSummary.TotalTokens = result.TotalTokens
+			}
+			completedAt := int64Value(assistantMessage["timestamp"])
+			if err := service.markRunCompleted(ctx, record.ID, completedAt); err != nil {
+				service.publishRunError(ctx, record, session, err)
+				return
+			}
+			service.broker.Publish(record.SessionID, buildRunEventWithSession(record, session, "final", "", assistantMessage, &sessionSummary))
+			return
+		}
 
-	sessionSummary, err := service.chat.appendMessage(ctx, session, finalMessage, finalTimestamp)
-	if err != nil {
-		service.publishRunError(ctx, record, session, err)
-		return
-	}
-	if result.TotalTokens > 0 {
-		if err := service.chat.UpdateSessionTotalTokens(ctx, session.ID, session.UserID, result.TotalTokens); err != nil {
+		if _, err := appendMessage(assistantMessage, int64Value(assistantMessage["timestamp"]), true); err != nil {
 			service.publishRunError(ctx, record, session, err)
 			return
 		}
-		session.TotalTokens = result.TotalTokens
-		sessionSummary.TotalTokens = result.TotalTokens
-	}
-	if err := service.markRunCompleted(ctx, record.ID, finalTimestamp); err != nil {
-		service.publishRunError(ctx, record, session, err)
-		return
-	}
+		service.broker.Publish(record.SessionID, buildRunEvent(record, session, "delta", "", assistantMessage))
+		messages = append(messages, ProviderMessage{Role: "assistant", Parts: providerPartsFromResult(result)})
 
-	service.broker.Publish(
-		record.SessionID,
-		buildRunEventWithSession(record, session, "final", "", finalMessage, &sessionSummary),
-	)
-}
-
-func buildAssistantToolLoopSnapshotContent(
-	summaries []roundSummary,
-	toolCalls []ProviderToolCall,
-) []chatMessageContentPart {
-	return buildAssistantToolLoopStreamingContent(summaries, toolCalls, "", nil, "")
-}
-
-func buildAssistantToolLoopStreamingContent(
-	summaries []roundSummary,
-	priorToolCalls []ProviderToolCall,
-	currentThinking string,
-	currentToolCalls []ProviderToolCall,
-	text string,
-) []chatMessageContentPart {
-	content := make([]chatMessageContentPart, 0, len(priorToolCalls)+len(currentToolCalls)+len(summaries)+2)
-	consumedToolCalls := 0
-	for _, summary := range summaries {
-		if thinking := strings.TrimSpace(summary.Thinking); thinking != "" {
-			content = append(content, newThinkingContentPart(thinking))
-		}
-		toolCount := len(summary.ToolIDs)
-		if toolCount == 0 && consumedToolCalls < len(priorToolCalls) {
-			toolCount = 1
-		}
-		for i := 0; i < toolCount && consumedToolCalls < len(priorToolCalls); i++ {
-			toolCall := priorToolCalls[consumedToolCalls]
-			consumedToolCalls++
-			if providerToolCallIsEmpty(toolCall) {
-				continue
+		for _, call := range result.ToolCalls {
+			startedAt := time.Now()
+			toolResult, toolErr := webRuntime.Execute(ctx, call)
+			duration := time.Since(startedAt)
+			toolMessage := buildToolResultMessage(
+				newID(),
+				call,
+				toolResult,
+				toolErr,
+				newTimestamp(),
+				maxInt64(1, duration.Milliseconds()),
+			)
+			if _, err := appendMessage(toolMessage, int64Value(toolMessage["timestamp"]), true); err != nil {
+				service.publishRunError(ctx, record, session, err)
+				return
 			}
-			content = append(content, newToolCallContentPart(toolCall))
+			service.broker.Publish(record.SessionID, buildRunEvent(record, session, "delta", "", toolMessage))
+			messages = append(messages, providerToolResultMessage(call, toolResult, toolErr))
 		}
+		assistantMessageID = newID()
 	}
-	for consumedToolCalls < len(priorToolCalls) {
-		toolCall := priorToolCalls[consumedToolCalls]
-		consumedToolCalls++
-		if providerToolCallIsEmpty(toolCall) {
-			continue
-		}
-		content = append(content, newToolCallContentPart(toolCall))
-	}
-	if thinking := strings.TrimSpace(currentThinking); thinking != "" {
-		content = append(content, newThinkingContentPart(thinking))
-	}
-	for _, toolCall := range currentToolCalls {
-		if providerToolCallIsEmpty(toolCall) {
-			continue
-		}
-		content = append(content, newToolCallContentPart(toolCall))
-	}
-	if normalizedText := strings.TrimSpace(text); normalizedText != "" {
-		content = append(content, newTextContentPart(normalizedText))
-	}
-	return content
-}
 
-func providerToolCallIsEmpty(toolCall ProviderToolCall) bool {
-	return strings.TrimSpace(toolCall.ID) == "" &&
-		strings.TrimSpace(toolCall.Name) == "" &&
-		strings.TrimSpace(toolCall.ArgsJSON) == "" &&
-		len(toolCall.Args) == 0
+	service.publishRunError(ctx, record, session, fmt.Errorf("tool loop exceeded maximum tool-call rounds (%d)", toolCallLimit))
 }
 
 func (service *ChatRunService) publishRunError(
@@ -350,17 +230,8 @@ func (service *ChatRunService) publishRunError(
 	if err := service.markRunFailed(ctx, record.ID, runErr); err != nil {
 		log.Printf("kairos: failed to persist run error for run %s: %v", record.ID, err)
 	}
-	log.Printf(
-		"kairos: run %s failed for session %s (%s): %s",
-		record.ID,
-		session.ID,
-		session.FriendlyID,
-		normalizedError,
-	)
-	service.broker.Publish(
-		record.SessionID,
-		buildRunEvent(record, session, "error", normalizedError, nil),
-	)
+	log.Printf("kairos: run %s failed for session %s (%s): %s", record.ID, session.ID, session.FriendlyID, normalizedError)
+	service.broker.Publish(record.SessionID, buildRunEvent(record, session, "error", normalizedError, nil))
 }
 
 func (service *ChatRunService) publishRunAborted(
@@ -387,10 +258,7 @@ func (service *ChatRunService) publishRunAborted(
 	if err := service.markRunAborted(persistCtx, record.ID); err != nil {
 		log.Printf("kairos: failed to persist run abort for run %s: %v", record.ID, err)
 	}
-	service.broker.Publish(
-		record.SessionID,
-		buildRunEventWithSession(record, session, "aborted", "", message, sessionSummary),
-	)
+	service.broker.Publish(record.SessionID, buildRunEventWithSession(record, session, "aborted", "", message, sessionSummary))
 }
 
 func (service *ChatRunService) markRunCompleted(ctx context.Context, runID string, completedAt int64) error {
@@ -426,10 +294,7 @@ func (service *ChatRunService) markRunAborted(ctx context.Context, runID string)
 	return nil
 }
 
-func (service *ChatRunService) registerRunCancel(
-	record runRecord,
-	cancel context.CancelFunc,
-) {
+func (service *ChatRunService) registerRunCancel(record runRecord, cancel context.CancelFunc) {
 	service.runMu.Lock()
 	defer service.runMu.Unlock()
 	service.runCancels[record.ID] = cancel
