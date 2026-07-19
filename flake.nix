@@ -318,7 +318,7 @@
             prePnpmInstall = ''
               rm -f .npmrc
             '';
-            hash = "sha256-1ODYMdqEhjIge9JDdcJFvlScs2IYAZI/VLTqEpgoHB8=";
+            hash = "sha256-QrYxtoZ3cWRjyoRL5xHdj+YFe5nM+0d72I3DfpWV7vA=";
           };
 
           postPatch = ''
