@@ -1,7 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { HugeiconsIcon } from '@hugeicons/react'
-import { ArrowDown01Icon, StarIcon } from '@hugeicons/core-free-icons'
+import {
+  ArrowDown01Icon,
+  StarIcon,
+  Search01Icon,
+  RefreshIcon,
+} from '@hugeicons/core-free-icons'
 import type {
   ModelsPayload,
   ProviderModel,
@@ -9,8 +14,6 @@ import type {
   UserPreferences,
 } from '@/lib/app-api'
 import { appQueryKeys, syncModels, updatePreferences } from '@/lib/app-api'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { MenuContent, MenuRoot, MenuTrigger } from '@/components/ui/menu'
 import { mutationErrorMessage } from '@/lib/error-utils'
 import {
@@ -68,7 +71,7 @@ export function ChatModelSelector({
     function scrollSelectedIntoView() {
       if (open) {
         const handle = requestAnimationFrame(function scroll() {
-          selectedRef.current?.scrollIntoView({ block: 'start' })
+          selectedRef.current?.scrollIntoView({ block: 'nearest' })
         })
         return function cleanup() {
           cancelAnimationFrame(handle)
@@ -87,10 +90,6 @@ export function ChatModelSelector({
     }) ?? null
 
   const normalizedDefaultModelId = defaultModelId?.trim()
-  const isSelectedModelDefault =
-    !!selectedModel &&
-    !!normalizedDefaultModelId &&
-    providerModelKey(selectedModel) === normalizedDefaultModelId
 
   const filteredModels = useMemo(
     function filterModels() {
@@ -101,6 +100,40 @@ export function ChatModelSelector({
       })
     },
     [models, query],
+  )
+
+  const sortedGroupedModels = useMemo(
+    function groupModels() {
+      const groups: Record<string, Array<ProviderModel>> = {}
+      for (const model of filteredModels) {
+        const provider =
+          model.providerLabel?.trim() || model.owned_by?.trim() || 'Other'
+        const normalizedProvider =
+          provider.charAt(0).toUpperCase() + provider.slice(1)
+        if (!groups[normalizedProvider]) {
+          groups[normalizedProvider] = []
+        }
+        groups[normalizedProvider].push(model)
+      }
+
+      for (const key of Object.keys(groups)) {
+        groups[key].sort(function compareNames(a, b) {
+          const nameA = providerModelDisplayName(a).toLowerCase()
+          const nameB = providerModelDisplayName(b).toLowerCase()
+          return nameA.localeCompare(nameB)
+        })
+      }
+
+      return Object.entries(groups).sort(function compareGroups(
+        [keyA],
+        [keyB],
+      ) {
+        if (keyA === 'Other') return 1
+        if (keyB === 'Other') return -1
+        return keyA.localeCompare(keyB)
+      })
+    },
+    [filteredModels],
   )
 
   const updatePreferencesMutation = useMutation({
@@ -204,12 +237,20 @@ export function ChatModelSelector({
       <MenuContent
         side={side}
         align={align}
-        className="w-88 max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl p-0"
+        className="w-80 max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl p-0 border border-primary-200/60 shadow-lg bg-surface"
       >
-        <div className="border-b border-primary-200 px-3 py-3">
-          <div>
-            <Input
-              nativeInput
+        <div className="border-b border-primary-200/60 bg-primary-50/15 px-3 py-2 flex items-center gap-2">
+          <div className="relative flex-1 flex items-center">
+            <span className="absolute left-2.5 flex items-center pointer-events-none">
+              <HugeiconsIcon
+                icon={Search01Icon}
+                size={20}
+                strokeWidth={1.5}
+                className="text-primary-400"
+              />
+            </span>
+            <input
+              type="text"
               value={query}
               onChange={function handleChange(
                 event: React.ChangeEvent<HTMLInputElement>,
@@ -219,147 +260,122 @@ export function ChatModelSelector({
               onKeyDown={function handleKeyDown(event) {
                 event.stopPropagation()
               }}
-              placeholder="Search a model"
+              placeholder="Search models..."
+              className="w-full h-8 pl-8 pr-3 text-xs bg-primary-100/30 border border-primary-200 rounded-lg outline-none placeholder:text-primary-400/80 focus:border-primary-500/80 focus:bg-surface focus:ring-2 focus:ring-primary-500/20 transition-all text-primary-900"
             />
           </div>
+          <button
+            type="button"
+            disabled={syncModelsMutation.isPending}
+            onClick={function handleClick(event) {
+              event.preventDefault()
+              event.stopPropagation()
+              handleRefreshModels()
+            }}
+            className={cn(
+              'flex size-8 shrink-0 items-center justify-center rounded-lg border border-primary-200 bg-primary-100/10 text-primary-600 hover:bg-primary-100 hover:text-primary-900 transition-colors',
+              syncModelsMutation.isPending && 'opacity-60 pointer-events-none',
+            )}
+            aria-label="Sync models"
+            title="Sync models"
+          >
+            <HugeiconsIcon
+              icon={RefreshIcon}
+              size={20}
+              strokeWidth={1.5}
+              className={cn(syncModelsMutation.isPending && 'animate-spin')}
+            />
+          </button>
         </div>
 
-        <div className="max-h-80 overflow-y-auto px-2 py-2">
-          {filteredModels.length === 0 ? (
-            <div className="rounded-lg border border-primary-200 bg-surface px-3 py-6 text-center text-sm text-primary-500">
+        <div className="max-h-64 overflow-y-auto p-1.5 space-y-2">
+          {(defaultErrorMessage || syncErrorMessage) && (
+            <div className="px-2.5 py-1.5 text-xs text-red-600 bg-red-500/10 rounded-lg border border-red-200/20">
+              {defaultErrorMessage || syncErrorMessage}
+            </div>
+          )}
+          {sortedGroupedModels.length === 0 ? (
+            <div className="rounded-lg border border-primary-100 bg-surface px-3 py-5 text-center text-xs text-primary-500">
               {loading ? 'Loading models...' : 'No models match this search.'}
             </div>
           ) : (
-            <div className="space-y-1">
-              {filteredModels.map(function renderModel(model) {
-                const modelKey = providerModelKey(model)
-                const isSelected =
-                  !!selectedModel &&
-                  modelKey === providerModelKey(selectedModel)
-                const isDefault =
-                  !!normalizedDefaultModelId &&
-                  modelKey === normalizedDefaultModelId
-
-                return (
-                  <div
-                    key={modelKey}
-                    ref={isSelected ? selectedRef : undefined}
-                    className={cn(
-                      'flex w-full items-start justify-between gap-3 rounded-lg px-3 py-2 text-left transition-colors hover:bg-primary-100',
-                      isSelected && 'bg-primary-100 text-primary-950',
-                    )}
-                  >
-                    <button
-                      type="button"
-                      onClick={function handleClick() {
-                        handleSelectModel(modelKey)
-                      }}
-                      className="min-w-0 flex-1 text-left"
-                    >
-                      <div className="flex min-w-0 items-center gap-2">
-                        <div className="truncate text-sm text-primary-900">
-                          {providerModelDisplayName(model)}
-                        </div>
-                        {isSelected ? (
-                          <span className="shrink-0 text-[11px] text-primary-700">
-                            Current
-                          </span>
-                        ) : null}
-                        {isDefault ? (
-                          <span className="shrink-0 text-[11px] text-primary-500">
-                            Default
-                          </span>
-                        ) : null}
-                      </div>
-                      <div className="truncate text-xs text-primary-500 tabular-nums">
-                        {providerModelMetaLine(model)}
-                      </div>
-                    </button>
-                    <div className="shrink-0">
-                      {isDefault ? (
-                        <span className="text-[11px] text-primary-500">
-                          Default
-                        </span>
-                      ) : !defaultModelLocked ? (
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          disabled={updatePreferencesMutation.isPending}
-                          onClick={function handleClick(event) {
-                            event.preventDefault()
-                            event.stopPropagation()
-                            handleMakeDefault(modelKey)
-                          }}
-                          className="rounded-md px-2 text-primary-500 hover:text-primary-900"
-                          aria-label={`Make ${providerModelDisplayName(model)} default`}
-                          title="Make default"
-                        >
-                          <HugeiconsIcon
-                            icon={StarIcon}
-                            size={20}
-                            strokeWidth={1.5}
-                          />
-                        </Button>
-                      ) : null}
-                    </div>
+            sortedGroupedModels.map(function renderGroup([
+              provider,
+              providerModels,
+            ]) {
+              return (
+                <div key={provider} className="space-y-0.5">
+                  <div className="px-2.5 py-1 text-[10px] font-medium tracking-wider text-primary-400 uppercase select-none">
+                    {provider}
                   </div>
-                )
-              })}
-            </div>
-          )}
-        </div>
+                  {providerModels.map(function renderModel(model) {
+                    const modelKey = providerModelKey(model)
+                    const isSelected =
+                      !!selectedModel &&
+                      modelKey === providerModelKey(selectedModel)
+                    const isDefault =
+                      !!normalizedDefaultModelId &&
+                      modelKey === normalizedDefaultModelId
 
-        <div className="border-t border-primary-200 px-3 py-2.5">
-          {defaultErrorMessage ? (
-            <div className="mb-2 text-xs text-red-600">
-              {defaultErrorMessage}
-            </div>
-          ) : syncErrorMessage ? (
-            <div className="mb-2 text-xs text-red-600">{syncErrorMessage}</div>
-          ) : null}
-          <div className="flex items-center justify-between gap-3">
-            <div className="min-w-0 text-xs text-primary-500">
-              {defaultModelLocked
-                ? 'Default model is locked by server policy.'
-                : isSelectedModelDefault
-                  ? 'Used by default for new chats.'
-                  : 'Selection applies to this chat only.'}
-            </div>
-            <div className="flex items-center gap-1.5">
-              <Button
-                size="sm"
-                variant="ghost"
-                disabled={syncModelsMutation.isPending}
-                onClick={function handleClick(event) {
-                  event.preventDefault()
-                  event.stopPropagation()
-                  handleRefreshModels()
-                }}
-                className="shrink-0 rounded-md px-2.5"
-              >
-                {syncModelsMutation.isPending ? 'Refreshing...' : 'Refresh'}
-              </Button>
-              {selectedModel &&
-              !isSelectedModelDefault &&
-              !defaultModelLocked ? (
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  disabled={updatePreferencesMutation.isPending}
-                  onClick={function handleClick(event) {
-                    event.preventDefault()
-                    event.stopPropagation()
-                    handleMakeDefault(providerModelKey(selectedModel))
-                  }}
-                  className="shrink-0 rounded-md px-2.5"
-                >
-                  {updatePreferencesMutation.isPending
-                    ? 'Saving...'
-                    : 'Make Default'}
-                </Button>
-              ) : null}
-            </div>
-          </div>
+                    return (
+                      <div
+                        key={modelKey}
+                        ref={isSelected ? selectedRef : undefined}
+                        className={cn(
+                          'group/model-row flex items-center justify-between gap-2.5 rounded-lg px-2.5 py-1.5 text-left transition-all duration-150 cursor-pointer hover:bg-primary-100/70',
+                          isSelected && 'bg-primary-100 text-primary-950',
+                        )}
+                        onClick={function handleClick() {
+                          handleSelectModel(modelKey)
+                        }}
+                      >
+                        <div className="min-w-0 flex-1 px-1">
+                          <div className="flex items-center gap-1.5">
+                            <div className="truncate text-xs font-medium text-primary-900">
+                              {providerModelDisplayName(model)}
+                            </div>
+                          </div>
+                          <div className="truncate text-[10px] text-primary-500 tabular-nums">
+                            {providerModelMetaLine(model)}
+                          </div>
+                        </div>
+
+                        <div className="shrink-0">
+                          {isDefault ? (
+                            <HugeiconsIcon
+                              icon={StarIcon}
+                              size={20}
+                              strokeWidth={1.5}
+                              className="text-primary-600 fill-primary-600/20"
+                            />
+                          ) : !defaultModelLocked ? (
+                            <button
+                              type="button"
+                              disabled={updatePreferencesMutation.isPending}
+                              onClick={function handleClick(event) {
+                                event.preventDefault()
+                                event.stopPropagation()
+                                handleMakeDefault(modelKey)
+                              }}
+                              className="opacity-0 group-hover/model-row:opacity-100 rounded-md p-1 text-primary-400 hover:bg-primary-200 hover:text-primary-600 transition-all duration-150"
+                              aria-label={`Make ${providerModelDisplayName(model)} default`}
+                              title="Make default"
+                            >
+                              <HugeiconsIcon
+                                icon={StarIcon}
+                                size={20}
+                                strokeWidth={1.5}
+                              />
+                            </button>
+                          ) : null}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )
+            })
+          )}
         </div>
       </MenuContent>
     </MenuRoot>
