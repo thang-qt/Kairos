@@ -59,11 +59,11 @@ function ChatHeaderComponent({
       ) : null}
       <div className="flex min-w-0 flex-1 items-center gap-2">
         {showActiveTitle ? (
-          <span className="min-w-0 flex-1 truncate text-sm font-medium">
+          <span className="hidden sm:inline min-w-0 flex-1 truncate text-sm font-medium">
             {activeTitle}
           </span>
         ) : (
-          <div className="flex-1" />
+          <div className="hidden sm:block flex-1" />
         )}
         <ChatModelSelector
           models={models}
