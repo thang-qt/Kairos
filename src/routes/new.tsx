@@ -1,5 +1,5 @@
 import { createFileRoute, redirect } from '@tanstack/react-router'
-import { beginFreshNewChat } from '../screens/chat/conversation-settings'
+import { beginFreshNewChat } from '@/features/chat/conversation-settings'
 
 export const Route = createFileRoute('/new')({
   beforeLoad: function redirectToNewChat() {

@@ -2,10 +2,8 @@ import type {
   GatewayMessage,
   HistoryResponse,
   SessionMeta,
-} from '@/screens/chat/types'
-import type { ChatRequestAdvancedSettings } from '@/screens/chat/conversation-settings'
-
-export type ChatConversation = SessionMeta
+  ChatRequestAdvancedSettings,
+} from './contracts'
 
 export type ChatAttachmentPayload = {
   mimeType: string
@@ -147,7 +145,7 @@ export type ChatSubscription = {
 
 export type ChatBackend = {
   getStatus: () => Promise<ChatStatus>
-  listConversations: () => Promise<Array<ChatConversation>>
+  listConversations: () => Promise<Array<SessionMeta>>
   getConversationHistory: (input: ChatHistoryInput) => Promise<HistoryResponse>
   createConversation: (
     input?: ChatCreateConversationInput,
@@ -155,9 +153,7 @@ export type ChatBackend = {
   renameConversation: (
     input: ChatRenameConversationInput,
   ) => Promise<ChatConversationResult>
-  pinConversation: (
-    input: ChatPinConversationInput,
-  ) => Promise<ChatConversation>
+  pinConversation: (input: ChatPinConversationInput) => Promise<SessionMeta>
   deleteConversation: (input: ChatDeleteConversationInput) => Promise<void>
   stopConversation: (input: ChatStopConversationInput) => Promise<void>
   sendMessage: (input: ChatSendMessageInput) => Promise<ChatSendMessageResult>

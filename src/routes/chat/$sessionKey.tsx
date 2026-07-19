@@ -1,9 +1,9 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useCallback, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { ChatScreen } from '../../screens/chat/chat-screen'
-import { moveHistoryMessages } from '../../screens/chat/chat-queries'
-import { beginFreshNewChat } from '../../screens/chat/conversation-settings'
+import { ChatScreen } from '@/features/chat/chat-screen'
+import { moveHistoryMessages } from '@/features/chat/chat-queries'
+import { beginFreshNewChat } from '@/features/chat/conversation-settings'
 import { requireAuthenticatedUser } from '@/lib/route-auth'
 
 export const Route = createFileRoute('/chat/$sessionKey')({

@@ -6,7 +6,7 @@ import type {
   ChatRenameConversationInput,
   ChatStatus,
 } from './types'
-import type { HistoryResponse, SessionMeta } from '@/screens/chat/types'
+import type { HistoryResponse, SessionMeta } from './contracts'
 import { parseJSON } from '@/lib/api-client'
 
 type SessionsPayload = {

@@ -1,7 +1,7 @@
 import { HugeiconsIcon } from '@hugeicons/react'
 import { ComputerIcon, Moon01Icon, Sun01Icon } from '@hugeicons/core-free-icons'
 import type { IconSvgElement } from '@hugeicons/react'
-import type { ThemeMode, ThemePalette } from '@/hooks/use-chat-settings'
+import type { ThemeMode, ThemePalette } from '@/app/preferences/app-preferences'
 import { Switch } from '@/components/ui/switch'
 import { Tabs, TabsList, TabsTab } from '@/components/ui/tabs'
 import {
@@ -9,7 +9,7 @@ import {
   themePaletteClassName,
   useChatSettings,
   useResolvedTheme,
-} from '@/hooks/use-chat-settings'
+} from '@/app/preferences/app-preferences'
 import { cn } from '@/lib/utils'
 
 type SettingCardProps = {

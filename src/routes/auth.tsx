@@ -1,6 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router'
 
-import { AuthScreen } from '@/screens/auth/auth-screen'
+import { AuthScreen } from '@/features/auth/auth-screen'
 import { requireGuestUser } from '@/lib/route-auth'
 
 export const Route = createFileRoute('/auth')({

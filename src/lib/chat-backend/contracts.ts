@@ -1,0 +1,119 @@
+export type ToolCallContent = {
+  type: 'toolCall'
+  id?: string
+  name?: string
+  arguments?: Record<string, unknown>
+  partialJson?: string
+  status?: string
+  emoji?: string
+}
+
+export type ToolResultContent = {
+  type: 'toolResult'
+  toolCallId?: string
+  toolName?: string
+  content?: Array<{ type?: string; text?: string }>
+  details?: Record<string, unknown>
+  isError?: boolean
+}
+
+export type TextContent = {
+  type: 'text'
+  text?: string
+  textSignature?: string
+}
+
+export type ThinkingContent = {
+  type: 'thinking'
+  thinking?: string
+  thinkingSignature?: string
+}
+
+export type ImageContent = {
+  type: 'image'
+  source: {
+    type: 'base64'
+    media_type: string
+    data: string
+  }
+}
+
+export type MessageContent =
+  | TextContent
+  | ToolCallContent
+  | ThinkingContent
+  | ImageContent
+
+export type GatewayMessage = {
+  id?: string
+  role?: string
+  model?: string
+  modelName?: string
+  modelDescription?: string
+  content?: Array<MessageContent>
+  toolCallId?: string
+  toolName?: string
+  details?: Record<string, unknown>
+  isError?: boolean
+  timestamp?: number
+  runId?: string
+  roundIndex?: number
+  messageIndex?: number
+  [key: string]: unknown
+  __optimisticId?: string
+  __streamRunId?: string | null
+}
+
+export type SessionSummary = {
+  key?: string
+  label?: string
+  title?: string
+  derivedTitle?: string
+  isPinned?: boolean
+  updatedAt?: number
+  lastMessage?: GatewayMessage | null
+  friendlyId?: string
+  totalTokens?: number
+  contextTokens?: number
+}
+
+export type SessionListResponse = {
+  sessions?: Array<SessionSummary>
+}
+
+export type HistoryResponse = {
+  sessionKey: string
+  sessionId?: string
+  messages: Array<GatewayMessage>
+}
+
+export type SessionMeta = {
+  key: string
+  friendlyId: string
+  title?: string
+  derivedTitle?: string
+  label?: string
+  isPinned?: boolean
+  updatedAt?: number
+  lastMessage?: GatewayMessage | null
+  totalTokens?: number
+  contextTokens?: number
+}
+
+export type ReasoningEffort = 'low' | 'medium' | 'high'
+
+export type ChatRequestAdvancedSettings = {
+  reasoning?: {
+    effort?: ReasoningEffort
+  }
+  sampling?: {
+    temperature?: number
+    topP?: number
+    topK?: number
+  }
+  penalties?: {
+    frequencyPenalty?: number
+    presencePenalty?: number
+  }
+  maxTokens?: number
+}

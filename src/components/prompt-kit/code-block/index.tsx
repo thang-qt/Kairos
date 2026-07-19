@@ -36,7 +36,7 @@ import langXml from '@shikijs/langs/xml'
 import langYaml from '@shikijs/langs/yaml'
 import { formatLanguageName, normalizeLanguage, resolveLanguage } from './utils'
 import type { HighlighterCore } from 'shiki/core'
-import { useResolvedTheme } from '@/hooks/use-chat-settings'
+import { useResolvedTheme } from '@/app/preferences/app-preferences'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 

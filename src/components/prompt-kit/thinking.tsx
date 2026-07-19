@@ -10,18 +10,23 @@ import {
   CollapsibleTrigger,
 } from '@/components/ui/collapsible'
 import { Button } from '@/components/ui/button'
-import { useChatSettingsStore } from '@/hooks/use-chat-settings'
+
+export type ReasoningCollapseMode =
+  | 'collapsed'
+  | 'expanded-while-thinking'
+  | 'expanded'
 
 export type ThinkingProps = {
   content: string
   isThinking?: boolean
+  reasoningCollapseMode?: ReasoningCollapseMode
 }
 
-function Thinking({ content, isThinking = false }: ThinkingProps) {
-  const reasoningCollapseMode = useChatSettingsStore(
-    (state) => state.settings.reasoningCollapseMode,
-  )
-
+function Thinking({
+  content,
+  isThinking = false,
+  reasoningCollapseMode = 'expanded-while-thinking',
+}: ThinkingProps) {
   function getInitialOpen() {
     if (reasoningCollapseMode === 'collapsed') return false
     if (reasoningCollapseMode === 'expanded') return true

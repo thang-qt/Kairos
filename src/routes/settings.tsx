@@ -1,7 +1,7 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
-import type { SettingsTab } from '@/screens/settings/settings-screen'
+import type { SettingsTab } from '@/features/settings/settings-screen'
 import { requireAuthenticatedUser } from '@/lib/route-auth'
-import { SettingsScreen } from '@/screens/settings/settings-screen'
+import { SettingsScreen } from '@/features/settings/settings-screen'
 
 const SETTINGS_TABS = new Set<SettingsTab>([
   'account',
