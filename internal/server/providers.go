@@ -174,9 +174,10 @@ type ChatGenerationRequest struct {
 }
 
 type ChatGenerationDelta struct {
-	Text      string
-	Thinking  string
-	ToolCalls []ProviderToolCall
+	Text         string
+	Thinking     string
+	ToolCalls    []ProviderToolCall
+	ToolProgress []ProviderToolProgress
 }
 
 type ChatGenerationResult struct {
@@ -222,6 +223,18 @@ type ProviderToolCall struct {
 	Name     string
 	ArgsJSON string
 	Args     map[string]any
+}
+
+// ProviderToolProgress is an informational, provider-executed tool update. It
+// must not be added to ProviderToolCall: unlike those calls, Kairos does not
+// execute it or send a tool result back to the provider.
+type ProviderToolProgress struct {
+	ID         string `json:"toolCallId"`
+	Name       string `json:"tool"`
+	Label      string `json:"label"`
+	Emoji      string `json:"emoji"`
+	Status     string `json:"status"`
+	DurationMS int64  `json:"durationMs,omitempty"`
 }
 
 type ProviderWebSearchOptions struct{}

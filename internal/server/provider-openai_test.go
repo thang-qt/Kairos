@@ -45,6 +45,8 @@ func TestOpenAICompatibleDriverUsesOfficialSDKForModelsAndStreaming(t *testing.T
 
 			writer.Header().Set("Content-Type", "text/event-stream")
 			fmt.Fprint(writer, "data: {\"id\":\"completion-1\",\"object\":\"chat.completion.chunk\",\"created\":123,\"model\":\"gpt-test\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"Hello \"}}]}\n\n")
+			fmt.Fprint(writer, "event: hermes.tool.progress\ndata: {\"tool\":\"terminal\",\"emoji\":\"💻\",\"label\":\"pwd\",\"toolCallId\":\"call-hermes\",\"status\":\"running\"}\n\n")
+			fmt.Fprint(writer, "event: hermes.tool.progress\ndata: {\"tool\":\"terminal\",\"toolCallId\":\"call-hermes\",\"status\":\"completed\"}\n\n")
 			fmt.Fprint(writer, "data: {\"id\":\"completion-1\",\"object\":\"chat.completion.chunk\",\"created\":123,\"model\":\"gpt-test\",\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call-1\",\"type\":\"function\",\"function\":{\"name\":\"lookup\",\"arguments\":\"{\\\"query\\\":\\\"kai\"}}]}}]}\n\n")
 			fmt.Fprint(writer, "data: {\"id\":\"completion-1\",\"object\":\"chat.completion.chunk\",\"created\":123,\"model\":\"gpt-test\",\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"ros\\\"}\"}}]}}]}\n\n")
 			fmt.Fprint(writer, "data: {\"id\":\"completion-1\",\"object\":\"chat.completion.chunk\",\"created\":123,\"model\":\"gpt-test\",\"choices\":[],\"usage\":{\"prompt_tokens\":3,\"completion_tokens\":5,\"total_tokens\":8}}\n\n")
@@ -101,7 +103,41 @@ func TestOpenAICompatibleDriverUsesOfficialSDKForModelsAndStreaming(t *testing.T
 	if len(result.ToolCalls) != 1 || result.ToolCalls[0].ID != "call-1" || result.ToolCalls[0].Name != "lookup" || result.ToolCalls[0].ArgsJSON != `{"query":"kairos"}` {
 		t.Fatalf("tool calls = %#v, want merged lookup call", result.ToolCalls)
 	}
-	if len(deltas) != 3 || deltas[0].Text != "Hello " || !strings.Contains(deltas[2].ToolCalls[0].ArgsJSON, "kairos") {
+	if len(deltas) < 3 || !containsOpenAITextDelta(deltas, "Hello ") || !containsOpenAIToolCallDelta(deltas, "kairos") {
 		t.Fatalf("deltas = %#v, want text and incremental tool-call deltas", deltas)
 	}
+	if progress := lastHermesToolProgress(deltas); progress.ID != "call-hermes" || progress.Name != "terminal" || progress.Label != "pwd" || progress.Status != "completed" {
+		t.Fatalf("Hermes tool progress = %#v, want completed terminal pwd", progress)
+	}
+}
+
+func containsOpenAITextDelta(deltas []ChatGenerationDelta, text string) bool {
+	for _, delta := range deltas {
+		if delta.Text == text {
+			return true
+		}
+	}
+	return false
+}
+
+func containsOpenAIToolCallDelta(deltas []ChatGenerationDelta, arguments string) bool {
+	for _, delta := range deltas {
+		for _, call := range delta.ToolCalls {
+			if strings.Contains(call.ArgsJSON, arguments) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func lastHermesToolProgress(deltas []ChatGenerationDelta) ProviderToolProgress {
+	var progress []ProviderToolProgress
+	for _, delta := range deltas {
+		progress = mergeProviderToolProgress(progress, delta.ToolProgress)
+	}
+	if len(progress) == 0 {
+		return ProviderToolProgress{}
+	}
+	return progress[len(progress)-1]
 }

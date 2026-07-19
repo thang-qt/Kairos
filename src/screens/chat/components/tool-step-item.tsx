@@ -122,7 +122,7 @@ function totalToolDurationMs(steps: Array<ToolStep>) {
         )
       )
     }
-    const duration = step.toolPart.output?.durationMs
+    const duration = step.toolPart.durationMs
     return (
       total +
       (typeof duration === 'number' && Number.isFinite(duration) ? duration : 0)
@@ -146,7 +146,10 @@ export function ToolStepItem({ step }: { step: ToolStep }) {
         <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-primary-100 text-primary-600">
           <HugeiconsIcon icon={stepIcon(step)} size={13} strokeWidth={1.7} />
         </span>
-        <span className="min-w-0 flex-1 truncate font-medium text-primary-800">
+        <span
+          className="min-w-0 flex-1 truncate font-medium text-primary-800"
+          title={stepTitle(step)}
+        >
           {stepTitle(step)}
         </span>
         <StepRightContent
@@ -192,7 +195,7 @@ function stepDetails(step: ToolStep, sourcesExpanded = false) {
   if (step.kind === 'web') {
     return sourcesExpanded ? <WebSourceCards step={step} /> : null
   }
-  if (step.toolPart.type === 'math_eval') return null
+  if (step.toolPart.compact || step.toolPart.type === 'math_eval') return null
   return <GenericToolStepDetails toolPart={step.toolPart} />
 }
 
@@ -348,12 +351,41 @@ function stepTitle(step: ToolStep) {
   }
 
   const input = step.toolPart.input
+  const label = typeof input?.label === 'string' ? input.label.trim() : ''
+  if (label) {
+    return `${friendlyToolAction(step.toolPart)}: ${label}`
+  }
   if (step.toolPart.type === 'math_eval') {
     const expr = typeof input?.expr === 'string' ? input.expr.trim() : ''
     return expr ? `Calculating: ${expr}` : 'Calculating'
   }
 
-  return step.toolPart.type
+  return friendlyToolAction(step.toolPart)
+}
+
+function friendlyToolAction(toolPart: ToolPart) {
+  const completed = toolPart.state === 'output-available'
+  switch (toolPart.type) {
+    case 'terminal':
+      return completed ? 'Ran command' : 'Running command'
+    case 'read_file':
+    case 'read':
+      return completed ? 'Read file' : 'Reading file'
+    case 'list_files':
+    case 'list_directory':
+      return completed ? 'Listed files' : 'Listing files'
+    case 'write_file':
+    case 'write':
+      return completed ? 'Wrote file' : 'Writing file'
+    default:
+      return completed
+        ? `Used ${humanizeToolName(toolPart.type)}`
+        : `Using ${humanizeToolName(toolPart.type)}`
+  }
+}
+
+function humanizeToolName(value: string) {
+  return value.replaceAll('_', ' ')
 }
 
 function webStepTitle(

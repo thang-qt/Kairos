@@ -4,6 +4,8 @@ export type ToolCallContent = {
   name?: string
   arguments?: Record<string, unknown>
   partialJson?: string
+  status?: string
+  emoji?: string
 }
 
 export type ToolResultContent = {

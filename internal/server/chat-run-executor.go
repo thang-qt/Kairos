@@ -134,6 +134,8 @@ func (service *ChatRunService) executeRun(
 		accumulatedText := ""
 		accumulatedThinking := ""
 		accumulatedToolCalls := []ProviderToolCall{}
+		accumulatedToolProgress := []ProviderToolProgress{}
+		toolProgressStartedAt := make(map[string]time.Time)
 		result, err := driver.GenerateChatStream(
 			ctx,
 			provider,
@@ -153,7 +155,19 @@ func (service *ChatRunService) executeRun(
 				accumulatedThinking += delta.Thinking
 				accumulatedText += delta.Text
 				accumulatedToolCalls = mergeProviderToolCalls(accumulatedToolCalls, delta.ToolCalls)
-				content := buildAssistantContent(accumulatedThinking, accumulatedText, accumulatedToolCalls)
+				for progressIndex := range delta.ToolProgress {
+					progress := &delta.ToolProgress[progressIndex]
+					if progress.Status == "running" {
+						toolProgressStartedAt[progress.ID] = time.Now()
+					}
+					if progress.Status == "completed" {
+						if startedAt, ok := toolProgressStartedAt[progress.ID]; ok {
+							progress.DurationMS = maxInt64(1, time.Since(startedAt).Milliseconds())
+						}
+					}
+				}
+				accumulatedToolProgress = mergeProviderToolProgress(accumulatedToolProgress, delta.ToolProgress)
+				content := buildAssistantStreamingContent(accumulatedThinking, accumulatedText, accumulatedToolCalls, accumulatedToolProgress)
 				if len(content) == 0 {
 					return nil
 				}
@@ -183,6 +197,12 @@ func (service *ChatRunService) executeRun(
 
 		displayModel = displayModel.withProviderResult(result)
 		accumulatedThinking = firstNonEmpty(result.ThinkingText, accumulatedThinking)
+		if progressDetails := providerToolProgressDetails(accumulatedToolProgress); len(progressDetails) > 0 {
+			if result.Details == nil {
+				result.Details = make(map[string]any)
+			}
+			result.Details["hermesToolProgress"] = progressDetails
+		}
 		accumulatedToolCalls = mergeProviderToolCalls(accumulatedToolCalls, result.ToolCalls)
 		assistantMessage := buildAssistantMessageWithLineage(
 			assistantMessageID,

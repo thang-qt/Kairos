@@ -7,7 +7,10 @@ import {
   mapStandaloneToolResultToToolPart,
   modelFromMessage,
 } from './message-item'
-import { toolChainMessagesSignature } from './message-item-utils'
+import {
+  mapToolCallToToolPart,
+  toolChainMessagesSignature,
+} from './message-item-utils'
 import type { GatewayMessage } from '../types'
 
 const modelLabelById = new Map([
@@ -90,6 +93,29 @@ describe('toolChainMessagesSignature', function () {
     expect(toolChainMessagesSignature([first], undefined)).not.toBe(
       toolChainMessagesSignature([second], undefined),
     )
+  })
+})
+
+describe('Hermes tool progress', function () {
+  it('shows a running remote tool as processing', function () {
+    expect(
+      mapToolCallToToolPart(
+        {
+          type: 'toolCall',
+          id: 'call-hermes',
+          name: 'terminal',
+          arguments: { label: 'pwd' },
+          emoji: '💻',
+          status: 'running',
+        },
+        undefined,
+      ),
+    ).toMatchObject({
+      type: 'terminal',
+      state: 'input-streaming',
+      input: { label: 'pwd' },
+      emoji: '💻',
+    })
   })
 })
 

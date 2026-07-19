@@ -29,6 +29,8 @@ type chatMessageContentPart struct {
 	Name     string
 	Args     map[string]any
 	ArgsJSON string
+	Status   string
+	Emoji    string
 }
 
 type chatMessageContentSource struct {
@@ -69,6 +71,21 @@ func newToolCallContentPart(toolCall ProviderToolCall) chatMessageContentPart {
 		Name:     strings.TrimSpace(toolCall.Name),
 		Args:     toolCall.Args,
 		ArgsJSON: strings.TrimSpace(toolCall.ArgsJSON),
+	}
+}
+
+func newToolProgressContentPart(progress ProviderToolProgress) chatMessageContentPart {
+	arguments := map[string]any{}
+	if label := strings.TrimSpace(progress.Label); label != "" {
+		arguments["label"] = label
+	}
+	return chatMessageContentPart{
+		Type:   "toolCall",
+		ID:     strings.TrimSpace(progress.ID),
+		Name:   strings.TrimSpace(progress.Name),
+		Args:   arguments,
+		Status: strings.TrimSpace(progress.Status),
+		Emoji:  strings.TrimSpace(progress.Emoji),
 	}
 }
 
@@ -172,6 +189,12 @@ func contentPartsToMaps(parts []chatMessageContentPart) []map[string]any {
 			if argsJSON := strings.TrimSpace(part.ArgsJSON); argsJSON != "" {
 				toolCall["partialJson"] = argsJSON
 			}
+			if status := strings.TrimSpace(part.Status); status != "" {
+				toolCall["status"] = status
+			}
+			if emoji := strings.TrimSpace(part.Emoji); emoji != "" {
+				toolCall["emoji"] = emoji
+			}
 			values = append(values, toolCall)
 		}
 	}
@@ -227,6 +250,8 @@ func contentPartsFromMaps(items []map[string]any) []chatMessageContentPart {
 				ID:       strings.TrimSpace(stringValueFromMap(item, "id")),
 				Name:     strings.TrimSpace(stringValueFromMap(item, "name")),
 				ArgsJSON: strings.TrimSpace(stringValueFromMap(item, "partialJson")),
+				Status:   strings.TrimSpace(stringValueFromMap(item, "status")),
+				Emoji:    strings.TrimSpace(stringValueFromMap(item, "emoji")),
 			}
 			if args, ok := item["arguments"].(map[string]any); ok {
 				toolCall.Args = args

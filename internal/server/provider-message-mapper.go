@@ -68,6 +68,22 @@ func buildAssistantContent(
 	return content
 }
 
+func buildAssistantStreamingContent(
+	thinking string,
+	text string,
+	toolCalls []ProviderToolCall,
+	toolProgress []ProviderToolProgress,
+) []chatMessageContentPart {
+	content := make([]chatMessageContentPart, 0, len(toolProgress)+2+len(toolCalls))
+	for _, progress := range toolProgress {
+		if strings.TrimSpace(progress.ID) == "" || strings.TrimSpace(progress.Name) == "" {
+			continue
+		}
+		content = append(content, newToolProgressContentPart(progress))
+	}
+	return append(content, buildAssistantContent(thinking, text, toolCalls)...)
+}
+
 func buildAssistantMessage(
 	messageID string,
 	displayModel assistantModelDisplay,
@@ -175,6 +191,70 @@ func buildGenerationDetails(result ChatGenerationResult) map[string]any {
 		return nil
 	}
 	return details
+}
+
+func mergeProviderToolProgress(
+	current []ProviderToolProgress,
+	next []ProviderToolProgress,
+) []ProviderToolProgress {
+	if len(next) == 0 {
+		return current
+	}
+	merged := append([]ProviderToolProgress(nil), current...)
+	for _, progress := range next {
+		index := -1
+		for candidateIndex, candidate := range merged {
+			if strings.TrimSpace(progress.ID) != "" && strings.TrimSpace(candidate.ID) == strings.TrimSpace(progress.ID) {
+				index = candidateIndex
+				break
+			}
+		}
+		if index < 0 {
+			merged = append(merged, progress)
+			continue
+		}
+		if strings.TrimSpace(progress.Name) != "" {
+			merged[index].Name = strings.TrimSpace(progress.Name)
+		}
+		if strings.TrimSpace(progress.Label) != "" {
+			merged[index].Label = strings.TrimSpace(progress.Label)
+		}
+		if strings.TrimSpace(progress.Emoji) != "" {
+			merged[index].Emoji = strings.TrimSpace(progress.Emoji)
+		}
+		if strings.TrimSpace(progress.Status) != "" {
+			merged[index].Status = strings.TrimSpace(progress.Status)
+		}
+		if progress.DurationMS > 0 {
+			merged[index].DurationMS = progress.DurationMS
+		}
+	}
+	return merged
+}
+
+func providerToolProgressDetails(progress []ProviderToolProgress) []map[string]any {
+	result := make([]map[string]any, 0, len(progress))
+	for _, item := range progress {
+		if strings.TrimSpace(item.ID) == "" || strings.TrimSpace(item.Name) == "" {
+			continue
+		}
+		value := map[string]any{
+			"toolCallId": strings.TrimSpace(item.ID),
+			"tool":       strings.TrimSpace(item.Name),
+			"status":     strings.TrimSpace(item.Status),
+		}
+		if label := strings.TrimSpace(item.Label); label != "" {
+			value["label"] = label
+		}
+		if emoji := strings.TrimSpace(item.Emoji); emoji != "" {
+			value["emoji"] = emoji
+		}
+		if item.DurationMS > 0 {
+			value["durationMs"] = item.DurationMS
+		}
+		result = append(result, value)
+	}
+	return result
 }
 
 func mergeProviderToolCalls(

@@ -19,6 +19,9 @@ export type ToolPart = {
   input?: Record<string, unknown>
   output?: Record<string, unknown>
   toolCallId?: string
+  emoji?: string
+  durationMs?: number
+  compact?: boolean
   errorText?: string
 }
 

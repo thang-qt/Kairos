@@ -33,6 +33,8 @@ import {
   toolResultsSignature,
   toolResultSignature,
   toolChainMessagesSignature,
+  hermesToolPartsFromMessage,
+  runtimeToolDetailsSignature,
 } from './message-item-utils'
 import { toolResultLookupKey } from './chat-message-list-utils'
 
@@ -103,6 +105,23 @@ function MessageItemComponent({
 
   const assistantParts = Array.isArray(message.content) ? message.content : []
   const assistantIsStreaming = Boolean(message.__streamRunId)
+  const hermesToolItems = useMemo(
+    function buildHermesToolItems() {
+      return hermesToolPartsFromMessage(message).map(
+        function toToolChainItem(toolPart) {
+          return {
+            kind: 'step',
+            step: {
+              kind: 'tool',
+              key: `hermes-tool-${toolPart.toolCallId || toolPart.type}`,
+              toolPart,
+            },
+          } satisfies ToolChainItem
+        },
+      )
+    },
+    [message],
+  )
   const toolTurn = useMemo(
     function buildToolTurn() {
       const items: Array<ToolChainItem> = []
@@ -135,7 +154,10 @@ function MessageItemComponent({
                 toolResultLookupKey(sourceMessage, part.id),
               ) ?? toolResultsByCallId?.get(part.id))
             : undefined
-          if (part.name === 'web_search' || part.name === 'web_fetch') {
+          if (
+            (part.name === 'web_search' || part.name === 'web_fetch') &&
+            part.status === undefined
+          ) {
             const step: ToolStep = {
               kind: 'web',
               key: `web-tool-${part.id || index}`,
@@ -221,7 +243,8 @@ function MessageItemComponent({
         toolResultsByCallId?.get(part.id))
       : undefined
     const step: ToolStep =
-      part.name === 'web_search' || part.name === 'web_fetch'
+      (part.name === 'web_search' || part.name === 'web_fetch') &&
+      part.status === undefined
         ? {
             kind: 'web',
             key: `web-tool-${part.id || index}`,
@@ -314,6 +337,13 @@ function MessageItemComponent({
         <ToolChain items={toolTurn.items} />
       ) : null}
 
+      {isAssistant &&
+      !assistantIsStreaming &&
+      hermesToolItems.length > 0 &&
+      showToolMessages ? (
+        <ToolChain items={hermesToolItems} />
+      ) : null}
+
       {isAssistant && assistantParts.map(renderAssistantPart)}
 
       {isAssistant && showAssistantActions && (
@@ -389,6 +419,12 @@ function areMessagesEqual(
   if (
     thinkingFromMessage(prevProps.message) !==
     thinkingFromMessage(nextProps.message)
+  ) {
+    return false
+  }
+  if (
+    runtimeToolDetailsSignature(prevProps.message) !==
+    runtimeToolDetailsSignature(nextProps.message)
   ) {
     return false
   }

@@ -33,7 +33,11 @@ export function mapToolCallToToolPart(
   const isError = resultMessage?.isError ?? Boolean(outputError)
 
   let state: ToolPart['state']
-  if (!hasResult) {
+  if (toolCall.status === 'running') {
+    state = 'input-streaming'
+  } else if (toolCall.status === 'completed') {
+    state = 'output-available'
+  } else if (!hasResult) {
     state = 'input-available'
   } else if (isError) {
     state = 'output-error'
@@ -53,6 +57,8 @@ export function mapToolCallToToolPart(
     input: toolCall.arguments,
     output,
     toolCallId: toolCall.id,
+    emoji: toolCall.emoji,
+    compact: toolCall.status !== undefined,
     errorText,
   }
 }
@@ -117,7 +123,43 @@ export function runtimeToolDetailsSignature(message: GatewayMessage): string {
   const details = detailsRecord(message.details)
   if (!details) return ''
   const tools = Array.isArray(details.tools) ? details.tools : []
-  return tools.length > 0 ? JSON.stringify(tools) : ''
+  const hermesToolProgress = Array.isArray(details.hermesToolProgress)
+    ? details.hermesToolProgress
+    : []
+  return tools.length > 0 || hermesToolProgress.length > 0
+    ? JSON.stringify({ tools, hermesToolProgress })
+    : ''
+}
+
+export function hermesToolPartsFromMessage(
+  message: GatewayMessage,
+): Array<ToolPart> {
+  const details = detailsRecord(message.details)
+  const progress = Array.isArray(details?.hermesToolProgress)
+    ? details.hermesToolProgress
+    : []
+
+  return progress.flatMap(function toToolPart(value) {
+    const item = detailsRecord(value)
+    const toolCallId = normalizedString(item?.toolCallId)
+    const type = normalizedString(item?.tool)
+    if (!toolCallId || !type) return []
+
+    const label = normalizedString(item?.label)
+    const status = normalizedString(item?.status)
+    const durationMs = normalizedNumber(item?.durationMs)
+    return [
+      {
+        type,
+        state: status === 'completed' ? 'output-available' : 'input-available',
+        input: label ? { label } : undefined,
+        toolCallId,
+        emoji: normalizedString(item?.emoji) ?? undefined,
+        durationMs,
+        compact: true,
+      },
+    ]
+  })
 }
 
 export function toolResultText(
@@ -195,7 +237,9 @@ export function toolCallsSignature(message: GatewayMessage): string {
       const name = toolCall.name ?? ''
       const partialJson = toolCall.partialJson ?? ''
       const args = toolCall.arguments ? JSON.stringify(toolCall.arguments) : ''
-      return `${id}|${name}|${partialJson}|${args}`
+      const status = toolCall.status ?? ''
+      const emoji = toolCall.emoji ?? ''
+      return `${id}|${name}|${partialJson}|${args}|${status}|${emoji}`
     })
     .join('||')
 }
