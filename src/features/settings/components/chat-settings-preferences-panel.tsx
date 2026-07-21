@@ -86,7 +86,7 @@ export function ChatSettingsPreferencesPanel({
           models={models}
           selectedModelId={modelId || defaultModelId || ''}
           defaultModelId={defaultModelId}
-          showModelInfo={isModelOverride}
+          showModelInfo={false}
           value={value}
           onChange={save}
         />
