@@ -117,12 +117,11 @@ export function WebToolsSettingsPanel() {
       <div className="mx-auto flex w-full max-w-3xl flex-col gap-4">
         <section className="rounded-xl border border-primary-200 bg-surface p-5">
           <div className="mb-4 max-w-2xl">
-            <h2 className="text-balance text-base text-primary-950">
+            <h2 className="text-balance text-base font-medium text-primary-950">
               Web tools
             </h2>
             <p className="mt-1 text-pretty text-sm text-primary-500">
-              Configure provider-neutral web search and fetch. For now Kairos
-              uses Exa, then exposes it to models as normal function tools.
+              Configure web search and URL fetching for assistant turns.
             </p>
           </div>
 
@@ -162,10 +161,6 @@ export function WebToolsSettingsPanel() {
                   }
                 }}
               />
-              <p className="text-xs text-primary-500">
-                Stored encrypted in the local database. Environment EXA_API_KEY
-                is still used only when no per-user setting exists.
-              </p>
             </div>
 
             {configured ? (
@@ -201,7 +196,9 @@ export function WebToolsSettingsPanel() {
                     setSearchMaxResults(readValue(event))
                   }}
                 />
-                <p className="text-xs text-primary-500">Allowed range: 1–10.</p>
+                <p className="text-xs text-primary-500">
+                  Links per query (1–10)
+                </p>
               </div>
 
               <div className="flex flex-col gap-1.5">
@@ -222,7 +219,7 @@ export function WebToolsSettingsPanel() {
                   }}
                 />
                 <p className="text-xs text-primary-500">
-                  Allowed range: 1,000–50,000.
+                  Max page length (1k–50k)
                 </p>
               </div>
 
@@ -239,9 +236,7 @@ export function WebToolsSettingsPanel() {
                     setToolCallLimit(readValue(event))
                   }}
                 />
-                <p className="text-xs text-primary-500">
-                  Maximum tool-call rounds per response. Allowed range: 1–100.
-                </p>
+                <p className="text-xs text-primary-500">Max rounds (1–100)</p>
               </div>
             </div>
 

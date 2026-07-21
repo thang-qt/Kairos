@@ -32,7 +32,7 @@ export function DisplaySettingsPanel() {
     <div className="space-y-3">
       <SettingsRow
         label="Tool messages"
-        description="Show tool calls and tool outputs inline in chat."
+        description="Display tool steps and web search progress inline."
       >
         <Switch
           checked={settings.showToolMessages}
@@ -44,7 +44,7 @@ export function DisplaySettingsPanel() {
 
       <SettingsRow
         label="Reasoning blocks"
-        description="Show reasoning sections when a model returns them."
+        description="Show model thinking steps in responses."
       >
         <Switch
           checked={settings.showReasoningBlocks}
@@ -57,11 +57,11 @@ export function DisplaySettingsPanel() {
       {settings.showReasoningBlocks && (
         <div className="space-y-3 rounded-lg border border-primary-200 bg-surface px-4 py-3">
           <div>
-            <div className="text-sm text-primary-900">
+            <div className="text-sm font-medium text-primary-900">
               Reasoning collapse behavior
             </div>
-            <div className="text-pretty text-xs text-primary-500">
-              Configure how reasoning blocks are shown in the chat window.
+            <div className="text-xs text-primary-500">
+              Choose how thinking sections display after loading.
             </div>
           </div>
           <Tabs
@@ -102,7 +102,7 @@ export function DisplaySettingsPanel() {
 
       <SettingsRow
         label="Conversation navigator"
-        description="Show quick navigation controls in the message list."
+        description="Quickly jump between messages in long chats."
       >
         <Switch
           checked={settings.showConversationNavigator}
@@ -114,7 +114,7 @@ export function DisplaySettingsPanel() {
 
       <SettingsRow
         label="Sidebar section counts"
-        description="Show the number of conversations in each sidebar group."
+        description="Show total chat counts in sidebar categories."
       >
         <Switch
           checked={settings.showSidebarSectionCounts}

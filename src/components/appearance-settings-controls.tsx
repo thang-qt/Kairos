@@ -78,8 +78,8 @@ export function AppearanceSettingsControls() {
   return (
     <div className="space-y-3">
       <SettingCard
-        label="Mode"
-        description="Choose whether the interface follows light, dark, or your system preference."
+        label="Theme"
+        description="Switch between light, dark, or system mode."
       >
         <Tabs
           value={settings.themeMode}
@@ -102,8 +102,8 @@ export function AppearanceSettingsControls() {
       </SettingCard>
 
       <SettingCard
-        label="Palette"
-        description="Swap the app's color system without changing layout or behavior."
+        label="Color palette"
+        description="Select an accent color palette for the app."
       >
         <div className="grid gap-2 sm:grid-cols-2">
           {THEME_PALETTE_OPTIONS.map((option) => {
@@ -126,9 +126,6 @@ export function AppearanceSettingsControls() {
                   <div className="min-w-0">
                     <div className="text-sm text-primary-900">
                       {option.label}
-                    </div>
-                    <div className="mt-1 text-pretty text-xs text-primary-500">
-                      {option.description}
                     </div>
                   </div>
                   <div
@@ -156,7 +153,7 @@ export function AppearanceSettingsControls() {
 
       <SettingCard
         label="Wide mode"
-        description="Use a wider layout for message content."
+        description="Expand chat content across a wider container."
       >
         <div className="flex items-center justify-end">
           <Switch

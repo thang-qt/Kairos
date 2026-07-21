@@ -85,19 +85,23 @@ function SettingCard({
   children,
 }: {
   label: string
-  description: string
+  description?: string
   checked: boolean
   onCheckedChange: (checked: boolean) => void
   children?: React.ReactNode
 }) {
   return (
-    <div className="space-y-3 rounded-lg border border-primary-200 px-3 py-2">
+    <div className="space-y-3 rounded-lg border border-primary-200 px-3 py-2.5">
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0 flex-1">
-          <div className="truncate text-sm text-primary-800">{label}</div>
-          <div className="text-pretty text-xs text-primary-500">
-            {description}
+          <div className="truncate text-sm font-medium text-primary-800">
+            {label}
           </div>
+          {description ? (
+            <div className="text-pretty text-xs text-primary-500">
+              {description}
+            </div>
+          ) : null}
         </div>
         <Switch checked={checked} onCheckedChange={onCheckedChange} />
       </div>
@@ -222,7 +226,7 @@ export function ModelSettingsPanel({
       <PanelSection title="Prompting">
         <FieldBlock
           label="System prompt"
-          description="Prepended as a system message before the conversation history."
+          description="Custom instructions for assistant persona and behavior."
         >
           <textarea
             value={value.systemPrompt}
@@ -241,192 +245,161 @@ export function ModelSettingsPanel({
       </PanelSection>
 
       <PanelSection title="Tools">
-        <FieldBlock
-          label="Web search and fetch"
-          description="Allow Kairos to search the web and fetch URLs for the next turn."
-        >
-          <div className="flex items-center justify-between gap-3 rounded-lg border border-primary-200 px-3 py-2">
-            <div className="min-w-0 flex-1">
-              <div className="truncate text-sm text-primary-800">
-                Use web tools
-              </div>
-              <div className="text-pretty text-xs text-primary-500">
-                Adds provider-neutral web_search and web_fetch tools.
-              </div>
-            </div>
-            <Switch
-              checked={value.webSearch}
-              onCheckedChange={function handleCheckedChange(checked) {
-                onChange({ webSearch: checked })
-              }}
-            />
-          </div>
-        </FieldBlock>
+        <SettingCard
+          label="Web search & fetch"
+          description="Search the web and read page contents during chat."
+          checked={value.webSearch}
+          onCheckedChange={function handleCheckedChange(checked) {
+            onChange({ webSearch: checked })
+          }}
+        />
 
-        <FieldBlock
-          label="Math"
-          description="Allow Kairos to evaluate math expressions with the math.js web service."
-        >
-          <div className="flex items-center justify-between gap-3 rounded-lg border border-primary-200 px-3 py-2">
-            <div className="min-w-0 flex-1">
-              <div className="truncate text-sm text-primary-800">
-                Use math tools
-              </div>
-              <div className="text-pretty text-xs text-primary-500">
-                Adds math_eval for calculations, units, matrices, and functions.
-              </div>
-            </div>
-            <Switch
-              checked={value.mathTools}
-              onCheckedChange={function handleCheckedChange(checked) {
-                onChange({ mathTools: checked })
-              }}
-            />
-          </div>
-        </FieldBlock>
+        <SettingCard
+          label="Math tools"
+          description="Solve equations and unit conversions automatically."
+          checked={value.mathTools}
+          onCheckedChange={function handleCheckedChange(checked) {
+            onChange({ mathTools: checked })
+          }}
+        />
       </PanelSection>
 
       <PanelSection title="Advanced">
-        <FieldBlock
-          label="Request options"
-          description="Advanced options are omitted from requests until their switch is enabled."
-        >
-          <div className="space-y-3">
-            <SettingCard
-              label="Reasoning"
-              description="Send reasoning controls for compatible models."
-              checked={advanced.reasoning}
-              onCheckedChange={function handleReasoningChange(checked) {
-                onChange({ advanced: { ...advanced, reasoning: checked } })
-              }}
-            >
-              <label className="grid grid-cols-[minmax(0,1fr)_8rem] items-center gap-3 text-sm text-primary-800">
-                <span className="truncate">Effort</span>
-                <select
-                  value={advanced.reasoningEffort}
-                  onChange={function handleEffortChange(event) {
-                    onChange({
-                      advanced: {
-                        ...advanced,
-                        reasoningEffort: event.target.value as ReasoningEffort,
-                      },
-                    })
-                  }}
-                  className="h-8 rounded-lg border border-primary-200 bg-surface px-2 text-sm text-primary-900 outline-none focus:border-primary-500"
-                  aria-label="Reasoning effort"
-                >
-                  <option value="low">Low</option>
-                  <option value="medium">Medium</option>
-                  <option value="high">High</option>
-                </select>
-              </label>
-            </SettingCard>
-
-            <SettingCard
-              label="Sampling"
-              description="Override temperature, nucleus sampling, and top-k."
-              checked={advanced.sampling}
-              onCheckedChange={function handleSamplingChange(checked) {
-                onChange({ advanced: { ...advanced, sampling: checked } })
-              }}
-            >
-              <NumberField
-                label="Temperature"
-                value={advanced.temperature}
-                min={0}
-                max={2}
-                step={0.1}
-                onChange={function handleTemperatureChange(nextValue) {
-                  onChange({
-                    advanced: { ...advanced, temperature: nextValue },
-                  })
-                }}
-              />
-              <NumberField
-                label="Top P"
-                value={advanced.topP}
-                min={0}
-                max={1}
-                step={0.05}
-                onChange={function handleTopPChange(nextValue) {
-                  onChange({ advanced: { ...advanced, topP: nextValue } })
-                }}
-              />
-              <NumberField
-                label="Top K"
-                value={advanced.topK}
-                min={0}
-                max={1000}
-                step={1}
-                onChange={function handleTopKChange(nextValue) {
-                  onChange({ advanced: { ...advanced, topK: nextValue } })
-                }}
-              />
-            </SettingCard>
-
-            <SettingCard
-              label="Penalties"
-              description="Override frequency and presence penalties."
-              checked={advanced.penalties}
-              onCheckedChange={function handlePenaltiesChange(checked) {
-                onChange({ advanced: { ...advanced, penalties: checked } })
-              }}
-            >
-              <NumberField
-                label="Frequency"
-                value={advanced.frequencyPenalty}
-                min={-2}
-                max={2}
-                step={0.1}
-                onChange={function handleFrequencyPenaltyChange(nextValue) {
+        <div className="space-y-3">
+          <SettingCard
+            label="Reasoning"
+            description="Control thinking depth for reasoning models."
+            checked={advanced.reasoning}
+            onCheckedChange={function handleReasoningChange(checked) {
+              onChange({ advanced: { ...advanced, reasoning: checked } })
+            }}
+          >
+            <label className="grid grid-cols-[minmax(0,1fr)_8rem] items-center gap-3 text-sm text-primary-800">
+              <span className="truncate">Effort</span>
+              <select
+                value={advanced.reasoningEffort}
+                onChange={function handleEffortChange(event) {
                   onChange({
                     advanced: {
                       ...advanced,
-                      frequencyPenalty: nextValue,
+                      reasoningEffort: event.target.value as ReasoningEffort,
                     },
                   })
                 }}
-              />
-              <NumberField
-                label="Presence"
-                value={advanced.presencePenalty}
-                min={-2}
-                max={2}
-                step={0.1}
-                onChange={function handlePresencePenaltyChange(nextValue) {
-                  onChange({
-                    advanced: {
-                      ...advanced,
-                      presencePenalty: nextValue,
-                    },
-                  })
-                }}
-              />
-            </SettingCard>
+                className="h-8 rounded-lg border border-primary-200 bg-surface px-2 text-sm text-primary-900 outline-none focus:border-primary-500"
+                aria-label="Reasoning effort"
+              >
+                <option value="low">Low</option>
+                <option value="medium">Medium</option>
+                <option value="high">High</option>
+              </select>
+            </label>
+          </SettingCard>
 
-            <SettingCard
-              label="Max output"
-              description="Request a maximum number of generated tokens."
-              checked={advanced.maxTokens}
-              onCheckedChange={function handleMaxTokensChange(checked) {
-                onChange({ advanced: { ...advanced, maxTokens: checked } })
+          <SettingCard
+            label="Sampling"
+            description="Adjust response creativity and diversity."
+            checked={advanced.sampling}
+            onCheckedChange={function handleSamplingChange(checked) {
+              onChange({ advanced: { ...advanced, sampling: checked } })
+            }}
+          >
+            <NumberField
+              label="Temperature"
+              value={advanced.temperature}
+              min={0}
+              max={2}
+              step={0.1}
+              onChange={function handleTemperatureChange(nextValue) {
+                onChange({
+                  advanced: { ...advanced, temperature: nextValue },
+                })
               }}
-            >
-              <NumberField
-                label="Tokens"
-                value={advanced.maxTokensValue}
-                min={1}
-                max={200000}
-                step={1}
-                onChange={function handleMaxTokensValueChange(nextValue) {
-                  onChange({
-                    advanced: { ...advanced, maxTokensValue: nextValue },
-                  })
-                }}
-              />
-            </SettingCard>
-          </div>
-        </FieldBlock>
+            />
+            <NumberField
+              label="Top P"
+              value={advanced.topP}
+              min={0}
+              max={1}
+              step={0.05}
+              onChange={function handleTopPChange(nextValue) {
+                onChange({ advanced: { ...advanced, topP: nextValue } })
+              }}
+            />
+            <NumberField
+              label="Top K"
+              value={advanced.topK}
+              min={0}
+              max={1000}
+              step={1}
+              onChange={function handleTopKChange(nextValue) {
+                onChange({ advanced: { ...advanced, topK: nextValue } })
+              }}
+            />
+          </SettingCard>
+
+          <SettingCard
+            label="Penalties"
+            description="Reduce repetitive text generation."
+            checked={advanced.penalties}
+            onCheckedChange={function handlePenaltiesChange(checked) {
+              onChange({ advanced: { ...advanced, penalties: checked } })
+            }}
+          >
+            <NumberField
+              label="Frequency"
+              value={advanced.frequencyPenalty}
+              min={-2}
+              max={2}
+              step={0.1}
+              onChange={function handleFrequencyPenaltyChange(nextValue) {
+                onChange({
+                  advanced: {
+                    ...advanced,
+                    frequencyPenalty: nextValue,
+                  },
+                })
+              }}
+            />
+            <NumberField
+              label="Presence"
+              value={advanced.presencePenalty}
+              min={-2}
+              max={2}
+              step={0.1}
+              onChange={function handlePresencePenaltyChange(nextValue) {
+                onChange({
+                  advanced: {
+                    ...advanced,
+                    presencePenalty: nextValue,
+                  },
+                })
+              }}
+            />
+          </SettingCard>
+
+          <SettingCard
+            label="Max output"
+            description="Limit response length in tokens."
+            checked={advanced.maxTokens}
+            onCheckedChange={function handleMaxTokensChange(checked) {
+              onChange({ advanced: { ...advanced, maxTokens: checked } })
+            }}
+          >
+            <NumberField
+              label="Tokens"
+              value={advanced.maxTokensValue}
+              min={1}
+              max={200000}
+              step={1}
+              onChange={function handleMaxTokensValueChange(nextValue) {
+                onChange({
+                  advanced: { ...advanced, maxTokensValue: nextValue },
+                })
+              }}
+            />
+          </SettingCard>
+        </div>
       </PanelSection>
     </div>
   )

@@ -224,14 +224,15 @@ export function TitleSettingsPopover({
               setOpen(false)
             }}
           />
-          <div className="absolute right-0 mt-2 w-80 max-w-[calc(100vw-2rem)] rounded-xl border border-primary-200 bg-surface p-4 shadow-lg z-50 space-y-4 text-left">
-            <h4 className="text-sm font-medium text-primary-955 tracking-tight">
-              Title Generation
-            </h4>
-            <p className="text-[11px] text-primary-500 leading-relaxed text-pretty">
-              Customize title generation running at the start of new
-              conversations.
-            </p>
+          <div className="absolute right-0 mt-2 w-80 max-w-[calc(100vw-2rem)] rounded-xl border border-primary-200 bg-surface p-4 shadow-lg z-50 space-y-3 text-left">
+            <div>
+              <h4 className="text-sm font-medium text-primary-955 tracking-tight">
+                Title Generation
+              </h4>
+              <p className="mt-0.5 text-xs text-primary-500">
+                Automatically generate titles for new conversations.
+              </p>
+            </div>
 
             <div className="space-y-3 pt-2 border-t border-primary-100">
               <div className="flex items-center justify-between gap-3">

@@ -181,8 +181,8 @@ function OptionsPanel({
     <div className="pb-4">
       <PanelSection title="Conversation">
         <SettingsRow
-          label="Rename conversation"
-          description="Update the visible title for this thread"
+          label="Rename thread"
+          description="Update the title of this chat."
         >
           <Button
             size="sm"
@@ -197,8 +197,8 @@ function OptionsPanel({
           </Button>
         </SettingsRow>
         <SettingsRow
-          label="Pin conversation"
-          description="Keep this thread at the top of the session list"
+          label="Pin thread"
+          description="Keep this chat at the top of your list."
         >
           <Button
             size="sm"
@@ -211,8 +211,8 @@ function OptionsPanel({
           </Button>
         </SettingsRow>
         <SettingsRow
-          label="Export conversation"
-          description="Download the current thread in a portable format"
+          label="Export thread"
+          description="Download conversation history."
         >
           <ExportMenu onExport={onExport} disabled={exportDisabled} />
         </SettingsRow>

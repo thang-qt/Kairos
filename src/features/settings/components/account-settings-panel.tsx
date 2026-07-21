@@ -14,7 +14,7 @@ import { cn } from '@/lib/utils'
 
 type SettingsCardProps = {
   title: string
-  description: string
+  description?: string
   children: ReactNode
 }
 
@@ -39,10 +39,14 @@ function SettingsCard({ title, description, children }: SettingsCardProps) {
   return (
     <section className="rounded-xl border border-primary-200 bg-surface p-5">
       <div className="mb-4 max-w-2xl">
-        <h2 className="text-balance text-base text-primary-950">{title}</h2>
-        <p className="mt-1 text-pretty text-sm text-primary-500">
-          {description}
-        </p>
+        <h2 className="text-balance text-base font-medium text-primary-950">
+          {title}
+        </h2>
+        {description ? (
+          <p className="mt-1 text-pretty text-sm text-primary-500">
+            {description}
+          </p>
+        ) : null}
       </div>
       {children}
     </section>
@@ -159,7 +163,7 @@ export function AccountSettingsPanel() {
     <div className="space-y-4">
       <SettingsCard
         title="Account"
-        description="Manage the email address and password used to sign in to this workspace."
+        description="Your account credentials and sign-in details."
       >
         <div className="rounded-lg border border-primary-200 bg-primary-50/60 px-4 py-3">
           <div className="text-xs text-primary-500">Current email</div>
@@ -171,7 +175,7 @@ export function AccountSettingsPanel() {
 
       <SettingsCard
         title="Change email"
-        description="Confirm your password before replacing the email used for future logins."
+        description="Update your account email address."
       >
         <form
           className="space-y-3"
@@ -250,7 +254,7 @@ export function AccountSettingsPanel() {
 
       <SettingsCard
         title="Change password"
-        description="Use your current password to set a new one. Updating it will sign out your other active sessions."
+        description="Update your password to keep your account secure."
       >
         <form
           className="space-y-3"
