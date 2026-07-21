@@ -1,7 +1,10 @@
+export type { SessionSearchResult } from './contracts'
+
 import type {
   GatewayMessage,
   HistoryResponse,
   SessionMeta,
+  SessionSearchResult,
   ChatRequestAdvancedSettings,
   ConversationSettings,
 } from './contracts'
@@ -154,6 +157,10 @@ export type ChatSubscription = {
 export type ChatBackend = {
   getStatus: () => Promise<ChatStatus>
   listConversations: () => Promise<Array<SessionMeta>>
+  searchConversations: (
+    query: string,
+    signal?: AbortSignal,
+  ) => Promise<Array<SessionSearchResult>>
   getConversationHistory: (input: ChatHistoryInput) => Promise<HistoryResponse>
   createConversation: (
     input?: ChatCreateConversationInput,

@@ -4,9 +4,9 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { countConversationTokens, isSessionNotFound } from './utils'
 import {
-  chatQueryKeys,
   clearHistoryMessages,
   fetchChatStatus,
+  invalidateChatSessionQueries,
 } from './chat-queries'
 import {
   appShellUiQueryKey,
@@ -53,6 +53,7 @@ type ChatScreenProps = {
     friendlyId: string
   }) => void
   forcedSessionKey?: string
+  targetMessageId?: string
 }
 
 export function ChatScreen({
@@ -60,6 +61,7 @@ export function ChatScreen({
   isNewChat = false,
   onSessionResolved,
   forcedSessionKey,
+  targetMessageId,
 }: ChatScreenProps) {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
@@ -399,7 +401,7 @@ export function ChatScreen({
         finishAllRuns()
       }
       if (state === 'final' || state === 'error' || state === 'aborted') {
-        void queryClient.invalidateQueries({ queryKey: chatQueryKeys.sessions })
+        void invalidateChatSessionQueries(queryClient)
       }
       if (state === 'error') {
         setStreamError(streamErrorMessage || 'The model request failed.')
@@ -516,6 +518,7 @@ export function ChatScreen({
             onScrollTopChange={handleScrollTopChange}
             restoreScrollTop={restoreScrollTop}
             restoreKey={activeFriendlyId}
+            targetMessageId={targetMessageId}
             onRestoreScrollTopApplied={handleRestoreScrollTopApplied}
             showConversationNavigator={
               settings.showConversationNavigator &&

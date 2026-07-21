@@ -7,6 +7,7 @@ export const Route = createFileRoute('/new')({
     throw redirect({
       to: '/chat/$sessionKey',
       params: { sessionKey: 'new' },
+      search: {},
       replace: true,
     })
   },

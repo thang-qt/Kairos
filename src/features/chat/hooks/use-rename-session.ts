@@ -1,6 +1,10 @@
 import { useCallback, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { chatQueryKeys, upsertSessionSummary } from '../chat-queries'
+import {
+  chatQueryKeys,
+  invalidateChatSessionQueries,
+  upsertSessionSummary,
+} from '../chat-queries'
 import { getChatBackend } from '@/lib/chat-backend'
 
 export type RenameSessionResult = {
@@ -71,7 +75,7 @@ export function useRenameSession(): RenameSessionResult {
         ...session,
         key: session.key || session.sessionKey,
       })
-      queryClient.invalidateQueries({ queryKey: chatQueryKeys.sessions })
+      void invalidateChatSessionQueries(queryClient)
     },
     onSettled: function onSettled() {
       setRenaming(false)

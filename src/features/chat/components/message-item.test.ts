@@ -274,6 +274,22 @@ describe('areMessagesEqual render boundary', function () {
     expect(areMessagesEqual(prevProps, nextProps)).toBe(true)
   })
 
+  it('considers a changed target highlight as not equal', function () {
+    const message: GatewayMessage = {
+      id: 'm1',
+      role: 'user',
+      content: [{ type: 'text', text: 'hello' }],
+    }
+    const modelLabelById = new Map()
+
+    expect(
+      areMessagesEqual(
+        { message, modelLabelById, isHighlighted: false },
+        { message, modelLabelById, isHighlighted: true },
+      ),
+    ).toBe(false)
+  })
+
   it('considers messages with different text content as not equal', function () {
     const prevMsg: GatewayMessage = {
       id: 'm1',

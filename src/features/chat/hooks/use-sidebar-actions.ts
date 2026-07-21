@@ -7,6 +7,15 @@ import { useSessionShortcuts } from './use-session-shortcuts'
 import { appQueryKeys, isUnauthorizedError, logout } from '@/lib/app-api'
 import type { SessionMeta } from '../types'
 
+type SearchSession = Pick<SessionMeta, 'friendlyId'> & {
+  messageId?: string
+}
+
+export function searchForSessionNavigation(session: SearchSession) {
+  const messageId = session.messageId?.trim()
+  return messageId ? { messageId } : {}
+}
+
 type UseSidebarActionsProps = {
   sessions: Array<SessionMeta>
   activeFriendlyId: string
@@ -80,6 +89,7 @@ export function useSidebarActions({
         void navigate({
           to: '/chat/$sessionKey',
           params: { sessionKey: targetSession.friendlyId },
+          search: {},
         })
         onSelectSession?.()
       }
@@ -100,11 +110,12 @@ export function useSidebarActions({
   }
 
   const handleSearchSelect = useCallback(
-    function handleSearchSelect(session: SessionMeta) {
+    function handleSearchSelect(session: SearchSession) {
       setSearchDialogOpen(false)
       void navigate({
         to: '/chat/$sessionKey',
         params: { sessionKey: session.friendlyId },
+        search: searchForSessionNavigation(session),
       })
       onSelectSession?.()
     },

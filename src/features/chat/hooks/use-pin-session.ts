@@ -1,6 +1,10 @@
 import { useCallback, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { chatQueryKeys, upsertSessionSummary } from '../chat-queries'
+import {
+  chatQueryKeys,
+  invalidateChatSessionQueries,
+  upsertSessionSummary,
+} from '../chat-queries'
 import type { SessionMeta } from '../types'
 import { getChatBackend } from '@/lib/chat-backend'
 
@@ -67,7 +71,7 @@ export function usePinSession(): PinSessionResult {
     },
     onSuccess: function onSuccess(session) {
       upsertSessionSummary(queryClient, session)
-      queryClient.invalidateQueries({ queryKey: chatQueryKeys.sessions })
+      void invalidateChatSessionQueries(queryClient)
     },
     onSettled: function onSettled() {
       setPinning(false)

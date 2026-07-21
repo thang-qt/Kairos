@@ -44,6 +44,7 @@ function SessionItemComponent({
     <Link
       to="/chat/$sessionKey"
       params={{ sessionKey: session.friendlyId }}
+      search={{}}
       onClick={onSelect}
       style={{
         contentVisibility: 'auto',

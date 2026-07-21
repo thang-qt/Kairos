@@ -55,6 +55,7 @@ type MessageItemProps = {
   wrapperRef?: React.RefObject<HTMLDivElement | null>
   wrapperClassName?: string
   wrapperScrollMarginTop?: number
+  isHighlighted?: boolean
   onClone?: (
     message: GatewayMessage,
     currentText: string,
@@ -97,6 +98,7 @@ function MessageItemComponent({
   wrapperRef,
   wrapperClassName,
   wrapperScrollMarginTop,
+  isHighlighted = false,
   onClone,
   previousMessageId,
   onEdit,
@@ -300,9 +302,10 @@ function MessageItemComponent({
           : undefined
       }
       className={cn(
-        'group flex flex-col gap-0.5',
+        'group flex flex-col gap-0.5 rounded-lg transition-colors duration-500',
         wrapperClassName,
         isUser ? 'items-end' : 'items-start',
+        isHighlighted && 'bg-primary-100',
       )}
     >
       {/* Render images if present */}
@@ -424,6 +427,7 @@ export function areMessagesEqual(
   if (prevProps.wrapperScrollMarginTop !== nextProps.wrapperScrollMarginTop) {
     return false
   }
+  if (prevProps.isHighlighted !== nextProps.isHighlighted) return false
   if (prevProps.onClone !== nextProps.onClone) return false
   if (prevProps.previousMessageId !== nextProps.previousMessageId) return false
   if (prevProps.onEdit !== nextProps.onEdit) return false

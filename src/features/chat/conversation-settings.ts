@@ -2,7 +2,10 @@ import { useCallback, useMemo, useRef } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { create } from 'zustand'
 
-import { chatQueryKeys, upsertSessionSummary } from './chat-queries'
+import {
+  invalidateChatSessionQueries,
+  upsertSessionSummary,
+} from './chat-queries'
 import { getChatBackend } from '@/lib/chat-backend'
 import { providerModelKey } from '@/lib/model-utils'
 
@@ -137,11 +140,10 @@ export function useConversationSettings({
             friendlyId: conversationId,
             settings: nextSettings,
           })
+          await invalidateChatSessionQueries(queryClient)
         })
         .catch(function refreshAfterSaveFailure() {
-          void queryClient.invalidateQueries({
-            queryKey: chatQueryKeys.sessions,
-          })
+          void invalidateChatSessionQueries(queryClient)
         })
     },
     [

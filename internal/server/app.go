@@ -144,6 +144,7 @@ func (app *App) Handler() http.Handler {
 	mux.HandleFunc("POST /api/models/sync", app.handleSyncModels)
 	mux.HandleFunc("PATCH /api/models/metadata", app.handleUpdateModelMetadata)
 	mux.HandleFunc("GET /api/sessions", app.handleListSessions)
+	mux.HandleFunc("GET /api/sessions/search", app.handleSearchSessions)
 	mux.HandleFunc("POST /api/sessions", app.handleCreateSession)
 	mux.HandleFunc("PATCH /api/sessions/{friendlyId}/settings", app.handleUpdateConversationSettings)
 	mux.HandleFunc("PATCH /api/sessions/{friendlyId}", app.handleRenameSession)

@@ -1,6 +1,8 @@
 'use client'
 
 import { Fragment, useMemo, useState } from 'react'
+import type { ReactNode } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { HugeiconsIcon } from '@hugeicons/react'
 import { ArrowDown01Icon, ArrowUp01Icon } from '@hugeicons/core-free-icons'
 import {
@@ -17,7 +19,7 @@ import {
   CommandPanel,
   CommandSeparator,
 } from '@/components/ui/command'
-import { useAutocompleteFilter } from '@/components/ui/autocomplete'
+import { fetchSessionSearch, chatQueryKeys } from '../chat-queries'
 
 type CommandSession = {
   key: string
@@ -25,6 +27,8 @@ type CommandSession = {
   label?: string
   title?: string
   derivedTitle?: string
+  messageId?: string
+  snippet?: string
 }
 
 type CommandSessionItem = {
@@ -52,6 +56,50 @@ function getSessionLabel(session: CommandSession) {
   )
 }
 
+function getSessionItemValue(session: CommandSession) {
+  return session.messageId ? `${session.key}:${session.messageId}` : session.key
+}
+
+function getSearchTokens(query: string) {
+  return Array.from(
+    new Set(query.match(/[\p{L}\p{N}]+/gu)?.filter(Boolean) ?? []),
+  )
+}
+
+function highlightSearchMatches(
+  value: string,
+  query: string,
+): Array<ReactNode> {
+  const tokens = getSearchTokens(query)
+  if (tokens.length === 0) return [value]
+
+  const expression = new RegExp(
+    `(${tokens
+      .sort(function sortLongestToken(first, second) {
+        return second.length - first.length
+      })
+      .map(function escapeToken(token) {
+        return token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+      })
+      .join('|')})`,
+    'iu',
+  )
+
+  return value.split(expression).map(function renderPart(part, index) {
+    if (part !== '' && expression.test(part)) {
+      return (
+        <mark
+          key={index}
+          className="bg-primary-100 font-medium text-primary-900"
+        >
+          {part}
+        </mark>
+      )
+    }
+    return part
+  })
+}
+
 function CommandSessionDialog({
   sessions,
   open,
@@ -59,14 +107,22 @@ function CommandSessionDialog({
   onSelect,
 }: CommandSessionProps) {
   const [value, setValue] = useState('')
-  const filter = useAutocompleteFilter({ sensitivity: 'base' })
+  const query = value.trim()
+  const sessionSearchQuery = useQuery({
+    queryKey: chatQueryKeys.sessionSearchResults(query),
+    queryFn: function searchSessions({ signal }) {
+      return fetchSessionSearch(query, signal)
+    },
+    enabled: query !== '',
+    staleTime: 1000 * 60 * 5,
+  })
 
   const groupedItems = useMemo<Array<CommandSessionGroup>>(() => {
     return [
       {
         value: 'Sessions',
         items: sessions.map((session) => ({
-          value: session.key,
+          value: getSessionItemValue(session),
           label: getSessionLabel(session),
           friendlyId: session.friendlyId,
           session,
@@ -75,40 +131,59 @@ function CommandSessionDialog({
     ]
   }, [sessions])
 
-  const filteredGroups = useMemo(() => {
-    const query = value.trim()
+  const searchGroups = useMemo<Array<CommandSessionGroup>>(() => {
     if (!query) return groupedItems
 
-    return groupedItems
-      .map((group) => ({
-        ...group,
-        items: group.items.filter((item) =>
-          filter.contains(item, query, (target) => target.label),
-        ),
-      }))
-      .filter((group) => group.items.length > 0)
-  }, [filter, groupedItems, value])
+    const results = (sessionSearchQuery.data ?? []).map(
+      function mapSearchSession(session) {
+        return {
+          value: getSessionItemValue(session),
+          label: getSessionLabel(session),
+          friendlyId: session.friendlyId,
+          session,
+        }
+      },
+    )
 
-  const isEmpty = filteredGroups.length === 0
+    return [
+      {
+        value: 'Search results',
+        items: results,
+      },
+    ]
+  }, [groupedItems, query, sessionSearchQuery.data])
+
+  const isSearching = query !== '' && sessionSearchQuery.isPending
+  const hasSearchError = query !== '' && sessionSearchQuery.isError
+  const isEmpty =
+    !isSearching && !hasSearchError && searchGroups[0]?.items.length === 0
 
   return (
     <CommandDialog open={open} onOpenChange={onOpenChange}>
       <CommandDialogPopup className="mx-auto self-center">
         <Command
-          items={groupedItems}
+          items={searchGroups}
           value={value}
           onValueChange={setValue}
           mode="none"
         >
           <CommandInput placeholder="Search sessions" />
           <CommandPanel className="flex min-h-0 flex-1 flex-col">
-            {isEmpty ? (
+            {isSearching ? (
+              <div className="h-72 min-h-0 flex items-center justify-center text-sm text-primary-600">
+                Searching sessions...
+              </div>
+            ) : hasSearchError ? (
+              <div className="h-72 min-h-0 flex items-center justify-center text-sm text-primary-600">
+                Couldn&apos;t search sessions. Try again.
+              </div>
+            ) : isEmpty ? (
               <div className="h-72 min-h-0 flex items-center justify-center text-sm text-primary-600">
                 No sessions found.
               </div>
             ) : (
               <CommandList className="h-72 min-h-0">
-                {filteredGroups.map((group, index) => (
+                {searchGroups.map((group, index) => (
                   <Fragment key={`${group.value}-${index}`}>
                     <CommandGroup items={group.items}>
                       <CommandGroupLabel>{group.value}</CommandGroupLabel>
@@ -116,18 +191,29 @@ function CommandSessionDialog({
                         {(item) => (
                           <CommandItem
                             key={item.value}
-                            value={item.label}
+                            value={item.value}
                             onClick={() => onSelect(item.session)}
                             className="gap-2"
                           >
-                            <span className="text-sm font-[450] line-clamp-1">
-                              {item.label}
+                            <span className="min-w-0 flex-1">
+                              <span className="block truncate text-sm font-medium">
+                                {highlightSearchMatches(item.label, query)}
+                              </span>
+                              {item.session.messageId &&
+                              item.session.snippet ? (
+                                <span className="block text-xs text-primary-600 line-clamp-1">
+                                  {highlightSearchMatches(
+                                    item.session.snippet,
+                                    query,
+                                  )}
+                                </span>
+                              ) : null}
                             </span>
                           </CommandItem>
                         )}
                       </CommandCollection>
                     </CommandGroup>
-                    {index < filteredGroups.length - 1 ? (
+                    {index < searchGroups.length - 1 ? (
                       <CommandSeparator />
                     ) : null}
                   </Fragment>

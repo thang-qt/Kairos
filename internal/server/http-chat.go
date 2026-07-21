@@ -10,6 +10,10 @@ type sessionsResponse struct {
 	Sessions []SessionSummary `json:"sessions"`
 }
 
+type sessionSearchResponse struct {
+	Sessions []SessionSearchResult `json:"sessions"`
+}
+
 type createSessionRequest struct {
 	Label          string                `json:"label"`
 	Message        string                `json:"message"`
@@ -81,6 +85,25 @@ func (app *App) handleListSessions(writer http.ResponseWriter, request *http.Req
 	}
 
 	writeJSON(writer, http.StatusOK, sessionsResponse{Sessions: sessions})
+}
+
+func (app *App) handleSearchSessions(writer http.ResponseWriter, request *http.Request) {
+	user, ok := app.requireAuthenticatedUser(writer, request)
+	if !ok {
+		return
+	}
+
+	sessions, err := app.chat.SearchSessions(request.Context(), user.ID, request.URL.Query().Get("q"))
+	if err != nil {
+		if errors.Is(err, errSessionSearchQueryTooLong) {
+			writeError(writer, http.StatusBadRequest, "Search query is too long.")
+			return
+		}
+		writeError(writer, http.StatusInternalServerError, "Unable to search sessions.")
+		return
+	}
+
+	writeJSON(writer, http.StatusOK, sessionSearchResponse{Sessions: sessions})
 }
 
 func (app *App) handleCreateSession(writer http.ResponseWriter, request *http.Request) {

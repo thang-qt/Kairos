@@ -124,6 +124,14 @@ export type SessionMeta = {
   settings?: ConversationSettings
 }
 
+export type SessionSearchResult = Pick<
+  SessionMeta,
+  'key' | 'friendlyId' | 'title' | 'derivedTitle' | 'label' | 'updatedAt'
+> & {
+  messageId?: string
+  snippet?: string
+}
+
 export type ReasoningEffort = 'low' | 'medium' | 'high'
 
 export type ChatRequestAdvancedSettings = {

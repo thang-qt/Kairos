@@ -6,11 +6,19 @@ import type {
   ChatRenameConversationInput,
   ChatStatus,
 } from './types'
-import type { HistoryResponse, SessionMeta } from './contracts'
+import type {
+  HistoryResponse,
+  SessionMeta,
+  SessionSearchResult,
+} from './contracts'
 import { parseJSON } from '@/lib/api-client'
 
 type SessionsPayload = {
   sessions: Array<SessionMeta>
+}
+
+type SessionSearchPayload = {
+  sessions: Array<SessionSearchResult>
 }
 
 type ClientRuntimeContext = {
@@ -76,6 +84,18 @@ export function createHTTPChatBackend(): ChatBackend {
         credentials: 'include',
       })
       const payload = await parseJSON<SessionsPayload>(response)
+      return payload.sessions
+    },
+    async searchConversations(query: string, signal?: AbortSignal) {
+      const parameters = new URLSearchParams({ q: query })
+      const response = await fetch(
+        `/api/sessions/search?${parameters.toString()}`,
+        {
+          credentials: 'include',
+          signal,
+        },
+      )
+      const payload = await parseJSON<SessionSearchPayload>(response)
       return payload.sessions
     },
     async getConversationHistory(input: ChatHistoryInput) {

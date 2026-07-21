@@ -3,6 +3,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   chatQueryKeys,
   clearHistoryMessages,
+  invalidateChatSessionQueries,
   removeSessionFromCache,
 } from '../chat-queries'
 import { clearSessionDeleted, markSessionDeleted } from '../session-tombstones'
@@ -66,7 +67,7 @@ export function useDeleteSession(): DeleteSessionResult {
       setError(err instanceof Error ? err.message : String(err))
     },
     onSuccess: function onSuccess() {
-      queryClient.invalidateQueries({ queryKey: chatQueryKeys.sessions })
+      void invalidateChatSessionQueries(queryClient)
     },
     onSettled: function onSettled() {
       setDeleting(false)

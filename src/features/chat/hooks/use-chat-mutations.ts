@@ -5,8 +5,8 @@ import { useQueryClient } from '@tanstack/react-query'
 import { createOptimisticMessage } from '../chat-screen-utils'
 import {
   appendHistoryMessage,
-  chatQueryKeys,
   clearHistoryMessages,
+  invalidateChatSessionQueries,
   moveHistoryMessages,
   removeHistoryMessageByClientId,
   updateHistoryMessageByClientId,
@@ -176,9 +176,7 @@ export function useChatMutations({
             startRun(payload.runId.trim())
           }
           refreshHistory()
-          void queryClient.invalidateQueries({
-            queryKey: chatQueryKeys.sessions,
-          })
+          void invalidateChatSessionQueries(queryClient)
         })
         .catch((err) => {
           if (optimisticClientId) {
@@ -275,6 +273,7 @@ export function useChatMutations({
               key: sessionKey,
               friendlyId,
             })
+            void invalidateChatSessionQueries(queryClient)
             moveHistoryMessages(
               queryClient,
               'new',
@@ -465,9 +464,7 @@ export function useChatMutations({
         if (isUserTurn) {
           stashCloneComposerDraft(result.friendlyId, payload.currentText)
         }
-        await queryClient.invalidateQueries({
-          queryKey: chatQueryKeys.sessions,
-        })
+        await invalidateChatSessionQueries(queryClient)
         storeCloneScrollRestore()
         navigate({
           to: '/chat/$sessionKey',
@@ -551,9 +548,7 @@ export function useChatMutations({
           startRun(result.runId)
         }
         refreshHistory()
-        await queryClient.invalidateQueries({
-          queryKey: chatQueryKeys.sessions,
-        })
+        await invalidateChatSessionQueries(queryClient)
       } catch (err) {
         finishGeneration()
         setPinToTop(false)
@@ -605,9 +600,7 @@ export function useChatMutations({
           messageId: target.messageId,
         })
         refreshHistory()
-        await queryClient.invalidateQueries({
-          queryKey: chatQueryKeys.sessions,
-        })
+        await invalidateChatSessionQueries(queryClient)
       } catch (err) {
         setStreamError(
           err instanceof Error ? err.message : 'Failed to delete message.',

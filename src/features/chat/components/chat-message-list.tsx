@@ -1,4 +1,12 @@
-import { memo, useCallback, useLayoutEffect, useMemo, useRef } from 'react'
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import {
   getGatewayMessageId,
   getMessageTimestamp,
@@ -52,6 +60,7 @@ type ChatMessageListProps = {
   onScrollTopChange?: (scrollTop: number) => void
   restoreScrollTop?: number | null
   restoreKey?: string
+  targetMessageId?: string
   onRestoreScrollTopApplied?: () => void
   showConversationNavigator?: boolean
 }
@@ -83,6 +92,7 @@ function ChatMessageListComponent({
   onScrollTopChange,
   restoreScrollTop,
   restoreKey,
+  targetMessageId,
   onRestoreScrollTopApplied,
   showConversationNavigator = false,
 }: ChatMessageListProps) {
@@ -90,6 +100,8 @@ function ChatMessageListComponent({
   const anchorRef = useRef<HTMLDivElement | null>(null)
   const lastUserRef = useRef<HTMLDivElement | null>(null)
   const responseAfterLastUserRef = useRef<HTMLDivElement | null>(null)
+  const highlightTimeoutRef = useRef<number | undefined>(undefined)
+  const [highlightedMessageId, setHighlightedMessageId] = useState<string>()
   const userTurnRefsRef = useRef(
     new Map<string, React.RefObject<HTMLDivElement | null>>(),
   )
@@ -134,6 +146,31 @@ function ChatMessageListComponent({
     return undefined
   }, [displayMessages])
 
+  const handleTargetMessageReached = useCallback(
+    function handleTargetMessageReached(messageId: string) {
+      if (highlightTimeoutRef.current) {
+        window.clearTimeout(highlightTimeoutRef.current)
+      }
+      setHighlightedMessageId(messageId)
+      highlightTimeoutRef.current = window.setTimeout(
+        function clearHighlight() {
+          setHighlightedMessageId(undefined)
+          highlightTimeoutRef.current = undefined
+        },
+        1500,
+      )
+    },
+    [],
+  )
+
+  useEffect(function cleanupHighlightTimeout() {
+    return function clearHighlightTimeout() {
+      if (highlightTimeoutRef.current) {
+        window.clearTimeout(highlightTimeoutRef.current)
+      }
+    }
+  }, [])
+
   const {
     viewportNode,
     handleViewportNodeChange,
@@ -144,10 +181,12 @@ function ChatMessageListComponent({
     loading,
     pinToTop,
     sessionKey,
+    targetMessageId,
     headerHeight,
     slicedLastUserIndex: latestUserIndex,
     lastUserRef,
     responseAfterLastUserRef,
+    onTargetMessageReached: handleTargetMessageReached,
   })
 
   const { shortcutsHelpOpen, setShortcutsHelpOpen } = useMessageNavigation({
@@ -285,6 +324,7 @@ function ChatMessageListComponent({
     },
   ) {
     const messageKey = getMessageKey(chatMessage, index)
+    const messageId = getGatewayMessageId(chatMessage) ?? ''
     const messageRunId =
       typeof (chatMessage.runId ?? chatMessage.__streamRunId) === 'string'
         ? String(chatMessage.runId ?? chatMessage.__streamRunId).trim()
@@ -342,6 +382,7 @@ function ChatMessageListComponent({
             isAssistantContinuation && '-mt-5',
           )}
           wrapperScrollMarginTop={wrapperScrollMarginTop}
+          isHighlighted={messageId === highlightedMessageId}
           onClone={onClone ? handleClone : undefined}
           previousMessageId={previousMessageId}
           onEdit={onEditUserTurn}
@@ -402,6 +443,7 @@ function ChatMessageListComponent({
     onEditUserTurn,
     toolChainsByFinalMessageID,
     toolResultsByCallId,
+    highlightedMessageId,
   ])
 
   const pinnedEndNotice =
@@ -515,6 +557,7 @@ export function areChatMessageListEqual(
     prev.onScrollTopChange === next.onScrollTopChange &&
     prev.restoreScrollTop === next.restoreScrollTop &&
     prev.restoreKey === next.restoreKey &&
+    prev.targetMessageId === next.targetMessageId &&
     prev.onRestoreScrollTopApplied === next.onRestoreScrollTopApplied &&
     prev.showConversationNavigator === next.showConversationNavigator
   )

@@ -1,7 +1,7 @@
 import { getMessageTimestamp, normalizeSessions } from './utils'
 import type { QueryClient } from '@tanstack/react-query'
 import type { GatewayMessage, HistoryResponse, SessionMeta } from './types'
-import type { ChatStatus } from '@/lib/chat-backend'
+import type { ChatStatus, SessionSearchResult } from '@/lib/chat-backend'
 import { getChatBackend } from '@/lib/chat-backend'
 
 export const chatQueryKeys = {
@@ -9,7 +9,46 @@ export const chatQueryKeys = {
   history: function history(friendlyId: string, sessionKey: string) {
     return ['chat', 'history', friendlyId, sessionKey] as const
   },
+  sessionSearch: ['chat', 'session-search'] as const,
+  sessionSearchResults: function sessionSearchResults(query: string) {
+    return ['chat', 'session-search', query] as const
+  },
 } as const
+
+export async function fetchSessionSearch(
+  query: string,
+  signal?: AbortSignal,
+): Promise<Array<SessionSearchResult>> {
+  await waitForSessionSearchDebounce(signal)
+  return getChatBackend().searchConversations(query, signal)
+}
+
+function waitForSessionSearchDebounce(signal?: AbortSignal): Promise<void> {
+  return new Promise(function waitForDebounce(resolve, reject) {
+    const timeout = window.setTimeout(function resolveDebounce() {
+      signal?.removeEventListener('abort', abort)
+      resolve()
+    }, 250)
+
+    function abort() {
+      window.clearTimeout(timeout)
+      reject(new DOMException('Search request was cancelled', 'AbortError'))
+    }
+
+    if (signal?.aborted) {
+      abort()
+      return
+    }
+    signal?.addEventListener('abort', abort, { once: true })
+  })
+}
+
+export function invalidateChatSessionQueries(queryClient: QueryClient) {
+  return Promise.all([
+    queryClient.invalidateQueries({ queryKey: chatQueryKeys.sessions }),
+    queryClient.invalidateQueries({ queryKey: chatQueryKeys.sessionSearch }),
+  ])
+}
 
 export async function fetchSessions(): Promise<Array<SessionMeta>> {
   const backend = getChatBackend()

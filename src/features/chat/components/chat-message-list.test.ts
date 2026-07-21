@@ -6,6 +6,7 @@ import {
   projectChatMessages,
   areChatMessageListEqual,
 } from './chat-message-list'
+import { targetVisibleCount } from '../hooks/use-chat-scroll-control'
 import type { GatewayMessage } from '../types'
 
 describe('linked tool results', function () {
@@ -131,6 +132,24 @@ describe('linked tool results', function () {
     expect(projectChatMessages(messages, new Set()).displayMessages).toEqual(
       messages,
     )
+  })
+})
+
+describe('target message visibility', function () {
+  it('expands the rendered history through an older target message', function () {
+    const messages = Array.from(
+      { length: 40 },
+      function createMessage(_, index) {
+        return {
+          id: `message-${index}`,
+          role: 'user',
+          content: [{ type: 'text', text: String(index) }],
+        } satisfies GatewayMessage
+      },
+    )
+
+    expect(targetVisibleCount(messages, 'message-4')).toBe(36)
+    expect(targetVisibleCount(messages, 'missing')).toBeUndefined()
   })
 })
 
