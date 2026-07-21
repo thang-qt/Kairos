@@ -187,8 +187,13 @@ function PromptInputTextarea({
   function adjustHeight(el: HTMLTextAreaElement | null) {
     if (!el || disableAutosize) return
 
-    el.style.height = 'auto'
     const minHeight = 28
+    if (!el.value) {
+      el.style.height = `${minHeight}px`
+      return
+    }
+
+    el.style.height = `${minHeight}px`
     const measured = Math.max(minHeight, el.scrollHeight)
 
     if (typeof maxHeight === 'number') {
@@ -213,20 +218,12 @@ function PromptInputTextarea({
     adjustHeight(el)
   }
 
-  useLayoutEffect(() => {
-    if (!textareaRef.current || disableAutosize) return
-
-    const el = textareaRef.current
-    el.style.height = 'auto'
-    const minHeight = 28
-    const measured = Math.max(minHeight, el.scrollHeight)
-
-    if (typeof maxHeight === 'number') {
-      el.style.height = `${Math.min(measured, maxHeight)}px`
-    } else {
-      el.style.height = `min(${measured}px, ${maxHeight})`
-    }
-  }, [value, maxHeight, disableAutosize])
+  useLayoutEffect(
+    function handleAutosize() {
+      adjustHeight(textareaRef.current)
+    },
+    [value, maxHeight, disableAutosize],
+  )
 
   function handleChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
     adjustHeight(e.target)
