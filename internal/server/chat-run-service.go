@@ -55,15 +55,17 @@ type toolExecutor interface {
 }
 
 type ChatRunService struct {
-	db          *sql.DB
-	chat        *ChatService
-	providers   *ProviderService
-	webSettings *WebToolSettingsService
-	broker      *RunBroker
-	toolRuntime func(ctx context.Context, userID string, input SendMessageInput) (toolExecutor, error)
-	runMu       sync.Mutex
-	runCancels  map[string]context.CancelFunc
-	sessionRuns map[string]map[string]struct{}
+	db           *sql.DB
+	chat         *ChatService
+	providers    *ProviderService
+	webSettings  *WebToolSettingsService
+	broker       *RunBroker
+	toolRuntime  func(ctx context.Context, userID string, input SendMessageInput) (toolExecutor, error)
+	runMu        sync.Mutex
+	runCancels   map[string]context.CancelFunc
+	runDone      map[string]chan struct{}
+	sessionRuns  map[string]map[string]struct{}
+	stoppingRuns map[string]struct{}
 }
 
 func NewChatRunService(
@@ -74,13 +76,15 @@ func NewChatRunService(
 	broker *RunBroker,
 ) *ChatRunService {
 	service := &ChatRunService{
-		db:          db,
-		chat:        chat,
-		providers:   providers,
-		webSettings: webSettings,
-		broker:      broker,
-		runCancels:  make(map[string]context.CancelFunc),
-		sessionRuns: make(map[string]map[string]struct{}),
+		db:           db,
+		chat:         chat,
+		providers:    providers,
+		webSettings:  webSettings,
+		broker:       broker,
+		runCancels:   make(map[string]context.CancelFunc),
+		runDone:      make(map[string]chan struct{}),
+		sessionRuns:  make(map[string]map[string]struct{}),
+		stoppingRuns: make(map[string]struct{}),
 	}
 	service.toolRuntime = service.defaultToolRuntime
 	return service
@@ -110,6 +114,9 @@ func (service *ChatRunService) StartRun(
 	session, err := service.chat.findSessionByFriendlyID(ctx, userID, input.FriendlyID)
 	if err != nil {
 		return SendMessageResult{}, err
+	}
+	if err := service.waitForStoppingSessionRuns(ctx, session.ID); err != nil {
+		return SendMessageResult{}, fmt.Errorf("wait for stopping session runs: %w", err)
 	}
 	idempotencyKey := strings.TrimSpace(input.IdempotencyKey)
 	if idempotencyKey != "" {
@@ -307,38 +314,53 @@ func (service *ChatRunService) CancelSessionRuns(
 	}
 
 	service.runMu.Lock()
+	defer service.runMu.Unlock()
 	runIDs := service.sessionRuns[session.ID]
 	if len(runIDs) == 0 {
-		service.runMu.Unlock()
 		return false, nil
 	}
 
-	type runCancel struct {
-		runID  string
-		cancel context.CancelFunc
-	}
-	cancels := make([]runCancel, 0, len(runIDs))
+	stopped := false
 	for runID := range runIDs {
 		cancel := service.runCancels[runID]
-		if cancel != nil {
-			cancels = append(cancels, runCancel{runID: runID, cancel: cancel})
+		if cancel == nil {
+			continue
 		}
-	}
-	service.runMu.Unlock()
-
-	stopped := false
-	for _, item := range cancels {
-		claimed, err := service.claimRunAborted(ctx, item.runID)
+		claimed, err := service.claimRunAborted(ctx, runID)
 		if err != nil {
 			return stopped, err
 		}
 		if claimed {
 			stopped = true
 		}
-		item.cancel()
+		service.stoppingRuns[runID] = struct{}{}
+		cancel()
 	}
 
-	return stopped || len(cancels) > 0, nil
+	return stopped, nil
+}
+
+func (service *ChatRunService) waitForStoppingSessionRuns(ctx context.Context, sessionID string) error {
+	service.runMu.Lock()
+	waiting := make([]<-chan struct{}, 0)
+	for runID := range service.sessionRuns[sessionID] {
+		if _, stopping := service.stoppingRuns[runID]; !stopping {
+			continue
+		}
+		if done := service.runDone[runID]; done != nil {
+			waiting = append(waiting, done)
+		}
+	}
+	service.runMu.Unlock()
+
+	for _, done := range waiting {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-done:
+		}
+	}
+	return nil
 }
 
 func (service *ChatRunService) activeRunIDsForSession(

@@ -58,6 +58,34 @@ export function useChatStream({
 
     const payloadSessionKey =
       typeof payload.sessionKey === 'string' ? payload.sessionKey : ''
+    const streamRunId =
+      typeof payload.runId === 'string' ? payload.runId : undefined
+
+    function clearStreamingMessagesForTerminalRun() {
+      if (!streamRunId || !isTerminalState(payloadState)) return
+      updateHistoryMessages(
+        queryClient,
+        activeFriendlyId,
+        sessionKeyForHistory,
+        function removeStreamingMessages(messages) {
+          return messages.filter(function keepMessage(message) {
+            return getStreamRunId(message) !== streamRunId
+          })
+        },
+      )
+      if (payloadSessionKey && payloadSessionKey !== sessionKeyForHistory) {
+        updateHistoryMessages(
+          queryClient,
+          activeFriendlyId,
+          payloadSessionKey,
+          function removeStreamingMessages(messages) {
+            return messages.filter(function keepMessage(message) {
+              return getStreamRunId(message) !== streamRunId
+            })
+          },
+        )
+      }
+    }
 
     if (!payload.message || typeof payload.message !== 'object') {
       if (
@@ -66,6 +94,7 @@ export function useChatStream({
         payloadState === 'error' ||
         payloadState === 'aborted'
       ) {
+        clearStreamingMessagesForTerminalRun()
         refreshHistoryRef.current()
       }
       return
@@ -80,8 +109,6 @@ export function useChatStream({
       return
     }
 
-    const streamRunId =
-      typeof payload.runId === 'string' ? payload.runId : undefined
     const nextMessage: GatewayMessage = {
       ...payload.message,
       runId:
@@ -152,11 +179,8 @@ export function useChatStream({
       )
     }
 
-    if (
-      payloadState === 'final' ||
-      payloadState === 'error' ||
-      payloadState === 'aborted'
-    ) {
+    if (isTerminalState(payloadState)) {
+      clearStreamingMessagesForTerminalRun()
       refreshHistoryRef.current()
     }
   })
@@ -179,7 +203,6 @@ export function useChatStream({
       friendlyId: activeFriendlyId,
       onEvent: handleChatEvent,
       onReconnect: () => refreshHistoryRef.current(),
-      onReconcile: () => refreshHistoryRef.current(),
     })
 
     unsubscribeRef.current = unsubscribe
@@ -245,14 +268,25 @@ export function findStreamMessageIndex(
   const targetRole = normalizeString(targetMessage.role)
   let index = -1
   messages.forEach((message, currentIndex) => {
-    const runId = normalizeString(
-      (message as { __streamRunId?: unknown }).__streamRunId,
-    )
+    const runId = getStreamRunId(message)
     if (!runId || runId !== streamRunId) return
     if (normalizeString(message.role) !== targetRole) return
+    if (index === -2) return
+    if (index >= 0) {
+      index = -2
+      return
+    }
     index = currentIndex
   })
-  return index
+  return index >= 0 ? index : -1
+}
+
+function isTerminalState(state: string): boolean {
+  return state === 'final' || state === 'error' || state === 'aborted'
+}
+
+function getStreamRunId(message: GatewayMessage): string {
+  return normalizeString((message as { __streamRunId?: unknown }).__streamRunId)
 }
 
 function getMessageId(message: GatewayMessage): string {

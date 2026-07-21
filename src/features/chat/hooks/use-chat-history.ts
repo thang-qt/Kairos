@@ -119,12 +119,11 @@ function mergeStreamingHistoryMessages(
 
   const merged = [...serverMessages]
   for (const streamingMessage of streamingMessages) {
-    const hasMatch = merged.some((serverMessage) => {
-      return (
-        sameMessageIdentity(serverMessage, streamingMessage) &&
-        messageCoversStreamingMessage(serverMessage, streamingMessage)
-      )
-    })
+    const hasMatch = merged.some(
+      function hasMatchingServerMessage(serverMessage) {
+        return sameMessageIdentity(serverMessage, streamingMessage)
+      },
+    )
 
     if (!hasMatch) {
       merged.push(streamingMessage)
@@ -158,37 +157,6 @@ function sameMessageIdentity(
   }
 
   return false
-}
-
-function messageCoversStreamingMessage(
-  serverMessage: GatewayMessage,
-  streamingMessage: GatewayMessage,
-): boolean {
-  const serverSignatures = nonTextPartSignatures(serverMessage)
-  const streamingSignatures = nonTextPartSignatures(streamingMessage)
-  if (streamingSignatures.size === 0) return true
-
-  for (const signature of streamingSignatures) {
-    if (!serverSignatures.has(signature)) {
-      return false
-    }
-  }
-
-  return true
-}
-
-function nonTextPartSignatures(message: GatewayMessage): Set<string> {
-  const signatures = new Set<string>()
-  const parts = Array.isArray(message.content) ? message.content : []
-  for (const part of parts) {
-    if (part.type === 'text') continue
-    try {
-      signatures.add(`${part.type}:${JSON.stringify(part)}`)
-    } catch {
-      signatures.add(`${part.type}:unserializable`)
-    }
-  }
-  return signatures
 }
 
 function mergeOptimisticHistoryMessages(

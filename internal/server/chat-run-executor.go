@@ -532,6 +532,7 @@ func (service *ChatRunService) registerRunCancel(record runRecord, cancel contex
 	service.runMu.Lock()
 	defer service.runMu.Unlock()
 	service.runCancels[record.ID] = cancel
+	service.runDone[record.ID] = make(chan struct{})
 	if service.sessionRuns[record.SessionID] == nil {
 		service.sessionRuns[record.SessionID] = make(map[string]struct{})
 	}
@@ -542,6 +543,11 @@ func (service *ChatRunService) unregisterRunCancel(record runRecord) {
 	service.runMu.Lock()
 	defer service.runMu.Unlock()
 	delete(service.runCancels, record.ID)
+	delete(service.stoppingRuns, record.ID)
+	if done := service.runDone[record.ID]; done != nil {
+		close(done)
+		delete(service.runDone, record.ID)
+	}
 	sessionRuns := service.sessionRuns[record.SessionID]
 	if sessionRuns == nil {
 		return

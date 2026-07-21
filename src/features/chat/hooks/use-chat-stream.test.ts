@@ -52,7 +52,7 @@ describe('findStreamMessageIndex', function () {
     ).toBe(0)
   })
 
-  it('falls back to run and role only for id-less stream messages', function () {
+  it('falls back to run and role only for one id-less stream message', function () {
     const messages: Array<GatewayMessage> = [
       {
         role: 'assistant',
@@ -72,5 +72,32 @@ describe('findStreamMessageIndex', function () {
         'run-1',
       ),
     ).toBe(0)
+  })
+
+  it('does not replace an ambiguous id-less assistant round', function () {
+    const messages: Array<GatewayMessage> = [
+      {
+        role: 'assistant',
+        __streamRunId: 'run-1',
+        content: [{ type: 'text', text: 'Round one' }],
+      },
+      {
+        role: 'assistant',
+        __streamRunId: 'run-1',
+        content: [{ type: 'text', text: 'Round two' }],
+      },
+    ]
+
+    expect(
+      findStreamMessageIndex(
+        messages,
+        {
+          role: 'assistant',
+          __streamRunId: 'run-1',
+          content: [{ type: 'text', text: 'Unknown round' }],
+        },
+        'run-1',
+      ),
+    ).toBe(-1)
   })
 })

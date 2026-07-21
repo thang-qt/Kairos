@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"net/http"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -965,6 +966,60 @@ func (driver fakeProviderDriver) GenerateChatStream(
 	}, nil
 }
 
+type gatedCancellationDriver struct {
+	models        []ProviderModel
+	firstDelta    chan struct{}
+	firstCanceled chan struct{}
+	releaseFirst  <-chan struct{}
+	secondStarted chan struct{}
+	mu            sync.Mutex
+	calls         int
+}
+
+func (driver *gatedCancellationDriver) Kind() string {
+	return openRouterProviderKind
+}
+
+func (driver *gatedCancellationDriver) ListModels(
+	_ context.Context,
+	_ resolvedProvider,
+) ([]ProviderModel, error) {
+	return append([]ProviderModel(nil), driver.models...), nil
+}
+
+func (driver *gatedCancellationDriver) GenerateChatStream(
+	ctx context.Context,
+	_ resolvedProvider,
+	request ChatGenerationRequest,
+	onDelta func(delta ChatGenerationDelta) error,
+) (ChatGenerationResult, error) {
+	driver.mu.Lock()
+	driver.calls++
+	call := driver.calls
+	driver.mu.Unlock()
+
+	if call == 1 {
+		if err := onDelta(ChatGenerationDelta{Text: "Partial A"}); err != nil {
+			return ChatGenerationResult{}, err
+		}
+		close(driver.firstDelta)
+		<-ctx.Done()
+		close(driver.firstCanceled)
+		<-driver.releaseFirst
+		return ChatGenerationResult{}, ctx.Err()
+	}
+
+	close(driver.secondStarted)
+	if err := onDelta(ChatGenerationDelta{Text: "Reply B"}); err != nil {
+		return ChatGenerationResult{}, err
+	}
+	return ChatGenerationResult{
+		Model:            request.Model,
+		ModelDescription: "Gated test provider",
+		OutputText:       "Reply B",
+	}, nil
+}
+
 func splitFakeProviderOutput(output string) []string {
 	if len(output) <= 12 {
 		if output == "" {
@@ -1381,6 +1436,118 @@ func TestStopSessionRunPublishesAbortedEventAndKeepsPartialAssistantHistory(t *t
 	content, ok := historyPayload.Messages[1]["content"].([]any)
 	if !ok || len(content) == 0 {
 		t.Fatalf("assistant content after stop = %T, want partial content", historyPayload.Messages[1]["content"])
+	}
+}
+
+func TestStartingNextRunWaitsForStoppedRunToPersistPartialAssistantHistory(t *testing.T) {
+	testServer := newTestApp(t, func(config *Config) {
+		config.SystemProviderEnabled = true
+		config.SystemProviderLabel = "Server Default"
+		config.SystemProviderStaticModels = []string{"test-model"}
+	})
+	releaseFirst := make(chan struct{})
+	driver := &gatedCancellationDriver{
+		models: []ProviderModel{{
+			ID:            "test-model",
+			Object:        "model",
+			OwnedBy:       "test",
+			ProviderRef:   "system:system-default",
+			ProviderLabel: "Server Default",
+		}},
+		firstDelta:    make(chan struct{}),
+		firstCanceled: make(chan struct{}),
+		releaseFirst:  releaseFirst,
+		secondStarted: make(chan struct{}),
+	}
+	testServer.app.providers.drivers[openRouterProviderKind] = driver
+	cookie := signupAndRequireCookie(t, testServer, "stop-next@example.com")
+	userID := userIDFromCookie(t, testServer, cookie)
+
+	createResponse := performJSONRequest(t, testServer.handler, http.MethodPost, "/api/sessions", createSessionRequest{
+		Label: "Stop then send",
+	}, []*http.Cookie{cookie})
+	assertStatusCode(t, createResponse, http.StatusCreated)
+	var created sessionMutationResponse
+	decodeResponseJSON(t, createResponse, &created)
+
+	_, err := testServer.app.runs.StartRun(context.Background(), userID, SendMessageInput{
+		FriendlyID: created.FriendlyID,
+		Message:    "Prompt A",
+		Model:      "test-model",
+	})
+	if err != nil {
+		t.Fatalf("start first run: %v", err)
+	}
+	select {
+	case <-driver.firstDelta:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for first run delta")
+	}
+
+	stopped, err := testServer.app.runs.CancelSessionRuns(context.Background(), userID, created.FriendlyID)
+	if err != nil {
+		t.Fatalf("stop first run: %v", err)
+	}
+	if !stopped {
+		t.Fatal("stop first run = false, want true")
+	}
+	select {
+	case <-driver.firstCanceled:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for first run cancellation")
+	}
+
+	type startResult struct {
+		run SendMessageResult
+		err error
+	}
+	startedSecond := make(chan struct{})
+	secondResult := make(chan startResult, 1)
+	go func() {
+		close(startedSecond)
+		run, startErr := testServer.app.runs.StartRun(context.Background(), userID, SendMessageInput{
+			FriendlyID: created.FriendlyID,
+			Message:    "Prompt B",
+			Model:      "test-model",
+		})
+		secondResult <- startResult{run: run, err: startErr}
+	}()
+	<-startedSecond
+
+	select {
+	case <-driver.secondStarted:
+		t.Fatal("second run started before the stopped run persisted its partial message")
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	close(releaseFirst)
+	select {
+	case <-driver.secondStarted:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for second run to start")
+	}
+	var second startResult
+	select {
+	case second = <-secondResult:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out starting second run")
+	}
+	if second.err != nil {
+		t.Fatalf("start second run: %v", second.err)
+	}
+	waitForRunStatus(t, testServer, second.run.RunID, "completed")
+
+	history, err := testServer.app.chat.GetHistory(context.Background(), userID, created.FriendlyID)
+	if err != nil {
+		t.Fatalf("get history: %v", err)
+	}
+	if len(history.Messages) != 4 {
+		t.Fatalf("history message count = %d, want 4", len(history.Messages))
+	}
+	for index, role := range []string{"user", "assistant", "user", "assistant"} {
+		if actual := history.Messages[index]["role"]; actual != role {
+			t.Fatalf("history message %d role = %v, want %q", index, actual, role)
+		}
 	}
 }
 
