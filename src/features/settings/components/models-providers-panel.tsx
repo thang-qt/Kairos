@@ -310,14 +310,6 @@ export function ModelsProvidersPanel() {
         </div>
       )}
 
-      {chatSettingsQuery.data ? (
-        <ChatSettingsPreferencesPanel
-          models={models}
-          defaultModelId={defaultModelId}
-          defaults={chatSettingsQuery.data.defaultSettings}
-        />
-      ) : null}
-
       {/* Provider Filter Pills */}
       <ProviderFilterPills
         models={models}

@@ -25,6 +25,7 @@ type ModelSettingsPanelProps = {
   loading?: boolean
   canSelectModel?: boolean
   defaultModelLocked?: boolean
+  showModelInfo?: boolean
   value: ModelSettingsValue
   onChange: (updates: Partial<ModelSettingsValue>) => void
 }
@@ -167,6 +168,7 @@ export function ModelSettingsPanel({
   models,
   selectedModelId,
   loading = false,
+  showModelInfo = true,
   value,
   onChange,
 }: ModelSettingsPanelProps) {
@@ -182,46 +184,48 @@ export function ModelSettingsPanel({
 
   return (
     <div className="pb-4">
-      <PanelSection title="Model">
-        <FieldBlock label="Current model">
-          <div className="rounded-xl border border-primary-200 bg-primary-50/60 p-3">
-            <div className="text-pretty text-sm font-medium text-primary-950">
-              {modelName}
-            </div>
+      {showModelInfo ? (
+        <PanelSection title="Model">
+          <FieldBlock label="Current model">
+            <div className="rounded-xl border border-primary-200 bg-primary-50/60 p-3">
+              <div className="text-pretty text-sm font-medium text-primary-950">
+                {modelName}
+              </div>
 
-            {modelDescription ? (
-              <details className="group mt-3">
-                <summary className="cursor-pointer list-none text-sm leading-relaxed text-primary-700 outline-none">
-                  <span className="line-clamp-3 group-open:line-clamp-none">
-                    {modelDescription}
-                  </span>
-                  <span className="mt-1 inline-block text-xs font-medium text-primary-500 group-open:hidden">
-                    Read full description
-                  </span>
-                  <span className="mt-1 hidden text-xs font-medium text-primary-500 group-open:inline-block">
-                    Show less
-                  </span>
-                </summary>
-              </details>
-            ) : null}
-
-            <div className="mt-4 space-y-2 rounded-lg border border-primary-200 bg-surface/70 p-3">
-              <ModelInfoRow
-                label="Context"
-                value={formatContextWindow(selectedModel?.contextWindow)}
-              />
-              {selectedModel?.created ? (
-                <ModelInfoRow
-                  label="Created"
-                  value={new Date(
-                    selectedModel.created * 1000,
-                  ).toLocaleDateString()}
-                />
+              {modelDescription ? (
+                <details className="group mt-3">
+                  <summary className="cursor-pointer list-none text-sm leading-relaxed text-primary-700 outline-none">
+                    <span className="line-clamp-3 group-open:line-clamp-none">
+                      {modelDescription}
+                    </span>
+                    <span className="mt-1 inline-block text-xs font-medium text-primary-500 group-open:hidden">
+                      Read full description
+                    </span>
+                    <span className="mt-1 hidden text-xs font-medium text-primary-500 group-open:inline-block">
+                      Show less
+                    </span>
+                  </summary>
+                </details>
               ) : null}
+
+              <div className="mt-4 space-y-2 rounded-lg border border-primary-200 bg-surface/70 p-3">
+                <ModelInfoRow
+                  label="Context"
+                  value={formatContextWindow(selectedModel?.contextWindow)}
+                />
+                {selectedModel?.created ? (
+                  <ModelInfoRow
+                    label="Created"
+                    value={new Date(
+                      selectedModel.created * 1000,
+                    ).toLocaleDateString()}
+                  />
+                ) : null}
+              </div>
             </div>
-          </div>
-        </FieldBlock>
-      </PanelSection>
+          </FieldBlock>
+        </PanelSection>
+      ) : null}
 
       <PanelSection title="Prompting">
         <FieldBlock

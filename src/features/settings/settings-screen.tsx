@@ -6,6 +6,7 @@ import { AppearanceSettingsPanel } from './components/appearance-settings-panel'
 import { DisplaySettingsPanel } from './components/display-settings-panel'
 import { AccountSettingsPanel } from './components/account-settings-panel'
 import { WebToolsSettingsPanel } from './components/web-tools-settings-panel'
+import { ChatSettingsPanel } from './components/chat-settings-panel'
 import {
   SettingsSidebar,
   getSettingsTabLabel,
@@ -22,6 +23,7 @@ import {
 export type SettingsTab =
   | 'account'
   | 'models'
+  | 'chat'
   | 'web-tools'
   | 'appearance'
   | 'display'
@@ -37,6 +39,9 @@ function renderTabPanel(activeTab: SettingsTab) {
   }
   if (activeTab === 'models') {
     return <ModelsProvidersPanel />
+  }
+  if (activeTab === 'chat') {
+    return <ChatSettingsPanel />
   }
   if (activeTab === 'web-tools') {
     return <WebToolsSettingsPanel />
