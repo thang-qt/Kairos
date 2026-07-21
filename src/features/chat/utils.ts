@@ -127,6 +127,7 @@ export function normalizeSessions(
         typeof session.contextTokens === 'number'
           ? session.contextTokens
           : undefined,
+      settings: session.settings,
     }
   })
 }

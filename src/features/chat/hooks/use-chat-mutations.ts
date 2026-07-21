@@ -16,10 +16,7 @@ import {
 } from '../chat-queries'
 import { getGatewayMessageId } from '../utils'
 import { setRecentSession } from '../pending-send'
-import {
-  clearConversationModelOverride,
-  copyConversationSettings,
-} from '../conversation-settings'
+import { beginFreshNewChat } from '../conversation-settings'
 import { getChatBackend } from '@/lib/chat-backend'
 import { randomUUID } from '@/lib/utils'
 
@@ -28,6 +25,7 @@ import type { QueryClient } from '@tanstack/react-query'
 import type { AttachmentFile } from '@/features/chat/components/composer/attachment-button'
 import type { ChatComposerHelpers } from '../components/chat-composer'
 import type { ChatRequestAdvancedSettings, GatewayMessage } from '../types'
+import type { ConversationSettings } from '../conversation-settings'
 
 type UserTurnDeleteState = {
   messageId: string
@@ -49,6 +47,7 @@ type UseChatMutationsInput = {
   resolvedWebSearch: boolean
   resolvedMathTools: boolean
   resolvedAdvancedSettings?: ChatRequestAdvancedSettings
+  conversationSettings: ConversationSettings
   beginGeneration: () => void
   finishGeneration: () => void
   startRun: (runId: string) => void
@@ -71,6 +70,7 @@ export function useChatMutations({
   resolvedWebSearch,
   resolvedMathTools,
   resolvedAdvancedSettings,
+  conversationSettings,
   beginGeneration,
   finishGeneration,
   startRun,
@@ -254,6 +254,7 @@ export function useChatMutations({
             webSearch: resolvedWebSearch,
             mathTools: resolvedMathTools,
             advanced: resolvedAdvancedSettings,
+            settings: conversationSettings,
             idempotencyKey: clientId,
             clientId,
             attachments: attachmentsPayload,
@@ -264,8 +265,7 @@ export function useChatMutations({
             if (!sessionKey || !friendlyId) {
               throw new Error('Invalid conversation response')
             }
-            copyConversationSettings(activeFriendlyId || 'new', friendlyId)
-            clearConversationModelOverride('new')
+            beginFreshNewChat()
             setRecentSession(friendlyId)
             upsertSessionSummary(queryClient, {
               ...result,
@@ -444,7 +444,7 @@ export function useChatMutations({
 
       if (isUserTurn && !cloneAtMessageId) {
         stashCloneComposerDraft('new', payload.currentText)
-        clearConversationModelOverride('new')
+        beginFreshNewChat()
         clearHistoryMessages(queryClient, 'new', 'new')
         storeCloneScrollRestore()
         navigate({ to: '/new' })

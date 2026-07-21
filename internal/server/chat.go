@@ -14,17 +14,40 @@ const defaultContextTokens = 32768
 
 var errChatSessionNotFound = errors.New("chat session not found")
 
+type ConversationAdvancedSettings struct {
+	Reasoning        bool    `json:"reasoning"`
+	ReasoningEffort  string  `json:"reasoningEffort"`
+	Sampling         bool    `json:"sampling"`
+	Temperature      float64 `json:"temperature"`
+	TopP             float64 `json:"topP"`
+	TopK             float64 `json:"topK"`
+	Penalties        bool    `json:"penalties"`
+	FrequencyPenalty float64 `json:"frequencyPenalty"`
+	PresencePenalty  float64 `json:"presencePenalty"`
+	MaxTokens        bool    `json:"maxTokens"`
+	MaxTokensValue   float64 `json:"maxTokensValue"`
+}
+
+type ConversationSettings struct {
+	Model        string                       `json:"model"`
+	SystemPrompt string                       `json:"systemPrompt"`
+	WebSearch    bool                         `json:"webSearch"`
+	MathTools    bool                         `json:"mathTools"`
+	Advanced     ConversationAdvancedSettings `json:"advanced"`
+}
+
 type SessionSummary struct {
-	Key           string         `json:"key"`
-	FriendlyID    string         `json:"friendlyId"`
-	Title         string         `json:"title,omitempty"`
-	DerivedTitle  string         `json:"derivedTitle,omitempty"`
-	Label         string         `json:"label,omitempty"`
-	IsPinned      bool           `json:"isPinned,omitempty"`
-	UpdatedAt     int64          `json:"updatedAt,omitempty"`
-	LastMessage   map[string]any `json:"lastMessage,omitempty"`
-	TotalTokens   int64          `json:"totalTokens,omitempty"`
-	ContextTokens int64          `json:"contextTokens,omitempty"`
+	Key           string               `json:"key"`
+	FriendlyID    string               `json:"friendlyId"`
+	Title         string               `json:"title,omitempty"`
+	DerivedTitle  string               `json:"derivedTitle,omitempty"`
+	Label         string               `json:"label,omitempty"`
+	IsPinned      bool                 `json:"isPinned,omitempty"`
+	UpdatedAt     int64                `json:"updatedAt,omitempty"`
+	LastMessage   map[string]any       `json:"lastMessage,omitempty"`
+	TotalTokens   int64                `json:"totalTokens,omitempty"`
+	ContextTokens int64                `json:"contextTokens,omitempty"`
+	Settings      ConversationSettings `json:"settings"`
 }
 
 type HistoryPayload struct {
@@ -38,17 +61,18 @@ type ChatService struct {
 }
 
 type sessionRecord struct {
-	ID              string
-	UserID          string
-	FriendlyID      string
-	Title           sql.NullString
-	DerivedTitle    sql.NullString
-	Label           sql.NullString
-	IsPinned        bool
-	UpdatedAt       int64
-	LastMessageJSON sql.NullString
-	TotalTokens     int64
-	ContextTokens   int64
+	ID                       string
+	UserID                   string
+	FriendlyID               string
+	Title                    sql.NullString
+	DerivedTitle             sql.NullString
+	Label                    sql.NullString
+	IsPinned                 bool
+	UpdatedAt                int64
+	LastMessageJSON          sql.NullString
+	TotalTokens              int64
+	ContextTokens            int64
+	ConversationSettingsJSON string
 }
 
 type messageRecord struct {
@@ -94,7 +118,8 @@ func (service *ChatService) ListSessions(
 			updated_at,
 			last_message_json,
 			total_tokens,
-			context_tokens
+			context_tokens,
+			conversation_settings_json
 		FROM chat_sessions
 		WHERE user_id = ?
 		ORDER BY is_pinned DESC, updated_at DESC, created_at DESC, id DESC
@@ -128,7 +153,20 @@ func (service *ChatService) CreateSession(
 	userID string,
 	label string,
 ) (SessionSummary, error) {
+	return service.CreateSessionWithSettings(ctx, userID, label, defaultConversationSettings())
+}
+
+func (service *ChatService) CreateSessionWithSettings(
+	ctx context.Context,
+	userID string,
+	label string,
+	settings ConversationSettings,
+) (SessionSummary, error) {
 	now := time.Now().UnixMilli()
+	settingsJSON, err := encodeConversationSettings(settings)
+	if err != nil {
+		return SessionSummary{}, err
+	}
 	sessionID := newID()
 	friendlyID := newFriendlyID()
 	normalizedLabel := normalizeSessionLabel(label)
@@ -144,11 +182,12 @@ func (service *ChatService) CreateSession(
 			is_pinned,
 			updated_at,
 			created_at,
-				total_tokens,
-				context_tokens
-			)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)
-	`, sessionID, userID, friendlyID, nullableString(normalizedLabel), nullableString(normalizedLabel), nullableString(normalizedLabel), 0, now, now, defaultContextTokens); err != nil {
+			total_tokens,
+			context_tokens,
+			conversation_settings_json
+		)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
+	`, sessionID, userID, friendlyID, nullableString(normalizedLabel), nullableString(normalizedLabel), nullableString(normalizedLabel), 0, now, now, defaultContextTokens, settingsJSON); err != nil {
 		return SessionSummary{}, fmt.Errorf("create session: %w", err)
 	}
 
@@ -162,7 +201,33 @@ func (service *ChatService) CreateSession(
 		UpdatedAt:     now,
 		TotalTokens:   0,
 		ContextTokens: defaultContextTokens,
+		Settings:      settings,
 	}, nil
+}
+
+func (service *ChatService) UpdateConversationSettings(
+	ctx context.Context,
+	userID string,
+	friendlyID string,
+	settings ConversationSettings,
+) (SessionSummary, error) {
+	record, err := service.findSessionByFriendlyID(ctx, userID, friendlyID)
+	if err != nil {
+		return SessionSummary{}, err
+	}
+	settingsJSON, err := encodeConversationSettings(settings)
+	if err != nil {
+		return SessionSummary{}, err
+	}
+	if _, err := service.db.ExecContext(ctx, `
+		UPDATE chat_sessions
+		SET conversation_settings_json = ?
+		WHERE id = ? AND user_id = ?
+	`, settingsJSON, record.ID, userID); err != nil {
+		return SessionSummary{}, fmt.Errorf("update conversation settings: %w", err)
+	}
+	record.ConversationSettingsJSON = settingsJSON
+	return sessionRecordToSummary(record)
 }
 
 func (service *ChatService) GetSessionSummary(
@@ -829,10 +894,11 @@ func (service *ChatService) createClonedSession(
 			created_at,
 				last_message_json,
 				total_tokens,
-				context_tokens
+				context_tokens,
+				conversation_settings_json
 			)
-			VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?)
-		`, sessionID, source.UserID, friendlyID, nullableString(forkedTitle), nullableString(derivedTitle), 0, now, now, lastMessageJSON, totalTokens, source.ContextTokens); err != nil {
+			VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?)
+		`, sessionID, source.UserID, friendlyID, nullableString(forkedTitle), nullableString(derivedTitle), 0, now, now, lastMessageJSON, totalTokens, source.ContextTokens, source.ConversationSettingsJSON); err != nil {
 		return SessionSummary{}, fmt.Errorf("create clone session: %w", err)
 	}
 
@@ -870,6 +936,7 @@ func (service *ChatService) createClonedSession(
 		LastMessage:   lastMessageFromRecords(messageRecords),
 		TotalTokens:   totalTokens,
 		ContextTokens: source.ContextTokens,
+		Settings:      mustDecodeConversationSettings(source.ConversationSettingsJSON),
 	}, nil
 }
 
@@ -908,7 +975,8 @@ func (service *ChatService) findSession(
 			updated_at,
 			last_message_json,
 			total_tokens,
-			context_tokens
+			context_tokens,
+			conversation_settings_json
 		FROM chat_sessions
 		WHERE user_id = ? AND `+field+` = ?
 	`, userID, value).Scan(
@@ -923,6 +991,7 @@ func (service *ChatService) findSession(
 		&record.LastMessageJSON,
 		&record.TotalTokens,
 		&record.ContextTokens,
+		&record.ConversationSettingsJSON,
 	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -949,6 +1018,7 @@ func scanSessionRecord(scanner interface {
 		&record.LastMessageJSON,
 		&record.TotalTokens,
 		&record.ContextTokens,
+		&record.ConversationSettingsJSON,
 	); err != nil {
 		return sessionRecord{}, fmt.Errorf("scan session: %w", err)
 	}
@@ -1048,6 +1118,10 @@ func extractAttachmentPayloads(message map[string]any) []AttachmentPayload {
 }
 
 func sessionRecordToSummary(record sessionRecord) (SessionSummary, error) {
+	settings, err := decodeConversationSettings(record.ConversationSettingsJSON)
+	if err != nil {
+		return SessionSummary{}, err
+	}
 	var lastMessage map[string]any
 	if record.LastMessageJSON.Valid && strings.TrimSpace(record.LastMessageJSON.String) != "" {
 		decoded, err := decodeJSONObject(record.LastMessageJSON.String)
@@ -1068,7 +1142,48 @@ func sessionRecordToSummary(record sessionRecord) (SessionSummary, error) {
 		LastMessage:   lastMessage,
 		TotalTokens:   record.TotalTokens,
 		ContextTokens: record.ContextTokens,
+		Settings:      settings,
 	}, nil
+}
+
+func defaultConversationSettings() ConversationSettings {
+	return ConversationSettings{
+		WebSearch: true,
+		MathTools: true,
+		Advanced: ConversationAdvancedSettings{
+			ReasoningEffort: "medium",
+			Temperature:     0.7,
+			TopP:            1,
+			MaxTokensValue:  4096,
+		},
+	}
+}
+
+func encodeConversationSettings(settings ConversationSettings) (string, error) {
+	data, err := json.Marshal(settings)
+	if err != nil {
+		return "", fmt.Errorf("encode conversation settings: %w", err)
+	}
+	return string(data), nil
+}
+
+func decodeConversationSettings(raw string) (ConversationSettings, error) {
+	settings := defaultConversationSettings()
+	if strings.TrimSpace(raw) == "" || strings.TrimSpace(raw) == "{}" {
+		return settings, nil
+	}
+	if err := json.Unmarshal([]byte(raw), &settings); err != nil {
+		return ConversationSettings{}, fmt.Errorf("decode conversation settings: %w", err)
+	}
+	return settings, nil
+}
+
+func mustDecodeConversationSettings(raw string) ConversationSettings {
+	settings, err := decodeConversationSettings(raw)
+	if err != nil {
+		return defaultConversationSettings()
+	}
+	return settings
 }
 
 func decodeJSONObject(raw string) (map[string]any, error) {

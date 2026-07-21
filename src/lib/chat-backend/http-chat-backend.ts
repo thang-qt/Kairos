@@ -39,6 +39,7 @@ type SessionMutationPayload = {
   lastMessage?: HistoryResponse['messages'][number] | null
   totalTokens?: number
   contextTokens?: number
+  settings?: SessionMeta['settings']
   runId?: string
   userMessageId?: string
   assistantMessageId?: string
@@ -108,8 +109,23 @@ export function createHTTPChatBackend(): ChatBackend {
           clientTimeZone:
             input?.clientTimeZone || runtimeContext.clientTimeZone,
           attachments: input?.attachments,
+          settings: input?.settings,
         }),
       })
+      return parseJSON<SessionMutationPayload>(response)
+    },
+    async updateConversationSettings(input) {
+      const response = await fetch(
+        `/api/sessions/${encodeURIComponent(input.friendlyId)}/settings`,
+        {
+          method: 'PATCH',
+          credentials: 'include',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ settings: input.settings }),
+        },
+      )
       return parseJSON<SessionMutationPayload>(response)
     },
     async renameConversation(input: ChatRenameConversationInput) {

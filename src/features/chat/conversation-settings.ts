@@ -1,47 +1,20 @@
-import { useMemo } from 'react'
+import { useCallback, useMemo, useRef } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { create } from 'zustand'
-import { persist } from 'zustand/middleware'
-import type { ProviderModel } from '@/lib/app-api'
+
+import { chatQueryKeys, upsertSessionSummary } from './chat-queries'
+import { getChatBackend } from '@/lib/chat-backend'
 import { providerModelKey } from '@/lib/model-utils'
+
+import type { ProviderModel } from '@/lib/app-api'
 import type {
-  ReasoningEffort,
+  ConversationAdvancedSettings,
+  ConversationSettings,
   ChatRequestAdvancedSettings,
+  SessionMeta,
 } from '@/lib/chat-backend/contracts'
 
-export type ConversationSettings = {
-  model: string
-  systemPrompt: string
-  webSearch: boolean
-  mathTools: boolean
-  advanced: ConversationAdvancedSettings
-}
-
-export type ConversationAdvancedSettings = {
-  reasoning: boolean
-  reasoningEffort: ReasoningEffort
-  sampling: boolean
-  temperature: number
-  topP: number
-  topK: number
-  penalties: boolean
-  frequencyPenalty: number
-  presencePenalty: number
-  maxTokens: boolean
-  maxTokensValue: number
-}
-
-type ConversationSettingsState = {
-  conversations: Record<string, ConversationSettings>
-  updateConversationSettings: (
-    conversationId: string,
-    updates: Partial<ConversationSettings>,
-  ) => void
-  copyConversationSettings: (
-    sourceConversationId: string,
-    targetConversationId: string,
-  ) => void
-  clearConversationModelOverride: (conversationId: string) => void
-}
+export type { ConversationAdvancedSettings, ConversationSettings }
 
 export const defaultConversationSettings: ConversationSettings = {
   model: '',
@@ -63,109 +36,109 @@ export const defaultConversationSettings: ConversationSettings = {
   },
 }
 
-export const useConversationSettingsStore = create<ConversationSettingsState>()(
-  persist(
-    (set) => ({
-      conversations: {},
-      updateConversationSettings: (conversationId, updates) =>
-        set((state) => ({
-          conversations: {
-            ...state.conversations,
-            [conversationId]: {
-              ...(state.conversations[conversationId] ??
-                defaultConversationSettings),
-              ...updates,
-            },
-          },
-        })),
-      copyConversationSettings: (sourceConversationId, targetConversationId) =>
-        set((state) => {
-          const sourceSettings = normalizeConversationSettings(
-            state.conversations[sourceConversationId],
-          )
+type NewConversationSettingsState = {
+  settings: ConversationSettings
+  updateSettings: (updates: Partial<ConversationSettings>) => void
+  resetModel: () => void
+}
 
-          return {
-            conversations: {
-              ...state.conversations,
-              [targetConversationId]: {
-                ...sourceSettings,
-              },
-            },
-          }
-        }),
-      clearConversationModelOverride: (conversationId) =>
-        set((state) => {
-          const current = state.conversations[conversationId]
-          if (!current || current.model === '') return state
-          return {
-            conversations: {
-              ...state.conversations,
-              [conversationId]: {
-                ...current,
-                model: '',
-              },
-            },
-          }
-        }),
-    }),
-    {
-      name: 'kairos-conversation-settings',
-    },
-  ),
-)
+export const useConversationSettingsStore =
+  create<NewConversationSettingsState>((set) => ({
+    settings: defaultConversationSettings,
+    updateSettings: (updates) =>
+      set((state) => ({
+        settings: mergeConversationSettings(state.settings, updates),
+      })),
+    resetModel: () =>
+      set((state) => ({
+        settings: { ...state.settings, model: '' },
+      })),
+  }))
 
-export function useConversationSettings(conversationId: string) {
-  const storedSettings = useConversationSettingsStore(
-    (state) => state.conversations[conversationId],
+type UseConversationSettingsInput = {
+  conversationId: string
+  session?: SessionMeta
+}
+
+export function useConversationSettings({
+  conversationId,
+  session,
+}: UseConversationSettingsInput) {
+  const queryClient = useQueryClient()
+  const newConversationSettings = useConversationSettingsStore(
+    (state) => state.settings,
   )
+  const updateNewConversationSettings = useConversationSettingsStore(
+    (state) => state.updateSettings,
+  )
+  const persistenceQueue = useRef(Promise.resolve())
   const settings = useMemo(
-    function buildSettings() {
-      return normalizeConversationSettings(storedSettings)
+    function getSettings() {
+      if (conversationId === 'new') return newConversationSettings
+      return normalizeConversationSettings(session?.settings)
     },
-    [storedSettings],
-  )
-  const updateConversationSettings = useConversationSettingsStore(
-    (state) => state.updateConversationSettings,
+    [conversationId, newConversationSettings, session?.settings],
   )
 
-  return {
-    settings,
-    updateSettings(updates: Partial<ConversationSettings>) {
-      updateConversationSettings(conversationId, updates)
+  const updateSettings = useCallback(
+    function updateSettings(updates: Partial<ConversationSettings>) {
+      const nextSettings = mergeConversationSettings(settings, updates)
+      if (conversationId === 'new') {
+        updateNewConversationSettings(updates)
+        return
+      }
+
+      if (!session) return
+      upsertSessionSummary(queryClient, { ...session, settings: nextSettings })
+      persistenceQueue.current = persistenceQueue.current
+        .catch(function ignorePreviousSaveFailure() {})
+        .then(async function saveSettings() {
+          await getChatBackend().updateConversationSettings({
+            sessionKey: session.key,
+            friendlyId: conversationId,
+            settings: nextSettings,
+          })
+        })
+        .catch(function refreshAfterSaveFailure() {
+          void queryClient.invalidateQueries({
+            queryKey: chatQueryKeys.sessions,
+          })
+        })
     },
-  }
-}
+    [
+      conversationId,
+      queryClient,
+      session,
+      settings,
+      updateNewConversationSettings,
+    ],
+  )
 
-export function copyConversationSettings(
-  sourceConversationId: string,
-  targetConversationId: string,
-) {
-  useConversationSettingsStore
-    .getState()
-    .copyConversationSettings(sourceConversationId, targetConversationId)
-}
-
-export function clearConversationModelOverride(conversationId: string) {
-  useConversationSettingsStore
-    .getState()
-    .clearConversationModelOverride(conversationId)
+  return { settings, updateSettings }
 }
 
 export function beginFreshNewChat() {
-  clearConversationModelOverride('new')
+  useConversationSettingsStore.getState().resetModel()
+}
+
+export function mergeConversationSettings(
+  settings: ConversationSettings,
+  updates: Partial<ConversationSettings>,
+): ConversationSettings {
+  return {
+    ...settings,
+    ...updates,
+    advanced: {
+      ...settings.advanced,
+      ...updates.advanced,
+    },
+  }
 }
 
 function normalizeConversationSettings(
   settings: Partial<ConversationSettings> | undefined,
 ): ConversationSettings {
-  return {
-    ...defaultConversationSettings,
-    ...settings,
-    advanced: {
-      ...defaultConversationSettings.advanced,
-      ...settings?.advanced,
-    },
-  }
+  return mergeConversationSettings(defaultConversationSettings, settings ?? {})
 }
 
 export function resolveConversationModelID(
@@ -215,10 +188,7 @@ export function resolveConversationModelID(
     )
   }
 
-  if (models.length > 0) {
-    return providerModelKey(models[0])
-  }
-
+  if (models.length > 0) return providerModelKey(models[0])
   return ''
 }
 
@@ -226,13 +196,8 @@ export function buildChatRequestAdvancedSettings(
   settings: ConversationAdvancedSettings,
 ): ChatRequestAdvancedSettings | undefined {
   const advanced: ChatRequestAdvancedSettings = {}
-
-  if (settings.reasoning) {
-    advanced.reasoning = {
-      effort: settings.reasoningEffort,
-    }
-  }
-
+  if (settings.reasoning)
+    advanced.reasoning = { effort: settings.reasoningEffort }
   if (settings.sampling) {
     advanced.sampling = {
       temperature: clampNumber(settings.temperature, 0, 2),
@@ -242,20 +207,17 @@ export function buildChatRequestAdvancedSettings(
       advanced.sampling.topK = Math.floor(clampNumber(settings.topK, 0, 1000))
     }
   }
-
   if (settings.penalties) {
     advanced.penalties = {
       frequencyPenalty: clampNumber(settings.frequencyPenalty, -2, 2),
       presencePenalty: clampNumber(settings.presencePenalty, -2, 2),
     }
   }
-
   if (settings.maxTokens) {
     advanced.maxTokens = Math.floor(
       clampNumber(settings.maxTokensValue, 1, 200000),
     )
   }
-
   return Object.keys(advanced).length > 0 ? advanced : undefined
 }
 
@@ -271,11 +233,7 @@ export function normalizeConversationTextSetting(value: string): string {
 function normalizeConversationStringValue(
   value: string | number | null | undefined,
 ) {
-  if (typeof value === 'string') {
-    return value.trim()
-  }
-  if (typeof value === 'number' && Number.isFinite(value)) {
-    return String(value)
-  }
+  if (typeof value === 'string') return value.trim()
+  if (typeof value === 'number' && Number.isFinite(value)) return String(value)
   return ''
 }

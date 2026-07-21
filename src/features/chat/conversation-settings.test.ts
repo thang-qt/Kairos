@@ -1,30 +1,21 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it } from 'vitest'
 
 import {
   beginFreshNewChat,
-  clearConversationModelOverride,
-  copyConversationSettings,
   defaultConversationSettings,
+  mergeConversationSettings,
   useConversationSettingsStore,
 } from './conversation-settings'
 
-describe('conversation settings model override', function () {
-  beforeEach(function resetStore() {
-    vi.spyOn(console, 'error').mockImplementation(
-      function ignorePersistWarning() {},
-    )
-    vi.spyOn(console, 'warn').mockImplementation(
-      function ignorePersistWarning() {},
-    )
-    useConversationSettingsStore.setState({ conversations: {} })
+describe('conversation settings', function () {
+  beforeEach(function resetNewConversationSettings() {
+    useConversationSettingsStore.setState({
+      settings: defaultConversationSettings,
+    })
   })
 
-  afterEach(function restoreConsole() {
-    vi.restoreAllMocks()
-  })
-
-  it('clears only the model override for a fresh new chat', function () {
-    useConversationSettingsStore.getState().updateConversationSettings('new', {
+  it('keeps new-conversation settings in memory and resets only its model', function () {
+    useConversationSettingsStore.getState().updateSettings({
       model: 'provider/model-a',
       systemPrompt: 'keep this',
       webSearch: false,
@@ -32,46 +23,22 @@ describe('conversation settings model override', function () {
 
     beginFreshNewChat()
 
-    expect(
-      useConversationSettingsStore.getState().conversations.new,
-    ).toMatchObject({
+    expect(useConversationSettingsStore.getState().settings).toMatchObject({
       model: '',
       systemPrompt: 'keep this',
       webSearch: false,
     })
   })
 
-  it('preserves copied pending model for created sessions before clearing new', function () {
-    useConversationSettingsStore.getState().updateConversationSettings('new', {
-      model: 'provider/model-a',
-      systemPrompt: 'draft prompt',
+  it('merges advanced settings without losing unchanged preferences', function () {
+    const settings = mergeConversationSettings(defaultConversationSettings, {
+      advanced: { ...defaultConversationSettings.advanced, temperature: 1.2 },
     })
 
-    copyConversationSettings('new', 'created-chat')
-    clearConversationModelOverride('new')
-
-    expect(
-      useConversationSettingsStore.getState().conversations['created-chat']
-        .model,
-    ).toBe('provider/model-a')
-    expect(
-      useConversationSettingsStore.getState().conversations.new.model,
-    ).toBe('')
-  })
-
-  it('does not clear existing session model settings', function () {
-    useConversationSettingsStore
-      .getState()
-      .updateConversationSettings('existing-chat', {
-        model: 'provider/model-a',
-      })
-
-    clearConversationModelOverride('new')
-
-    expect(
-      useConversationSettingsStore.getState().conversations['existing-chat']
-        .model,
-    ).toBe('provider/model-a')
-    expect(defaultConversationSettings.model).toBe('')
+    expect(settings.advanced).toMatchObject({
+      temperature: 1.2,
+      reasoningEffort: 'medium',
+      topP: 1,
+    })
   })
 })

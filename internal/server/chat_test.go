@@ -1551,6 +1551,54 @@ func TestStartingNextRunWaitsForStoppedRunToPersistPartialAssistantHistory(t *te
 	}
 }
 
+func TestConversationSettingsPersistPerSession(t *testing.T) {
+	testServer := newTestApp(t, nil)
+	cookie := signupAndRequireCookie(t, testServer, "conversation-settings@example.com")
+	settings := ConversationSettings{
+		Model:        "provider/model-a",
+		SystemPrompt: "Be concise.",
+		WebSearch:    false,
+		MathTools:    true,
+		Advanced: ConversationAdvancedSettings{
+			Reasoning:       true,
+			ReasoningEffort: "high",
+			Sampling:        true,
+			Temperature:     1.1,
+			TopP:            0.8,
+			MaxTokens:       true,
+			MaxTokensValue:  8192,
+		},
+	}
+
+	createResponse := performJSONRequest(t, testServer.handler, http.MethodPost, "/api/sessions", createSessionRequest{
+		Settings: &settings,
+	}, []*http.Cookie{cookie})
+	assertStatusCode(t, createResponse, http.StatusCreated)
+	var created sessionMutationResponse
+	decodeResponseJSON(t, createResponse, &created)
+	if created.Settings != settings {
+		t.Fatalf("created settings = %#v, want %#v", created.Settings, settings)
+	}
+
+	settings.Model = "provider/model-b"
+	settings.MathTools = false
+	updateResponse := performJSONRequest(t, testServer.handler, http.MethodPatch, "/api/sessions/"+created.FriendlyID+"/settings", updateConversationSettingsRequest{
+		Settings: settings,
+	}, []*http.Cookie{cookie})
+	assertStatusCode(t, updateResponse, http.StatusOK)
+
+	listResponse := performJSONRequest(t, testServer.handler, http.MethodGet, "/api/sessions", nil, []*http.Cookie{cookie})
+	assertStatusCode(t, listResponse, http.StatusOK)
+	var listed sessionsResponse
+	decodeResponseJSON(t, listResponse, &listed)
+	if len(listed.Sessions) != 1 {
+		t.Fatalf("sessions count = %d, want 1", len(listed.Sessions))
+	}
+	if listed.Sessions[0].Settings != settings {
+		t.Fatalf("stored settings = %#v, want %#v", listed.Sessions[0].Settings, settings)
+	}
+}
+
 func TestBuildAssistantContentPreservesAssistantPartOrder(t *testing.T) {
 	content := buildAssistantContent(
 		"thinking",

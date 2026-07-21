@@ -71,11 +71,25 @@ export function ChatScreen({
     useChatMeasurements()
   const [pinToTop, setPinToTop] = useState(() => hasPendingGeneration())
   const { settings } = useChatSettings()
+  const modelsQuery = useModelsQuery()
+  const { isMobile } = useAppMobile(queryClient)
+  const {
+    sessionsQuery,
+    sessions,
+    activeSession,
+    activeExists,
+    activeSessionKey,
+    hasActiveTitle,
+    activeTitle,
+    sessionsError,
+  } = useChatSessions({ activeFriendlyId, isNewChat, forcedSessionKey })
   const {
     settings: conversationSettings,
     updateSettings: updateConversationSettings,
-  } = useConversationSettings(activeFriendlyId || 'new')
-  const modelsQuery = useModelsQuery()
+  } = useConversationSettings({
+    conversationId: isNewChat ? 'new' : activeFriendlyId,
+    session: activeSession,
+  })
   const models = modelsQuery.data?.models ?? []
   const defaultModelId = modelsQuery.data?.preferences.defaultModelId
   const resolvedConversationModel = resolveConversationModelID(
@@ -105,26 +119,14 @@ export function ChatScreen({
     },
     [updateConversationSettings],
   )
-  const resolvedSystemPromptBase = normalizeConversationTextSetting(
+  const resolvedSystemPrompt = normalizeConversationTextSetting(
     conversationSettings.systemPrompt,
   )
-  const resolvedSystemPrompt = resolvedSystemPromptBase
   const resolvedWebSearch = conversationSettings.webSearch
   const resolvedMathTools = conversationSettings.mathTools
   const resolvedAdvancedSettings = buildChatRequestAdvancedSettings(
     conversationSettings.advanced,
   )
-  const { isMobile } = useAppMobile(queryClient)
-  const {
-    sessionsQuery,
-    sessions,
-    activeSession,
-    activeExists,
-    activeSessionKey,
-    hasActiveTitle,
-    activeTitle,
-    sessionsError,
-  } = useChatSessions({ activeFriendlyId, isNewChat, forcedSessionKey })
   const {
     historyQuery,
     displayMessages,
@@ -260,6 +262,7 @@ export function ChatScreen({
     resolvedWebSearch,
     resolvedMathTools,
     resolvedAdvancedSettings,
+    conversationSettings,
     beginGeneration,
     finishGeneration,
     startRun,

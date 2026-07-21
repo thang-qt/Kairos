@@ -11,18 +11,23 @@ type sessionsResponse struct {
 }
 
 type createSessionRequest struct {
-	Label          string               `json:"label"`
-	Message        string               `json:"message"`
-	Model          string               `json:"model"`
-	SystemPrompt   string               `json:"systemPrompt"`
-	WebSearch      bool                 `json:"webSearch"`
-	MathTools      bool                 `json:"mathTools"`
-	Advanced       *ChatAdvancedOptions `json:"advanced"`
-	IdempotencyKey string               `json:"idempotencyKey"`
-	ClientID       string               `json:"clientId"`
-	ClientTime     string               `json:"clientTime"`
-	ClientTimeZone string               `json:"clientTimeZone"`
-	Attachments    []AttachmentPayload  `json:"attachments"`
+	Label          string                `json:"label"`
+	Message        string                `json:"message"`
+	Model          string                `json:"model"`
+	SystemPrompt   string                `json:"systemPrompt"`
+	WebSearch      bool                  `json:"webSearch"`
+	MathTools      bool                  `json:"mathTools"`
+	Advanced       *ChatAdvancedOptions  `json:"advanced"`
+	IdempotencyKey string                `json:"idempotencyKey"`
+	ClientID       string                `json:"clientId"`
+	ClientTime     string                `json:"clientTime"`
+	ClientTimeZone string                `json:"clientTimeZone"`
+	Attachments    []AttachmentPayload   `json:"attachments"`
+	Settings       *ConversationSettings `json:"settings"`
+}
+
+type updateConversationSettingsRequest struct {
+	Settings ConversationSettings `json:"settings"`
 }
 
 type sendMessageRequest struct {
@@ -90,7 +95,11 @@ func (app *App) handleCreateSession(writer http.ResponseWriter, request *http.Re
 		return
 	}
 
-	session, err := app.chat.CreateSession(request.Context(), user.ID, payload.Label)
+	settings := defaultConversationSettings()
+	if payload.Settings != nil {
+		settings = *payload.Settings
+	}
+	session, err := app.chat.CreateSessionWithSettings(request.Context(), user.ID, payload.Label, settings)
 	if err != nil {
 		writeError(writer, http.StatusInternalServerError, "failed to create session")
 		return
@@ -137,6 +146,36 @@ func (app *App) handleCreateSession(writer http.ResponseWriter, request *http.Re
 	}
 
 	writeJSON(writer, http.StatusCreated, response)
+}
+
+func (app *App) handleUpdateConversationSettings(writer http.ResponseWriter, request *http.Request) {
+	user, ok := app.requireAuthenticatedUser(writer, request)
+	if !ok {
+		return
+	}
+
+	var payload updateConversationSettingsRequest
+	if err := decodeJSON(request, &payload); err != nil {
+		writeError(writer, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	session, err := app.chat.UpdateConversationSettings(
+		request.Context(),
+		user.ID,
+		request.PathValue("friendlyId"),
+		payload.Settings,
+	)
+	if err != nil {
+		if errors.Is(err, errChatSessionNotFound) {
+			writeError(writer, http.StatusNotFound, err.Error())
+			return
+		}
+		writeError(writer, http.StatusInternalServerError, "failed to update conversation settings")
+		return
+	}
+
+	writeJSON(writer, http.StatusOK, newSessionMutationResponse(session))
 }
 
 func (app *App) handleRenameSession(writer http.ResponseWriter, request *http.Request) {

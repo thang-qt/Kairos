@@ -64,6 +64,28 @@ export type GatewayMessage = {
   __streamRunId?: string | null
 }
 
+export type ConversationAdvancedSettings = {
+  reasoning: boolean
+  reasoningEffort: ReasoningEffort
+  sampling: boolean
+  temperature: number
+  topP: number
+  topK: number
+  penalties: boolean
+  frequencyPenalty: number
+  presencePenalty: number
+  maxTokens: boolean
+  maxTokensValue: number
+}
+
+export type ConversationSettings = {
+  model: string
+  systemPrompt: string
+  webSearch: boolean
+  mathTools: boolean
+  advanced: ConversationAdvancedSettings
+}
+
 export type SessionSummary = {
   key?: string
   label?: string
@@ -75,6 +97,7 @@ export type SessionSummary = {
   friendlyId?: string
   totalTokens?: number
   contextTokens?: number
+  settings?: ConversationSettings
 }
 
 export type SessionListResponse = {
@@ -98,6 +121,7 @@ export type SessionMeta = {
   lastMessage?: GatewayMessage | null
   totalTokens?: number
   contextTokens?: number
+  settings?: ConversationSettings
 }
 
 export type ReasoningEffort = 'low' | 'medium' | 'high'

@@ -3,6 +3,7 @@ import type {
   HistoryResponse,
   SessionMeta,
   ChatRequestAdvancedSettings,
+  ConversationSettings,
 } from './contracts'
 
 export type ChatAttachmentPayload = {
@@ -51,6 +52,13 @@ export type ChatCreateConversationInput = {
   clientTime?: string
   clientTimeZone?: string
   attachments?: Array<ChatAttachmentPayload>
+  settings?: ConversationSettings
+}
+
+export type ChatUpdateConversationSettingsInput = {
+  sessionKey: string
+  friendlyId: string
+  settings: ConversationSettings
 }
 
 export type ChatRenameConversationInput = {
@@ -153,6 +161,9 @@ export type ChatBackend = {
   renameConversation: (
     input: ChatRenameConversationInput,
   ) => Promise<ChatConversationResult>
+  updateConversationSettings: (
+    input: ChatUpdateConversationSettingsInput,
+  ) => Promise<SessionMeta>
   pinConversation: (input: ChatPinConversationInput) => Promise<SessionMeta>
   deleteConversation: (input: ChatDeleteConversationInput) => Promise<void>
   stopConversation: (input: ChatStopConversationInput) => Promise<void>
