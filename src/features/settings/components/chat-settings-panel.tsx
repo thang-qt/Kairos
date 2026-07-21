@@ -24,21 +24,10 @@ export function ChatSettingsPanel() {
   }
 
   return (
-    <div className="space-y-4">
-      <div>
-        <h2 className="text-balance text-lg font-medium text-primary-950">
-          Default chat settings
-        </h2>
-        <p className="text-pretty text-sm text-primary-600">
-          These settings apply to new conversations. Model-specific overrides
-          are configured from the selected model in Models & Providers.
-        </p>
-      </div>
-      <ChatSettingsPreferencesPanel
-        models={models}
-        defaultModelId={defaultModelId}
-        defaults={chatSettingsQuery.data.defaultSettings}
-      />
-    </div>
+    <ChatSettingsPreferencesPanel
+      models={models}
+      defaultModelId={defaultModelId}
+      defaults={chatSettingsQuery.data.defaultSettings}
+    />
   )
 }
