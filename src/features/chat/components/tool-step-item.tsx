@@ -229,7 +229,7 @@ function WebResultChips({
                 href={source.url}
                 target="_blank"
                 rel="noreferrer"
-                className="max-w-[9rem] truncate rounded-full border border-primary-200 bg-surface px-2 py-0.5 text-xs text-primary-700 shadow-xs/5 hover:border-primary-300"
+                className="hidden max-w-[9rem] truncate rounded-full border border-primary-200 bg-surface px-2 py-0.5 text-xs text-primary-700 shadow-xs/5 hover:border-primary-300 sm:inline-flex"
               >
                 {hostnameFromURL(source.url) ?? source.title}
               </a>
@@ -258,7 +258,7 @@ function WebResultChips({
         {sources.length > chips.length ? (
           <button
             type="button"
-            className="rounded-full bg-primary-100 px-2 py-0.5 text-xs text-primary-500 transition-colors hover:bg-primary-200 hover:text-primary-700"
+            className="hidden rounded-full bg-primary-100 px-2 py-0.5 text-xs text-primary-500 transition-colors hover:bg-primary-200 hover:text-primary-700 sm:inline-flex"
             onClick={(event) => {
               event.preventDefault()
               event.stopPropagation()
@@ -268,6 +268,19 @@ function WebResultChips({
             {expanded ? 'hide sources' : `+${sources.length - chips.length}`}
           </button>
         ) : null}
+        <button
+          type="button"
+          className="rounded-full bg-primary-100 px-2 py-0.5 text-xs text-primary-500 transition-colors hover:bg-primary-200 hover:text-primary-700 sm:hidden"
+          onClick={(event) => {
+            event.preventDefault()
+            event.stopPropagation()
+            onToggleExpanded()
+          }}
+        >
+          {expanded
+            ? 'hide sources'
+            : `${sources.length} source${sources.length === 1 ? '' : 's'}`}
+        </button>
         {event?.state === 'running' ? (
           <span className="text-xs text-primary-500">running…</span>
         ) : null}
