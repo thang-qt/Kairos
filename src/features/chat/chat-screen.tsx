@@ -251,6 +251,7 @@ export function ChatScreen({
     hasAvailableModel,
     send,
     handleRetryLastMessage,
+    clearRetryableNetworkSend,
     handleStopGeneration,
     handleCloneMessage,
     handleOpenDeleteUserTurn,
@@ -401,6 +402,7 @@ export function ChatScreen({
         finishAllRuns()
       }
       if (state === 'final' || state === 'error' || state === 'aborted') {
+        clearRetryableNetworkSend()
         void invalidateChatSessionQueries(queryClient)
       }
       if (state === 'error') {

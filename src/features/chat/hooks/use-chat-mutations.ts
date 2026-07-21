@@ -18,6 +18,7 @@ import { getGatewayMessageId } from '../utils'
 import { setRecentSession } from '../pending-send'
 import { beginFreshNewChat } from '../conversation-settings'
 import { getChatBackend } from '@/lib/chat-backend'
+import { ApiError } from '@/lib/api-client'
 import { randomUUID } from '@/lib/utils'
 
 import type { CloneMessagePayload } from '../components/chat-message-list'
@@ -31,6 +32,20 @@ type UserTurnDeleteState = {
   messageId: string
   currentText: string
 } | null
+
+type RetryableNetworkSend = {
+  sessionKey: string
+  friendlyId: string
+  message: string
+  model: string
+  systemPrompt: string
+  webSearch: boolean
+  mathTools: boolean
+  advanced?: ChatRequestAdvancedSettings
+  attachments?: Array<AttachmentFile>
+  clientId?: string
+  idempotencyKey: string
+}
 
 type UseChatMutationsInput = {
   activeFriendlyId: string
@@ -86,6 +101,8 @@ export function useChatMutations({
   const [sending, setSending] = useState(false)
   const [creatingSession, setCreatingSession] = useState(false)
   const [streamError, setStreamError] = useState<string | null>(null)
+  const [retryableNetworkSend, setRetryableNetworkSend] =
+    useState<RetryableNetworkSend | null>(null)
   const [deletingUserTurn, setDeletingUserTurn] =
     useState<UserTurnDeleteState>(null)
 
@@ -104,7 +121,11 @@ export function useChatMutations({
       advancedOverride?: ChatRequestAdvancedSettings,
       attachments?: Array<AttachmentFile>,
       clientIdOverride?: string,
+      idempotencyKeyOverride?: string,
     ) {
+      if (!skipOptimistic) {
+        setRetryableNetworkSend(null)
+      }
       let optimisticClientId = ''
       if (!skipOptimistic) {
         const { clientId, optimisticMessage } = createOptimisticMessage(
@@ -152,8 +173,8 @@ export function useChatMutations({
         advancedOverride !== undefined
           ? advancedOverride
           : resolvedAdvancedSettings
-      const idempotencyKey =
-        clientIdOverride || optimisticClientId || randomUUID()
+      const clientId = clientIdOverride || optimisticClientId || undefined
+      const idempotencyKey = idempotencyKeyOverride || clientId || randomUUID()
       void backend
         .sendMessage({
           sessionKey,
@@ -165,10 +186,13 @@ export function useChatMutations({
           mathTools,
           advanced,
           idempotencyKey,
-          clientId: clientIdOverride || optimisticClientId || undefined,
+          clientId,
           attachments: attachmentsPayload,
         })
         .then((payload) => {
+          setRetryableNetworkSend(function clearMatchingRetryableSend(current) {
+            return current?.idempotencyKey === idempotencyKey ? null : current
+          })
           if (
             typeof payload.runId === 'string' &&
             payload.runId.trim().length > 0
@@ -179,6 +203,21 @@ export function useChatMutations({
           void invalidateChatSessionQueries(queryClient)
         })
         .catch((err) => {
+          if (!(err instanceof ApiError)) {
+            setRetryableNetworkSend({
+              sessionKey,
+              friendlyId,
+              message: body,
+              model,
+              systemPrompt,
+              webSearch,
+              mathTools,
+              advanced,
+              attachments,
+              clientId,
+              idempotencyKey,
+            })
+          }
           if (optimisticClientId) {
             updateHistoryMessageByClientId(
               queryClient,
@@ -369,6 +408,28 @@ export function useChatMutations({
 
   const handleRetryLastMessage = useCallback(
     function handleRetryLastMessage() {
+      if (
+        retryableNetworkSend &&
+        retryableNetworkSend.friendlyId === activeFriendlyId
+      ) {
+        setStreamError(null)
+        sendMessage(
+          retryableNetworkSend.sessionKey,
+          retryableNetworkSend.friendlyId,
+          retryableNetworkSend.message,
+          true,
+          retryableNetworkSend.model,
+          retryableNetworkSend.systemPrompt,
+          retryableNetworkSend.webSearch,
+          retryableNetworkSend.mathTools,
+          retryableNetworkSend.advanced,
+          retryableNetworkSend.attachments,
+          retryableNetworkSend.clientId,
+          retryableNetworkSend.idempotencyKey,
+        )
+        return
+      }
+
       const lastUserMessage = [...displayMessages]
         .reverse()
         .find((msg) => msg.role === 'user')
@@ -396,11 +457,16 @@ export function useChatMutations({
       activeFriendlyId,
       activeSessionKey,
       displayMessages,
+      retryableNetworkSend,
       resolvedConversationModel,
       resolvedMathTools,
       sendMessage,
     ],
   )
+
+  function clearRetryableNetworkSend() {
+    setRetryableNetworkSend(null)
+  }
 
   const handleStopGeneration = useCallback(
     async function handleStopGeneration() {
@@ -662,6 +728,7 @@ export function useChatMutations({
     sendMessage,
     sendProgrammaticMessage,
     handleRetryLastMessage,
+    clearRetryableNetworkSend,
     handleStopGeneration,
     handleCloneMessage,
     handleOpenDeleteUserTurn,
