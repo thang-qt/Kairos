@@ -14,6 +14,7 @@ import {
   syncModels,
   updateModelMetadata,
   useCapabilitiesQuery,
+  useChatSettingsPreferencesQuery,
   useModelsQuery,
   useProvidersQuery,
 } from '@/lib/app-api'
@@ -24,6 +25,7 @@ import { ModelMetadataEditor } from './model-metadata-editor'
 import { CustomModelDialog } from './custom-model-dialog'
 import { ProviderFilterPills } from './provider-filter-pills'
 import { ModelItemCard } from './model-item-card'
+import { ChatSettingsPreferencesPanel } from './chat-settings-preferences-panel'
 import { useModelFilter } from '../hooks/use-model-filter'
 import { mutationErrorMessage } from '@/lib/error-utils'
 import { useProviderEditor } from '@/features/settings/providers/use-provider-editor'
@@ -34,6 +36,7 @@ export function ModelsProvidersPanel() {
   const capabilitiesQuery = useCapabilitiesQuery()
   const providersQuery = useProvidersQuery()
   const modelsQuery = useModelsQuery()
+  const chatSettingsQuery = useChatSettingsPreferencesQuery()
 
   const providers = providersQuery.data?.providers ?? []
   const preferences = providersQuery.data?.preferences
@@ -307,6 +310,14 @@ export function ModelsProvidersPanel() {
         </div>
       )}
 
+      {chatSettingsQuery.data ? (
+        <ChatSettingsPreferencesPanel
+          models={models}
+          defaultModelId={defaultModelId}
+          defaults={chatSettingsQuery.data.defaultSettings}
+        />
+      ) : null}
+
       {/* Provider Filter Pills */}
       <ProviderFilterPills
         models={models}
@@ -458,6 +469,20 @@ export function ModelsProvidersPanel() {
                     deletePending={deleteCustomModelMutation.isPending}
                   />
                 </div>
+
+                {chatSettingsQuery.data ? (
+                  <ChatSettingsPreferencesPanel
+                    models={models}
+                    defaultModelId={defaultModelId}
+                    defaults={chatSettingsQuery.data.defaultSettings}
+                    modelId={providerModelKey(activeModel)}
+                    modelOverride={
+                      chatSettingsQuery.data.modelOverrides[
+                        providerModelKey(activeModel)
+                      ]
+                    }
+                  />
+                ) : null}
               </div>
             </motion.div>
           )}

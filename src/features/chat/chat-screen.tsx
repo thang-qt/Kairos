@@ -42,7 +42,7 @@ import type { RightSidebarTab } from './components/right-sidebar'
 import { AppShell } from '@/components/app-shell'
 import { useConversationExport } from '@/features/chat/export/use-conversation-export'
 import { useChatSettings } from '@/app/preferences/app-preferences'
-import { useModelsQuery } from '@/lib/app-api'
+import { useChatSettingsPreferencesQuery, useModelsQuery } from '@/lib/app-api'
 import { providerModelKey } from '@/lib/model-utils'
 
 type ChatScreenProps = {
@@ -72,6 +72,9 @@ export function ChatScreen({
   const [pinToTop, setPinToTop] = useState(() => hasPendingGeneration())
   const { settings } = useChatSettings()
   const modelsQuery = useModelsQuery()
+  const chatSettingsQuery = useChatSettingsPreferencesQuery()
+  const models = modelsQuery.data?.models ?? []
+  const defaultModelId = modelsQuery.data?.preferences.defaultModelId
   const { isMobile } = useAppMobile(queryClient)
   const {
     sessionsQuery,
@@ -89,9 +92,10 @@ export function ChatScreen({
   } = useConversationSettings({
     conversationId: isNewChat ? 'new' : activeFriendlyId,
     session: activeSession,
+    defaultSettings: chatSettingsQuery.data?.defaultSettings,
+    modelOverrides: chatSettingsQuery.data?.modelOverrides,
+    defaultModelId,
   })
-  const models = modelsQuery.data?.models ?? []
-  const defaultModelId = modelsQuery.data?.preferences.defaultModelId
   const resolvedConversationModel = resolveConversationModelID(
     conversationSettings.model,
     models,

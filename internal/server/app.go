@@ -130,6 +130,8 @@ func (app *App) Handler() http.Handler {
 	mux.HandleFunc("PATCH /api/me/password", app.handleChangePassword)
 	mux.HandleFunc("GET /api/me/preferences", app.handleGetPreferences)
 	mux.HandleFunc("PATCH /api/me/preferences", app.handleUpdatePreferences)
+	mux.HandleFunc("GET /api/me/chat-settings", app.handleGetChatSettingsPreferences)
+	mux.HandleFunc("PATCH /api/me/chat-settings", app.handleUpdateChatSettingsPreferences)
 	mux.HandleFunc("GET /api/me/web-tools", app.handleGetWebToolSettings)
 	mux.HandleFunc("PATCH /api/me/web-tools", app.handleUpdateWebToolSettings)
 	mux.HandleFunc("GET /api/providers", app.handleListProviders)

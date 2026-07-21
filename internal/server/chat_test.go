@@ -1551,6 +1551,45 @@ func TestStartingNextRunWaitsForStoppedRunToPersistPartialAssistantHistory(t *te
 	}
 }
 
+func TestUserChatSettingsPreferencesPersistDefaultsAndModelOverrides(t *testing.T) {
+	testServer := newTestApp(t, nil)
+	cookie := signupAndRequireCookie(t, testServer, "user-chat-settings@example.com")
+	settings := defaultConversationSettings()
+	settings.SystemPrompt = "Default instructions"
+	settings.WebSearch = false
+
+	updateDefaults := performJSONRequest(t, testServer.handler, http.MethodPatch, "/api/me/chat-settings", updateChatSettingsPreferencesRequest{
+		DefaultSettings: &settings,
+	}, []*http.Cookie{cookie})
+	assertStatusCode(t, updateDefaults, http.StatusOK)
+
+	modelSettings := settings
+	modelSettings.SystemPrompt = "Model instructions"
+	modelSettings.MathTools = false
+	updateModel := performJSONRequest(t, testServer.handler, http.MethodPatch, "/api/me/chat-settings", updateChatSettingsPreferencesRequest{
+		ModelID:       "provider/model-a",
+		ModelSettings: &modelSettings,
+	}, []*http.Cookie{cookie})
+	assertStatusCode(t, updateModel, http.StatusOK)
+
+	loadResponse := performJSONRequest(t, testServer.handler, http.MethodGet, "/api/me/chat-settings", nil, []*http.Cookie{cookie})
+	assertStatusCode(t, loadResponse, http.StatusOK)
+	var payload chatSettingsPreferencesResponse
+	decodeResponseJSON(t, loadResponse, &payload)
+	if payload.Settings.DefaultSettings != settings {
+		t.Fatalf("default settings = %#v, want %#v", payload.Settings.DefaultSettings, settings)
+	}
+	if payload.Settings.ModelOverrides["provider/model-a"] != modelSettings {
+		t.Fatalf("model settings = %#v, want %#v", payload.Settings.ModelOverrides["provider/model-a"], modelSettings)
+	}
+
+	clearModel := performJSONRequest(t, testServer.handler, http.MethodPatch, "/api/me/chat-settings", updateChatSettingsPreferencesRequest{
+		ModelID:             "provider/model-a",
+		ClearModelOverrides: true,
+	}, []*http.Cookie{cookie})
+	assertStatusCode(t, clearModel, http.StatusOK)
+}
+
 func TestConversationSettingsPersistPerSession(t *testing.T) {
 	testServer := newTestApp(t, nil)
 	cookie := signupAndRequireCookie(t, testServer, "conversation-settings@example.com")

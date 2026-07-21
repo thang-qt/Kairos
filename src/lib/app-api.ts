@@ -1,5 +1,6 @@
 import { queryOptions, useQuery } from '@tanstack/react-query'
 import { ApiError, parseJSON } from './api-client'
+import type { ConversationSettings } from './chat-backend/contracts'
 export { ApiError } from './api-client'
 
 export type AppCapabilities = {
@@ -127,6 +128,18 @@ export type UpdatePreferencesPayload = {
   titleGenerationModelId?: string
 }
 
+export type ChatSettingsPreferences = {
+  defaultSettings: ConversationSettings
+  modelOverrides: Record<string, ConversationSettings>
+}
+
+export type UpdateChatSettingsPreferencesPayload = {
+  defaultSettings?: ConversationSettings
+  modelId?: string
+  modelSettings?: ConversationSettings
+  clearModelOverride?: boolean
+}
+
 export type WebToolSettings = {
   provider: 'exa'
   apiKeyConfigured: boolean
@@ -150,6 +163,7 @@ export const appQueryKeys = {
   providers: ['app', 'providers'] as const,
   models: ['app', 'models'] as const,
   preferences: ['app', 'preferences'] as const,
+  chatSettings: ['app', 'chat-settings'] as const,
   webTools: ['app', 'web-tools'] as const,
 } as const
 
@@ -316,6 +330,29 @@ export async function deleteProvider(providerId: string): Promise<void> {
   await parseJSON(response)
 }
 
+export async function fetchChatSettingsPreferences(): Promise<ChatSettingsPreferences> {
+  const response = await fetch('/api/me/chat-settings', {
+    credentials: 'include',
+  })
+  const data = await parseJSON<{ settings: ChatSettingsPreferences }>(response)
+  return data.settings
+}
+
+export async function updateChatSettingsPreferences(
+  payload: UpdateChatSettingsPreferencesPayload,
+): Promise<ChatSettingsPreferences> {
+  const response = await fetch('/api/me/chat-settings', {
+    method: 'PATCH',
+    credentials: 'include',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  })
+  const data = await parseJSON<{ settings: ChatSettingsPreferences }>(response)
+  return data.settings
+}
+
 export async function fetchWebToolSettings(): Promise<WebToolSettings> {
   const response = await fetch('/api/me/web-tools', {
     credentials: 'include',
@@ -411,6 +448,13 @@ export function useModelsQuery() {
     staleTime: 1000 * 60 * 15,
     retry: false,
     refetchOnWindowFocus: false,
+  })
+}
+
+export function useChatSettingsPreferencesQuery() {
+  return useQuery({
+    queryKey: appQueryKeys.chatSettings,
+    queryFn: fetchChatSettingsPreferences,
   })
 }
 

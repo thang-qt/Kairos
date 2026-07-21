@@ -18,6 +18,17 @@ type preferencesResponse struct {
 	Preferences UserPreferences `json:"preferences"`
 }
 
+type chatSettingsPreferencesResponse struct {
+	Settings ChatSettingsPreferences `json:"settings"`
+}
+
+type updateChatSettingsPreferencesRequest struct {
+	DefaultSettings     *ConversationSettings `json:"defaultSettings"`
+	ModelID             string                `json:"modelId"`
+	ModelSettings       *ConversationSettings `json:"modelSettings"`
+	ClearModelOverrides bool                  `json:"clearModelOverride"`
+}
+
 func (app *App) handleGetPreferences(writer http.ResponseWriter, request *http.Request) {
 	user, ok := app.requireAuthenticatedUser(writer, request)
 	if !ok {
@@ -31,6 +42,50 @@ func (app *App) handleGetPreferences(writer http.ResponseWriter, request *http.R
 	}
 
 	writeJSON(writer, http.StatusOK, preferencesResponse{Preferences: preferences})
+}
+
+func (app *App) handleGetChatSettingsPreferences(writer http.ResponseWriter, request *http.Request) {
+	user, ok := app.requireAuthenticatedUser(writer, request)
+	if !ok {
+		return
+	}
+	settings, err := app.providers.GetChatSettingsPreferences(request.Context(), user.ID)
+	if err != nil {
+		writeError(writer, http.StatusInternalServerError, "failed to load chat settings")
+		return
+	}
+	writeJSON(writer, http.StatusOK, chatSettingsPreferencesResponse{Settings: settings})
+}
+
+func (app *App) handleUpdateChatSettingsPreferences(writer http.ResponseWriter, request *http.Request) {
+	user, ok := app.requireAuthenticatedUser(writer, request)
+	if !ok {
+		return
+	}
+	var payload updateChatSettingsPreferencesRequest
+	if err := decodeJSON(request, &payload); err != nil {
+		writeError(writer, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	var settings ChatSettingsPreferences
+	var err error
+	switch {
+	case payload.DefaultSettings != nil:
+		settings, err = app.providers.UpdateDefaultChatSettings(request.Context(), user.ID, *payload.DefaultSettings)
+	case payload.ClearModelOverrides:
+		settings, err = app.providers.DeleteModelChatSettings(request.Context(), user.ID, payload.ModelID)
+	case payload.ModelSettings != nil:
+		settings, err = app.providers.UpdateModelChatSettings(request.Context(), user.ID, payload.ModelID, *payload.ModelSettings)
+	default:
+		writeError(writer, http.StatusBadRequest, "a chat settings update is required")
+		return
+	}
+	if err != nil {
+		writeError(writer, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(writer, http.StatusOK, chatSettingsPreferencesResponse{Settings: settings})
 }
 
 func (app *App) handleUpdatePreferences(writer http.ResponseWriter, request *http.Request) {

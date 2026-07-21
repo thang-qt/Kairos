@@ -14,7 +14,7 @@ describe('conversation settings', function () {
     })
   })
 
-  it('keeps new-conversation settings in memory and resets only its model', function () {
+  it('keeps new-conversation settings in memory and clears its draft', function () {
     useConversationSettingsStore.getState().updateSettings({
       model: 'provider/model-a',
       systemPrompt: 'keep this',
@@ -23,11 +23,7 @@ describe('conversation settings', function () {
 
     beginFreshNewChat()
 
-    expect(useConversationSettingsStore.getState().settings).toMatchObject({
-      model: '',
-      systemPrompt: 'keep this',
-      webSearch: false,
-    })
+    expect(useConversationSettingsStore.getState().settings).toEqual({})
   })
 
   it('merges advanced settings without losing unchanged preferences', function () {

@@ -254,7 +254,10 @@ export function useChatMutations({
             webSearch: resolvedWebSearch,
             mathTools: resolvedMathTools,
             advanced: resolvedAdvancedSettings,
-            settings: conversationSettings,
+            settings: {
+              ...conversationSettings,
+              model: resolvedConversationModel,
+            },
             idempotencyKey: clientId,
             clientId,
             attachments: attachmentsPayload,

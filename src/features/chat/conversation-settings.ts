@@ -36,33 +36,47 @@ export const defaultConversationSettings: ConversationSettings = {
   },
 }
 
+type ConversationSettingsDraft = Omit<
+  Partial<ConversationSettings>,
+  'advanced'
+> & {
+  advanced?: Partial<ConversationAdvancedSettings>
+}
+
 type NewConversationSettingsState = {
-  settings: ConversationSettings
+  settings: ConversationSettingsDraft
   updateSettings: (updates: Partial<ConversationSettings>) => void
-  resetModel: () => void
+  reset: () => void
 }
 
 export const useConversationSettingsStore =
   create<NewConversationSettingsState>((set) => ({
-    settings: defaultConversationSettings,
+    settings: {},
     updateSettings: (updates) =>
       set((state) => ({
-        settings: mergeConversationSettings(state.settings, updates),
+        settings: {
+          ...state.settings,
+          ...updates,
+          advanced: { ...state.settings.advanced, ...updates.advanced },
+        },
       })),
-    resetModel: () =>
-      set((state) => ({
-        settings: { ...state.settings, model: '' },
-      })),
+    reset: () => set({ settings: {} }),
   }))
 
 type UseConversationSettingsInput = {
   conversationId: string
   session?: SessionMeta
+  defaultSettings?: ConversationSettings
+  modelOverrides?: Record<string, ConversationSettings>
+  defaultModelId?: string
 }
 
 export function useConversationSettings({
   conversationId,
   session,
+  defaultSettings = defaultConversationSettings,
+  modelOverrides = {},
+  defaultModelId,
 }: UseConversationSettingsInput) {
   const queryClient = useQueryClient()
   const newConversationSettings = useConversationSettingsStore(
@@ -74,17 +88,42 @@ export function useConversationSettings({
   const persistenceQueue = useRef(Promise.resolve())
   const settings = useMemo(
     function getSettings() {
-      if (conversationId === 'new') return newConversationSettings
-      return normalizeConversationSettings(session?.settings)
+      if (conversationId !== 'new') {
+        return normalizeConversationSettings(session?.settings)
+      }
+      const modelId =
+        newConversationSettings.model ||
+        defaultSettings.model ||
+        defaultModelId ||
+        ''
+      const modelOverride = modelOverrides[modelId]
+      const settingsWithModelOverride = modelOverride
+        ? { ...modelOverride, model: defaultSettings.model }
+        : defaultSettings
+      return mergeConversationSettings(
+        settingsWithModelOverride,
+        newConversationSettings,
+      )
     },
-    [conversationId, newConversationSettings, session?.settings],
+    [
+      conversationId,
+      defaultModelId,
+      defaultSettings,
+      modelOverrides,
+      newConversationSettings,
+      session?.settings,
+    ],
   )
 
   const updateSettings = useCallback(
     function updateSettings(updates: Partial<ConversationSettings>) {
       const nextSettings = mergeConversationSettings(settings, updates)
       if (conversationId === 'new') {
-        updateNewConversationSettings(updates)
+        if (Object.hasOwn(updates, 'model')) {
+          updateNewConversationSettings({ model: updates.model })
+        } else {
+          updateNewConversationSettings(updates)
+        }
         return
       }
 
@@ -118,12 +157,12 @@ export function useConversationSettings({
 }
 
 export function beginFreshNewChat() {
-  useConversationSettingsStore.getState().resetModel()
+  useConversationSettingsStore.getState().reset()
 }
 
 export function mergeConversationSettings(
   settings: ConversationSettings,
-  updates: Partial<ConversationSettings>,
+  updates: ConversationSettingsDraft,
 ): ConversationSettings {
   return {
     ...settings,
