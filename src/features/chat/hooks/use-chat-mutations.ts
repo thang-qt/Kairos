@@ -1,8 +1,9 @@
-import { useState, useCallback } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 
 import { createOptimisticMessage } from '../chat-screen-utils'
+import { reduceChatEventMessages } from '../chat-event-reducer'
 import {
   appendHistoryMessage,
   clearHistoryMessages,
@@ -71,6 +72,7 @@ type UseChatMutationsInput = {
   storeCloneScrollRestore: () => void
   stashCloneComposerDraft: (targetFriendlyId: string, value: string) => void
   displayMessages: Array<GatewayMessage>
+  throwawayMode: boolean
 }
 
 export function useChatMutations({
@@ -94,6 +96,7 @@ export function useChatMutations({
   storeCloneScrollRestore,
   stashCloneComposerDraft,
   displayMessages,
+  throwawayMode,
 }: UseChatMutationsInput) {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
@@ -105,8 +108,19 @@ export function useChatMutations({
     useState<RetryableNetworkSend | null>(null)
   const [deletingUserTurn, setDeletingUserTurn] =
     useState<UserTurnDeleteState>(null)
+  const ephemeralAbortRef = useRef<AbortController | null>(null)
 
   const hasAvailableModel = resolvedConversationModel.trim().length > 0
+
+  useEffect(
+    function cancelEphemeralOnScopeChange() {
+      return function cancelEphemeralRequest() {
+        ephemeralAbortRef.current?.abort()
+        ephemeralAbortRef.current = null
+      }
+    },
+    [activeFriendlyId, isNewChat, throwawayMode],
+  )
 
   const sendMessage = useCallback(
     function sendMessage(
@@ -266,6 +280,131 @@ export function useChatMutations({
       }
       helpers.reset()
 
+      if (isNewChat && throwawayMode) {
+        const { clientId, optimisticId, optimisticMessage } =
+          createOptimisticMessage(body, attachments)
+        appendHistoryMessage(queryClient, 'new', 'new', optimisticMessage)
+        beginGeneration()
+        setSending(true)
+        setStreamError(null)
+        setPinToTop(true)
+
+        const attachmentsPayload = attachments
+          ?.filter((attachment) => Boolean(attachment.base64))
+          .map((attachment) => ({
+            mimeType: attachment.file.type,
+            content: attachment.base64 as string,
+          }))
+
+        const abortController = new AbortController()
+        ephemeralAbortRef.current = abortController
+        let receivedStreamEvent = false
+        getChatBackend()
+          .streamEphemeralMessage(
+            {
+              history: displayMessages,
+              message: body,
+              model: resolvedConversationModel,
+              systemPrompt: resolvedSystemPrompt,
+              webSearch: resolvedWebSearch,
+              mathTools: resolvedMathTools,
+              advanced: resolvedAdvancedSettings,
+              clientId,
+              attachments: attachmentsPayload,
+              signal: abortController.signal,
+            },
+            function handleEphemeralEvent(event) {
+              receivedStreamEvent = true
+              updateHistoryMessageByClientId(
+                queryClient,
+                'new',
+                'new',
+                clientId,
+                function markAccepted(message) {
+                  return { ...message, status: undefined }
+                },
+              )
+              updateHistoryMessages(
+                queryClient,
+                'new',
+                'new',
+                function reduceEphemeralEvent(messages) {
+                  return reduceChatEventMessages(messages, event, {
+                    retainRunMessagesOnTerminal: true,
+                  })
+                },
+              )
+              if (event.state === 'error') {
+                setStreamError(
+                  event.error?.trim() || 'The model request failed.',
+                )
+              }
+            },
+          )
+          .then(() => {
+            updateHistoryMessageByClientId(
+              queryClient,
+              'new',
+              'new',
+              clientId,
+              function markSent(message) {
+                return { ...message, status: undefined }
+              },
+            )
+            finishGeneration()
+            setPinToTop(false)
+          })
+          .catch((error) => {
+            const aborted =
+              error instanceof DOMException && error.name === 'AbortError'
+            if (aborted) {
+              updateHistoryMessageByClientId(
+                queryClient,
+                'new',
+                'new',
+                clientId,
+                function markStopped(message) {
+                  return { ...message, status: undefined }
+                },
+              )
+            } else if (!receivedStreamEvent) {
+              removeHistoryMessageByClientId(
+                queryClient,
+                'new',
+                'new',
+                clientId,
+                optimisticId,
+              )
+              helpers.setValue(body)
+            } else {
+              updateHistoryMessageByClientId(
+                queryClient,
+                'new',
+                'new',
+                clientId,
+                function markAccepted(message) {
+                  return { ...message, status: undefined }
+                },
+              )
+            }
+            finishGeneration()
+            setPinToTop(false)
+            if (aborted) return
+            setStreamError(
+              error instanceof Error
+                ? error.message
+                : 'The model request failed.',
+            )
+          })
+          .finally(() => {
+            if (ephemeralAbortRef.current === abortController) {
+              ephemeralAbortRef.current = null
+            }
+            setSending(false)
+          })
+        return
+      }
+
       if (isNewChat) {
         const { clientId, optimisticId, optimisticMessage } =
           createOptimisticMessage(body, attachments)
@@ -403,11 +542,37 @@ export function useChatMutations({
       finishGeneration,
       setPinToTop,
       startRun,
+      throwawayMode,
+      displayMessages,
     ],
   )
 
   const handleRetryLastMessage = useCallback(
     function handleRetryLastMessage() {
+      if (isNewChat && throwawayMode) {
+        const lastUserIndex = findLastUserMessageIndex(displayMessages)
+        if (lastUserIndex < 0) return
+        const lastUserMessage = displayMessages[lastUserIndex]
+        const text = messageText(lastUserMessage)
+        const attachments = attachmentFilesFromMessage(lastUserMessage)
+        if (!text.trim() && attachments.length === 0) return
+        updateHistoryMessages(
+          queryClient,
+          'new',
+          'new',
+          function removeFailedTurn(messages) {
+            return messages.slice(0, lastUserIndex)
+          },
+        )
+        setStreamError(null)
+        send(text, {
+          attachments,
+          reset: function resetRetryComposer() {},
+          setValue: function restoreRetryComposer() {},
+        })
+        return
+      }
+
       if (
         retryableNetworkSend &&
         retryableNetworkSend.friendlyId === activeFriendlyId
@@ -457,10 +622,14 @@ export function useChatMutations({
       activeFriendlyId,
       activeSessionKey,
       displayMessages,
+      isNewChat,
+      queryClient,
       retryableNetworkSend,
       resolvedConversationModel,
       resolvedMathTools,
+      send,
       sendMessage,
+      throwawayMode,
     ],
   )
 
@@ -470,6 +639,10 @@ export function useChatMutations({
 
   const handleStopGeneration = useCallback(
     async function handleStopGeneration() {
+      if (isNewChat && throwawayMode) {
+        ephemeralAbortRef.current?.abort()
+        return
+      }
       if (isNewChat) return
       const sessionKeyForStop =
         forcedSessionKey ||
@@ -495,6 +668,7 @@ export function useChatMutations({
       forcedSessionKey,
       isNewChat,
       resolvedSessionKey,
+      throwawayMode,
     ],
   )
 
@@ -744,6 +918,42 @@ function findMessageIndexById(
   return messages.findIndex(
     (message) => getGatewayMessageId(message) === messageId,
   )
+}
+
+function findLastUserMessageIndex(messages: Array<GatewayMessage>): number {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    if (messages[index].role === 'user') return index
+  }
+  return -1
+}
+
+function messageText(message: GatewayMessage): string {
+  if (!Array.isArray(message.content)) return ''
+  return message.content
+    .filter((part) => part.type === 'text')
+    .map((part) => part.text || '')
+    .join('')
+}
+
+function attachmentFilesFromMessage(
+  message: GatewayMessage,
+): Array<AttachmentFile> {
+  if (!Array.isArray(message.content)) return []
+  return message.content.flatMap(function mapAttachment(part) {
+    if (part.type !== 'image') return []
+    const mimeType = part.source?.media_type?.trim()
+    const base64 = part.source?.data?.trim()
+    if (!mimeType || !base64) return []
+    return [
+      {
+        id: randomUUID(),
+        file: new File([], 'throwaway-retry-image', { type: mimeType }),
+        preview: `data:${mimeType};base64,${base64}`,
+        type: 'image' as const,
+        base64,
+      },
+    ]
+  })
 }
 
 function replaceTurnFromUserMessage(

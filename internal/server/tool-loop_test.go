@@ -101,6 +101,59 @@ func TestToolLoopPersistsConventionalAssistantToolResultTurns(t *testing.T) {
 	}
 }
 
+func TestEphemeralToolLoopSharesOneRunLineage(t *testing.T) {
+	testServer := newTestApp(t, func(config *Config) {
+		config.SystemProviderEnabled = true
+		config.SystemProviderLabel = "Test provider"
+		config.SystemProviderStaticModels = []string{"test-model"}
+	})
+	driver := &scriptedToolLoopDriver{}
+	testServer.app.providers.drivers[openRouterProviderKind] = driver
+	cookie := signupAndRequireCookie(t, testServer, "ephemeral-tool-loop@example.com")
+
+	response := performJSONRequest(
+		t,
+		testServer.handler,
+		http.MethodPost,
+		"/api/ephemeral/messages",
+		ephemeralMessageRequest{
+			Message:   "Check this without saving",
+			Model:     "test-model",
+			MathTools: true,
+		},
+		[]*http.Cookie{cookie},
+	)
+	assertStatusCode(t, response, http.StatusOK)
+
+	events := decodeSSEChatEvents(t, response)
+	if len(events) < 5 {
+		t.Fatalf("ephemeral tool events = %d, want streamed tool loop", len(events))
+	}
+	runID := events[0].RunID
+	if runID == "" {
+		t.Fatal("ephemeral runId = empty, want shared lineage")
+	}
+	foundToolResult := false
+	for index, event := range events {
+		if event.RunID != runID {
+			t.Fatalf("ephemeral event %d runId = %q, want %q", index, event.RunID, runID)
+		}
+		if event.Message["role"] == "toolResult" {
+			foundToolResult = true
+		}
+		if messageRunID := stringValueFromMap(event.Message, "runId"); len(event.Message) > 0 && messageRunID != runID {
+			t.Fatalf("ephemeral message %d runId = %q, want %q", index, messageRunID, runID)
+		}
+	}
+	if !foundToolResult {
+		t.Fatal("ephemeral stream missing tool result event")
+	}
+	finalEvent := events[len(events)-1]
+	if finalEvent.State != "final" || finalEvent.Message["role"] != "assistant" {
+		t.Fatalf("ephemeral final event = %#v, want final assistant", finalEvent)
+	}
+}
+
 type twoToolCallDriver struct {
 	requests int
 }

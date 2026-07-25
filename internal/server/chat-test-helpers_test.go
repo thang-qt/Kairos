@@ -3,6 +3,7 @@ package server
 import (
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -220,4 +221,29 @@ func findHistoryMessageByRole(messages []map[string]any, role string) map[string
 		}
 	}
 	return nil
+}
+
+func decodeSSEChatEvents(
+	t *testing.T,
+	response *httptest.ResponseRecorder,
+) []ChatEvent {
+	t.Helper()
+
+	events := make([]ChatEvent, 0)
+	for _, frame := range strings.Split(response.Body.String(), "\n\n") {
+		for _, line := range strings.Split(frame, "\n") {
+			if !strings.HasPrefix(line, "data: ") {
+				continue
+			}
+			var event ChatEvent
+			if err := json.Unmarshal(
+				[]byte(strings.TrimPrefix(line, "data: ")),
+				&event,
+			); err != nil {
+				t.Fatalf("decode SSE event: %v; line = %s", err, line)
+			}
+			events = append(events, event)
+		}
+	}
+	return events
 }

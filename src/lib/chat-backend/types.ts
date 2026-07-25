@@ -42,6 +42,14 @@ export type ChatSendMessageInput = {
   attachments?: Array<ChatAttachmentPayload>
 }
 
+export type ChatSendEphemeralMessageInput = Omit<
+  ChatSendMessageInput,
+  'sessionKey' | 'friendlyId' | 'idempotencyKey'
+> & {
+  history: Array<GatewayMessage>
+  signal?: AbortSignal
+}
+
 export type ChatCreateConversationInput = {
   label?: string
   message?: string
@@ -175,6 +183,10 @@ export type ChatBackend = {
   deleteConversation: (input: ChatDeleteConversationInput) => Promise<void>
   stopConversation: (input: ChatStopConversationInput) => Promise<void>
   sendMessage: (input: ChatSendMessageInput) => Promise<ChatSendMessageResult>
+  streamEphemeralMessage: (
+    input: ChatSendEphemeralMessageInput,
+    onEvent: (event: ChatEvent) => void,
+  ) => Promise<void>
   cloneConversation: (
     input: ChatCloneConversationInput,
   ) => Promise<ChatConversationResult>

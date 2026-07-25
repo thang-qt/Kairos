@@ -1,11 +1,21 @@
 import { memo } from 'react'
 import { HugeiconsIcon } from '@hugeicons/react'
-import { MoreVerticalIcon, SidebarLeft01Icon } from '@hugeicons/core-free-icons'
+import {
+  IncognitoIcon,
+  MoreVerticalIcon,
+  SidebarLeft01Icon,
+} from '@hugeicons/core-free-icons'
 import { ContextMeter } from './context-meter'
 import { ChatModelSelector } from './chat-model-selector'
 import type { ProviderModel } from '@/lib/app-api'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
+import {
+  TooltipContent,
+  TooltipProvider,
+  TooltipRoot,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
 
 type ChatHeaderProps = {
   activeTitle: string
@@ -24,6 +34,10 @@ type ChatHeaderProps = {
   canSelectModel?: boolean
   defaultModelLocked?: boolean
   onSelectModel: (modelId: string) => void
+  showThrowawayControl?: boolean
+  throwawayMode?: boolean
+  throwawayModeLocked?: boolean
+  onToggleThrowawayMode?: () => void
 }
 
 function ChatHeaderComponent({
@@ -43,6 +57,10 @@ function ChatHeaderComponent({
   canSelectModel = true,
   defaultModelLocked = false,
   onSelectModel,
+  showThrowawayControl = false,
+  throwawayMode = false,
+  throwawayModeLocked = false,
+  onToggleThrowawayMode,
 }: ChatHeaderProps) {
   return (
     <div ref={wrapperRef} className="px-4 h-12 flex items-center gap-2">
@@ -79,7 +97,47 @@ function ChatHeaderComponent({
         />
       </div>
       <div className="flex items-center gap-2 shrink-0">
-        <ContextMeter usedTokens={usedTokens} maxTokens={maxTokens} />
+        {showThrowawayControl ? (
+          <TooltipProvider>
+            <TooltipRoot>
+              <TooltipTrigger
+                render={
+                  <Button
+                    size="icon-sm"
+                    variant="ghost"
+                    onClick={onToggleThrowawayMode}
+                    disabled={throwawayModeLocked}
+                    className={cn(
+                      'text-primary-700 hover:bg-primary-100',
+                      throwawayMode &&
+                        'bg-primary-200 text-primary-950 hover:bg-primary-300 hover:text-primary-950 disabled:opacity-100',
+                    )}
+                    aria-label={
+                      throwawayMode
+                        ? 'Throwaway mode enabled'
+                        : 'Enable throwaway mode'
+                    }
+                    aria-pressed={throwawayMode}
+                  />
+                }
+              >
+                <HugeiconsIcon
+                  icon={IncognitoIcon}
+                  size={20}
+                  strokeWidth={1.5}
+                  fill={throwawayMode ? 'currentColor' : 'none'}
+                />
+              </TooltipTrigger>
+              <TooltipContent side="bottom" align="end">
+                {throwawayMode
+                  ? 'Throwaway mode: not saved to Kairos history'
+                  : 'Use throwaway mode (⌘/Ctrl Shift P)'}
+              </TooltipContent>
+            </TooltipRoot>
+          </TooltipProvider>
+        ) : (
+          <ContextMeter usedTokens={usedTokens} maxTokens={maxTokens} />
+        )}
         {onToggleRightSidebar ? (
           <Button
             size="icon-sm"

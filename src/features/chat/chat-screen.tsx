@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useHotkey } from '@tanstack/react-hotkeys'
 
 import { countConversationTokens, isSessionNotFound } from './utils'
 import {
@@ -67,6 +68,7 @@ export function ChatScreen({
   const queryClient = useQueryClient()
   const [isRedirecting, setIsRedirecting] = useState(false)
   const [rightSidebarOpen, setRightSidebarOpen] = useState(false)
+  const [throwawayMode, setThrowawayMode] = useState(false)
   const [rightSidebarTab, setRightSidebarTab] =
     useState<RightSidebarTab>('options')
   const { headerRef, composerRef, mainRef, pinGroupMinHeight, headerHeight } =
@@ -278,6 +280,7 @@ export function ChatScreen({
     storeCloneScrollRestore,
     stashCloneComposerDraft,
     displayMessages,
+    throwawayMode,
   })
 
   useEffect(() => {
@@ -288,6 +291,7 @@ export function ChatScreen({
     setStreamError(null)
     setWaitingForResponse(false)
     setPinToTop(false)
+    setThrowawayMode(false)
     beginFreshNewChat()
     clearHistoryMessages(queryClient, 'new', 'new')
     navigate({ to: '/new' })
@@ -322,6 +326,17 @@ export function ChatScreen({
     Boolean(backendStatusError) &&
     backendStatusQuery.errorUpdatedAt > backendStatusMountRef.current
   const historyEmpty = !historyLoading && displayMessages.length === 0
+
+  useHotkey(
+    'Mod+Shift+P',
+    function toggleThrowawayModeShortcut() {
+      setThrowawayMode((current) => !current)
+    },
+    {
+      enabled: isNewChat && displayMessages.length === 0,
+      preventDefault: true,
+    },
+  )
 
   const backendNotice = useMemo(() => {
     if (streamError) {
@@ -449,7 +464,13 @@ export function ChatScreen({
       hideChrome={hideUi}
       header={
         <ChatHeader
-          activeTitle={isNewChat ? 'New conversation' : activeTitle}
+          activeTitle={
+            isNewChat
+              ? throwawayMode
+                ? 'Throwaway conversation'
+                : 'New conversation'
+              : activeTitle
+          }
           showActiveTitle={isNewChat || hasActiveTitle}
           wrapperRef={headerRef}
           isSidebarCollapsed={isSidebarCollapsed}
@@ -468,6 +489,10 @@ export function ChatScreen({
           canSelectModel={modelsQuery.data?.capabilities.canSelectModel}
           defaultModelLocked={modelsQuery.data?.capabilities.defaultModelLocked}
           onSelectModel={handleSelectConversationModel}
+          showThrowawayControl={isNewChat}
+          throwawayMode={throwawayMode}
+          throwawayModeLocked={displayMessages.length > 0}
+          onToggleThrowawayMode={() => setThrowawayMode((current) => !current)}
         />
       }
       rightSidebar={
@@ -514,9 +539,13 @@ export function ChatScreen({
             pinGroupMinHeight={pinGroupMinHeight}
             headerHeight={headerHeight}
             contentStyle={stableContentStyle}
-            onClone={handleCloneMessage}
-            onEditUserTurn={handleSaveEditedUserTurn}
-            onDeleteUserTurn={handleOpenDeleteUserTurn}
+            onClone={throwawayMode ? undefined : handleCloneMessage}
+            onEditUserTurn={
+              throwawayMode ? undefined : handleSaveEditedUserTurn
+            }
+            onDeleteUserTurn={
+              throwawayMode ? undefined : handleOpenDeleteUserTurn
+            }
             onScrollTopChange={handleScrollTopChange}
             restoreScrollTop={restoreScrollTop}
             restoreKey={activeFriendlyId}
@@ -532,7 +561,7 @@ export function ChatScreen({
             onSubmit={send}
             onStop={handleStopGeneration}
             isLoading={sending}
-            canStop={waitingForResponse && !isNewChat}
+            canStop={waitingForResponse && (!isNewChat || throwawayMode)}
             disabled={sending || !hasAvailableModel}
             wrapperRef={composerRef}
             draft={composerDraft}

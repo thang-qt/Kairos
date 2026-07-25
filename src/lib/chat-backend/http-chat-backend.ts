@@ -2,6 +2,7 @@ import type {
   ChatBackend,
   ChatCreateConversationInput,
   ChatDeleteConversationInput,
+  ChatEvent,
   ChatHistoryInput,
   ChatRenameConversationInput,
   ChatStatus,
@@ -52,6 +53,65 @@ type SessionMutationPayload = {
   userMessageId?: string
   assistantMessageId?: string
   clientId?: string
+}
+
+export async function consumeSSEChatEvents(
+  response: Response,
+  onEvent: (event: ChatEvent) => void,
+) {
+  if (!response.body) {
+    throw new Error('Streaming response unavailable')
+  }
+
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  let terminalReceived = false
+
+  function consumeFrame(frame: string) {
+    const data = frame
+      .split(/\r?\n/)
+      .filter((line) => line.startsWith('data:'))
+      .map((line) => line.slice(5).trimStart())
+      .join('\n')
+    if (!data) return
+    const event = JSON.parse(data) as ChatEvent
+    if (
+      event.state === 'final' ||
+      event.state === 'error' ||
+      event.state === 'aborted'
+    ) {
+      terminalReceived = true
+    }
+    onEvent(event)
+    if (event.state === 'error') {
+      throw new Error(event.error || 'The model request failed.')
+    }
+  }
+
+  try {
+    while (true) {
+      const { value, done } = await reader.read()
+      buffer += decoder.decode(value, { stream: !done })
+      const frames = buffer.split(/\r?\n\r?\n/)
+      buffer = frames.pop() ?? ''
+      for (const frame of frames) {
+        consumeFrame(frame)
+      }
+      if (done) {
+        if (buffer.trim()) consumeFrame(buffer)
+        if (!terminalReceived) {
+          throw new Error('Throwaway response stream ended unexpectedly.')
+        }
+        return
+      }
+    }
+  } finally {
+    if (!terminalReceived) {
+      await reader.cancel().catch(function ignoreCancelError() {})
+    }
+    reader.releaseLock()
+  }
 }
 
 export function createHTTPChatBackend(): ChatBackend {
@@ -227,6 +287,38 @@ export function createHTTPChatBackend(): ChatBackend {
         },
       )
       return parseJSON(response)
+    },
+    async streamEphemeralMessage(input, onEvent) {
+      const runtimeContext = getClientRuntimeContext()
+      const response = await fetch('/api/ephemeral/messages', {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        signal: input.signal,
+        body: JSON.stringify({
+          history: input.history,
+          message: input.message,
+          model: input.model,
+          systemPrompt: input.systemPrompt,
+          webSearch: input.webSearch,
+          mathTools: input.mathTools,
+          advanced: input.advanced,
+          clientId: input.clientId,
+          clientTime: input.clientTime || runtimeContext.clientTime,
+          clientTimeZone: input.clientTimeZone || runtimeContext.clientTimeZone,
+          attachments: input.attachments,
+        }),
+      })
+      if (!response.ok) {
+        await parseJSON<never>(response)
+      }
+      const contentType = response.headers.get('Content-Type') ?? ''
+      if (!contentType.toLowerCase().startsWith('text/event-stream')) {
+        throw new Error('Invalid throwaway response stream.')
+      }
+      await consumeSSEChatEvents(response, onEvent)
     },
     async cloneConversation(input) {
       const response = await fetch(

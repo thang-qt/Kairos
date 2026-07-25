@@ -17,6 +17,61 @@ func TestSessionsRequireAuthentication(t *testing.T) {
 	assertStatusCode(t, response, http.StatusUnauthorized)
 }
 
+func TestEphemeralMessageGeneratesWithoutPersistingChatData(t *testing.T) {
+	testServer := newTestApp(t, func(config *Config) {
+		config.SystemProviderEnabled = true
+		config.SystemProviderLabel = "Test provider"
+		config.SystemProviderStaticModels = []string{"test-model"}
+	})
+	testServer.app.providers.drivers[openRouterProviderKind] = fakeProviderDriver{
+		models: []ProviderModel{{ID: "test-model", Object: "model", OwnedBy: "test"}},
+		output: "This response is temporary.",
+	}
+	cookie := signupAndRequireCookie(t, testServer, "ephemeral@example.com")
+
+	response := performJSONRequest(
+		t,
+		testServer.handler,
+		http.MethodPost,
+		"/api/ephemeral/messages",
+		ephemeralMessageRequest{
+			History: []map[string]any{
+				newUserTextMessage("Remember this only for this request."),
+				newAssistantTextMessage("Understood."),
+			},
+			Message: "Reply without saving.",
+			Model:   "test-model",
+		},
+		[]*http.Cookie{cookie},
+	)
+	assertStatusCode(t, response, http.StatusOK)
+	if got := response.Header().Get("Cache-Control"); got != "no-store" {
+		t.Fatalf("ephemeral Cache-Control = %q, want no-store", got)
+	}
+
+	events := decodeSSEChatEvents(t, response)
+	if len(events) < 2 {
+		t.Fatalf("ephemeral stream events = %d, want delta and final", len(events))
+	}
+	finalEvent := events[len(events)-1]
+	if finalEvent.State != "final" || finalEvent.Message["role"] != "assistant" {
+		t.Fatalf(
+			"ephemeral final event = %#v, want final assistant",
+			finalEvent,
+		)
+	}
+
+	for _, table := range []string{"chat_sessions", "chat_messages", "chat_runs"} {
+		var count int
+		if err := testServer.app.db.QueryRow("SELECT COUNT(*) FROM " + table).Scan(&count); err != nil {
+			t.Fatalf("count %s: %v", table, err)
+		}
+		if count != 0 {
+			t.Fatalf("%s rows = %d, want 0", table, count)
+		}
+	}
+}
+
 func TestCreateListAndLoadSessionHistory(t *testing.T) {
 	testServer := newTestApp(t, nil)
 	cookie := signupAndRequireCookie(t, testServer, "history@example.com")

@@ -33,6 +33,7 @@ const SHORTCUT_GROUPS: Array<ShortcutGroup> = [
     title: 'Sessions',
     items: [
       { keys: ['⌘/Ctrl', 'Shift', 'O'], description: 'New Session' },
+      { keys: ['⌘/Ctrl', 'Shift', 'P'], description: 'Throwaway mode' },
       { keys: ['⌘/Ctrl', 'K'], description: 'Search sessions' },
       { keys: ['Alt', '['], description: 'Previous session' },
       { keys: ['Alt', ']'], description: 'Next session' },

@@ -5,6 +5,11 @@ import {
   updateSessionLastMessage,
   upsertSessionSummary,
 } from '../chat-queries'
+import {
+  findStreamMessageIndex,
+  messageFromChatEvent,
+  reduceChatEventMessages,
+} from '../chat-event-reducer'
 import type { QueryClient } from '@tanstack/react-query'
 import type { GatewayMessage } from '../types'
 import type { ChatEvent } from '@/lib/chat-backend'
@@ -58,35 +63,6 @@ export function useChatStream({
 
     const payloadSessionKey =
       typeof payload.sessionKey === 'string' ? payload.sessionKey : ''
-    const streamRunId =
-      typeof payload.runId === 'string' ? payload.runId : undefined
-
-    function clearStreamingMessagesForTerminalRun() {
-      if (!streamRunId || !isTerminalState(payloadState)) return
-      updateHistoryMessages(
-        queryClient,
-        activeFriendlyId,
-        sessionKeyForHistory,
-        function removeStreamingMessages(messages) {
-          return messages.filter(function keepMessage(message) {
-            return getStreamRunId(message) !== streamRunId
-          })
-        },
-      )
-      if (payloadSessionKey && payloadSessionKey !== sessionKeyForHistory) {
-        updateHistoryMessages(
-          queryClient,
-          activeFriendlyId,
-          payloadSessionKey,
-          function removeStreamingMessages(messages) {
-            return messages.filter(function keepMessage(message) {
-              return getStreamRunId(message) !== streamRunId
-            })
-          },
-        )
-      }
-    }
-
     if (!payload.message || typeof payload.message !== 'object') {
       if (
         payloadState === 'reconcile' ||
@@ -94,7 +70,24 @@ export function useChatStream({
         payloadState === 'error' ||
         payloadState === 'aborted'
       ) {
-        clearStreamingMessagesForTerminalRun()
+        updateHistoryMessages(
+          queryClient,
+          activeFriendlyId,
+          sessionKeyForHistory,
+          function reduceTerminalEvent(messages) {
+            return reduceChatEventMessages(messages, payload)
+          },
+        )
+        if (payloadSessionKey && payloadSessionKey !== sessionKeyForHistory) {
+          updateHistoryMessages(
+            queryClient,
+            activeFriendlyId,
+            payloadSessionKey,
+            function reduceMirroredTerminalEvent(messages) {
+              return reduceChatEventMessages(messages, payload)
+            },
+          )
+        }
         refreshHistoryRef.current()
       }
       return
@@ -109,56 +102,16 @@ export function useChatStream({
       return
     }
 
-    const nextMessage: GatewayMessage = {
-      ...payload.message,
-      runId:
-        typeof payload.message.runId === 'string' &&
-        payload.message.runId.trim().length > 0
-          ? payload.message.runId
-          : streamRunId,
-      __streamRunId: payloadState === 'delta' ? streamRunId : null,
-    }
-
-    function upsert(messages: Array<GatewayMessage>) {
-      const nextId = getMessageId(nextMessage)
-      if (nextId) {
-        const existingById = messages.findIndex(
-          (message) => getMessageId(message) === nextId,
-        )
-        if (existingById >= 0) {
-          const next = [...messages]
-          next[existingById] = mergeStreamMessage(
-            messages[existingById],
-            nextMessage,
-          )
-          return next
-        }
-      }
-
-      if (streamRunId) {
-        const existingByRunId = findStreamMessageIndex(
-          messages,
-          nextMessage,
-          streamRunId,
-        )
-        if (existingByRunId >= 0) {
-          const next = [...messages]
-          next[existingByRunId] = mergeStreamMessage(
-            messages[existingByRunId],
-            nextMessage,
-          )
-          return next
-        }
-      }
-
-      return [...messages, nextMessage]
-    }
+    const nextMessage = messageFromChatEvent(payload)
+    if (!nextMessage) return
 
     updateHistoryMessages(
       queryClient,
       activeFriendlyId,
       sessionKeyForHistory,
-      upsert,
+      function reduceEvent(messages) {
+        return reduceChatEventMessages(messages, payload)
+      },
     )
 
     if (payloadSessionKey && payloadSessionKey !== sessionKeyForHistory) {
@@ -166,7 +119,9 @@ export function useChatStream({
         queryClient,
         activeFriendlyId,
         payloadSessionKey,
-        upsert,
+        function reduceMirroredEvent(messages) {
+          return reduceChatEventMessages(messages, payload)
+        },
       )
     }
 
@@ -180,7 +135,6 @@ export function useChatStream({
     }
 
     if (isTerminalState(payloadState)) {
-      clearStreamingMessagesForTerminalRun()
       refreshHistoryRef.current()
     }
   })
@@ -224,75 +178,8 @@ export function useChatStream({
   return { stopStream }
 }
 
-function mergeStreamMessage(
-  previousMessage: GatewayMessage,
-  nextMessage: GatewayMessage,
-): GatewayMessage {
-  const previousContent = Array.isArray(previousMessage.content)
-    ? previousMessage.content
-    : []
-  const nextContent = Array.isArray(nextMessage.content)
-    ? nextMessage.content
-    : []
-
-  if (previousContent.length === 0) {
-    return nextMessage
-  }
-
-  // Each streaming delta carries the full accumulated content snapshot.
-  // When the next delta has content, use it as the authoritative source
-  // instead of merging with previous content. This prevents stale parts
-  // (e.g. reasoning text suppressed after tool calls appear) from
-  // persisting in the merged message.
-  if (nextContent.length > 0) {
-    return {
-      ...previousMessage,
-      ...nextMessage,
-      content: nextContent,
-    }
-  }
-
-  return { ...previousMessage, ...nextMessage }
-}
-
-export function findStreamMessageIndex(
-  messages: Array<GatewayMessage>,
-  targetMessage: GatewayMessage,
-  streamRunId: string,
-): number {
-  const targetId = getMessageId(targetMessage)
-  if (targetId) {
-    return messages.findIndex((message) => getMessageId(message) === targetId)
-  }
-
-  const targetRole = normalizeString(targetMessage.role)
-  let index = -1
-  messages.forEach((message, currentIndex) => {
-    const runId = getStreamRunId(message)
-    if (!runId || runId !== streamRunId) return
-    if (normalizeString(message.role) !== targetRole) return
-    if (index === -2) return
-    if (index >= 0) {
-      index = -2
-      return
-    }
-    index = currentIndex
-  })
-  return index >= 0 ? index : -1
-}
-
 function isTerminalState(state: string): boolean {
   return state === 'final' || state === 'error' || state === 'aborted'
 }
 
-function getStreamRunId(message: GatewayMessage): string {
-  return normalizeString((message as { __streamRunId?: unknown }).__streamRunId)
-}
-
-function getMessageId(message: GatewayMessage): string {
-  return normalizeString((message as { id?: unknown }).id)
-}
-
-function normalizeString(value: unknown): string {
-  return typeof value === 'string' ? value.trim() : ''
-}
+export { findStreamMessageIndex }

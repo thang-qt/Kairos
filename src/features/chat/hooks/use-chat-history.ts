@@ -26,7 +26,9 @@ export function useChatHistory({
   sessionsReady,
   queryClient,
 }: UseChatHistoryInput) {
-  const sessionKeyForHistory = forcedSessionKey || activeSessionKey || ''
+  const sessionKeyForHistory = isNewChat
+    ? 'new'
+    : forcedSessionKey || activeSessionKey || ''
   const historyKey = chatQueryKeys.history(
     activeFriendlyId,
     sessionKeyForHistory,

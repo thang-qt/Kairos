@@ -35,275 +35,146 @@ func (service *ChatRunService) executeRun(
 	history []map[string]any,
 	input SendMessageInput,
 ) {
-	abortIfCanceled := func() bool {
-		if ctx.Err() == nil {
-			return false
-		}
-		service.publishRunAborted(ctx, record, session, nil)
-		return true
+	sink := &persistedGenerationSink{
+		service: service,
+		record:  record,
+		session: &session,
 	}
-	if abortIfCanceled() {
+	outcome, err := service.executeGeneration(
+		ctx,
+		generationExecutionInput{
+			UserID:             record.UserID,
+			RunID:              record.ID,
+			AssistantMessageID: record.AssistantMessageID,
+			History:            history,
+			Request:            input,
+		},
+		sink,
+	)
+	if err == nil {
 		return
 	}
+	if errors.Is(err, context.Canceled) ||
+		errors.Is(err, errGenerationInactive) {
+		service.publishRunAborted(
+			context.Background(),
+			record,
+			session,
+			outcome.PartialMessage,
+		)
+		return
+	}
+	service.publishRunError(context.Background(), record, session, err)
+}
 
-	provider, model, _, err := service.providers.ResolveGenerationTarget(ctx, record.UserID, record.Model)
+type persistedGenerationSink struct {
+	service *ChatRunService
+	record  runRecord
+	session *sessionRecord
+}
+
+func (sink *persistedGenerationSink) ModelResolved(model ProviderModel) error {
+	if model.ContextWindow <= 0 {
+		return nil
+	}
+	if err := sink.service.chat.UpdateSessionContextTokens(
+		context.Background(),
+		sink.session.ID,
+		sink.session.UserID,
+		model.ContextWindow,
+	); err == nil {
+		sink.session.ContextTokens = model.ContextWindow
+	}
+	return nil
+}
+
+func (sink *persistedGenerationSink) Delta(message map[string]any) error {
+	sink.service.broker.Publish(
+		sink.record.SessionID,
+		buildRunEvent(
+			sink.record,
+			*sink.session,
+			"delta",
+			"",
+			message,
+		),
+	)
+	return nil
+}
+
+func (sink *persistedGenerationSink) ToolRound(
+	messages []map[string]any,
+	totalTokens int64,
+) error {
+	sessionSummary, committed, err :=
+		sink.service.appendStagedRunMessagesIfRunning(
+			context.Background(),
+			sink.record,
+			*sink.session,
+			messages,
+			appendMessageOptions{SkipDerivedTitle: true},
+		)
 	if err != nil {
-		if errors.Is(err, context.Canceled) {
-			service.publishRunAborted(ctx, record, session, nil)
-			return
+		return err
+	}
+	if !committed {
+		return errGenerationInactive
+	}
+	sink.session.TotalTokens = sessionSummary.TotalTokens
+	if totalTokens > 0 {
+		if err := sink.service.chat.UpdateSessionTotalTokens(
+			context.Background(),
+			sink.session.ID,
+			sink.session.UserID,
+			totalTokens,
+		); err != nil {
+			return err
 		}
-		service.publishRunError(ctx, record, session, err)
-		return
+		sink.session.TotalTokens = totalTokens
 	}
-	if abortIfCanceled() {
-		return
-	}
-	if model.ContextWindow > 0 {
-		if err := service.chat.UpdateSessionContextTokens(ctx, session.ID, session.UserID, model.ContextWindow); err == nil {
-			session.ContextTokens = model.ContextWindow
+	for _, message := range messages {
+		if err := sink.Delta(message); err != nil {
+			return err
 		}
 	}
+	return nil
+}
 
-	driver := service.providers.drivers[provider.Record.Kind]
-	if driver == nil {
-		service.publishRunError(ctx, record, session, fmt.Errorf("unsupported provider kind: %s", provider.Record.Kind))
-		return
-	}
-
-	displayModel := assistantModelDisplay{
-		ID:          model.ID,
-		Name:        firstNonEmpty(model.Name, model.ID),
-		Description: provider.Record.Label,
-	}
-	nextTimestamp := latestMessageTimestamp(history) + 1
-	newTimestamp := func() int64 {
-		timestamp := maxInt64(time.Now().UnixMilli(), nextTimestamp)
-		nextTimestamp = timestamp + 1
-		return timestamp
-	}
-	updateTotalTokens := func(totalTokens int64) bool {
-		if totalTokens <= 0 {
-			return true
-		}
-		if err := service.chat.UpdateSessionTotalTokens(context.Background(), session.ID, session.UserID, totalTokens); err != nil {
-			service.publishRunError(context.Background(), record, session, err)
-			return false
-		}
-		session.TotalTokens = totalTokens
-		return true
-	}
-
-	effectiveSystemPrompt := buildEffectiveSystemPrompt(input.SystemPrompt, history, time.Now(), input.ClientTime, input.ClientTimeZone)
-	messages := buildProviderMessages(history, effectiveSystemPrompt)
-	tools := buildRuntimeTools(input.WebSearch, input.MathTools)
-	toolCallLimit := defaultMaxToolCalls
-	if len(tools) > 0 && service.webSettings != nil {
-		toolCallLimit, err = service.webSettings.ResolveToolCallLimit(ctx, record.UserID)
-		if err != nil {
-			if errors.Is(err, context.Canceled) {
-				service.publishRunAborted(ctx, record, session, nil)
-				return
-			}
-			service.publishRunError(ctx, record, session, err)
-			return
-		}
-	}
-	toolRuntime := toolExecutor(NewWebToolRuntimeFromEnv())
-	if service.toolRuntime != nil {
-		resolvedRuntime, runtimeErr := service.toolRuntime(ctx, record.UserID, input)
-		if runtimeErr != nil {
-			if errors.Is(runtimeErr, context.Canceled) {
-				service.publishRunAborted(ctx, record, session, nil)
-				return
-			}
-			service.publishRunError(ctx, record, session, runtimeErr)
-			return
-		}
-		if resolvedRuntime != nil {
-			toolRuntime = resolvedRuntime
-		}
-	}
-
-	executedToolCalls := 0
-	assistantMessageID := record.AssistantMessageID
-	for roundIndex := 0; ; roundIndex++ {
-		if abortIfCanceled() {
-			return
-		}
-		assistantTimestamp := newTimestamp()
-		accumulatedText := ""
-		accumulatedThinking := ""
-		accumulatedToolCalls := []ProviderToolCall{}
-		accumulatedToolProgress := []ProviderToolProgress{}
-		toolProgressStartedAt := make(map[string]time.Time)
-		result, err := driver.GenerateChatStream(
-			ctx,
-			provider,
-			ChatGenerationRequest{
-				Model:        model.ID,
-				SystemPrompt: effectiveSystemPrompt,
-				Messages:     messages,
-				Tools:        tools,
-				ToolChoice:   toolChoiceForTools(tools),
-				WebSearch:    buildProviderWebSearchOptions(input.WebSearch),
-				Advanced:     input.Advanced,
-			},
-			func(delta ChatGenerationDelta) error {
-				if ctx.Err() != nil {
-					return ctx.Err()
-				}
-				accumulatedThinking += delta.Thinking
-				accumulatedText += delta.Text
-				accumulatedToolCalls = mergeProviderToolCalls(accumulatedToolCalls, delta.ToolCalls)
-				for progressIndex := range delta.ToolProgress {
-					progress := &delta.ToolProgress[progressIndex]
-					if progress.Status == "running" {
-						toolProgressStartedAt[progress.ID] = time.Now()
-					}
-					if progress.Status == "completed" {
-						if startedAt, ok := toolProgressStartedAt[progress.ID]; ok {
-							progress.DurationMS = maxInt64(1, time.Since(startedAt).Milliseconds())
-						}
-					}
-				}
-				accumulatedToolProgress = mergeProviderToolProgress(accumulatedToolProgress, delta.ToolProgress)
-				content := buildAssistantStreamingContent(accumulatedThinking, accumulatedText, accumulatedToolCalls, accumulatedToolProgress)
-				if len(content) == 0 {
-					return nil
-				}
-				service.broker.Publish(
-					record.SessionID,
-					buildRunEvent(record, session, "delta", "", buildAssistantMessageWithLineage(assistantMessageID, displayModel, assistantTimestamp, content, record.ID, roundIndex)),
-				)
-				return nil
-			},
+func (sink *persistedGenerationSink) Final(
+	message map[string]any,
+	totalTokens int64,
+) error {
+	timestamp := int64Value(message["timestamp"])
+	sessionSummary, completed, err :=
+		sink.service.completeRunWithFinalMessage(
+			context.Background(),
+			sink.record,
+			*sink.session,
+			message,
+			timestamp,
+			totalTokens,
 		)
-		if err != nil {
-			if errors.Is(err, context.Canceled) {
-				content := buildAssistantContent(accumulatedThinking, accumulatedText, accumulatedToolCalls)
-				if len(accumulatedToolCalls) == 0 && len(content) > 0 {
-					service.publishRunAborted(ctx, record, session, buildAssistantMessageWithLineage(assistantMessageID, displayModel, assistantTimestamp, content, record.ID, roundIndex))
-					return
-				}
-				service.publishRunAborted(ctx, record, session, nil)
-				return
-			}
-			service.publishRunError(ctx, record, session, err)
-			return
-		}
-		if abortIfCanceled() {
-			return
-		}
-
-		displayModel = displayModel.withProviderResult(result)
-		accumulatedThinking = firstNonEmpty(result.ThinkingText, accumulatedThinking)
-		if progressDetails := providerToolProgressDetails(accumulatedToolProgress); len(progressDetails) > 0 {
-			if result.Details == nil {
-				result.Details = make(map[string]any)
-			}
-			result.Details["hermesToolProgress"] = progressDetails
-		}
-		accumulatedToolCalls = mergeProviderToolCalls(accumulatedToolCalls, result.ToolCalls)
-		assistantMessage := buildAssistantMessageWithLineage(
-			assistantMessageID,
-			displayModel,
-			assistantTimestamp,
-			buildAssistantContent(accumulatedThinking, result.OutputText, accumulatedToolCalls),
-			record.ID,
-			roundIndex,
-		)
-		if generationDetails := buildGenerationDetails(result); generationDetails != nil {
-			assistantMessage["details"] = generationDetails
-		}
-
-		if len(result.ToolCalls) == 0 {
-			sessionSummary, completed, err := service.completeRunWithFinalMessage(
-				context.Background(),
-				record,
-				session,
-				assistantMessage,
-				assistantTimestamp,
-				result.TotalTokens,
-			)
-			if err != nil {
-				service.publishRunError(context.Background(), record, session, err)
-				return
-			}
-			if !completed {
-				service.publishRunAborted(context.Background(), record, session, nil)
-				return
-			}
-			if result.TotalTokens > 0 {
-				session.TotalTokens = result.TotalTokens
-			}
-			service.broker.Publish(record.SessionID, buildRunEventWithSession(record, session, "final", "", assistantMessage, &sessionSummary))
-			return
-		}
-
-		stagedMessages := []map[string]any{assistantMessage}
-		providerToolMessages := make([]ProviderMessage, 0, len(result.ToolCalls))
-		limitExceeded := false
-		for callIndex, call := range result.ToolCalls {
-			messageIndex := callIndex + 1
-			if executedToolCalls >= toolCallLimit {
-				limitExceeded = true
-				toolErr := fmt.Errorf("maximum tool calls exceeded (%d)", toolCallLimit)
-				toolMessage := buildToolResultMessageWithLineage(newID(), call, WebToolResult{}, toolErr, newTimestamp(), 0, record.ID, roundIndex, messageIndex)
-				stagedMessages = append(stagedMessages, toolMessage)
-				providerToolMessages = append(providerToolMessages, providerToolResultMessage(call, WebToolResult{}, toolErr))
-				continue
-			}
-
-			startedAt := time.Now()
-			toolResult, toolErr := toolRuntime.Execute(ctx, call)
-			if ctx.Err() != nil || errors.Is(toolErr, context.Canceled) {
-				service.publishRunAborted(ctx, record, session, nil)
-				return
-			}
-			duration := time.Since(startedAt)
-			executedToolCalls++
-			toolMessage := buildToolResultMessageWithLineage(
-				newID(),
-				call,
-				toolResult,
-				toolErr,
-				newTimestamp(),
-				maxInt64(1, duration.Milliseconds()),
-				record.ID,
-				roundIndex,
-				messageIndex,
-			)
-			stagedMessages = append(stagedMessages, toolMessage)
-			providerToolMessages = append(providerToolMessages, providerToolResultMessage(call, toolResult, toolErr))
-		}
-		if abortIfCanceled() {
-			return
-		}
-		sessionSummary, committed, err := service.appendStagedRunMessagesIfRunning(context.Background(), record, session, stagedMessages, appendMessageOptions{SkipDerivedTitle: true})
-		if err != nil {
-			service.publishRunError(context.Background(), record, session, err)
-			return
-		}
-		if !committed {
-			service.publishRunAborted(context.Background(), record, session, nil)
-			return
-		}
-		session.TotalTokens = sessionSummary.TotalTokens
-		if result.TotalTokens > 0 && !updateTotalTokens(result.TotalTokens) {
-			return
-		}
-		for _, message := range stagedMessages {
-			service.broker.Publish(record.SessionID, buildRunEvent(record, session, "delta", "", message))
-		}
-		if limitExceeded {
-			service.publishRunError(context.Background(), record, session, fmt.Errorf("maximum tool calls exceeded (%d)", toolCallLimit))
-			return
-		}
-
-		messages = append(messages, ProviderMessage{Role: "assistant", Parts: providerPartsFromResult(result)})
-		messages = append(messages, providerToolMessages...)
-		assistantMessageID = newID()
+	if err != nil {
+		return err
 	}
+	if !completed {
+		return errGenerationInactive
+	}
+	if totalTokens > 0 {
+		sink.session.TotalTokens = totalTokens
+	}
+	sink.service.broker.Publish(
+		sink.record.SessionID,
+		buildRunEventWithSession(
+			sink.record,
+			*sink.session,
+			"final",
+			"",
+			message,
+			&sessionSummary,
+		),
+	)
+	return nil
 }
 
 func (service *ChatRunService) publishRunError(

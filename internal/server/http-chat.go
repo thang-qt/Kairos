@@ -1,6 +1,7 @@
 package server
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
@@ -42,6 +43,20 @@ type sendMessageRequest struct {
 	MathTools      bool                 `json:"mathTools"`
 	Advanced       *ChatAdvancedOptions `json:"advanced"`
 	IdempotencyKey string               `json:"idempotencyKey"`
+	ClientID       string               `json:"clientId"`
+	ClientTime     string               `json:"clientTime"`
+	ClientTimeZone string               `json:"clientTimeZone"`
+	Attachments    []AttachmentPayload  `json:"attachments"`
+}
+
+type ephemeralMessageRequest struct {
+	History        []map[string]any     `json:"history"`
+	Message        string               `json:"message"`
+	Model          string               `json:"model"`
+	SystemPrompt   string               `json:"systemPrompt"`
+	WebSearch      bool                 `json:"webSearch"`
+	MathTools      bool                 `json:"mathTools"`
+	Advanced       *ChatAdvancedOptions `json:"advanced"`
 	ClientID       string               `json:"clientId"`
 	ClientTime     string               `json:"clientTime"`
 	ClientTimeZone string               `json:"clientTimeZone"`
@@ -334,6 +349,67 @@ func (app *App) handleSendMessage(writer http.ResponseWriter, request *http.Requ
 	}
 
 	writeJSON(writer, http.StatusOK, result)
+}
+
+func (app *App) handleEphemeralMessage(writer http.ResponseWriter, request *http.Request) {
+	user, ok := app.requireAuthenticatedUser(writer, request)
+	if !ok {
+		return
+	}
+
+	var payload ephemeralMessageRequest
+	if err := decodeJSON(request, &payload); err != nil {
+		writeError(writer, http.StatusBadRequest, err.Error())
+		return
+	}
+	if len(payload.History) > 200 {
+		writeError(writer, http.StatusBadRequest, "ephemeral history is too long")
+		return
+	}
+
+	flusher, ok := writer.(http.Flusher)
+	if !ok {
+		writeError(writer, http.StatusInternalServerError, "streaming unsupported")
+		return
+	}
+	writer.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
+	writer.Header().Set("Cache-Control", "no-store")
+	writer.Header().Set("Connection", "keep-alive")
+	writer.Header().Set("X-Accel-Buffering", "no")
+	writer.WriteHeader(http.StatusOK)
+	flusher.Flush()
+
+	err := app.runs.StreamEphemeral(request.Context(), user.ID, payload.History, SendMessageInput{
+		Message:        payload.Message,
+		Model:          payload.Model,
+		SystemPrompt:   payload.SystemPrompt,
+		WebSearch:      payload.WebSearch,
+		MathTools:      payload.MathTools,
+		Advanced:       payload.Advanced,
+		ClientID:       payload.ClientID,
+		ClientTime:     payload.ClientTime,
+		ClientTimeZone: payload.ClientTimeZone,
+		Attachments:    payload.Attachments,
+	}, func(event ChatEvent) error {
+		encoded, encodeErr := json.Marshal(event)
+		if encodeErr != nil {
+			return encodeErr
+		}
+		if _, writeErr := writer.Write([]byte("data: ")); writeErr != nil {
+			return writeErr
+		}
+		if _, writeErr := writer.Write(encoded); writeErr != nil {
+			return writeErr
+		}
+		if _, writeErr := writer.Write([]byte("\n\n")); writeErr != nil {
+			return writeErr
+		}
+		flusher.Flush()
+		return nil
+	})
+	if err != nil {
+		return
+	}
 }
 
 func (app *App) handleCloneSession(writer http.ResponseWriter, request *http.Request) {
