@@ -1,3 +1,16 @@
 import { QueryClient } from '@tanstack/react-query'
 
-export const appQueryClient = new QueryClient()
+import {
+  createUserScopedQueryPersister,
+  persistedQueryCacheMaxAge,
+} from './persisted-query-cache'
+
+export const appQueryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      gcTime: persistedQueryCacheMaxAge,
+    },
+  },
+})
+
+export const appQueryPersister = createUserScopedQueryPersister(appQueryClient)

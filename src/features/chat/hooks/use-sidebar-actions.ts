@@ -5,6 +5,7 @@ import { useDeleteSession } from './use-delete-session'
 import { useRenameSession } from './use-rename-session'
 import { useSessionShortcuts } from './use-session-shortcuts'
 import { appQueryKeys, isUnauthorizedError, logout } from '@/lib/app-api'
+import { removeCurrentUserPersistedQueryCache } from '@/lib/persisted-query-cache'
 import type { SessionMeta } from '../types'
 import { getSessionDisplayTitle } from '../utils'
 
@@ -51,10 +52,13 @@ export function useSidebarActions({
 
   async function handleLoggedOut() {
     queryClient.removeQueries({ queryKey: ['chat'] })
-    queryClient.removeQueries({ queryKey: appQueryKeys.me })
     queryClient.removeQueries({ queryKey: appQueryKeys.providers })
     queryClient.removeQueries({ queryKey: appQueryKeys.models })
     queryClient.removeQueries({ queryKey: appQueryKeys.preferences })
+    queryClient.removeQueries({ queryKey: appQueryKeys.chatSettings })
+    queryClient.removeQueries({ queryKey: appQueryKeys.webTools })
+    await removeCurrentUserPersistedQueryCache(queryClient)
+    queryClient.removeQueries({ queryKey: appQueryKeys.me })
     await navigate({ to: '/auth', replace: true })
   }
 

@@ -116,7 +116,7 @@ func (service *ChatService) ListSessions(
 			label,
 			is_pinned,
 			updated_at,
-			last_message_json,
+			NULL AS last_message_json,
 			total_tokens,
 			context_tokens,
 			conversation_settings_json

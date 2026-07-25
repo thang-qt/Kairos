@@ -134,8 +134,8 @@ func TestCreateListAndLoadSessionHistory(t *testing.T) {
 	if session.Label != "Roadmap" {
 		t.Fatalf("session label = %q, want Roadmap", session.Label)
 	}
-	if session.LastMessage == nil {
-		t.Fatal("session lastMessage = nil, want populated message")
+	if session.LastMessage != nil {
+		t.Fatal("session lastMessage is populated, want omitted from list response")
 	}
 
 	historyResponse := performJSONRequest(t, testServer.handler, http.MethodGet, "/api/sessions/"+created.FriendlyID+"/history", nil, []*http.Cookie{cookie})

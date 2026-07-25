@@ -448,6 +448,7 @@ export function useModelsQuery() {
     staleTime: 1000 * 60 * 15,
     retry: false,
     refetchOnWindowFocus: false,
+    refetchOnMount: 'always',
   })
 }
 
@@ -455,6 +456,7 @@ export function useChatSettingsPreferencesQuery() {
   return useQuery({
     queryKey: appQueryKeys.chatSettings,
     queryFn: fetchChatSettingsPreferences,
+    refetchOnMount: 'always',
   })
 }
 

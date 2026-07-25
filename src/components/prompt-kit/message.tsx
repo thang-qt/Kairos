@@ -1,5 +1,5 @@
 import { Avatar } from '@base-ui/react/avatar'
-import { Markdown } from './markdown'
+import { LazyMarkdown } from './lazy-markdown'
 import {
   TooltipContent,
   TooltipProvider,
@@ -50,7 +50,7 @@ export type MessageContentProps = {
   children: React.ReactNode
   markdown?: boolean
   className?: string
-} & React.ComponentProps<typeof Markdown> &
+} & React.ComponentProps<typeof LazyMarkdown> &
   React.HTMLProps<HTMLDivElement>
 
 function MessageContent({
@@ -65,9 +65,9 @@ function MessageContent({
   )
 
   return markdown ? (
-    <Markdown className={classNames} {...props}>
+    <LazyMarkdown className={classNames} {...props}>
       {children as string}
-    </Markdown>
+    </LazyMarkdown>
   ) : (
     <div className={classNames} {...props}>
       {children}

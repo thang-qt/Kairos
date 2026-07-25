@@ -2,6 +2,7 @@ package server
 
 import (
 	"bytes"
+	"compress/gzip"
 	"database/sql"
 	"embed"
 	"fmt"
@@ -188,6 +189,11 @@ func (app *App) frontendHandler() http.Handler {
 			return
 		}
 
+		if strings.HasPrefix(assetPath, "assets/") {
+			http.NotFound(writer, request)
+			return
+		}
+
 		serveFrontendIndex(writer, request)
 	})
 }
@@ -260,13 +266,28 @@ func serveFrontendIndex(writer http.ResponseWriter, request *http.Request) {
 
 func (app *App) withCommonMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		writer.Header().Set("Cache-Control", "no-store")
+		writer.Header().Set("Cache-Control", cacheControlPolicy(request))
 		writer.Header().Set("X-Content-Type-Options", "nosniff")
 
 		if strings.HasPrefix(request.URL.Path, "/api/") {
 			writer.Header().Set("Content-Type", "application/json; charset=utf-8")
 		}
 
-		next.ServeHTTP(writer, request)
+		if canCompressResponse(request) {
+			addVaryHeader(writer.Header(), "Accept-Encoding")
+		}
+		if !shouldCompressResponse(request) {
+			next.ServeHTTP(writer, request)
+			return
+		}
+
+		writer.Header().Set("Content-Encoding", "gzip")
+		writer.Header().Del("Content-Length")
+		gzipWriter := gzip.NewWriter(writer)
+		defer gzipWriter.Close()
+		next.ServeHTTP(&gzipResponseWriter{
+			ResponseWriter: writer,
+			writer:         gzipWriter,
+		}, request)
 	})
 }

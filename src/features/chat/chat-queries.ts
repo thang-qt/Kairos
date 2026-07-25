@@ -69,6 +69,13 @@ export async function fetchChatStatus(): Promise<ChatStatus> {
   return backend.getStatus()
 }
 
+export function isChatBackendUnavailable(status: {
+  isError: boolean
+  data?: ChatStatus
+}) {
+  return status.isError || status.data?.ok === false
+}
+
 export function updateHistoryMessages(
   queryClient: QueryClient,
   friendlyId: string,

@@ -8,6 +8,7 @@ import {
   clearHistoryMessages,
   fetchChatStatus,
   invalidateChatSessionQueries,
+  isChatBackendUnavailable,
 } from './chat-queries'
 import {
   appShellUiQueryKey,
@@ -189,6 +190,7 @@ export function ChatScreen({
       : backendStatusQuery.data && !backendStatusQuery.data.ok
         ? backendStatusQuery.data.detail || 'Chat backend unavailable'
         : null
+  const backendUnavailable = isChatBackendUnavailable(backendStatusQuery)
   const backendError = backendStatusError ?? sessionsError ?? historyError
   const handleBackendRefetch = useCallback(() => {
     void backendStatusQuery.refetch()
@@ -562,7 +564,7 @@ export function ChatScreen({
             onStop={handleStopGeneration}
             isLoading={sending}
             canStop={waitingForResponse && (!isNewChat || throwawayMode)}
-            disabled={sending || !hasAvailableModel}
+            disabled={sending || !hasAvailableModel || backendUnavailable}
             wrapperRef={composerRef}
             draft={composerDraft}
             autoFocus={isNewChat}

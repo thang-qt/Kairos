@@ -20,7 +20,11 @@ export function useChatSessions({
   const sessionsQuery = useQuery({
     queryKey: chatQueryKeys.sessions,
     queryFn: fetchSessions,
-    refetchInterval: 30000,
+    staleTime: 1000 * 15,
+    refetchInterval: 1000 * 60 * 5,
+    refetchOnMount: 'always',
+    refetchOnWindowFocus: true,
+    refetchOnReconnect: 'always',
   })
 
   const sessions = useMemo(() => {

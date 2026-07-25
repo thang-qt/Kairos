@@ -1,7 +1,7 @@
 import { Outlet, createRootRouteWithContext } from '@tanstack/react-router'
-import { QueryClientProvider } from '@tanstack/react-query'
 
 import { appQueryClient } from '@/lib/query-client'
+import { AppQueryProvider } from '@/lib/app-query-provider'
 
 type RouterContext = {
   queryClient: typeof appQueryClient
@@ -14,11 +14,11 @@ export const Route = createRootRouteWithContext<RouterContext>()({
 
 function RootLayout() {
   return (
-    <QueryClientProvider client={appQueryClient}>
+    <AppQueryProvider>
       <div className="root">
         <Outlet />
       </div>
-    </QueryClientProvider>
+    </AppQueryProvider>
   )
 }
 
