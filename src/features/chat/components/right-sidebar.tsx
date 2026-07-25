@@ -14,6 +14,7 @@ import { ModelSettingsPanel } from './model-settings-panel'
 import { SessionRenameDialog } from './sidebar/session-rename-dialog'
 import type { SessionMeta } from '../types'
 import type { ConversationSettings } from '../conversation-settings'
+import { getSessionDisplayTitle } from '../utils'
 import type { ProviderModel } from '@/lib/app-api'
 import { Button } from '@/components/ui/button'
 import { ExportMenu } from '@/features/chat/export/export-menu'
@@ -150,12 +151,7 @@ function OptionsPanel({
   const { pinSession } = usePinSession()
   const { renameSession } = useRenameSession()
   const [renameDialogOpen, setRenameDialogOpen] = useState(false)
-  const sessionTitle =
-    activeSession?.label ||
-    activeSession?.title ||
-    activeSession?.derivedTitle ||
-    activeSession?.friendlyId ||
-    ''
+  const sessionTitle = getSessionDisplayTitle(activeSession)
   const pinned = activeSession?.isPinned === true
 
   async function handleSaveRename(nextTitle: string) {

@@ -6,6 +6,7 @@ import { useRenameSession } from './use-rename-session'
 import { useSessionShortcuts } from './use-session-shortcuts'
 import { appQueryKeys, isUnauthorizedError, logout } from '@/lib/app-api'
 import type { SessionMeta } from '../types'
+import { getSessionDisplayTitle } from '../utils'
 
 type SearchSession = Pick<SessionMeta, 'friendlyId'> & {
   messageId?: string
@@ -154,12 +155,7 @@ export function useSidebarActions({
   ) {
     setDeleteSessionKey(session.key)
     setDeleteFriendlyId(session.friendlyId)
-    setDeleteSessionTitle(
-      session.label ||
-        session.title ||
-        session.derivedTitle ||
-        session.friendlyId,
-    )
+    setDeleteSessionTitle(getSessionDisplayTitle(session))
     setDeleteDialogOpen(true)
   }, [])
 

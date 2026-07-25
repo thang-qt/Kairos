@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import { chatQueryKeys, fetchSessions } from '../chat-queries'
 import { isRecentSession } from '../pending-send'
 import { filterSessionsWithTombstones } from '../session-tombstones'
+import { getSessionDisplayTitle } from '../utils'
 
 type UseChatSessionsInput = {
   activeFriendlyId: string
@@ -45,16 +46,8 @@ export function useChatSessions({
     )
   }, [activeSession])
   const activeTitle = useMemo(() => {
-    if (activeSession) {
-      return (
-        activeSession.label ||
-        activeSession.title ||
-        activeSession.derivedTitle ||
-        activeSession.friendlyId
-      )
-    }
-    return activeFriendlyId
-  }, [activeFriendlyId, activeSession])
+    return getSessionDisplayTitle(activeSession)
+  }, [activeSession])
 
   const sessionsError =
     sessionsQuery.error instanceof Error ? sessionsQuery.error.message : null

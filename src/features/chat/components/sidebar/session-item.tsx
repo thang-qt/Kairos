@@ -8,8 +8,10 @@ import {
   Pen01Icon,
   PinIcon,
 } from '@hugeicons/core-free-icons'
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import { memo } from 'react'
 import type { SessionMeta } from '../../types'
+import { getSessionDisplayTitle } from '../../utils'
 import { cn } from '@/lib/utils'
 import {
   MenuContent,
@@ -37,8 +39,8 @@ function SessionItemComponent({
   onRename,
   onDelete,
 }: SessionItemProps) {
-  const label =
-    session.label || session.title || session.derivedTitle || session.friendlyId
+  const label = getSessionDisplayTitle(session)
+  const reduceMotion = useReducedMotion()
 
   return (
     <Link
@@ -61,7 +63,23 @@ function SessionItemComponent({
     >
       <div className="flex-1 min-w-0">
         <div className="flex min-w-0 items-center gap-1 text-sm font-[450]">
-          <span className="block min-w-0 flex-1 truncate">{label}</span>
+          <AnimatePresence initial={false}>
+            <motion.span
+              key={label}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{
+                duration: reduceMotion ? 0 : 0.15,
+                ease: 'easeOut',
+              }}
+              className={cn(
+                'block min-w-0 flex-1 truncate',
+                label === 'New chat' && 'text-primary-600',
+              )}
+            >
+              {label}
+            </motion.span>
+          </AnimatePresence>
         </div>
       </div>
       <div className="inline-flex items-center">

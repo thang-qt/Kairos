@@ -378,6 +378,7 @@ function MessageItemComponent({
           timestamp={timestamp}
           align="start"
           forceVisible={forceActionsVisible}
+          available={!assistantIsStreaming}
           onClone={
             onClone && messageId
               ? () => onClone(message, text, previousMessageId)
@@ -435,6 +436,12 @@ export function areMessagesEqual(
   if (
     (prevProps.message.role || 'assistant') !==
     (nextProps.message.role || 'assistant')
+  ) {
+    return false
+  }
+  if (
+    Boolean(prevProps.message.__streamRunId) !==
+    Boolean(nextProps.message.__streamRunId)
   ) {
     return false
   }

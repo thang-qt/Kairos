@@ -5,6 +5,20 @@ import type {
   ToolCallContent,
 } from './types'
 
+type SessionTitleFields = Pick<SessionMeta, 'label' | 'title' | 'derivedTitle'>
+
+export function getSessionDisplayTitle(
+  session: SessionTitleFields | undefined,
+): string {
+  const candidates = [session?.label, session?.title, session?.derivedTitle]
+  for (const candidate of candidates) {
+    if (typeof candidate !== 'string') continue
+    const normalized = candidate.trim()
+    if (normalized) return normalized
+  }
+  return 'New chat'
+}
+
 export function deriveFriendlyIdFromKey(key: string | undefined): string {
   if (!key) return 'main'
   const trimmed = key.trim()

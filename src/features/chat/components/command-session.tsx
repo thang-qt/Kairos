@@ -20,6 +20,7 @@ import {
   CommandSeparator,
 } from '@/components/ui/command'
 import { fetchSessionSearch, chatQueryKeys } from '../chat-queries'
+import { getSessionDisplayTitle } from '../utils'
 
 type CommandSession = {
   key: string
@@ -51,9 +52,7 @@ type CommandSessionProps = {
 }
 
 function getSessionLabel(session: CommandSession) {
-  return (
-    session.label || session.title || session.derivedTitle || session.friendlyId
-  )
+  return getSessionDisplayTitle(session)
 }
 
 function getSessionItemValue(session: CommandSession) {

@@ -259,6 +259,26 @@ describe('MessageItem', function () {
     expect(html).toContain('whitespace-pre-wrap')
     expect(html).toContain('first line\nsecond line')
   })
+
+  it('keeps assistant actions hidden while its response is streaming', function () {
+    const message: GatewayMessage = {
+      id: 'assistant-1',
+      role: 'assistant',
+      __streamRunId: 'run-1',
+      content: [{ type: 'text', text: 'Still generating' }],
+    }
+
+    const html = renderToStaticMarkup(
+      React.createElement(MessageItem, {
+        message,
+        modelLabelById: new Map(),
+        forceActionsVisible: true,
+      }),
+    )
+
+    expect(html).toContain('data-message-actions-available="false"')
+    expect(html).toContain('aria-hidden="true"')
+  })
 })
 
 describe('areMessagesEqual render boundary', function () {
@@ -305,5 +325,26 @@ describe('areMessagesEqual render boundary', function () {
     const prevProps = { message: prevMsg, modelLabelById }
     const nextProps = { message: nextMsg, modelLabelById }
     expect(areMessagesEqual(prevProps, nextProps)).toBe(false)
+  })
+
+  it('rerenders when an assistant message finishes streaming', function () {
+    const streamingMessage: GatewayMessage = {
+      id: 'assistant-1',
+      role: 'assistant',
+      __streamRunId: 'run-1',
+      content: [{ type: 'text', text: 'Complete response' }],
+    }
+    const completedMessage: GatewayMessage = {
+      ...streamingMessage,
+      __streamRunId: null,
+    }
+    const modelLabelById = new Map()
+
+    expect(
+      areMessagesEqual(
+        { message: streamingMessage, modelLabelById },
+        { message: completedMessage, modelLabelById },
+      ),
+    ).toBe(false)
   })
 })

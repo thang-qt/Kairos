@@ -22,6 +22,7 @@ type MessageActionsBarProps = {
   timestamp: number
   showTimestamp?: boolean
   forceVisible?: boolean
+  available?: boolean
   onClone?: () => void
   onEdit?: () => void
   onDelete?: () => void
@@ -33,6 +34,7 @@ export function MessageActionsBar({
   timestamp,
   showTimestamp = true,
   forceVisible = false,
+  available = true,
   onClone,
   onEdit,
   onDelete,
@@ -53,15 +55,20 @@ export function MessageActionsBar({
 
   return (
     <div
+      aria-hidden={!available}
+      data-message-actions-available={available}
+      inert={!available}
       className={cn(
-        'flex items-center gap-2 text-xs text-primary-600',
+        'flex items-center gap-2 text-xs text-primary-600 transition-opacity duration-150 ease-out',
         positionClass,
+        !available && 'pointer-events-none opacity-0',
       )}
     >
       <div
         className={cn(
-          'flex items-center gap-2 transition-opacity duration-100 ease-out group-hover:opacity-100 group-focus-within:opacity-100',
-          forceVisible ? 'opacity-100' : 'opacity-0',
+          'flex items-center gap-2 transition-opacity duration-100 ease-out',
+          available && 'group-hover:opacity-100 group-focus-within:opacity-100',
+          available && forceVisible ? 'opacity-100' : 'opacity-0',
         )}
       >
         <TooltipProvider>

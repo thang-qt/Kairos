@@ -1,6 +1,28 @@
 import { describe, expect, it } from 'vitest'
 
-import { normalizeSessions } from './utils'
+import { getSessionDisplayTitle, normalizeSessions } from './utils'
+
+describe('getSessionDisplayTitle', function () {
+  it('uses New chat instead of exposing an untitled session id', function () {
+    expect(
+      getSessionDisplayTitle({
+        label: ' ',
+        title: '',
+        derivedTitle: undefined,
+      }),
+    ).toBe('New chat')
+  })
+
+  it('prefers a user label over generated and derived titles', function () {
+    expect(
+      getSessionDisplayTitle({
+        label: ' Renamed chat ',
+        title: 'Generated title',
+        derivedTitle: 'Derived title',
+      }),
+    ).toBe('Renamed chat')
+  })
+})
 
 describe('normalizeSessions', function () {
   it('keeps persisted conversation settings from the sessions API', function () {
