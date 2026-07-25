@@ -352,7 +352,6 @@ export function useChatMutations({
               },
             )
             finishGeneration()
-            setPinToTop(false)
           })
           .catch((error) => {
             const aborted =

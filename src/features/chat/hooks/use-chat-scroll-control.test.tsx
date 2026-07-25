@@ -114,4 +114,79 @@ describe('useChatScrollControl message visibility', function () {
     expect(viewport.scrollTop).toBe(206)
     expect(onTargetMessageReached).toHaveBeenCalledOnce()
   })
+
+  it('preserves the pinned viewport when a streamed response becomes terminal', function () {
+    const frames: Array<FrameRequestCallback> = []
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation(
+      function requestAnimationFrame(callback) {
+        frames.push(callback)
+        return frames.length
+      },
+    )
+    vi.spyOn(window, 'cancelAnimationFrame').mockImplementation(
+      function cancelAnimationFrame() {},
+    )
+    const viewport = document.createElement('div')
+    Object.defineProperties(viewport, {
+      clientHeight: { value: 300 },
+      scrollHeight: { value: 900 },
+      scrollTop: { value: 120, writable: true },
+    })
+    const lastUser = document.createElement('div')
+    Object.defineProperty(lastUser, 'getBoundingClientRect', {
+      value: () => ({ top: 20, height: 40 }),
+    })
+    Object.defineProperty(viewport, 'getBoundingClientRect', {
+      value: () => ({ top: 0 }),
+    })
+    const lastUserRef = {
+      current: lastUser,
+    } as React.MutableRefObject<HTMLDivElement | null>
+    const streamingMessages = createMessages(2)
+    streamingMessages[1] = {
+      id: 'assistant-1',
+      role: 'assistant',
+      content: [{ type: 'text', text: 'streaming' }],
+      __streamRunId: 'run-1',
+    }
+    const { result, rerender } = renderHook(
+      ({ messages }) =>
+        useChatScrollControl({
+          displayMessages: messages,
+          loading: false,
+          pinToTop: true,
+          sessionKey: 'throwaway',
+          headerHeight: 0,
+          slicedLastUserIndex: 0,
+          lastUserRef,
+        }),
+      {
+        initialProps: {
+          messages: streamingMessages,
+        },
+      },
+    )
+
+    act(function attachViewport() {
+      result.current.handleViewportNodeChange(viewport)
+    })
+    act(function applyInitialPin() {
+      frames.shift()?.(0)
+    })
+    const pinnedScrollTop = viewport.scrollTop
+
+    rerender({
+      messages: streamingMessages.map(function finishMessage(message) {
+        return { ...message, __streamRunId: null }
+      }),
+    })
+    act(function runAnyCompletionFrames() {
+      while (frames.length > 0) {
+        frames.shift()?.(0)
+      }
+    })
+
+    expect(viewport.scrollTop).toBe(pinnedScrollTop)
+    expect(viewport.scrollTop).not.toBe(600)
+  })
 })
