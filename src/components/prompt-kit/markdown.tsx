@@ -1,5 +1,5 @@
 import { Children, isValidElement, memo } from 'react'
-import { math } from '@streamdown/math'
+import { createMathPlugin } from '@streamdown/math'
 import 'katex/dist/katex.min.css'
 import { Streamdown } from 'streamdown'
 import { CodeBlock } from './code-block'
@@ -35,6 +35,93 @@ function codePropsFromPreChildren(
   const child = Children.toArray(children)[0]
   if (!isValidElement<ComponentProps<'code'>>(child)) return null
   return child.props
+}
+
+function backtickRunLength(markdown: string, start: number): number {
+  let end = start
+  while (markdown[end] === '`') end += 1
+  return end - start
+}
+
+function findClosingBackticks(
+  markdown: string,
+  start: number,
+  runLength: number,
+): number {
+  let cursor = start
+
+  while (cursor < markdown.length) {
+    const next = markdown.indexOf('`', cursor)
+    if (next === -1) return -1
+    if (backtickRunLength(markdown, next) === runLength) return next
+    cursor = next + 1
+  }
+
+  return -1
+}
+
+function findLatexMathClose(
+  markdown: string,
+  delimiter: '\\)' | '\\]',
+  start: number,
+): number {
+  let cursor = start
+
+  while (cursor < markdown.length) {
+    const next = markdown.indexOf(delimiter, cursor)
+    if (next === -1) return -1
+    if (next === 0 || markdown[next - 1] !== '\\') return next
+    cursor = next + delimiter.length
+  }
+
+  return -1
+}
+
+function normalizeLatexMathDelimiters(markdown: string): string {
+  let normalized = ''
+  let cursor = 0
+
+  while (cursor < markdown.length) {
+    if (markdown[cursor] === '`') {
+      const runLength = backtickRunLength(markdown, cursor)
+      const close = findClosingBackticks(
+        markdown,
+        cursor + runLength,
+        runLength,
+      )
+
+      if (close === -1) {
+        normalized += markdown.slice(cursor)
+        break
+      }
+
+      const end = close + runLength
+      normalized += markdown.slice(cursor, end)
+      cursor = end
+      continue
+    }
+
+    const opening = markdown.slice(cursor, cursor + 2)
+    if (
+      (opening === '\\(' || opening === '\\[') &&
+      (cursor === 0 || markdown[cursor - 1] !== '\\')
+    ) {
+      const closing = opening === '\\(' ? '\\)' : '\\]'
+      const close = findLatexMathClose(markdown, closing, cursor + 2)
+
+      if (close !== -1) {
+        const marker = opening === '\\(' ? '$' : '$$'
+        normalized += `${marker}${markdown.slice(cursor + 2, close)}${marker}`
+        cursor = close + 2
+        continue
+      }
+    }
+
+    normalized += markdown[cursor]
+    cursor += 1
+  }
+
+  return normalized
 }
 
 const INITIAL_COMPONENTS: Record<string, React.ComponentType<any>> = {
@@ -160,7 +247,9 @@ const INITIAL_COMPONENTS: Record<string, React.ComponentType<any>> = {
   },
 }
 
-const STREAMDOWN_PLUGINS = { math }
+const STREAMDOWN_PLUGINS = {
+  math: createMathPlugin({ singleDollarTextMath: true }),
+}
 
 function MarkdownComponent({
   children,
@@ -173,7 +262,7 @@ function MarkdownComponent({
       components={components}
       plugins={STREAMDOWN_PLUGINS}
     >
-      {children}
+      {normalizeLatexMathDelimiters(children)}
     </Streamdown>
   )
 }
