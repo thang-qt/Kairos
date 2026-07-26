@@ -17,7 +17,7 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-//go:embed static
+//go:embed all:static
 var embeddedFrontendFiles embed.FS
 
 var frontendFiles = func() fs.FS {
@@ -190,6 +190,7 @@ func (app *App) frontendHandler() http.Handler {
 		}
 
 		if strings.HasPrefix(assetPath, "assets/") {
+			writer.Header().Set("Cache-Control", noStorePolicy)
 			http.NotFound(writer, request)
 			return
 		}

@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -48,7 +49,7 @@ func TestFrontendHandlerDoesNotFallbackForMissingAssets(t *testing.T) {
 	request := httptest.NewRequest(http.MethodGet, "/assets/missing.js", nil)
 	recorder := httptest.NewRecorder()
 
-	app.frontendHandler().ServeHTTP(recorder, request)
+	app.withCommonMiddleware(app.frontendHandler()).ServeHTTP(recorder, request)
 
 	if recorder.Code != http.StatusNotFound {
 		t.Fatalf(
@@ -56,6 +57,29 @@ func TestFrontendHandlerDoesNotFallbackForMissingAssets(t *testing.T) {
 			recorder.Code,
 			http.StatusNotFound,
 		)
+	}
+	if got := recorder.Header().Get("Cache-Control"); got != noStorePolicy {
+		t.Fatalf(
+			"missing asset Cache-Control = %q, want %q",
+			got,
+			noStorePolicy,
+		)
+	}
+}
+
+func TestEmbeddedFrontendIncludesUnderscoreAssets(t *testing.T) {
+	assetPaths, err := filepath.Glob("static/assets/_*.js")
+	if err != nil {
+		t.Fatalf("glob underscore assets: %v", err)
+	}
+	if len(assetPaths) == 0 {
+		t.Skip("frontend assets have not been built")
+	}
+
+	for _, assetPath := range assetPaths {
+		if _, err := embeddedFrontendFiles.ReadFile(assetPath); err != nil {
+			t.Errorf("underscore asset %q was not embedded: %v", assetPath, err)
+		}
 	}
 }
 
