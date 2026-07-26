@@ -64,8 +64,9 @@ export function activeAssistantRunBounds(
   for (let index = 0; index < messages.length; index += 1) {
     const message = messages[index]
     if (message.role !== 'assistant') continue
-    const runId = normalizeID(message.runId ?? message.__streamRunId)
-    if (!runId || !activeRunIds.has(runId)) continue
+    const streamRunId = normalizeID(message.__streamRunId)
+    const runId = normalizeID(message.runId) || streamRunId
+    if (!runId || (!activeRunIds.has(runId) && streamRunId !== runId)) continue
     const current = boundsByRunId.get(runId)
     if (current) {
       current.lastIndex = index

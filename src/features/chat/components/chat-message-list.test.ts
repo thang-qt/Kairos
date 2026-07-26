@@ -38,6 +38,29 @@ describe('linked tool results', function () {
     )
   })
 
+  it('treats throwaway stream rounds as one visual response', function () {
+    const messages: Array<GatewayMessage> = [
+      {
+        id: 'round-1',
+        role: 'assistant',
+        runId: 'run-1',
+        __streamRunId: 'run-1',
+        content: [{ type: 'toolCall', id: 'call-1', name: 'math_eval' }],
+      },
+      {
+        id: 'round-2',
+        role: 'assistant',
+        runId: 'run-1',
+        __streamRunId: 'run-1',
+        content: [{ type: 'toolCall', id: 'call-2', name: 'web_search' }],
+      },
+    ]
+
+    expect(activeAssistantRunBounds(messages, new Set())).toEqual(
+      new Map([['run-1', { firstIndex: 0, lastIndex: 1 }]]),
+    )
+  })
+
   it('identifies tool results that belong to assistant tool calls', function () {
     const messages: Array<GatewayMessage> = [
       {
