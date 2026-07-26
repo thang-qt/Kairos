@@ -137,7 +137,7 @@ export async function restorePersistedQueryCache(
     return false
   }
   if (!shouldHydrate()) return false
-  hydrate(queryClient, persistedClient.clientState)
+  hydrate(queryClient, removeEphemeralQueries(persistedClient.clientState))
   return true
 }
 
@@ -238,7 +238,7 @@ export function shouldPersistQuery(query: {
   if (sameQueryKey(query.queryKey, appQueryKeys.models)) return true
   if (sameQueryKey(query.queryKey, appQueryKeys.chatSettings)) return true
   if (sameQueryKey(query.queryKey, chatQueryKeys.sessions)) return true
-  return isHistoryQuery(query.queryKey)
+  return isPersistableHistoryQuery(query.queryKey)
 }
 
 export function limitPersistedClient(client: PersistedClient): PersistedClient {
@@ -246,10 +246,11 @@ export function limitPersistedClient(client: PersistedClient): PersistedClient {
   const historyQueries: Array<PersistedQuery> = []
 
   for (const query of client.clientState.queries) {
-    if (isHistoryQuery(query.queryKey)) {
+    if (isPersistableHistoryQuery(query.queryKey)) {
       historyQueries.push(query)
       continue
     }
+    if (isHistoryQuery(query.queryKey)) continue
     nonHistoryQueries.push(query)
   }
 
@@ -321,6 +322,27 @@ function isHistoryQuery(queryKey: ReadonlyArray<unknown>) {
   return (
     queryKey.length === 4 && queryKey[0] === 'chat' && queryKey[1] === 'history'
   )
+}
+
+function isPersistableHistoryQuery(queryKey: ReadonlyArray<unknown>) {
+  return (
+    isHistoryQuery(queryKey) &&
+    !(queryKey[2] === 'new' && queryKey[3] === 'new')
+  )
+}
+
+function removeEphemeralQueries(
+  clientState: PersistedClient['clientState'],
+): PersistedClient['clientState'] {
+  return {
+    ...clientState,
+    queries: clientState.queries.filter(function keepPersistableQuery(query) {
+      return (
+        !isHistoryQuery(query.queryKey) ||
+        isPersistableHistoryQuery(query.queryKey)
+      )
+    }),
+  }
 }
 
 function serializedByteLength(value: unknown) {

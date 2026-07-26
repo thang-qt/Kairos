@@ -121,6 +121,12 @@ describe('persisted query cache', function persistedQueryCacheSuite() {
     ).toBe(true)
     expect(
       shouldPersistQuery({
+        queryKey: ['chat', 'history', 'new', 'new'],
+        state: { status: 'success' },
+      }),
+    ).toBe(false)
+    expect(
+      shouldPersistQuery({
         queryKey: ['app', 'me'],
         state: { status: 'success' },
       }),
@@ -309,6 +315,37 @@ describe('persisted query cache', function persistedQueryCacheSuite() {
     expect(restoredClient.getQueryData(appQueryKeys.models)).toEqual({
       models: [{ id: 'model-1' }],
     })
+  })
+
+  it('does not restore throwaway new-chat history from an older cache', async function () {
+    const queryClient = new QueryClient()
+    const persister: QueryPersister = {
+      persistClient: async function persistClient() {},
+      restoreClient: async function restoreClient() {
+        return {
+          timestamp: Date.now(),
+          buster: persistedQueryCacheBuster,
+          clientState: {
+            mutations: [],
+            queries: [
+              createPersistedQuery(
+                ['chat', 'history', 'new', 'new'],
+                Date.now(),
+                { messages: [{ content: 'temporary' }] },
+              ),
+            ],
+          },
+        }
+      },
+      removeClient: async function removeClient() {},
+    }
+
+    await expect(
+      restorePersistedQueryCache(queryClient, persister),
+    ).resolves.toBe(true)
+    expect(
+      queryClient.getQueryData(['chat', 'history', 'new', 'new']),
+    ).toBeUndefined()
   })
 
   it('deletes legacy unscoped identity metadata during upgrade', async function () {
