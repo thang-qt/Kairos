@@ -8,62 +8,95 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"time"
 )
 
 const (
-	webSearchToolName = "web_search"
-	webFetchToolName  = "web_fetch"
-	exaAPIKeyEnvVar   = "EXA_API_KEY"
-	exaSearchURL      = "https://api.exa.ai/search"
-	exaContentsURL    = "https://api.exa.ai/contents"
+	webSearchToolName          = "web_search"
+	webFetchToolName           = "web_fetch"
+	exaAPIKeyEnvVar            = "EXA_API_KEY"
+	tinyFishAPIKeyEnvVar       = "TINYFISH_API_KEY"
+	exaSearchURL               = "https://api.exa.ai/search"
+	exaContentsURL             = "https://api.exa.ai/contents"
+	tinyFishSearchURL          = "https://api.search.tinyfish.ai"
+	tinyFishFetchURL           = "https://api.fetch.tinyfish.ai"
+	exaMaxSnippetCharacters    = 300
+	exaMaxFetchCharacters      = 10000
+	defaultWebSearchMaxResults = 5
 )
-
-const exaMaxSnippetCharacters = 300
-const exaMaxFetchCharacters = 10000
-const defaultWebSearchMaxResults = 5
-
-type WebToolRuntime struct {
-	httpClient         *http.Client
-	exaAPIKey          string
-	searchMaxResults   int
-	fetchMaxCharacters int
-}
-
-type WebToolRuntimeConfig struct {
-	ExaAPIKey          string
-	SearchMaxResults   int
-	FetchMaxCharacters int
-}
 
 type WebToolResult struct {
 	Content string
 	Details map[string]any
 }
+type webProvider interface {
+	Name() string
+	Search(context.Context, string, int) (WebToolResult, error)
+	Fetch(context.Context, string, int) (WebToolResult, error)
+}
+type WebToolRuntime struct {
+	httpClient         *http.Client
+	providers          map[string]webProvider
+	defaultProvider    string
+	searchMaxResults   int
+	fetchMaxCharacters int
+}
+type WebToolRuntimeConfig struct {
+	ExaAPIKey          string
+	TinyFishAPIKey     string
+	DefaultProvider    string
+	EnabledProviders   []string
+	SearchMaxResults   int
+	FetchMaxCharacters int
+	HTTPClient         *http.Client
+	Endpoints          map[string]string
+}
 
 func NewWebToolRuntimeFromEnv() *WebToolRuntime {
-	return NewWebToolRuntime(WebToolRuntimeConfig{ExaAPIKey: strings.TrimSpace(os.Getenv(exaAPIKeyEnvVar))})
+	return NewWebToolRuntime(WebToolRuntimeConfig{ExaAPIKey: os.Getenv(exaAPIKeyEnvVar), TinyFishAPIKey: os.Getenv(tinyFishAPIKeyEnvVar), DefaultProvider: "exa", EnabledProviders: []string{"exa"}})
 }
-
 func NewWebToolRuntime(config WebToolRuntimeConfig) *WebToolRuntime {
-	searchMaxResults := config.SearchMaxResults
-	if searchMaxResults <= 0 {
-		searchMaxResults = defaultWebSearchMaxResults
+	searchMax := clampInt(config.SearchMaxResults, 1, 10)
+	if config.SearchMaxResults <= 0 {
+		searchMax = defaultWebSearchMaxResults
 	}
-	fetchMaxCharacters := config.FetchMaxCharacters
-	if fetchMaxCharacters <= 0 {
-		fetchMaxCharacters = exaMaxFetchCharacters
+	fetchMax := clampInt(config.FetchMaxCharacters, 1000, 50000)
+	if config.FetchMaxCharacters <= 0 {
+		fetchMax = exaMaxFetchCharacters
 	}
-	return &WebToolRuntime{
-		httpClient:         &http.Client{Timeout: 30 * time.Second},
-		exaAPIKey:          strings.TrimSpace(config.ExaAPIKey),
-		searchMaxResults:   clampInt(searchMaxResults, 1, 10),
-		fetchMaxCharacters: clampInt(fetchMaxCharacters, 1000, 50000),
+	client := config.HTTPClient
+	if client == nil {
+		client = &http.Client{Timeout: 30 * time.Second}
 	}
+	endpoint := func(name, fallback string) string {
+		if config.Endpoints != nil && config.Endpoints[name] != "" {
+			return config.Endpoints[name]
+		}
+		return fallback
+	}
+	providers := map[string]webProvider{}
+	for _, name := range config.EnabledProviders {
+		switch strings.ToLower(strings.TrimSpace(name)) {
+		case "exa":
+			providers["exa"] = &exaWebProvider{client: client, apiKey: strings.TrimSpace(config.ExaAPIKey), searchURL: endpoint("exa-search", exaSearchURL), fetchURL: endpoint("exa-fetch", exaContentsURL)}
+		case "tinyfish":
+			providers["tinyfish"] = &tinyFishWebProvider{client: client, apiKey: strings.TrimSpace(config.TinyFishAPIKey), searchURL: endpoint("tinyfish-search", tinyFishSearchURL), fetchURL: endpoint("tinyfish-fetch", tinyFishFetchURL)}
+		}
+	}
+	defaultProvider := strings.ToLower(strings.TrimSpace(config.DefaultProvider))
+	if _, ok := providers[defaultProvider]; !ok {
+		for _, name := range []string{"exa", "tinyfish"} {
+			if _, ok := providers[name]; ok {
+				defaultProvider = name
+				break
+			}
+		}
+	}
+	return &WebToolRuntime{httpClient: client, providers: providers, defaultProvider: defaultProvider, searchMaxResults: searchMax, fetchMaxCharacters: fetchMax}
 }
-
 func buildRuntimeTools(webSearchEnabled bool, mathToolsEnabled bool) []ProviderTool {
 	tools := make([]ProviderTool, 0, 3)
 	if mathToolsEnabled {
@@ -74,35 +107,12 @@ func buildRuntimeTools(webSearchEnabled bool, mathToolsEnabled bool) []ProviderT
 	}
 	return tools
 }
-
 func buildWebTools() []ProviderTool {
 	return []ProviderTool{
-		{
-			Name:        webSearchToolName,
-			Description: "Search the web for current information. Returns concise Exa search results with title, URL, and snippet.",
-			Parameters: map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"query":       map[string]any{"type": "string", "description": "Search query."},
-					"max_results": map[string]any{"type": "integer", "description": "Maximum number of results to return.", "minimum": 1, "maximum": 10},
-				},
-				"required": []string{"query"},
-			},
-		},
-		{
-			Name:        webFetchToolName,
-			Description: "Fetch readable text content for a URL using Exa contents.",
-			Parameters: map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"url": map[string]any{"type": "string", "description": "URL to fetch."},
-				},
-				"required": []string{"url"},
-			},
-		},
+		{Name: webSearchToolName, Description: "Search the web for current information. Returns concise results with title, URL, and snippet.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"query": map[string]any{"type": "string", "description": "Search query."}, "max_results": map[string]any{"type": "integer", "description": "Maximum number of results to return.", "minimum": 1, "maximum": 10}, "provider": map[string]any{"type": "string", "enum": []string{"exa", "tinyfish"}, "description": "Optional enabled web provider override."}}, "required": []string{"query"}}},
+		{Name: webFetchToolName, Description: "Fetch readable page content for a URL.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"url": map[string]any{"type": "string", "description": "URL to fetch."}, "provider": map[string]any{"type": "string", "enum": []string{"exa", "tinyfish"}, "description": "Optional enabled web provider override."}}, "required": []string{"url"}}},
 	}
 }
-
 func (runtime *WebToolRuntime) Execute(ctx context.Context, call ProviderToolCall) (WebToolResult, error) {
 	if runtime == nil {
 		return WebToolResult{}, errors.New("web tool runtime is not configured")
@@ -111,122 +121,197 @@ func (runtime *WebToolRuntime) Execute(ctx context.Context, call ProviderToolCal
 	if len(args) == 0 && strings.TrimSpace(call.ArgsJSON) != "" {
 		args = parseToolCallArguments(call.ArgsJSON)
 	}
+	if strings.TrimSpace(call.Name) == mathEvalToolName {
+		return runtime.evalMathJS(ctx, strings.TrimSpace(stringFromAny(args["expr"])), intFromAny(args["precision"], 0))
+	}
+	provider, err := runtime.provider(stringFromAny(args["provider"]))
+	if err != nil {
+		return WebToolResult{}, err
+	}
 	switch strings.TrimSpace(call.Name) {
-	case mathEvalToolName:
-		expr := strings.TrimSpace(stringFromAny(args["expr"]))
-		precision := intFromAny(args["precision"], 0)
-		return runtime.evalMathJS(ctx, expr, precision)
 	case webSearchToolName:
 		query := strings.TrimSpace(stringFromAny(args["query"]))
 		if query == "" {
 			return WebToolResult{}, errors.New("web_search query is required")
 		}
-		maxResults := intFromAny(args["max_results"], runtime.searchMaxResults)
-		if maxResults < 1 {
-			maxResults = runtime.searchMaxResults
+		n := intFromAny(args["max_results"], runtime.searchMaxResults)
+		if n < 1 || n > runtime.searchMaxResults {
+			n = runtime.searchMaxResults
 		}
-		if maxResults > runtime.searchMaxResults {
-			maxResults = runtime.searchMaxResults
-		}
-		return runtime.searchExa(ctx, query, maxResults)
+		return provider.Search(ctx, query, n)
 	case webFetchToolName:
-		url := strings.TrimSpace(stringFromAny(args["url"]))
-		if url == "" {
+		rawURL := strings.TrimSpace(stringFromAny(args["url"]))
+		if rawURL == "" {
 			return WebToolResult{}, errors.New("web_fetch url is required")
 		}
-		return runtime.fetchExa(ctx, url)
+		return provider.Fetch(ctx, rawURL, runtime.fetchMaxCharacters)
 	default:
 		return WebToolResult{}, fmt.Errorf("unknown tool: %s", call.Name)
 	}
 }
+func (runtime *WebToolRuntime) provider(requested string) (webProvider, error) {
+	name := strings.ToLower(strings.TrimSpace(requested))
+	if name == "" {
+		name = runtime.defaultProvider
+	}
+	provider := runtime.providers[name]
+	if provider == nil {
+		return nil, fmt.Errorf("web provider %q is unavailable, disabled, or not configured", name)
+	}
+	return provider, nil
+}
 
-func (runtime *WebToolRuntime) searchExa(ctx context.Context, query string, maxResults int) (WebToolResult, error) {
-	if strings.TrimSpace(runtime.exaAPIKey) == "" {
-		return WebToolResult{}, fmt.Errorf("%s is not set", exaAPIKeyEnvVar)
-	}
-	payload := map[string]any{
-		"query":      query,
-		"numResults": maxResults,
-		"contents":   map[string]any{"text": map[string]any{"maxCharacters": exaMaxSnippetCharacters}},
-	}
+type exaWebProvider struct {
+	client                      *http.Client
+	apiKey, searchURL, fetchURL string
+}
+
+func (p *exaWebProvider) Name() string { return "exa" }
+func (p *exaWebProvider) Search(ctx context.Context, q string, n int) (WebToolResult, error) {
 	var response exaResponse
-	if err := runtime.postExa(ctx, exaSearchURL, payload, &response); err != nil {
+	err := postJSON(ctx, p.client, p.searchURL, p.apiKey, "x-api-key", map[string]any{"query": q, "numResults": n, "contents": map[string]any{"text": map[string]any{"maxCharacters": exaMaxSnippetCharacters}}}, &response, "Exa")
+	if err != nil {
 		return WebToolResult{}, err
 	}
 	results := make([]map[string]any, 0, len(response.Results))
-	for _, result := range response.Results {
-		results = append(results, map[string]any{
-			"title":   strings.TrimSpace(result.Title),
-			"url":     strings.TrimSpace(result.URL),
-			"snippet": strings.TrimSpace(result.Text),
-		})
+	for _, r := range response.Results {
+		results = append(results, map[string]any{"title": strings.TrimSpace(r.Title), "url": strings.TrimSpace(r.URL), "snippet": strings.TrimSpace(r.Text)})
 	}
-	output := map[string]any{"query": query, "results": results}
-	content, _ := json.Marshal(output)
-	return WebToolResult{Content: string(content), Details: output}, nil
+	return normalizedSearch(q, results)
 }
-
-func (runtime *WebToolRuntime) fetchExa(ctx context.Context, url string) (WebToolResult, error) {
-	if strings.TrimSpace(runtime.exaAPIKey) == "" {
-		return WebToolResult{}, fmt.Errorf("%s is not set", exaAPIKeyEnvVar)
-	}
-	payload := map[string]any{
-		"ids":  []string{url},
-		"text": map[string]any{"maxCharacters": runtime.fetchMaxCharacters},
-	}
+func (p *exaWebProvider) Fetch(ctx context.Context, rawURL string, n int) (WebToolResult, error) {
 	var response exaResponse
-	if err := runtime.postExa(ctx, exaContentsURL, payload, &response); err != nil {
+	err := postJSON(ctx, p.client, p.fetchURL, p.apiKey, "x-api-key", map[string]any{"ids": []string{rawURL}, "text": map[string]any{"maxCharacters": n}}, &response, "Exa")
+	if err != nil {
 		return WebToolResult{}, err
 	}
 	if len(response.Results) == 0 || strings.TrimSpace(response.Results[0].Text) == "" {
-		return WebToolResult{}, fmt.Errorf("Exa fetch returned no content for %s", url)
+		return WebToolResult{}, fmt.Errorf("Exa fetch returned no content for %s", rawURL)
 	}
-	result := response.Results[0]
-	output := map[string]any{
-		"url":         url,
-		"title":       strings.TrimSpace(result.Title),
-		"contentType": "text/plain",
-		"text":        strings.TrimSpace(result.Text),
-	}
-	content, _ := json.Marshal(output)
-	return WebToolResult{Content: string(content), Details: output}, nil
+	return normalizedFetch(rawURL, response.Results[0].Title, response.Results[0].Text, "text/plain")
 }
 
-func (runtime *WebToolRuntime) postExa(ctx context.Context, url string, payload any, target any) error {
+type tinyFishWebProvider struct {
+	client                      *http.Client
+	apiKey, searchURL, fetchURL string
+}
+
+func (p *tinyFishWebProvider) Name() string { return "tinyfish" }
+func (p *tinyFishWebProvider) Search(ctx context.Context, q string, n int) (WebToolResult, error) {
+	if strings.TrimSpace(p.apiKey) == "" {
+		return WebToolResult{}, fmt.Errorf("%s is not set", tinyFishAPIKeyEnvVar)
+	}
+	u, err := url.Parse(p.searchURL)
+	if err != nil {
+		return WebToolResult{}, err
+	}
+	params := u.Query()
+	params.Set("query", q)
+	u.RawQuery = params.Encode()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+	if err != nil {
+		return WebToolResult{}, err
+	}
+	req.Header.Set("X-API-Key", p.apiKey)
+	var response tinyFishSearchResponse
+	if err = requestJSON(p.client, req, &response, "TinyFish"); err != nil {
+		return WebToolResult{}, err
+	}
+	results := make([]map[string]any, 0, n)
+	for _, r := range response.Results {
+		if len(results) == n {
+			break
+		}
+		results = append(results, map[string]any{"title": strings.TrimSpace(r.Title), "url": strings.TrimSpace(r.URL), "snippet": strings.TrimSpace(r.Snippet)})
+	}
+	return normalizedSearch(q, results)
+}
+func (p *tinyFishWebProvider) Fetch(ctx context.Context, rawURL string, n int) (WebToolResult, error) {
+	var response tinyFishFetchResponse
+	err := postJSON(ctx, p.client, p.fetchURL, p.apiKey, "X-API-Key", map[string]any{"urls": []string{rawURL}, "format": "markdown"}, &response, "TinyFish")
+	if err != nil {
+		return WebToolResult{}, err
+	}
+	if len(response.Results) == 0 || strings.TrimSpace(response.Results[0].Text) == "" {
+		if len(response.Errors) > 0 {
+			return WebToolResult{}, fmt.Errorf("TinyFish fetch failed for %s: %s", rawURL, response.Errors[0].Error)
+		}
+		return WebToolResult{}, fmt.Errorf("TinyFish fetch returned no content for %s", rawURL)
+	}
+	text := response.Results[0].Text
+	if len(text) > n {
+		text = text[:n]
+	}
+	return normalizedFetch(rawURL, response.Results[0].Title, text, "text/markdown")
+}
+func normalizedSearch(q string, results []map[string]any) (WebToolResult, error) {
+	output := map[string]any{"query": q, "results": results}
+	data, _ := json.Marshal(output)
+	return WebToolResult{Content: string(data), Details: output}, nil
+}
+func normalizedFetch(rawURL, title, text, contentType string) (WebToolResult, error) {
+	output := map[string]any{"url": rawURL, "title": strings.TrimSpace(title), "contentType": contentType, "text": strings.TrimSpace(text)}
+	data, _ := json.Marshal(output)
+	return WebToolResult{Content: string(data), Details: output}, nil
+}
+func postJSON(ctx context.Context, client *http.Client, endpoint, key, header string, payload, target any, name string) error {
+	if strings.TrimSpace(key) == "" {
+		return fmt.Errorf("%s is not set", map[string]string{"x-api-key": exaAPIKeyEnvVar, "X-API-Key": tinyFishAPIKeyEnvVar}[header])
+	}
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return err
 	}
-	request, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {
 		return err
 	}
-	request.Header.Set("Content-Type", "application/json")
-	request.Header.Set("x-api-key", strings.TrimSpace(runtime.exaAPIKey))
-	response, err := runtime.httpClient.Do(request)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(header, key)
+	return requestJSON(client, req, target, name)
+}
+func requestJSON(client *http.Client, request *http.Request, target any, name string) error {
+	response, err := client.Do(request)
 	if err != nil {
 		return err
 	}
 	defer response.Body.Close()
-	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusBadRequest {
+	if response.StatusCode < 200 || response.StatusCode >= 400 {
 		data, _ := io.ReadAll(io.LimitReader(response.Body, 16*1024))
-		return fmt.Errorf("Exa API error (%s): %s", response.Status, strings.TrimSpace(string(data)))
+		return fmt.Errorf("%s API error (%s): %s", name, response.Status, strings.TrimSpace(string(data)))
 	}
 	if err := json.NewDecoder(response.Body).Decode(target); err != nil {
-		return fmt.Errorf("decode Exa response: %w", err)
+		return fmt.Errorf("decode %s response: %w", name, err)
 	}
 	return nil
 }
 
 type exaResponse struct {
 	Results []exaResult `json:"results"`
-	Error   string      `json:"error"`
 }
-
 type exaResult struct {
 	Title string `json:"title"`
 	URL   string `json:"url"`
 	Text  string `json:"text"`
+}
+type tinyFishSearchResponse struct {
+	Results []tinyFishSearchResult `json:"results"`
+}
+type tinyFishSearchResult struct {
+	Title   string `json:"title"`
+	URL     string `json:"url"`
+	Snippet string `json:"snippet"`
+}
+type tinyFishFetchResponse struct {
+	Results []tinyFishFetchResult `json:"results"`
+	Errors  []tinyFishFetchError  `json:"errors"`
+}
+type tinyFishFetchResult struct {
+	Title string `json:"title"`
+	Text  string `json:"text"`
+}
+type tinyFishFetchError struct {
+	Error string `json:"error"`
 }
 
 func stringFromAny(value any) string {
@@ -239,7 +324,6 @@ func stringFromAny(value any) string {
 		return ""
 	}
 }
-
 func intFromAny(value any, fallback int) int {
 	switch typed := value.(type) {
 	case int:

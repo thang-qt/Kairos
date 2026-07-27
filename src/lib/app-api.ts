@@ -140,18 +140,32 @@ export type UpdateChatSettingsPreferencesPayload = {
   clearModelOverride?: boolean
 }
 
-export type WebToolSettings = {
-  provider: 'exa'
+export type WebToolProvider = 'exa' | 'tinyfish'
+
+export type WebToolProviderSettings = {
+  provider: WebToolProvider
   apiKeyConfigured: boolean
+  enabled: boolean
+}
+
+export type WebToolSettings = {
+  provider: WebToolProvider
+  providers: WebToolProviderSettings[]
   searchMaxResults: number
   fetchMaxCharacters: number
   toolCallLimit: number
 }
 
-export type UpdateWebToolSettingsPayload = {
-  provider?: 'exa'
+export type UpdateWebToolProviderPayload = {
+  provider: WebToolProvider
   apiKey?: string
   clearApiKey?: boolean
+  enabled?: boolean
+}
+
+export type UpdateWebToolSettingsPayload = {
+  provider?: WebToolProvider
+  providers?: UpdateWebToolProviderPayload[]
   searchMaxResults?: number
   fetchMaxCharacters?: number
   toolCallLimit?: number
