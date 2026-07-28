@@ -216,14 +216,22 @@ func (s *WebToolSettingsService) UpdateSettings(ctx context.Context, userID stri
 		}
 	}
 
+	transaction, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return WebToolSettings{}, fmt.Errorf("begin web tool settings transaction: %w", err)
+	}
+	defer transaction.Rollback()
 	for _, name := range webProviderNames {
-		if err := s.upsertProviderRow(ctx, userID, stagedProviders[name]); err != nil {
+		if err := s.upsertProviderRow(ctx, transaction, userID, stagedProviders[name]); err != nil {
 			return WebToolSettings{}, err
 		}
 	}
 	row.UpdatedAt = time.Now().UnixMilli()
-	if err := s.upsertRow(ctx, row); err != nil {
+	if err := s.upsertRow(ctx, transaction, row); err != nil {
 		return WebToolSettings{}, err
+	}
+	if err := transaction.Commit(); err != nil {
+		return WebToolSettings{}, fmt.Errorf("commit web tool settings transaction: %w", err)
 	}
 	settings, err := s.GetSettings(ctx, userID)
 	if err != nil {
@@ -297,15 +305,15 @@ func (s *WebToolSettingsService) findProviderRow(ctx context.Context, userID, pr
 	row.Enabled = enabled != 0
 	return row, true, nil
 }
-func (s *WebToolSettingsService) upsertRow(ctx context.Context, row webToolSettingsRow) error {
-	_, err := s.db.ExecContext(ctx, `INSERT INTO user_web_tool_settings (user_id,provider,encrypted_api_key,search_max_results,fetch_max_characters,tool_call_limit,updated_at) VALUES (?,?,?,?,?,?,?) ON CONFLICT(user_id) DO UPDATE SET provider=excluded.provider,encrypted_api_key=excluded.encrypted_api_key,search_max_results=excluded.search_max_results,fetch_max_characters=excluded.fetch_max_characters,tool_call_limit=excluded.tool_call_limit,updated_at=excluded.updated_at`, row.UserID, row.Provider, row.EncryptedAPIKey, row.SearchMaxResults, row.FetchMaxCharacters, row.ToolCallLimit, row.UpdatedAt)
+func (s *WebToolSettingsService) upsertRow(ctx context.Context, executor sqlExecutor, row webToolSettingsRow) error {
+	_, err := executor.ExecContext(ctx, `INSERT INTO user_web_tool_settings (user_id,provider,encrypted_api_key,search_max_results,fetch_max_characters,tool_call_limit,updated_at) VALUES (?,?,?,?,?,?,?) ON CONFLICT(user_id) DO UPDATE SET provider=excluded.provider,encrypted_api_key=excluded.encrypted_api_key,search_max_results=excluded.search_max_results,fetch_max_characters=excluded.fetch_max_characters,tool_call_limit=excluded.tool_call_limit,updated_at=excluded.updated_at`, row.UserID, row.Provider, row.EncryptedAPIKey, row.SearchMaxResults, row.FetchMaxCharacters, row.ToolCallLimit, row.UpdatedAt)
 	if err != nil {
 		return fmt.Errorf("save web tool settings: %w", err)
 	}
 	return nil
 }
-func (s *WebToolSettingsService) upsertProviderRow(ctx context.Context, userID string, row webProviderRow) error {
-	_, err := s.db.ExecContext(ctx, `INSERT INTO user_web_tool_providers(user_id,provider,encrypted_api_key,enabled,updated_at) VALUES(?,?,?,?,?) ON CONFLICT(user_id,provider) DO UPDATE SET encrypted_api_key=excluded.encrypted_api_key,enabled=excluded.enabled,updated_at=excluded.updated_at`, userID, row.Provider, row.EncryptedAPIKey, boolToInt(row.Enabled), time.Now().UnixMilli())
+func (s *WebToolSettingsService) upsertProviderRow(ctx context.Context, executor sqlExecutor, userID string, row webProviderRow) error {
+	_, err := executor.ExecContext(ctx, `INSERT INTO user_web_tool_providers(user_id,provider,encrypted_api_key,enabled,updated_at) VALUES(?,?,?,?,?) ON CONFLICT(user_id,provider) DO UPDATE SET encrypted_api_key=excluded.encrypted_api_key,enabled=excluded.enabled,updated_at=excluded.updated_at`, userID, row.Provider, row.EncryptedAPIKey, boolToInt(row.Enabled), time.Now().UnixMilli())
 	return err
 }
 func defaultWebToolSettingsRow(userID string) webToolSettingsRow {

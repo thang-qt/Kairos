@@ -184,3 +184,47 @@ func TestWebToolSettingsRejectsInvalidPatchWithoutPersistingProviderChanges(t *t
 		}
 	}
 }
+
+func TestWebToolSettingsRollsBackProviderChangesWhenSettingsSaveFails(t *testing.T) {
+	testServer := newTestApp(t, nil)
+	user, _, _, err := testServer.app.auth.Signup(context.Background(), "rollback-web-tools@example.com", "tracepass123", RequestMeta{})
+	if err != nil {
+		t.Fatalf("Signup() error = %v", err)
+	}
+
+	exaKey := "exa-key"
+	exaEnabled := true
+	_, err = testServer.app.webTools.UpdateSettings(context.Background(), user.ID, UpdateWebToolSettingsInput{
+		Providers: []UpdateWebToolProviderInput{{Provider: "exa", APIKey: &exaKey, Enabled: &exaEnabled}},
+	})
+	if err != nil {
+		t.Fatalf("initial UpdateSettings() error = %v", err)
+	}
+	if _, err := testServer.app.db.Exec(`CREATE TRIGGER fail_web_tool_settings_update BEFORE UPDATE ON user_web_tool_settings BEGIN SELECT RAISE(ABORT, 'forced settings failure'); END`); err != nil {
+		t.Fatalf("create failure trigger: %v", err)
+	}
+
+	tinyKey := "tiny-key"
+	tinyEnabled := true
+	defaultTiny := "tinyfish"
+	_, err = testServer.app.webTools.UpdateSettings(context.Background(), user.ID, UpdateWebToolSettingsInput{
+		Provider:  &defaultTiny,
+		Providers: []UpdateWebToolProviderInput{{Provider: "tinyfish", APIKey: &tinyKey, Enabled: &tinyEnabled}},
+	})
+	if err == nil {
+		t.Fatal("UpdateSettings() succeeded despite forced settings failure")
+	}
+
+	settings, err := testServer.app.webTools.GetSettings(context.Background(), user.ID)
+	if err != nil {
+		t.Fatalf("GetSettings() error = %v", err)
+	}
+	if settings.Provider != "exa" {
+		t.Fatalf("provider after failed update = %q, want exa", settings.Provider)
+	}
+	for _, provider := range settings.Providers {
+		if provider.Provider == "tinyfish" && (provider.Enabled || provider.APIKeyConfigured) {
+			t.Fatalf("TinyFish provider persisted after failed update: %#v", provider)
+		}
+	}
+}
