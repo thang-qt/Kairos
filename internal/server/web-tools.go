@@ -241,11 +241,15 @@ func (p *tinyFishWebProvider) Fetch(ctx context.Context, rawURL string, n int) (
 		}
 		return WebToolResult{}, fmt.Errorf("TinyFish fetch returned no content for %s", rawURL)
 	}
-	text := response.Results[0].Text
-	if len(text) > n {
-		text = text[:n]
-	}
+	text := truncateString(response.Results[0].Text, n)
 	return normalizedFetch(rawURL, response.Results[0].Title, text, "text/markdown")
+}
+func truncateString(text string, n int) string {
+	characters := []rune(text)
+	if len(characters) > n {
+		return string(characters[:n])
+	}
+	return text
 }
 func normalizedSearch(q string, results []map[string]any) (WebToolResult, error) {
 	output := map[string]any{"query": q, "results": results}

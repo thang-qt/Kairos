@@ -49,6 +49,22 @@ func TestTinyFishProviderUsesDocumentedSearchAndFetchContracts(t *testing.T) {
 	}
 }
 
+func TestTinyFishFetchTruncatesByCharacters(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		_ = json.NewEncoder(writer).Encode(map[string]any{"results": []map[string]any{{"title": "Page", "text": "ééé"}}})
+	}))
+	defer server.Close()
+
+	provider := &tinyFishWebProvider{client: server.Client(), apiKey: "tiny-key", fetchURL: server.URL}
+	result, err := provider.Fetch(context.Background(), "https://example.com", 2)
+	if err != nil {
+		t.Fatalf("Fetch() error = %v", err)
+	}
+	if result.Details["text"] != "éé" {
+		t.Fatalf("truncated text = %q, want %q", result.Details["text"], "éé")
+	}
+}
+
 func TestTinyFishRuntimeUsesLongerTimeoutThanDefaultClient(t *testing.T) {
 	runtime := NewWebToolRuntime(WebToolRuntimeConfig{TinyFishAPIKey: "tiny-key", DefaultProvider: "tinyfish", EnabledProviders: []string{"tinyfish"}})
 	provider, err := runtime.provider("tinyfish")
