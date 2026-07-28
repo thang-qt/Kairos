@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 )
 
 func TestTinyFishProviderUsesDocumentedSearchAndFetchContracts(t *testing.T) {
@@ -45,6 +46,24 @@ func TestTinyFishProviderUsesDocumentedSearchAndFetchContracts(t *testing.T) {
 	}
 	if !sawSearch || !sawFetch {
 		t.Fatalf("search/fetch seen = %v/%v", sawSearch, sawFetch)
+	}
+}
+
+func TestTinyFishRuntimeUsesLongerTimeoutThanDefaultClient(t *testing.T) {
+	runtime := NewWebToolRuntime(WebToolRuntimeConfig{TinyFishAPIKey: "tiny-key", DefaultProvider: "tinyfish", EnabledProviders: []string{"tinyfish"}})
+	provider, err := runtime.provider("tinyfish")
+	if err != nil {
+		t.Fatalf("runtime.provider() error = %v", err)
+	}
+	tinyFish, ok := provider.(*tinyFishWebProvider)
+	if !ok {
+		t.Fatalf("provider type = %T, want *tinyFishWebProvider", provider)
+	}
+	if tinyFish.client.Timeout != tinyFishRequestTimeout {
+		t.Fatalf("TinyFish client timeout = %v, want %v", tinyFish.client.Timeout, tinyFishRequestTimeout)
+	}
+	if tinyFish.client.Timeout <= 30*time.Second {
+		t.Fatalf("TinyFish client timeout = %v, want greater than default", tinyFish.client.Timeout)
 	}
 }
 

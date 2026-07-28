@@ -25,6 +25,7 @@ const (
 	tinyFishFetchURL           = "https://api.fetch.tinyfish.ai"
 	exaMaxSnippetCharacters    = 300
 	exaMaxFetchCharacters      = 10000
+	tinyFishRequestTimeout     = 2 * time.Minute
 	defaultWebSearchMaxResults = 5
 )
 
@@ -78,12 +79,14 @@ func NewWebToolRuntime(config WebToolRuntimeConfig) *WebToolRuntime {
 		return fallback
 	}
 	providers := map[string]webProvider{}
+	tinyFishClient := *client
+	tinyFishClient.Timeout = tinyFishRequestTimeout
 	for _, name := range config.EnabledProviders {
 		switch strings.ToLower(strings.TrimSpace(name)) {
 		case "exa":
 			providers["exa"] = &exaWebProvider{client: client, apiKey: strings.TrimSpace(config.ExaAPIKey), searchURL: endpoint("exa-search", exaSearchURL), fetchURL: endpoint("exa-fetch", exaContentsURL)}
 		case "tinyfish":
-			providers["tinyfish"] = &tinyFishWebProvider{client: client, apiKey: strings.TrimSpace(config.TinyFishAPIKey), searchURL: endpoint("tinyfish-search", tinyFishSearchURL), fetchURL: endpoint("tinyfish-fetch", tinyFishFetchURL)}
+			providers["tinyfish"] = &tinyFishWebProvider{client: &tinyFishClient, apiKey: strings.TrimSpace(config.TinyFishAPIKey), searchURL: endpoint("tinyfish-search", tinyFishSearchURL), fetchURL: endpoint("tinyfish-fetch", tinyFishFetchURL)}
 		}
 	}
 	defaultProvider := strings.ToLower(strings.TrimSpace(config.DefaultProvider))
