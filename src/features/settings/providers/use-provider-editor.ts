@@ -19,7 +19,7 @@ export type ProviderEditorState =
       providerId: string
     }
 
-export type ProviderKind = 'openrouter' | 'openai'
+export type ProviderKind = 'openai-responses' | 'openai'
 
 export type ProviderDraftState = {
   kind: ProviderKind
@@ -32,9 +32,9 @@ export const providerKindDefaults: Record<
   ProviderKind,
   { label: string; baseURL: string }
 > = {
-  openrouter: {
-    label: 'OpenRouter',
-    baseURL: 'https://openrouter.ai/api/v1',
+  'openai-responses': {
+    label: 'Responses API',
+    baseURL: 'https://api.openai.com/v1',
   },
   openai: {
     label: 'OpenAI Compatible',
@@ -43,8 +43,8 @@ export const providerKindDefaults: Record<
 }
 
 export const defaultProviderDraft = {
-  kind: 'openrouter',
-  ...providerKindDefaults.openrouter,
+  kind: 'openai',
+  ...providerKindDefaults.openai,
 } as const
 
 export function createEmptyProviderDraft(): ProviderDraftState {
@@ -99,7 +99,8 @@ export function useProviderEditor(options?: { canSyncModels?: boolean }) {
       providerId: provider.id,
     })
     setDraft({
-      kind: provider.kind === 'openai' ? 'openai' : 'openrouter',
+      kind:
+        provider.kind === 'openai-responses' ? 'openai-responses' : 'openai',
       label: provider.label,
       baseURL: provider.baseUrl ?? '',
       apiKey: '',

@@ -260,6 +260,21 @@ export function createHTTPChatBackend(): ChatBackend {
       )
       await parseJSON(response)
     },
+    async retryRun(input) {
+      const response = await fetch(
+        `/api/sessions/${encodeURIComponent(input.friendlyId)}/runs/${encodeURIComponent(input.runId)}/retry`,
+        {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            idempotencyKey: input.idempotencyKey,
+            expectedRevision: input.expectedRevision,
+          }),
+        },
+      )
+      return parseJSON(response)
+    },
     async sendMessage(input) {
       const runtimeContext = getClientRuntimeContext()
       const response = await fetch(
@@ -271,6 +286,7 @@ export function createHTTPChatBackend(): ChatBackend {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
+            expectedRevision: input.expectedRevision,
             message: input.message,
             model: input.model,
             systemPrompt: input.systemPrompt,
@@ -347,12 +363,14 @@ export function createHTTPChatBackend(): ChatBackend {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
+            expectedRevision: input.expectedRevision,
             message: input.message,
             model: input.model,
             systemPrompt: input.systemPrompt,
             webSearch: input.webSearch,
             mathTools: input.mathTools,
             advanced: input.advanced,
+            idempotencyKey: input.idempotencyKey,
             clientId: input.clientId,
             clientTime: input.clientTime || runtimeContext.clientTime,
             clientTimeZone:
@@ -364,7 +382,7 @@ export function createHTTPChatBackend(): ChatBackend {
     },
     async deleteUserMessage(input) {
       const response = await fetch(
-        `/api/sessions/${encodeURIComponent(input.sourceFriendlyId)}/messages/${encodeURIComponent(input.messageId)}`,
+        `/api/sessions/${encodeURIComponent(input.sourceFriendlyId)}/messages/${encodeURIComponent(input.messageId)}${input.expectedRevision === undefined ? '' : `?revision=${input.expectedRevision}`}`,
         {
           method: 'DELETE',
           credentials: 'include',

@@ -82,8 +82,7 @@ func NewApp(config Config) (*App, error) {
 	chat := NewChatService(db)
 	providers := NewProviderService(db, config)
 	webTools := NewWebToolSettingsService(db, config)
-	runBroker := NewRunBroker()
-	runs := NewChatRunService(db, chat, providers, webTools, runBroker)
+	runs := NewChatRunService(db, chat, providers, webTools)
 
 	app := &App{
 		config:    config,
@@ -112,10 +111,12 @@ func NewApp(config Config) (*App, error) {
 		},
 	}
 
+	runs.StartWorkers()
 	return app, nil
 }
 
 func (app *App) Close() error {
+	app.runs.Close()
 	return app.db.Close()
 }
 
@@ -157,6 +158,7 @@ func (app *App) Handler() http.Handler {
 	mux.HandleFunc("POST /api/sessions/{friendlyId}/clone", app.handleCloneSession)
 	mux.HandleFunc("POST /api/sessions/{friendlyId}/messages/{messageId}/edit", app.handleEditUserMessage)
 	mux.HandleFunc("DELETE /api/sessions/{friendlyId}/messages/{messageId}", app.handleDeleteUserMessage)
+	mux.HandleFunc("POST /api/sessions/{friendlyId}/runs/{runId}/retry", app.handleRetryRun)
 	mux.HandleFunc("POST /api/sessions/{friendlyId}/stop", app.handleStopSessionRuns)
 	mux.HandleFunc("GET /api/sessions/{friendlyId}/events", app.handleSessionEvents)
 	mux.Handle("/", app.frontendHandler())

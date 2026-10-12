@@ -13,18 +13,20 @@ import (
 )
 
 type SendMessageInput struct {
-	FriendlyID     string               `json:"-"`
-	Message        string               `json:"message"`
-	Model          string               `json:"model"`
-	SystemPrompt   string               `json:"systemPrompt"`
-	WebSearch      bool                 `json:"webSearch"`
-	MathTools      bool                 `json:"mathTools"`
-	Advanced       *ChatAdvancedOptions `json:"advanced"`
-	IdempotencyKey string               `json:"idempotencyKey"`
-	ClientID       string               `json:"clientId"`
-	ClientTime     string               `json:"clientTime"`
-	ClientTimeZone string               `json:"clientTimeZone"`
-	Attachments    []AttachmentPayload  `json:"attachments"`
+	EditMessageID    string               `json:"-"`
+	ExpectedRevision *int64               `json:"expectedRevision,omitempty"`
+	FriendlyID       string               `json:"-"`
+	Message          string               `json:"message"`
+	Model            string               `json:"model"`
+	SystemPrompt     string               `json:"systemPrompt"`
+	WebSearch        bool                 `json:"webSearch"`
+	MathTools        bool                 `json:"mathTools"`
+	Advanced         *ChatAdvancedOptions `json:"advanced"`
+	IdempotencyKey   string               `json:"idempotencyKey"`
+	ClientID         string               `json:"clientId"`
+	ClientTime       string               `json:"clientTime"`
+	ClientTimeZone   string               `json:"clientTimeZone"`
+	Attachments      []AttachmentPayload  `json:"attachments"`
 }
 
 type AttachmentPayload struct {
@@ -41,6 +43,8 @@ type SendMessageResult struct {
 }
 
 type runRecord struct {
+	Revision           int64
+	LeaseToken         string
 	ID                 string
 	UserID             string
 	SessionID          string
@@ -55,17 +59,19 @@ type toolExecutor interface {
 }
 
 type ChatRunService struct {
-	db           *sql.DB
-	chat         *ChatService
-	providers    *ProviderService
-	webSettings  *WebToolSettingsService
-	broker       *RunBroker
-	toolRuntime  func(ctx context.Context, userID string, input SendMessageInput) (toolExecutor, error)
-	runMu        sync.Mutex
-	runCancels   map[string]context.CancelFunc
-	runDone      map[string]chan struct{}
-	sessionRuns  map[string]map[string]struct{}
-	stoppingRuns map[string]struct{}
+	workerOnce    sync.Once
+	workerCancel  context.CancelFunc
+	workerContext context.Context
+	workerWG      sync.WaitGroup
+	wake          chan struct{}
+	db            *sql.DB
+	chat          *ChatService
+	providers     *ProviderService
+	webSettings   *WebToolSettingsService
+	toolRuntime   func(ctx context.Context, userID string, input SendMessageInput) (toolExecutor, error)
+	runMu         sync.Mutex
+	runCancels    map[string]context.CancelFunc
+	sessionRuns   map[string]map[string]struct{}
 }
 
 func NewChatRunService(
@@ -73,18 +79,15 @@ func NewChatRunService(
 	chat *ChatService,
 	providers *ProviderService,
 	webSettings *WebToolSettingsService,
-	broker *RunBroker,
 ) *ChatRunService {
 	service := &ChatRunService{
-		db:           db,
-		chat:         chat,
-		providers:    providers,
-		webSettings:  webSettings,
-		broker:       broker,
-		runCancels:   make(map[string]context.CancelFunc),
-		runDone:      make(map[string]chan struct{}),
-		sessionRuns:  make(map[string]map[string]struct{}),
-		stoppingRuns: make(map[string]struct{}),
+		wake:        make(chan struct{}, 1),
+		db:          db,
+		chat:        chat,
+		providers:   providers,
+		webSettings: webSettings,
+		runCancels:  make(map[string]context.CancelFunc),
+		sessionRuns: make(map[string]map[string]struct{}),
 	}
 	service.toolRuntime = service.defaultToolRuntime
 	return service
@@ -111,12 +114,11 @@ func (service *ChatRunService) StartRun(
 	userID string,
 	input SendMessageInput,
 ) (SendMessageResult, error) {
+	service.chat.commandMu.Lock()
+	defer service.chat.commandMu.Unlock()
 	session, err := service.chat.findSessionByFriendlyID(ctx, userID, input.FriendlyID)
 	if err != nil {
 		return SendMessageResult{}, err
-	}
-	if err := service.waitForStoppingSessionRuns(ctx, session.ID); err != nil {
-		return SendMessageResult{}, fmt.Errorf("wait for stopping session runs: %w", err)
 	}
 	idempotencyKey := strings.TrimSpace(input.IdempotencyKey)
 	if idempotencyKey != "" {
@@ -170,7 +172,7 @@ func (service *ChatRunService) StartRun(
 		ID:                 runID,
 		UserID:             userID,
 		SessionID:          session.ID,
-		Status:             "running",
+		Status:             "queued",
 		Model:              model,
 		IdempotencyKey:     idempotencyKey,
 		AssistantMessageID: assistantMessageID,
@@ -182,9 +184,39 @@ func (service *ChatRunService) StartRun(
 	}
 	defer transaction.Rollback()
 
-	session, err = service.chat.removeTrailingUserMessageExec(ctx, transaction, session)
-	if err != nil {
+	if err := transaction.QueryRowContext(ctx, `SELECT revision FROM chat_sessions WHERE id=?`, session.ID).Scan(&record.Revision); err != nil {
 		return SendMessageResult{}, err
+	}
+	if input.ExpectedRevision != nil && *input.ExpectedRevision != record.Revision {
+		return SendMessageResult{}, errConversationConflict
+	}
+	if input.EditMessageID != "" {
+		records, err := service.chat.listMessageRecordsExec(ctx, transaction, session.ID)
+		if err != nil {
+			return SendMessageResult{}, err
+		}
+		index := findMessageRecordIndex(records, input.EditMessageID)
+		if index < 0 || records[index].Role != "user" {
+			return SendMessageResult{}, errConversationConflict
+		}
+		input.Attachments = extractAttachmentPayloads(records[index].Message)
+		userMessage, _, err = buildUserMessage(input.Message, input.Attachments, input.ClientID)
+		if err != nil {
+			return SendMessageResult{}, err
+		}
+		userMessage["id"] = input.EditMessageID
+		userMessage["timestamp"] = now
+		if err := service.chat.truncateSessionMessagesExec(ctx, transaction, &session, records, index); err != nil {
+			return SendMessageResult{}, err
+		}
+		record.Revision++
+	}
+	var active int
+	if err := transaction.QueryRowContext(ctx, `SELECT COUNT(*) FROM chat_runs WHERE session_id=? AND status IN ('queued','preparing','running')`, session.ID).Scan(&active); err != nil {
+		return SendMessageResult{}, err
+	}
+	if active > 0 {
+		return SendMessageResult{}, errConversationConflict
 	}
 
 	if _, err := service.chat.appendMessageWithOptionsExec(
@@ -223,20 +255,19 @@ func (service *ChatRunService) StartRun(
 		}
 		return SendMessageResult{}, err
 	}
+	if _, err := transaction.ExecContext(ctx, `UPDATE chat_runs SET user_message_id=? WHERE id=?`, messageIDFromMap(userMessage), record.ID); err != nil {
+		return SendMessageResult{}, err
+	}
 	if err := transaction.Commit(); err != nil {
 		return SendMessageResult{}, fmt.Errorf("commit run tx: %w", err)
-	}
-
-	history, err := service.chat.GetHistory(ctx, userID, input.FriendlyID)
-	if err != nil {
-		return SendMessageResult{}, err
 	}
 
 	if shouldGenerateTitle && autoGenerateTitleEnabled {
 		service.maybeGenerateSessionTitle(session, input, userMessage, titlePreferences)
 	}
-
-	service.runAsync(record, session, history.Messages, input)
+	service.StartWorkers()
+	service.notifyQueue()
+	log.Printf("kairos: stage=accepted run=%s revision=%d", record.ID, record.Revision)
 
 	return SendMessageResult{
 		RunID:              runID,
@@ -268,31 +299,39 @@ func (service *ChatRunService) StreamSessionFromCursor(
 		return err
 	}
 
-	activeRunIDs, err := service.activeRunIDsForSession(ctx, session.ID)
+	history, err := service.chat.GetHistory(ctx, userID, friendlyID)
 	if err != nil {
 		return err
 	}
-
-	channel, unsubscribe := service.broker.Subscribe(
-		session.ID,
-		afterCursor,
-		ChatEvent{State: "reconcile", ActiveRunIDs: activeRunIDs},
-	)
-	defer unsubscribe()
-
+	if err := onEvent(ChatEvent{State: "reconcile", SessionKey: session.ID, Revision: history.Revision, ActiveRunIDs: history.ActiveRunIDs}); err != nil {
+		return err
+	}
+	ticker := time.NewTicker(50 * time.Millisecond)
+	defer ticker.Stop()
+	heartbeat := time.NewTicker(15 * time.Second)
+	defer heartbeat.Stop()
 	for {
+		events, err := service.readEvents(ctx, session.ID, afterCursor)
+		if err != nil {
+			return err
+		}
+		for _, event := range events {
+			if err := onEvent(event); err != nil {
+				return err
+			}
+			afterCursor = event.Cursor
+		}
 		select {
 		case <-ctx.Done():
 			return nil
-		case event, ok := <-channel:
-			if !ok {
-				return nil
-			}
-			if err := onEvent(event); err != nil {
+		case <-ticker.C:
+		case <-heartbeat.C:
+			if err := onEvent(ChatEvent{State: "heartbeat"}); err != nil {
 				return err
 			}
 		}
 	}
+
 }
 
 func (service *ChatRunService) ResolveSession(
@@ -313,54 +352,52 @@ func (service *ChatRunService) CancelSessionRuns(
 		return false, err
 	}
 
+	tx, err := service.db.BeginTx(ctx, nil)
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback()
+	rows, err := tx.QueryContext(ctx, `SELECT id FROM chat_runs WHERE session_id=? AND status IN ('queued','preparing','running')`, session.ID)
+	if err != nil {
+		return false, err
+	}
+	ids := []string{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return false, err
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return false, err
+	}
+	rows.Close()
+	for _, id := range ids {
+		if _, err := tx.ExecContext(ctx, `UPDATE chat_runs SET status='aborted',completed_at=?,lease_token='' WHERE id=?`, time.Now().UnixMilli(), id); err != nil {
+			return false, err
+		}
+		if err := service.refreshTurnExec(ctx, tx, id, "aborted"); err != nil {
+			return false, err
+		}
+		if _, err := tx.ExecContext(ctx, `DELETE FROM chat_jobs WHERE run_id=?`, id); err != nil {
+			return false, err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return false, err
+	}
 	service.runMu.Lock()
 	defer service.runMu.Unlock()
-	runIDs := service.sessionRuns[session.ID]
-	if len(runIDs) == 0 {
-		return false, nil
-	}
-
-	stopped := false
-	for runID := range runIDs {
-		cancel := service.runCancels[runID]
-		if cancel == nil {
-			continue
-		}
-		claimed, err := service.claimRunAborted(ctx, runID)
-		if err != nil {
-			return stopped, err
-		}
-		if claimed {
-			stopped = true
-		}
-		service.stoppingRuns[runID] = struct{}{}
-		cancel()
-	}
-
-	return stopped, nil
-}
-
-func (service *ChatRunService) waitForStoppingSessionRuns(ctx context.Context, sessionID string) error {
-	service.runMu.Lock()
-	waiting := make([]<-chan struct{}, 0)
-	for runID := range service.sessionRuns[sessionID] {
-		if _, stopping := service.stoppingRuns[runID]; !stopping {
-			continue
-		}
-		if done := service.runDone[runID]; done != nil {
-			waiting = append(waiting, done)
+	for _, id := range ids {
+		if cancel := service.runCancels[id]; cancel != nil {
+			cancel()
 		}
 	}
-	service.runMu.Unlock()
+	return len(ids) > 0, nil
 
-	for _, done := range waiting {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-done:
-		}
-	}
-	return nil
 }
 
 func (service *ChatRunService) activeRunIDsForSession(
@@ -370,7 +407,7 @@ func (service *ChatRunService) activeRunIDsForSession(
 	rows, err := service.db.QueryContext(ctx, `
 		SELECT id
 		FROM chat_runs
-		WHERE session_id = ? AND status = 'running'
+		WHERE session_id = ? AND status IN ('queued','preparing','running')
 		ORDER BY started_at ASC, id ASC
 	`, sessionID)
 	if err != nil {
@@ -431,7 +468,13 @@ func (service *ChatRunService) insertRunExec(
 		return fmt.Errorf("insert run: %w", err)
 	}
 
-	return nil
+	if _, err := exec.ExecContext(ctx, `UPDATE chat_runs SET revision=?,user_message_id=? WHERE id=?`, record.Revision, input.ClientID, record.ID); err != nil {
+		return err
+	}
+	if _, err := exec.ExecContext(ctx, `INSERT INTO chat_jobs(run_id,available_at) VALUES(?,?)`, record.ID, now); err != nil {
+		return err
+	}
+	return service.refreshTurnExec(ctx, exec, record.ID, "delta")
 }
 
 func (service *ChatRunService) findRunByIdempotencyKey(

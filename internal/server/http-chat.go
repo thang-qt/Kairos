@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strconv"
 	"strings"
 )
 
@@ -36,17 +37,18 @@ type updateConversationSettingsRequest struct {
 }
 
 type sendMessageRequest struct {
-	Message        string               `json:"message"`
-	Model          string               `json:"model"`
-	SystemPrompt   string               `json:"systemPrompt"`
-	WebSearch      bool                 `json:"webSearch"`
-	MathTools      bool                 `json:"mathTools"`
-	Advanced       *ChatAdvancedOptions `json:"advanced"`
-	IdempotencyKey string               `json:"idempotencyKey"`
-	ClientID       string               `json:"clientId"`
-	ClientTime     string               `json:"clientTime"`
-	ClientTimeZone string               `json:"clientTimeZone"`
-	Attachments    []AttachmentPayload  `json:"attachments"`
+	ExpectedRevision *int64               `json:"expectedRevision,omitempty"`
+	Message          string               `json:"message"`
+	Model            string               `json:"model"`
+	SystemPrompt     string               `json:"systemPrompt"`
+	WebSearch        bool                 `json:"webSearch"`
+	MathTools        bool                 `json:"mathTools"`
+	Advanced         *ChatAdvancedOptions `json:"advanced"`
+	IdempotencyKey   string               `json:"idempotencyKey"`
+	ClientID         string               `json:"clientId"`
+	ClientTime       string               `json:"clientTime"`
+	ClientTimeZone   string               `json:"clientTimeZone"`
+	Attachments      []AttachmentPayload  `json:"attachments"`
 }
 
 type ephemeralMessageRequest struct {
@@ -321,21 +323,24 @@ func (app *App) handleSendMessage(writer http.ResponseWriter, request *http.Requ
 	}
 
 	result, err := app.runs.StartRun(request.Context(), user.ID, SendMessageInput{
-		FriendlyID:     request.PathValue("friendlyId"),
-		Message:        payload.Message,
-		Model:          payload.Model,
-		SystemPrompt:   payload.SystemPrompt,
-		WebSearch:      payload.WebSearch,
-		MathTools:      payload.MathTools,
-		Advanced:       payload.Advanced,
-		IdempotencyKey: payload.IdempotencyKey,
-		ClientID:       payload.ClientID,
-		ClientTime:     payload.ClientTime,
-		ClientTimeZone: payload.ClientTimeZone,
-		Attachments:    payload.Attachments,
+		ExpectedRevision: payload.ExpectedRevision,
+		FriendlyID:       request.PathValue("friendlyId"),
+		Message:          payload.Message,
+		Model:            payload.Model,
+		SystemPrompt:     payload.SystemPrompt,
+		WebSearch:        payload.WebSearch,
+		MathTools:        payload.MathTools,
+		Advanced:         payload.Advanced,
+		IdempotencyKey:   payload.IdempotencyKey,
+		ClientID:         payload.ClientID,
+		ClientTime:       payload.ClientTime,
+		ClientTimeZone:   payload.ClientTimeZone,
+		Attachments:      payload.Attachments,
 	})
 	if err != nil {
 		switch {
+		case errors.Is(err, errConversationConflict):
+			writeError(writer, http.StatusConflict, err.Error())
 		case errors.Is(err, errChatSessionNotFound):
 			writeError(writer, http.StatusNotFound, err.Error())
 		case errors.Is(err, errNoProviderAvailable),
@@ -432,6 +437,8 @@ func (app *App) handleCloneSession(writer http.ResponseWriter, request *http.Req
 	)
 	if err != nil {
 		switch {
+		case errors.Is(err, errConversationConflict):
+			writeError(writer, http.StatusConflict, err.Error())
 		case errors.Is(err, errChatSessionNotFound):
 			writeError(writer, http.StatusNotFound, err.Error())
 		default:
@@ -455,38 +462,14 @@ func (app *App) handleEditUserMessage(writer http.ResponseWriter, request *http.
 		return
 	}
 
-	session, attachments, err := app.chat.EditUserMessage(
-		request.Context(),
-		user.ID,
-		request.PathValue("friendlyId"),
-		request.PathValue("messageId"),
-		payload.Message,
-	)
-	if err != nil {
-		switch {
-		case errors.Is(err, errChatSessionNotFound):
-			writeError(writer, http.StatusNotFound, err.Error())
-		default:
-			writeError(writer, http.StatusBadRequest, err.Error())
-		}
-		return
-	}
-
 	result, err := app.runs.StartRun(request.Context(), user.ID, SendMessageInput{
-		FriendlyID:     session.FriendlyID,
-		Message:        payload.Message,
-		Model:          payload.Model,
-		SystemPrompt:   payload.SystemPrompt,
-		WebSearch:      payload.WebSearch,
-		MathTools:      payload.MathTools,
-		Advanced:       payload.Advanced,
-		ClientID:       payload.ClientID,
-		ClientTime:     payload.ClientTime,
-		ClientTimeZone: payload.ClientTimeZone,
-		Attachments:    attachments,
+		FriendlyID: request.PathValue("friendlyId"), EditMessageID: request.PathValue("messageId"), ExpectedRevision: payload.ExpectedRevision,
+		Message: payload.Message, Model: payload.Model, SystemPrompt: payload.SystemPrompt, WebSearch: payload.WebSearch, MathTools: payload.MathTools, Advanced: payload.Advanced, IdempotencyKey: payload.IdempotencyKey, ClientID: payload.ClientID, ClientTime: payload.ClientTime, ClientTimeZone: payload.ClientTimeZone,
 	})
 	if err != nil {
 		switch {
+		case errors.Is(err, errConversationConflict):
+			writeError(writer, http.StatusConflict, err.Error())
 		case errors.Is(err, errNoProviderAvailable),
 			errors.Is(err, errNoModelAvailable),
 			errors.Is(err, errModelNotAvailable):
@@ -498,9 +481,9 @@ func (app *App) handleEditUserMessage(writer http.ResponseWriter, request *http.
 	}
 
 	writeJSON(writer, http.StatusOK, map[string]any{
-		"sessionKey":         session.Key,
-		"key":                session.Key,
-		"friendlyId":         session.FriendlyID,
+		"sessionKey":         result.SessionKey,
+		"key":                result.SessionKey,
+		"friendlyId":         request.PathValue("friendlyId"),
 		"runId":              result.RunID,
 		"userMessageId":      result.UserMessageID,
 		"assistantMessageId": result.AssistantMessageID,
@@ -514,14 +497,26 @@ func (app *App) handleDeleteUserMessage(writer http.ResponseWriter, request *htt
 		return
 	}
 
-	session, err := app.chat.DeleteUserMessage(
+	var expectedRevision *int64
+	if raw := request.URL.Query().Get("revision"); raw != "" {
+		value, err := strconv.ParseInt(raw, 10, 64)
+		if err != nil {
+			writeError(writer, http.StatusBadRequest, "invalid revision")
+			return
+		}
+		expectedRevision = &value
+	}
+	session, err := app.chat.DeleteUserMessageAtRevision(
 		request.Context(),
 		user.ID,
 		request.PathValue("friendlyId"),
 		request.PathValue("messageId"),
+		expectedRevision,
 	)
 	if err != nil {
 		switch {
+		case errors.Is(err, errConversationConflict):
+			writeError(writer, http.StatusConflict, err.Error())
 		case errors.Is(err, errChatSessionNotFound):
 			writeError(writer, http.StatusNotFound, err.Error())
 		default:

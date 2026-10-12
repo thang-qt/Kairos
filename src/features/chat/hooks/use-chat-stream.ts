@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useEffectEvent, useRef } from 'react'
 
 import {
+  chatQueryKeys,
   updateHistoryMessages,
   updateSessionLastMessage,
   upsertSessionSummary,
@@ -11,7 +12,7 @@ import {
   reduceChatEventMessages,
 } from '../chat-event-reducer'
 import type { QueryClient } from '@tanstack/react-query'
-import type { GatewayMessage } from '../types'
+import type { GatewayMessage, HistoryResponse } from '../types'
 import type { ChatEvent } from '@/lib/chat-backend'
 import { getChatBackend } from '@/lib/chat-backend'
 
@@ -49,6 +50,36 @@ export function useChatStream({
   const handleChatEvent = useEffectEvent(function handleChatEvent(
     payload: ChatEvent,
   ) {
+    if (payload.state === 'heartbeat') return
+    const key = chatQueryKeys.history(activeFriendlyId, sessionKeyForHistory)
+    const cached = queryClient.getQueryData<HistoryResponse>(key)
+    if (
+      payload.revision !== undefined &&
+      payload.revision < (cached?.revision ?? -1)
+    )
+      return
+    if (payload.cursor && payload.cursor <= (cached?.cursor ?? 0)) return
+    if (
+      payload.revision !== undefined &&
+      payload.revision > (cached?.revision ?? -1)
+    ) {
+      queryClient.setQueryData<HistoryResponse>(
+        key,
+        function setRevision(previous) {
+          return {
+            ...previous,
+            sessionKey: previous?.sessionKey ?? sessionKeyForHistory,
+            messages:
+              previous?.revision === undefined
+                ? (previous?.messages ?? [])
+                : [],
+            revision: payload.revision,
+            cursor: payload.cursor,
+          }
+        },
+      )
+      refreshHistoryRef.current()
+    }
     onChatEvent?.(payload)
 
     const payloadState = typeof payload.state === 'string' ? payload.state : ''
@@ -134,6 +165,17 @@ export function useChatStream({
       )
     }
 
+    queryClient.setQueryData<HistoryResponse>(
+      key,
+      function advanceCursor(previous) {
+        if (!previous) return previous
+        return {
+          ...previous,
+          revision: payload.revision ?? previous.revision,
+          cursor: payload.cursor ?? previous.cursor,
+        }
+      },
+    )
     if (isTerminalState(payloadState)) {
       refreshHistoryRef.current()
     }

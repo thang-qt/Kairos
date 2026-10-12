@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"time"
 )
 
@@ -124,6 +125,10 @@ func (service *ChatRunService) executeGeneration(
 		accumulatedToolCalls := []ProviderToolCall{}
 		accumulatedToolProgress := []ProviderToolProgress{}
 		toolProgressStartedAt := make(map[string]time.Time)
+		log.Printf("kairos: stage=provider_request run=%s round=%d", input.RunID, roundIndex)
+		providerStarted := time.Now()
+		firstEvent := true
+		firstVisible := true
 		result, generationErr := driver.GenerateChatStream(
 			ctx,
 			provider,
@@ -141,6 +146,14 @@ func (service *ChatRunService) executeGeneration(
 			func(delta ChatGenerationDelta) error {
 				if ctx.Err() != nil {
 					return ctx.Err()
+				}
+				if firstEvent {
+					log.Printf("kairos: stage=first_provider_event run=%s latency_ms=%d", input.RunID, time.Since(providerStarted).Milliseconds())
+					firstEvent = false
+				}
+				if firstVisible && delta.Text != "" {
+					log.Printf("kairos: stage=first_text run=%s latency_ms=%d", input.RunID, time.Since(providerStarted).Milliseconds())
+					firstVisible = false
 				}
 				accumulatedThinking += delta.Thinking
 				accumulatedText += delta.Text
@@ -221,7 +234,7 @@ func (service *ChatRunService) executeGeneration(
 			if result.Details == nil {
 				result.Details = make(map[string]any)
 			}
-			result.Details["hermesToolProgress"] = progressDetails
+			result.Details["toolProgress"] = progressDetails
 		}
 		accumulatedToolCalls = mergeProviderToolCalls(
 			accumulatedToolCalls,
@@ -289,6 +302,12 @@ func (service *ChatRunService) executeGeneration(
 				continue
 			}
 
+			if fence, ok := sink.(interface{ BeforeTool(map[string]any) error }); ok {
+				if err := fence.BeforeTool(assistantMessage); err != nil {
+					return generationOutcome{}, err
+				}
+			}
+			log.Printf("kairos: stage=tool_start run=%s call=%s", input.RunID, call.ID)
 			startedAt := time.Now()
 			toolResult, toolErr := toolRuntime.Execute(ctx, call)
 			if ctx.Err() != nil || errors.Is(toolErr, context.Canceled) {

@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
 
-type ProviderKind = 'openrouter' | 'openai'
+type ProviderKind = 'openai-responses' | 'openai'
 
 type ProviderDraftState = {
   kind: ProviderKind
@@ -74,7 +74,7 @@ export function ProviderEditorForm({
               updateDraft('kind', event.target.value as ProviderKind)
             }}
           >
-            <option value="openrouter">OpenRouter</option>
+            <option value="openai-responses">Responses API (opt-in)</option>
             <option value="openai">OpenAI compatible</option>
           </select>
         </div>
@@ -89,7 +89,7 @@ export function ProviderEditorForm({
           placeholder={
             draft.kind === 'openai'
               ? 'https://api.openai.com/v1'
-              : 'https://openrouter.ai/api/v1'
+              : 'https://api.openai.com/v1'
           }
           value={draft.baseURL}
           disabled={!canAddCustomBaseUrl}

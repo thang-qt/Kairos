@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -51,13 +52,17 @@ type SessionSummary struct {
 }
 
 type HistoryPayload struct {
-	SessionKey string           `json:"sessionKey"`
-	SessionID  string           `json:"sessionId,omitempty"`
-	Messages   []map[string]any `json:"messages"`
+	SessionKey   string           `json:"sessionKey"`
+	SessionID    string           `json:"sessionId,omitempty"`
+	Revision     int64            `json:"revision"`
+	Cursor       int64            `json:"cursor"`
+	ActiveRunIDs []string         `json:"activeRunIds"`
+	Messages     []map[string]any `json:"messages"`
 }
 
 type ChatService struct {
-	db *sql.DB
+	db        *sql.DB
+	commandMu sync.Mutex
 }
 
 type sessionRecord struct {
@@ -96,6 +101,7 @@ type appendMessageOptions struct {
 type sqlExecutor interface {
 	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
 	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
 }
 
 func NewChatService(db *sql.DB) *ChatService {
@@ -316,7 +322,7 @@ func (service *ChatService) DeleteSession(
 	return nil
 }
 
-func (service *ChatService) GetHistory(
+func (service *ChatService) getTranscript(
 	ctx context.Context,
 	userID string,
 	friendlyID string,
@@ -367,12 +373,15 @@ func (service *ChatService) CloneSession(
 	return service.createClonedSession(ctx, source, messageRecords[:cloneIndex+1])
 }
 
-func (service *ChatService) DeleteUserMessage(
+func (service *ChatService) DeleteUserMessageAtRevision(
 	ctx context.Context,
 	userID string,
 	friendlyID string,
 	messageID string,
+	expectedRevision *int64,
 ) (SessionSummary, error) {
+	service.commandMu.Lock()
+	defer service.commandMu.Unlock()
 	source, err := service.findSessionByFriendlyID(ctx, userID, friendlyID)
 	if err != nil {
 		return SessionSummary{}, err
@@ -391,54 +400,33 @@ func (service *ChatService) DeleteUserMessage(
 		return SessionSummary{}, fmt.Errorf("only user messages can be deleted")
 	}
 
-	return service.truncateSessionMessages(ctx, source, messageRecords, messageIndex)
+	tx, err := service.db.BeginTx(ctx, nil)
+	if err != nil {
+		return SessionSummary{}, err
+	}
+	defer tx.Rollback()
+	if expectedRevision != nil {
+		var revision int64
+		if err := tx.QueryRowContext(ctx, `SELECT revision FROM chat_sessions WHERE id=?`, source.ID).Scan(&revision); err != nil {
+			return SessionSummary{}, err
+		}
+		if revision != *expectedRevision {
+			return SessionSummary{}, errConversationConflict
+		}
+	}
+	if err := service.truncateSessionMessagesExec(ctx, tx, &source, messageRecords, messageIndex); err != nil {
+		return SessionSummary{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return SessionSummary{}, err
+	}
+	return sessionRecordToSummary(source)
 }
 
-func (service *ChatService) EditUserMessage(
-	ctx context.Context,
-	userID string,
-	friendlyID string,
-	messageID string,
-	message string,
-) (SessionSummary, []AttachmentPayload, error) {
-	source, err := service.findSessionByFriendlyID(ctx, userID, friendlyID)
-	if err != nil {
-		return SessionSummary{}, nil, err
-	}
-
-	messageRecords, err := service.listMessageRecords(ctx, source.ID)
-	if err != nil {
-		return SessionSummary{}, nil, err
-	}
-
-	messageIndex := findMessageRecordIndex(messageRecords, messageID)
-	if messageIndex < 0 {
-		return SessionSummary{}, nil, fmt.Errorf("user message not found")
-	}
-
-	target := messageRecords[messageIndex]
-	if target.Role != "user" {
-		return SessionSummary{}, nil, fmt.Errorf("only user messages can be edited")
-	}
-
-	session, err := service.truncateSessionMessages(ctx, source, messageRecords, messageIndex)
-	if err != nil {
-		return SessionSummary{}, nil, err
-	}
-
-	return session, extractAttachmentPayloads(target.Message), nil
-}
-
-func (service *ChatService) truncateSessionMessages(
-	ctx context.Context,
-	session sessionRecord,
-	messageRecords []messageRecord,
-	startIndex int,
-) (SessionSummary, error) {
+func (service *ChatService) truncateSessionMessagesExec(ctx context.Context, exec sqlExecutor, session *sessionRecord, messageRecords []messageRecord, startIndex int) error {
 	if startIndex < 0 || startIndex > len(messageRecords) {
-		return SessionSummary{}, fmt.Errorf("invalid message truncate index")
+		return fmt.Errorf("invalid truncate index")
 	}
-
 	remainingRecords := messageRecords[:startIndex]
 	deletedRecords := messageRecords[startIndex:]
 	now := time.Now().UnixMilli()
@@ -448,31 +436,30 @@ func (service *ChatService) truncateSessionMessages(
 	if len(remainingRecords) > 0 {
 		lastMessageJSON = nullableString(remainingRecords[len(remainingRecords)-1].MessageJSON)
 	}
-
-	transaction, err := service.db.BeginTx(ctx, nil)
-	if err != nil {
-		return SessionSummary{}, fmt.Errorf("begin truncate messages tx: %w", err)
+	if _, err := exec.ExecContext(ctx, `UPDATE chat_sessions SET revision=revision+1 WHERE id=?`, session.ID); err != nil {
+		return err
 	}
-	defer transaction.Rollback()
-
+	if err := invalidationExec(ctx, exec, session.ID); err != nil {
+		return err
+	}
+	for _, record := range deletedRecords {
+		if id := stringValueFromMap(record.Message, "runId"); id != "" {
+			if _, err := exec.ExecContext(ctx, `UPDATE chat_runs SET invalidated=1,lease_token='' WHERE id=? AND session_id=?`, id, session.ID); err != nil {
+				return err
+			}
+		}
+	}
 	if len(deletedRecords) > 0 {
-		placeholders := make([]string, 0, len(deletedRecords))
-		args := make([]any, 0, len(deletedRecords)+1)
-		args = append(args, session.ID)
-		for _, record := range deletedRecords {
-			placeholders = append(placeholders, "?")
-			args = append(args, record.StorageID)
+		cutoff := deletedRecords[0].Timestamp
+		if _, err := exec.ExecContext(ctx, `UPDATE chat_runs SET invalidated=1,lease_token='' WHERE session_id=? AND (id IN (SELECT run_id FROM chat_messages WHERE session_id=? AND timestamp>=?) OR user_message_id IN (SELECT json_extract(message_json,'$.id') FROM chat_messages WHERE session_id=? AND timestamp>=?))`, session.ID, session.ID, cutoff, session.ID, cutoff); err != nil {
+			return err
 		}
-		query := fmt.Sprintf(
-			"DELETE FROM chat_messages WHERE session_id = ? AND id IN (%s)",
-			strings.Join(placeholders, ","),
-		)
-		if _, err := transaction.ExecContext(ctx, query, args...); err != nil {
-			return SessionSummary{}, fmt.Errorf("delete truncated messages: %w", err)
+		if _, err := exec.ExecContext(ctx, `DELETE FROM chat_messages WHERE session_id=? AND timestamp>=?`, session.ID, cutoff); err != nil {
+			return err
 		}
 	}
 
-	if _, err := transaction.ExecContext(ctx, `
+	if _, err := exec.ExecContext(ctx, `
 		UPDATE chat_sessions
 		SET
 			last_message_json = ?,
@@ -481,18 +468,18 @@ func (service *ChatService) truncateSessionMessages(
 			total_tokens = ?
 		WHERE id = ? AND user_id = ?
 	`, lastMessageJSON, now, nullableString(derivedTitle), totalTokens, session.ID, session.UserID); err != nil {
-		return SessionSummary{}, fmt.Errorf("update session after truncate: %w", err)
-	}
-
-	if err := transaction.Commit(); err != nil {
-		return SessionSummary{}, fmt.Errorf("commit truncate messages: %w", err)
+		return fmt.Errorf("update session after truncate: %w", err)
 	}
 
 	session.LastMessageJSON = lastMessageJSON
 	session.UpdatedAt = now
 	session.DerivedTitle = nullableString(derivedTitle)
 	session.TotalTokens = totalTokens
-	return sessionRecordToSummary(session)
+	var revision int64
+	if err := exec.QueryRowContext(ctx, `SELECT revision FROM chat_sessions WHERE id=?`, session.ID).Scan(&revision); err != nil {
+		return err
+	}
+	return insertChatEventExec(ctx, exec, ChatEvent{SessionKey: session.ID, Revision: revision, State: "reconcile", ActiveRunIDs: []string{}})
 }
 
 func (service *ChatService) appendMessage(
@@ -565,86 +552,6 @@ func (service *ChatService) appendMessagesWithOptions(
 		return SessionSummary{}, fmt.Errorf("commit append messages tx: %w", err)
 	}
 	return summary, nil
-}
-
-func (service *ChatService) removeTrailingUserMessageExec(
-	ctx context.Context,
-	exec sqlExecutor,
-	session sessionRecord,
-) (sessionRecord, error) {
-	var storageID string
-	var messageJSON string
-	var timestamp int64
-	err := exec.QueryRowContext(ctx, `
-		SELECT id, message_json, timestamp
-		FROM chat_messages
-		WHERE session_id = ?
-		ORDER BY timestamp DESC, created_at DESC, id DESC
-		LIMIT 1
-	`, session.ID).Scan(&storageID, &messageJSON, &timestamp)
-	if errors.Is(err, sql.ErrNoRows) {
-		return session, nil
-	}
-	if err != nil {
-		return sessionRecord{}, fmt.Errorf("load trailing message: %w", err)
-	}
-
-	var message map[string]any
-	if err := json.Unmarshal([]byte(messageJSON), &message); err != nil {
-		return sessionRecord{}, fmt.Errorf("decode trailing message: %w", err)
-	}
-	if stringValueFromMap(message, "role") != "user" {
-		return session, nil
-	}
-
-	if _, err := exec.ExecContext(ctx, `
-		DELETE FROM chat_messages
-		WHERE session_id = ? AND id = ?
-	`, session.ID, storageID); err != nil {
-		return sessionRecord{}, fmt.Errorf("delete trailing user message: %w", err)
-	}
-
-	var previousMessageJSON string
-	var previousTimestamp int64
-	previousErr := exec.QueryRowContext(ctx, `
-		SELECT message_json, timestamp
-		FROM chat_messages
-		WHERE session_id = ?
-		ORDER BY timestamp DESC, created_at DESC, id DESC
-		LIMIT 1
-	`, session.ID).Scan(&previousMessageJSON, &previousTimestamp)
-
-	lastMessageJSON := sql.NullString{}
-	updatedAt := time.Now().UnixMilli()
-	if previousErr == nil {
-		lastMessageJSON = nullableString(previousMessageJSON)
-		updatedAt = previousTimestamp
-	} else if !errors.Is(previousErr, sql.ErrNoRows) {
-		return sessionRecord{}, fmt.Errorf("load previous message after dedupe: %w", previousErr)
-	}
-
-	totalTokens := maxInt64(0, session.TotalTokens-approximateMessageTokens(message))
-	derivedTitle := session.DerivedTitle
-	if !lastMessageJSON.Valid {
-		derivedTitle = sql.NullString{}
-	}
-	if _, err := exec.ExecContext(ctx, `
-		UPDATE chat_sessions
-		SET
-			last_message_json = ?,
-			updated_at = ?,
-			derived_title = ?,
-			total_tokens = ?
-		WHERE id = ? AND user_id = ?
-	`, lastMessageJSON, updatedAt, derivedTitle, totalTokens, session.ID, session.UserID); err != nil {
-		return sessionRecord{}, fmt.Errorf("update session after dedupe: %w", err)
-	}
-
-	session.LastMessageJSON = lastMessageJSON
-	session.UpdatedAt = updatedAt
-	session.DerivedTitle = derivedTitle
-	session.TotalTokens = totalTokens
-	return session, nil
 }
 
 func (service *ChatService) appendMessageWithOptionsExec(
@@ -807,7 +714,10 @@ func (service *ChatService) listMessageRecords(
 	ctx context.Context,
 	sessionID string,
 ) ([]messageRecord, error) {
-	rows, err := service.db.QueryContext(ctx, `
+	return service.listMessageRecordsExec(ctx, service.db, sessionID)
+}
+func (service *ChatService) listMessageRecordsExec(ctx context.Context, exec sqlExecutor, sessionID string) ([]messageRecord, error) {
+	rows, err := exec.QueryContext(ctx, `
 		SELECT
 			id,
 			role,
@@ -1358,4 +1268,8 @@ func max(left int, right int) int {
 		return left
 	}
 	return right
+}
+
+func (service *ChatService) DeleteUserMessage(ctx context.Context, userID, friendlyID, messageID string) (SessionSummary, error) {
+	return service.DeleteUserMessageAtRevision(ctx, userID, friendlyID, messageID, nil)
 }

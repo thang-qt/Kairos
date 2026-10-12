@@ -27,6 +27,15 @@ export function reduceChatEventMessages(
     retainRunMessagesOnTerminal?: boolean
   },
 ): Array<GatewayMessage> {
+  if (event.revision !== undefined) {
+    const revision = Math.max(
+      -1,
+      ...messages.map(function getRevision(message) {
+        return message.revision ?? -1
+      }),
+    )
+    if (event.revision < revision) return messages
+  }
   const nextMessage = messageFromChatEvent(event)
   const runId = normalizeString(event.runId)
   let nextMessages = messages
@@ -69,7 +78,7 @@ export function reduceChatEventMessages(
   if (!runId || !isTerminalState(event.state ?? '')) {
     return nextMessages
   }
-  if (options?.retainRunMessagesOnTerminal) {
+  if (nextMessage?.steps || options?.retainRunMessagesOnTerminal) {
     return nextMessages.map(function freezeRunMessage(message) {
       if (getStreamRunId(message) !== runId) return message
       return { ...message, __streamRunId: null }

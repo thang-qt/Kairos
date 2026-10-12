@@ -27,9 +27,7 @@ import { TypingIndicator } from '@/components/prompt-kit/typing-indicator'
 import { useChatSettingsStore } from '@/app/preferences/app-preferences'
 import { useChatScrollControl } from '../hooks/use-chat-scroll-control'
 import { useMessageNavigation } from '../hooks/use-message-navigation'
-import { cn } from '@/lib/utils'
 import {
-  activeAssistantRunBounds,
   findPreviousClonePoint,
   projectChatMessages,
 } from './chat-message-list-utils'
@@ -122,7 +120,7 @@ function ChatMessageListComponent({
 
   const { displayMessages, toolChainsByFinalMessageID, toolResultsByCallId } =
     useMemo(() => {
-      const projection = projectChatMessages(messages, activeRunIds)
+      const projection = projectChatMessages(messages)
       const activeIds = new Set<string>()
       projection.displayMessages.forEach(
         function collectUserRefs(message, index) {
@@ -247,13 +245,6 @@ function ChatMessageListComponent({
     }
   }, [slicedMessages, showConversationNavigator])
 
-  const activeAssistantResponses = useMemo(
-    function getActiveAssistantResponses() {
-      return activeAssistantRunBounds(slicedMessages, activeRunIds)
-    },
-    [activeRunIds, slicedMessages],
-  )
-
   const showTypingIndicator =
     waitingForResponse &&
     (typeof slicedLastUserIndex !== 'number' ||
@@ -325,19 +316,6 @@ function ChatMessageListComponent({
   ) {
     const messageKey = getMessageKey(chatMessage, index)
     const messageId = getGatewayMessageId(chatMessage) ?? ''
-    const messageRunId =
-      typeof (chatMessage.runId ?? chatMessage.__streamRunId) === 'string'
-        ? String(chatMessage.runId ?? chatMessage.__streamRunId).trim()
-        : ''
-    const activeAssistantResponse = messageRunId
-      ? activeAssistantResponses.get(messageRunId)
-      : undefined
-    const isActiveAssistantRound =
-      chatMessage.role === 'assistant' && activeAssistantResponse !== undefined
-    const isAssistantContinuation =
-      isActiveAssistantRound && index > activeAssistantResponse.firstIndex
-    const hasFollowingAssistantRound =
-      isActiveAssistantRound && index < activeAssistantResponse.lastIndex
     const forceActionsVisible =
       typeof slicedLastAssistantIndex === 'number' &&
       index === slicedLastAssistantIndex
@@ -365,7 +343,7 @@ function ChatMessageListComponent({
 
     return (
       <div key={messageKey} className="contents">
-        {shouldShowDateDivider(index) && !isAssistantContinuation ? (
+        {shouldShowDateDivider(index) ? (
           <DateDivider timestamp={getMessageTimestamp(chatMessage)} />
         ) : null}
         <MessageItem
@@ -373,14 +351,11 @@ function ChatMessageListComponent({
           toolChainMessages={toolChainMessages}
           toolResultsByCallId={hasToolCalls ? toolResultsByCallId : undefined}
           forceActionsVisible={forceActionsVisible}
-          showAssistantModel={!isAssistantContinuation}
-          showAssistantActions={!hasFollowingAssistantRound}
+          showAssistantModel
+          showAssistantActions
           modelLabelById={modelLabelById}
           wrapperRef={wrapperRef}
-          wrapperClassName={cn(
-            options?.wrapperClassName,
-            isAssistantContinuation && '-mt-5',
-          )}
+          wrapperClassName={options?.wrapperClassName}
           wrapperScrollMarginTop={wrapperScrollMarginTop}
           isHighlighted={messageId === highlightedMessageId}
           onClone={onClone ? handleClone : undefined}
@@ -430,7 +405,6 @@ function ChatMessageListComponent({
     }
   }, [
     slicedMessages,
-    activeAssistantResponses,
     groupStartIndex,
     hasGroup,
     headerHeight,
@@ -564,7 +538,6 @@ export function areChatMessageListEqual(
 }
 
 export {
-  activeAssistantRunBounds,
   collectLinkedToolCallIds,
   isLinkedToolResultMessage,
   projectChatMessages,

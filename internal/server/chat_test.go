@@ -23,7 +23,7 @@ func TestEphemeralMessageGeneratesWithoutPersistingChatData(t *testing.T) {
 		config.SystemProviderLabel = "Test provider"
 		config.SystemProviderStaticModels = []string{"test-model"}
 	})
-	testServer.app.providers.drivers[openRouterProviderKind] = fakeProviderDriver{
+	testServer.app.providers.drivers[openAIProviderKind] = fakeProviderDriver{
 		models: []ProviderModel{{ID: "test-model", Object: "model", OwnedBy: "test"}},
 		output: "This response is temporary.",
 	}
@@ -397,13 +397,13 @@ func TestDeleteUserMessageUpdatesThread(t *testing.T) {
 	}
 }
 
-func TestSendMessageReplacesTrailingUserMessage(t *testing.T) {
+func TestSendMessagePreservesExistingUserMessage(t *testing.T) {
 	testServer := newTestApp(t, func(config *Config) {
 		config.SystemProviderEnabled = true
 		config.SystemProviderLabel = "Server Default"
 		config.SystemProviderStaticModels = []string{"test-model"}
 	})
-	testServer.app.providers.drivers[openRouterProviderKind] = fakeProviderDriver{
+	testServer.app.providers.drivers[openAIProviderKind] = fakeProviderDriver{
 		models: []ProviderModel{
 			{
 				ID:            "test-model",
@@ -441,14 +441,14 @@ func TestSendMessageReplacesTrailingUserMessage(t *testing.T) {
 
 	var historyPayload HistoryPayload
 	decodeResponseJSON(t, historyResponse, &historyPayload)
-	if len(historyPayload.Messages) != 2 {
-		t.Fatalf("history message count after dedupe = %d, want 2", len(historyPayload.Messages))
+	if len(historyPayload.Messages) != 3 {
+		t.Fatalf("history message count after dedupe = %d, want 3", len(historyPayload.Messages))
 	}
 	if historyPayload.Messages[0]["role"] != "user" {
 		t.Fatalf("first message role = %v, want user", historyPayload.Messages[0]["role"])
 	}
-	if text := textContentFromMessage(historyPayload.Messages[0]); text != "Second draft" {
-		t.Fatalf("first user message text = %q, want second draft", text)
+	if text := textContentFromMessage(historyPayload.Messages[0]); text != "First draft" {
+		t.Fatalf("first user message text = %q, want first draft", text)
 	}
 }
 
@@ -458,7 +458,7 @@ func TestEditUserMessageUpdatesThreadAndRuns(t *testing.T) {
 		config.SystemProviderLabel = "Server Default"
 		config.SystemProviderStaticModels = []string{"test-model"}
 	})
-	testServer.app.providers.drivers[openRouterProviderKind] = fakeProviderDriver{
+	testServer.app.providers.drivers[openAIProviderKind] = fakeProviderDriver{
 		models: []ProviderModel{
 			{
 				ID:            "test-model",
@@ -552,7 +552,7 @@ func TestSendMessagePersistsHistoryAndStreamsFinalEvent(t *testing.T) {
 		config.SystemProviderLabel = "Server Default"
 		config.SystemProviderStaticModels = []string{"test-model"}
 	})
-	testServer.app.providers.drivers[openRouterProviderKind] = fakeProviderDriver{
+	testServer.app.providers.drivers[openAIProviderKind] = fakeProviderDriver{
 		models: []ProviderModel{
 			{
 				ID:            "test-model",
@@ -599,6 +599,9 @@ func TestSendMessagePersistsHistoryAndStreamsFinalEvent(t *testing.T) {
 		}
 	}()
 
+	if _, _, err := testServer.app.providers.ListModels(context.Background(), userID); err != nil {
+		t.Fatal(err)
+	}
 	sendResponse := performJSONRequest(t, testServer.handler, http.MethodPost, "/api/sessions/"+created.FriendlyID+"/messages", sendMessageRequest{
 		Message: "Explain the new slice",
 		Model:   "test-model",
@@ -622,7 +625,7 @@ func TestSendMessagePersistsHistoryAndStreamsFinalEvent(t *testing.T) {
 		if !ok {
 			t.Fatalf("final event usage = %T, want map[string]any", details["usage"])
 		}
-		if usage["totalTokens"] != int64(120) {
+		if int64Value(usage["totalTokens"]) != 120 {
 			t.Fatalf("final event usage totalTokens = %v, want 120", usage["totalTokens"])
 		}
 		if finalMessage["modelName"] != "Test Model" {
@@ -708,7 +711,7 @@ func TestSendMessageIdempotencyKeyReusesExistingRun(t *testing.T) {
 		config.SystemProviderEnabled = true
 		config.SystemProviderStaticModels = []string{"test-model"}
 	})
-	testServer.app.providers.drivers[openRouterProviderKind] = fakeProviderDriver{
+	testServer.app.providers.drivers[openAIProviderKind] = fakeProviderDriver{
 		models: []ProviderModel{
 			{
 				ID:            "test-model",
@@ -766,7 +769,7 @@ func TestSendMessageIncludesProviderThinkingWhenAvailable(t *testing.T) {
 		config.SystemProviderLabel = "Server Default"
 		config.SystemProviderStaticModels = []string{"test-model"}
 	})
-	testServer.app.providers.drivers[openRouterProviderKind] = fakeProviderDriver{
+	testServer.app.providers.drivers[openAIProviderKind] = fakeProviderDriver{
 		models: []ProviderModel{
 			{
 				ID:            "test-model",
@@ -833,7 +836,7 @@ func TestSendMessagePassesModelSettingsToProvider(t *testing.T) {
 		config.SystemProviderLabel = "Server Default"
 		config.SystemProviderStaticModels = []string{"test-model"}
 	})
-	testServer.app.providers.drivers[openRouterProviderKind] = fakeProviderDriver{
+	testServer.app.providers.drivers[openAIProviderKind] = fakeProviderDriver{
 		models: []ProviderModel{
 			{
 				ID:            "test-model",
@@ -948,7 +951,7 @@ type fakeProviderDriver struct {
 }
 
 func (driver fakeProviderDriver) Kind() string {
-	return openRouterProviderKind
+	return openAIProviderKind
 }
 
 func (driver fakeProviderDriver) ListModels(
@@ -1032,7 +1035,7 @@ type gatedCancellationDriver struct {
 }
 
 func (driver *gatedCancellationDriver) Kind() string {
-	return openRouterProviderKind
+	return openAIProviderKind
 }
 
 func (driver *gatedCancellationDriver) ListModels(
@@ -1091,7 +1094,7 @@ func TestSendMessageAutoGeneratesSessionTitleFromFirstTurn(t *testing.T) {
 		config.SystemProviderLabel = "Server Default"
 		config.SystemProviderStaticModels = []string{"chat-model"}
 	})
-	testServer.app.providers.drivers[openRouterProviderKind] = fakeProviderDriver{
+	testServer.app.providers.drivers[openAIProviderKind] = fakeProviderDriver{
 		models: []ProviderModel{
 			{
 				ID:            "chat-model",
@@ -1143,7 +1146,7 @@ func TestSendMessageDoesNotExposeDerivedTitleBeforeGeneratedTitleArrives(t *test
 		config.SystemProviderLabel = "Server Default"
 		config.SystemProviderStaticModels = []string{"chat-model"}
 	})
-	testServer.app.providers.drivers[openRouterProviderKind] = fakeProviderDriver{
+	testServer.app.providers.drivers[openAIProviderKind] = fakeProviderDriver{
 		models: []ProviderModel{
 			{
 				ID:            "chat-model",
@@ -1208,7 +1211,7 @@ func TestSendMessagePublishesTitleEvent(t *testing.T) {
 		config.SystemProviderLabel = "Server Default"
 		config.SystemProviderStaticModels = []string{"chat-model"}
 	})
-	testServer.app.providers.drivers[openRouterProviderKind] = fakeProviderDriver{
+	testServer.app.providers.drivers[openAIProviderKind] = fakeProviderDriver{
 		models: []ProviderModel{
 			{
 				ID:            "chat-model",
@@ -1291,7 +1294,7 @@ func TestSendMessageUsesSeparateTitleModelWhenConfigured(t *testing.T) {
 		config.SystemProviderLabel = "Server Default"
 		config.SystemProviderStaticModels = []string{"chat-model", "title-model"}
 	})
-	testServer.app.providers.drivers[openRouterProviderKind] = fakeProviderDriver{
+	testServer.app.providers.drivers[openAIProviderKind] = fakeProviderDriver{
 		models: []ProviderModel{
 			{
 				ID:            "chat-model",
@@ -1397,7 +1400,7 @@ func TestStopSessionRunPublishesAbortedEventAndKeepsPartialAssistantHistory(t *t
 		config.SystemProviderLabel = "Server Default"
 		config.SystemProviderStaticModels = []string{"test-model"}
 	})
-	testServer.app.providers.drivers[openRouterProviderKind] = fakeProviderDriver{
+	testServer.app.providers.drivers[openAIProviderKind] = fakeProviderDriver{
 		models: []ProviderModel{
 			{
 				ID:            "test-model",
@@ -1429,7 +1432,7 @@ func TestStopSessionRunPublishesAbortedEventAndKeepsPartialAssistantHistory(t *t
 		events := make([]ChatEvent, 0, 2)
 		err := testServer.app.runs.StreamSession(streamContext, userID, created.FriendlyID, func(event ChatEvent) error {
 			events = append(events, event)
-			if event.State == "delta" {
+			if event.State == "delta" && len(contentPartsFromAny(event.Message["content"])) > 0 {
 				select {
 				case deltaSeen <- struct{}{}:
 				default:
@@ -1494,7 +1497,7 @@ func TestStopSessionRunPublishesAbortedEventAndKeepsPartialAssistantHistory(t *t
 	}
 }
 
-func TestStartingNextRunWaitsForStoppedRunToPersistPartialAssistantHistory(t *testing.T) {
+func TestStartingNextRunDoesNotWaitForFencedStoppedWorker(t *testing.T) {
 	testServer := newTestApp(t, func(config *Config) {
 		config.SystemProviderEnabled = true
 		config.SystemProviderLabel = "Server Default"
@@ -1514,7 +1517,7 @@ func TestStartingNextRunWaitsForStoppedRunToPersistPartialAssistantHistory(t *te
 		releaseFirst:  releaseFirst,
 		secondStarted: make(chan struct{}),
 	}
-	testServer.app.providers.drivers[openRouterProviderKind] = driver
+	testServer.app.providers.drivers[openAIProviderKind] = driver
 	cookie := signupAndRequireCookie(t, testServer, "stop-next@example.com")
 	userID := userIDFromCookie(t, testServer, cookie)
 
@@ -1571,16 +1574,11 @@ func TestStartingNextRunWaitsForStoppedRunToPersistPartialAssistantHistory(t *te
 
 	select {
 	case <-driver.secondStarted:
-		t.Fatal("second run started before the stopped run persisted its partial message")
-	case <-time.After(100 * time.Millisecond):
-	}
-
-	close(releaseFirst)
-	select {
-	case <-driver.secondStarted:
 	case <-time.After(5 * time.Second):
-		t.Fatal("timed out waiting for second run to start")
+		close(releaseFirst)
+		t.Fatal("new run blocked on fenced worker")
 	}
+	close(releaseFirst)
 	var second startResult
 	select {
 	case second = <-secondResult:

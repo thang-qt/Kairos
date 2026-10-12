@@ -123,43 +123,7 @@ export function runtimeToolDetailsSignature(message: GatewayMessage): string {
   const details = detailsRecord(message.details)
   if (!details) return ''
   const tools = Array.isArray(details.tools) ? details.tools : []
-  const hermesToolProgress = Array.isArray(details.hermesToolProgress)
-    ? details.hermesToolProgress
-    : []
-  return tools.length > 0 || hermesToolProgress.length > 0
-    ? JSON.stringify({ tools, hermesToolProgress })
-    : ''
-}
-
-export function hermesToolPartsFromMessage(
-  message: GatewayMessage,
-): Array<ToolPart> {
-  const details = detailsRecord(message.details)
-  const progress = Array.isArray(details?.hermesToolProgress)
-    ? details.hermesToolProgress
-    : []
-
-  return progress.flatMap(function toToolPart(value) {
-    const item = detailsRecord(value)
-    const toolCallId = normalizedString(item?.toolCallId)
-    const type = normalizedString(item?.tool)
-    if (!toolCallId || !type) return []
-
-    const label = normalizedString(item?.label)
-    const status = normalizedString(item?.status)
-    const durationMs = normalizedNumber(item?.durationMs)
-    return [
-      {
-        type,
-        state: status === 'completed' ? 'output-available' : 'input-available',
-        input: label ? { label } : undefined,
-        toolCallId,
-        emoji: normalizedString(item?.emoji) ?? undefined,
-        durationMs,
-        compact: true,
-      },
-    ]
-  })
+  return tools.length > 0 ? JSON.stringify(tools) : ''
 }
 
 export function toolResultText(

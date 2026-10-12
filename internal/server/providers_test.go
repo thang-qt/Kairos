@@ -6,8 +6,6 @@ import (
 	"sync"
 	"testing"
 	"time"
-
-	openrouter "github.com/revrost/go-openrouter"
 )
 
 type countingProviderDriver struct {
@@ -17,7 +15,7 @@ type countingProviderDriver struct {
 }
 
 func (driver *countingProviderDriver) Kind() string {
-	return openRouterProviderKind
+	return openAIProviderKind
 }
 
 func (driver *countingProviderDriver) ListModels(
@@ -52,118 +50,6 @@ func (driver *countingProviderDriver) callCount() int {
 	defer driver.mu.Unlock()
 
 	return driver.calls
-}
-
-func TestBuildOpenRouterChatRequestUsesProviderNeutralTools(t *testing.T) {
-	request := buildOpenRouterChatRequest(ChatGenerationRequest{
-		Model:    "openai/gpt-5.2",
-		Messages: []ProviderMessage{{Role: "user", Parts: []ProviderMessagePart{{Type: "text", Text: "What happened today?"}}}},
-		Tools:    buildRuntimeTools(true, true),
-	})
-
-	if len(request.Tools) != 3 {
-		t.Fatalf("tools length = %d, want 3", len(request.Tools))
-	}
-	seen := make(map[string]bool)
-	for index, tool := range request.Tools {
-		if tool.Type != openrouter.ToolTypeFunction {
-			t.Fatalf("tool %d type = %q, want function", index, tool.Type)
-		}
-		if tool.Function != nil {
-			seen[tool.Function.Name] = true
-		}
-	}
-	for _, name := range []string{mathEvalToolName, webSearchToolName, webFetchToolName} {
-		if !seen[name] {
-			t.Fatalf("missing function tool %q in %#v", name, seen)
-		}
-	}
-	if len(request.Plugins) != 0 {
-		t.Fatalf("plugins length = %d, want 0", len(request.Plugins))
-	}
-}
-
-func TestBuildOpenRouterChatRequestOmitsAdvancedOptionsByDefault(t *testing.T) {
-	request := buildOpenRouterChatRequest(ChatGenerationRequest{
-		Model:    "openai/gpt-5.2",
-		Messages: []ProviderMessage{{Role: "user", Parts: []ProviderMessagePart{{Type: "text", Text: "Hello"}}}},
-	})
-
-	if request.Reasoning != nil {
-		t.Fatal("reasoning = set, want nil")
-	}
-	if request.Temperature != 0 {
-		t.Fatalf("temperature = %v, want zero", request.Temperature)
-	}
-	if request.TopP != 0 {
-		t.Fatalf("top_p = %v, want zero", request.TopP)
-	}
-	if request.TopK != 0 {
-		t.Fatalf("top_k = %v, want zero", request.TopK)
-	}
-	if request.MaxTokens != 0 {
-		t.Fatalf("max_tokens = %v, want zero", request.MaxTokens)
-	}
-	if request.FrequencyPenalty != 0 {
-		t.Fatalf("frequency_penalty = %v, want zero", request.FrequencyPenalty)
-	}
-	if request.PresencePenalty != 0 {
-		t.Fatalf("presence_penalty = %v, want zero", request.PresencePenalty)
-	}
-}
-
-func TestBuildOpenRouterChatRequestAppliesAdvancedOptions(t *testing.T) {
-	temperature := float32(0.8)
-	topP := float32(0.9)
-	topK := 40
-	frequencyPenalty := float32(0.2)
-	presencePenalty := float32(0.3)
-	maxTokens := 2048
-
-	request := buildOpenRouterChatRequest(ChatGenerationRequest{
-		Model:    "openai/gpt-5.2",
-		Messages: []ProviderMessage{{Role: "user", Parts: []ProviderMessagePart{{Type: "text", Text: "Hello"}}}},
-		Advanced: &ChatAdvancedOptions{
-			Reasoning: &ChatReasoningOptions{
-				Effort: "high",
-			},
-			Sampling: &ChatSamplingOptions{
-				Temperature: &temperature,
-				TopP:        &topP,
-				TopK:        &topK,
-			},
-			Penalties: &ChatPenaltyOptions{
-				FrequencyPenalty: &frequencyPenalty,
-				PresencePenalty:  &presencePenalty,
-			},
-			MaxTokens: &maxTokens,
-		},
-	})
-
-	if request.Reasoning == nil || request.Reasoning.Effort == nil {
-		t.Fatal("reasoning effort = nil, want high")
-	}
-	if *request.Reasoning.Effort != "high" {
-		t.Fatalf("reasoning effort = %q, want high", *request.Reasoning.Effort)
-	}
-	if request.Temperature != temperature {
-		t.Fatalf("temperature = %v, want %v", request.Temperature, temperature)
-	}
-	if request.TopP != topP {
-		t.Fatalf("top_p = %v, want %v", request.TopP, topP)
-	}
-	if request.TopK != topK {
-		t.Fatalf("top_k = %v, want %v", request.TopK, topK)
-	}
-	if request.FrequencyPenalty != frequencyPenalty {
-		t.Fatalf("frequency_penalty = %v, want %v", request.FrequencyPenalty, frequencyPenalty)
-	}
-	if request.PresencePenalty != presencePenalty {
-		t.Fatalf("presence_penalty = %v, want %v", request.PresencePenalty, presencePenalty)
-	}
-	if request.MaxTokens != maxTokens {
-		t.Fatalf("max_tokens = %v, want %v", request.MaxTokens, maxTokens)
-	}
 }
 
 func TestBuildOpenAIChatRequestOmitsAdvancedOptionsByDefault(t *testing.T) {
@@ -405,7 +291,7 @@ func TestModelListAppliesProviderAndUserMetadata(t *testing.T) {
 		config.SystemProviderEnabled = true
 		config.SystemProviderLabel = "Server Default"
 	})
-	testServer.app.providers.drivers[openRouterProviderKind] = &countingProviderDriver{
+	testServer.app.providers.drivers[openAIProviderKind] = &countingProviderDriver{
 		models: []ProviderModel{
 			{
 				ID:            "gpt-4.1-mini",
@@ -484,7 +370,7 @@ func TestModelListUsesPersistedProviderModelsCache(t *testing.T) {
 		config.SystemProviderEnabled = true
 		config.SystemProviderLabel = "Server Default"
 	})
-	testServer.app.providers.drivers[openRouterProviderKind] = driver
+	testServer.app.providers.drivers[openAIProviderKind] = driver
 
 	cookie := signupAndRequireCookie(t, testServer, "cached-models@example.com")
 
@@ -527,7 +413,7 @@ func TestManualModelSyncRefreshesPersistedProviderModels(t *testing.T) {
 		config.SystemProviderEnabled = true
 		config.SystemProviderLabel = "Server Default"
 	})
-	testServer.app.providers.drivers[openRouterProviderKind] = driver
+	testServer.app.providers.drivers[openAIProviderKind] = driver
 
 	cookie := signupAndRequireCookie(t, testServer, "manual-model-sync@example.com")
 

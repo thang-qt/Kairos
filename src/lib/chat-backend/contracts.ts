@@ -45,6 +45,10 @@ export type MessageContent =
   | ImageContent
 
 export type GatewayMessage = {
+  steps?: Array<GatewayMessage>
+  status?: string
+  revision?: number
+  error?: string
   id?: string
   role?: string
   model?: string
@@ -105,6 +109,9 @@ export type SessionListResponse = {
 }
 
 export type HistoryResponse = {
+  revision?: number
+  cursor?: number
+  activeRunIds?: Array<string>
   sessionKey: string
   sessionId?: string
   messages: Array<GatewayMessage>

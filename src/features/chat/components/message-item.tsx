@@ -33,7 +33,6 @@ import {
   toolResultsSignature,
   toolResultSignature,
   toolChainMessagesSignature,
-  hermesToolPartsFromMessage,
   runtimeToolDetailsSignature,
 } from './message-item-utils'
 import { toolResultLookupKey } from './chat-message-list-utils'
@@ -128,23 +127,6 @@ function MessageItemComponent({
 
   const assistantParts = Array.isArray(message.content) ? message.content : []
   const assistantIsStreaming = Boolean(message.__streamRunId)
-  const hermesToolItems = useMemo(
-    function buildHermesToolItems() {
-      return hermesToolPartsFromMessage(message).map(
-        function toToolChainItem(toolPart) {
-          return {
-            kind: 'step',
-            step: {
-              kind: 'tool',
-              key: `hermes-tool-${toolPart.toolCallId || toolPart.type}`,
-              toolPart,
-            },
-          } satisfies ToolChainItem
-        },
-      )
-    },
-    [message],
-  )
   const toolTurn = useMemo(
     function buildToolTurn() {
       const items: Array<ToolChainItem> = []
@@ -363,14 +345,18 @@ function MessageItemComponent({
         <ToolChain items={toolTurn.items} />
       ) : null}
 
-      {isAssistant &&
-      !assistantIsStreaming &&
-      hermesToolItems.length > 0 &&
-      showToolMessages ? (
-        <ToolChain items={hermesToolItems} />
-      ) : null}
-
       {isAssistant && assistantParts.map(renderAssistantPart)}
+
+      {isAssistant && message.status ? (
+        <div className="text-pretty text-xs text-primary-600" role="status">
+          {message.status === 'aborted'
+            ? 'Cancelled'
+            : message.status === 'error'
+              ? 'Failed'
+              : message.status}
+          {message.error ? `: ${message.error}` : ''}
+        </div>
+      ) : null}
 
       {isAssistant && showAssistantActions && (
         <MessageActionsBar

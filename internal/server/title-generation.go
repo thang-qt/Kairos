@@ -150,15 +150,15 @@ func (service *ChatRunService) publishTitleUpdated(
 	sessionID string,
 	session SessionSummary,
 ) {
-	service.broker.Publish(
-		sessionID,
-		ChatEvent{
-			SessionKey: session.Key,
-			FriendlyID: session.FriendlyID,
-			State:      "title",
-			Session:    &session,
-		},
-	)
+	ctx := context.Background()
+	var revision int64
+	if err := service.db.QueryRowContext(ctx, `SELECT revision FROM chat_sessions WHERE id=?`, sessionID).Scan(&revision); err != nil {
+		return
+	}
+	if err := insertChatEventExec(ctx, service.db, ChatEvent{SessionKey: session.Key, FriendlyID: session.FriendlyID, Revision: revision, State: "title", Session: &session}); err != nil {
+		log.Printf("kairos: title event: %v", err)
+	}
+
 }
 
 func buildTitleGenerationMessages(userMessage map[string]any) []ProviderMessage {

@@ -27,6 +27,7 @@ export type ChatHistoryInput = {
 }
 
 export type ChatSendMessageInput = {
+  expectedRevision?: number
   sessionKey: string
   friendlyId: string
   message: string
@@ -101,6 +102,8 @@ export type ChatCloneConversationInput = {
 }
 
 export type ChatEditUserMessageInput = {
+  idempotencyKey?: string
+  expectedRevision?: number
   sourceSessionKey: string
   sourceFriendlyId: string
   messageId: string
@@ -116,6 +119,7 @@ export type ChatEditUserMessageInput = {
 }
 
 export type ChatDeleteUserMessageInput = {
+  expectedRevision?: number
   sourceSessionKey: string
   sourceFriendlyId: string
   messageId: string
@@ -143,11 +147,20 @@ export type ChatConversationRunResult = ChatConversationResult & {
 }
 
 export type ChatEvent = {
+  revision?: number
+  turnId?: string
   cursor?: number
   runId?: string
   sessionKey?: string
   friendlyId?: string
-  state?: 'delta' | 'final' | 'error' | 'aborted' | 'title' | 'reconcile'
+  state?:
+    | 'delta'
+    | 'final'
+    | 'error'
+    | 'aborted'
+    | 'title'
+    | 'reconcile'
+    | 'heartbeat'
   error?: string
   activeRunIds?: Array<string>
   message?: GatewayMessage
@@ -163,6 +176,12 @@ export type ChatSubscription = {
 }
 
 export type ChatBackend = {
+  retryRun: (input: {
+    friendlyId: string
+    runId: string
+    idempotencyKey: string
+    expectedRevision?: number
+  }) => Promise<ChatSendMessageResult>
   getStatus: () => Promise<ChatStatus>
   listConversations: () => Promise<Array<SessionMeta>>
   searchConversations: (

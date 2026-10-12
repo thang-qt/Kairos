@@ -341,6 +341,27 @@ export function ChatScreen({
   )
 
   const backendNotice = useMemo(() => {
+    const lastTurn = displayMessages.at(-1)
+    if (
+      !throwawayMode &&
+      lastTurn?.role === 'assistant' &&
+      ['aborted', 'error', 'interrupted'].includes(lastTurn.status ?? '')
+    ) {
+      return (
+        <MessageStatus
+          title={
+            lastTurn.status === 'aborted'
+              ? 'Response cancelled'
+              : 'Response interrupted or failed'
+          }
+          description={
+            lastTurn.error || 'The saved partial response is shown above.'
+          }
+          actionLabel="Retry response (may repeat tools)"
+          onAction={handleRetryLastMessage}
+        />
+      )
+    }
     if (streamError) {
       return (
         <MessageStatus

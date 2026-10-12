@@ -5,6 +5,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { createOptimisticMessage } from '../chat-screen-utils'
 import { reduceChatEventMessages } from '../chat-event-reducer'
 import {
+  chatQueryKeys,
   appendHistoryMessage,
   clearHistoryMessages,
   invalidateChatSessionQueries,
@@ -26,7 +27,11 @@ import type { CloneMessagePayload } from '../components/chat-message-list'
 import type { QueryClient } from '@tanstack/react-query'
 import type { AttachmentFile } from '@/features/chat/components/composer/attachment-button'
 import type { ChatComposerHelpers } from '../components/chat-composer'
-import type { ChatRequestAdvancedSettings, GatewayMessage } from '../types'
+import type {
+  ChatRequestAdvancedSettings,
+  GatewayMessage,
+  HistoryResponse,
+} from '../types'
 import type { ConversationSettings } from '../conversation-settings'
 
 type UserTurnDeleteState = {
@@ -594,28 +599,36 @@ export function useChatMutations({
         return
       }
 
-      const lastUserMessage = [...displayMessages]
+      const turn = [...displayMessages]
         .reverse()
-        .find((msg) => msg.role === 'user')
-      if (lastUserMessage && Array.isArray(lastUserMessage.content)) {
-        const text = lastUserMessage.content
-          .filter((part) => part.type === 'text')
-          .map((part) => part.text || '')
-          .join('')
-        if (text.trim()) {
-          setStreamError(null)
-          sendMessage(
-            activeSessionKey || '',
-            activeFriendlyId,
-            text,
-            true,
-            resolvedConversationModel,
-            undefined,
-            undefined,
-            resolvedMathTools,
+        .find(function lastAssistant(message) {
+          return message.role === 'assistant'
+        })
+      if (!turn?.runId) return
+      setStreamError(null)
+      beginGeneration()
+      getChatBackend()
+        .retryRun({
+          friendlyId: activeFriendlyId,
+          runId: turn.runId,
+          idempotencyKey: randomUUID(),
+          expectedRevision: queryClient.getQueryData<HistoryResponse>(
+            chatQueryKeys.history(
+              activeFriendlyId,
+              resolvedSessionKey || activeSessionKey || '',
+            ),
+          )?.revision,
+        })
+        .then(function accepted(result) {
+          startRun(result.runId)
+          refreshHistory()
+        })
+        .catch(function failed(error) {
+          finishGeneration()
+          setStreamError(
+            error instanceof Error ? error.message : 'Retry failed',
           )
-        }
-      }
+        })
     },
     [
       activeFriendlyId,
@@ -759,6 +772,12 @@ export function useChatMutations({
 
         const backend = getChatBackend()
         const result = await backend.editUserMessage({
+          expectedRevision: queryClient.getQueryData<HistoryResponse>(
+            chatQueryKeys.history(
+              activeFriendlyId,
+              resolvedSessionKey || activeSessionKey || '',
+            ),
+          )?.revision,
           sourceSessionKey: sourceKey,
           sourceFriendlyId: activeFriendlyId,
           messageId,
@@ -834,6 +853,12 @@ export function useChatMutations({
         )
         const backend = getChatBackend()
         await backend.deleteUserMessage({
+          expectedRevision: queryClient.getQueryData<HistoryResponse>(
+            chatQueryKeys.history(
+              activeFriendlyId,
+              resolvedSessionKey || activeSessionKey || '',
+            ),
+          )?.revision,
           sourceSessionKey: sourceKey,
           sourceFriendlyId: activeFriendlyId,
           messageId: target.messageId,

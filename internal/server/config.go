@@ -104,8 +104,14 @@ func LoadConfig() (Config, error) {
 			return Config{}, errors.New("ADMIN_PASSWORD or ADMIN_PASSWORD_HASH is required when BOOTSTRAP_ADMIN is true")
 		}
 	}
-	if config.SystemProviderKind != "" && config.SystemProviderKind != openRouterProviderKind && config.SystemProviderKind != openAIProviderKind {
-		return Config{}, errors.New("SYSTEM_PROVIDER_1_KIND must be openrouter or openai")
+	if config.SystemProviderKind == "openrouter" {
+		config.SystemProviderKind = openAIProviderKind
+		if config.SystemProviderBaseURL == "" {
+			config.SystemProviderBaseURL = "https://openrouter.ai/api/v1"
+		}
+	}
+	if config.SystemProviderKind != "" && config.SystemProviderKind != openAIResponsesProviderKind && config.SystemProviderKind != openAIProviderKind {
+		return Config{}, errors.New("SYSTEM_PROVIDER_1_KIND must be openai or openai-responses")
 	}
 	if config.ProviderEncryptionSecretKey == "" {
 		// Development and tests get a deterministic fallback. Production should

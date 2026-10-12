@@ -4,7 +4,6 @@ go 1.24.0
 
 require (
 	github.com/openai/openai-go/v3 v3.43.0
-	github.com/revrost/go-openrouter v1.6.0
 	golang.org/x/crypto v0.39.0
 	modernc.org/sqlite v1.39.1
 )

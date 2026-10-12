@@ -268,6 +268,12 @@ type ProviderService struct {
 }
 
 func NewProviderService(db *sql.DB, config Config) *ProviderService {
+	if config.SystemProviderKind == "openrouter" {
+		config.SystemProviderKind = openAIProviderKind
+		if config.SystemProviderBaseURL == "" {
+			config.SystemProviderBaseURL = "https://openrouter.ai/api/v1"
+		}
+	}
 	service := &ProviderService{
 		db:                   db,
 		config:               config,

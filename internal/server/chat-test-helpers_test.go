@@ -205,7 +205,7 @@ func waitForAssistantMessage(
 
 		var historyPayload HistoryPayload
 		decodeResponseJSON(t, historyResponse, &historyPayload)
-		if findHistoryMessageByRole(historyPayload.Messages, "assistant") != nil {
+		if message := findHistoryMessageByRole(historyPayload.Messages, "assistant"); message != nil && (message["status"] == "completed" || message["status"] == "error") {
 			return
 		}
 		time.Sleep(20 * time.Millisecond)

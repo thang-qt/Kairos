@@ -1,0 +1,112 @@
+package server
+
+import (
+	"context"
+	"errors"
+	"net/http"
+	"strings"
+	"time"
+)
+
+// Retry is explicit: the caller accepts that already-executed tools may run again.
+// It replaces this attempt's checkpoints while retaining the same visible turn.
+func (service *ChatRunService) RetryRun(ctx context.Context, userID, friendlyID, runID, key string, expected *int64) (SendMessageResult, error) {
+	if strings.TrimSpace(key) == "" {
+		return SendMessageResult{}, errors.New("retry requires an idempotencyKey")
+	}
+	service.chat.commandMu.Lock()
+	defer service.chat.commandMu.Unlock()
+	session, err := service.chat.findSessionByFriendlyID(ctx, userID, friendlyID)
+	if err != nil {
+		return SendMessageResult{}, err
+	}
+	tx, err := service.db.BeginTx(ctx, nil)
+	if err != nil {
+		return SendMessageResult{}, err
+	}
+	defer tx.Rollback()
+	var result SendMessageResult
+	result.RunID = runID
+	result.SessionKey = session.ID
+	var status string
+	var invalidated int
+	var revision int64
+	if err := tx.QueryRowContext(ctx, `SELECT status,COALESCE(assistant_message_id,id),COALESCE(user_message_id,''),invalidated FROM chat_runs WHERE id=? AND session_id=? AND user_id=?`, runID, session.ID, userID).Scan(&status, &result.AssistantMessageID, &result.UserMessageID, &invalidated); err != nil {
+		return result, errChatSessionNotFound
+	}
+	var repeated int
+	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM chat_retry_commands WHERE run_id=? AND command_key=?`, runID, key).Scan(&repeated); err != nil {
+		return result, err
+	}
+	if repeated > 0 {
+		return result, nil
+	}
+	if err := tx.QueryRowContext(ctx, `SELECT revision FROM chat_sessions WHERE id=?`, session.ID).Scan(&revision); err != nil {
+		return result, err
+	}
+	if expected != nil && *expected != revision {
+		return result, errConversationConflict
+	}
+	if invalidated != 0 || (status != "error" && status != "interrupted" && status != "aborted") {
+		return result, errConversationConflict
+	}
+	// Only the last response can be replaced in a linear conversation.
+	var newer int
+	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM chat_runs WHERE session_id=? AND invalidated=0 AND created_at>(SELECT created_at FROM chat_runs WHERE id=?)`, session.ID, runID).Scan(&newer); err != nil {
+		return result, err
+	}
+	if newer > 0 {
+		return result, errConversationConflict
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM chat_messages WHERE session_id=? AND run_id=?`, session.ID, runID); err != nil {
+		return result, err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM chat_run_steps WHERE run_id=?`, runID); err != nil {
+		return result, err
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE chat_runs SET status='queued',revision=?,lease_token='',lease_until=0,completed_at=NULL,error_message=NULL,turn_json=NULL WHERE id=?`, revision, runID); err != nil {
+		return result, err
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO chat_jobs(run_id,available_at) VALUES(?,?) ON CONFLICT(run_id) DO UPDATE SET available_at=excluded.available_at`, runID, time.Now().UnixMilli()); err != nil {
+		return result, err
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO chat_retry_commands(run_id,command_key) VALUES(?,?)`, runID, key); err != nil {
+		return result, err
+	}
+	if err := service.refreshTurnExec(ctx, tx, runID, "delta"); err != nil {
+		return result, err
+	}
+	if err := tx.Commit(); err != nil {
+		return result, err
+	}
+	service.notifyQueue()
+	return result, nil
+}
+
+func (app *App) handleRetryRun(writer http.ResponseWriter, request *http.Request) {
+	user, ok := app.requireAuthenticatedUser(writer, request)
+	if !ok {
+		return
+	}
+	var payload struct {
+		IdempotencyKey   string `json:"idempotencyKey"`
+		ExpectedRevision *int64 `json:"expectedRevision,omitempty"`
+	}
+	if err := decodeJSON(request, &payload); err != nil {
+		writeError(writer, http.StatusBadRequest, err.Error())
+		return
+	}
+	result, err := app.runs.RetryRun(request.Context(), user.ID, request.PathValue("friendlyId"), request.PathValue("runId"), payload.IdempotencyKey, payload.ExpectedRevision)
+	if err != nil {
+		status := http.StatusBadRequest
+		if errors.Is(err, errConversationConflict) {
+			status = http.StatusConflict
+		}
+		if errors.Is(err, errChatSessionNotFound) {
+			status = http.StatusNotFound
+		}
+		writeError(writer, status, err.Error())
+		return
+	}
+	writeJSON(writer, http.StatusOK, result)
+}

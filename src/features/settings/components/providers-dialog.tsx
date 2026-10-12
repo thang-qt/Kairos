@@ -30,7 +30,7 @@ type ProviderEditorState =
       providerId: string
     }
 
-type ProviderKind = 'openrouter' | 'openai'
+type ProviderKind = 'openai-responses' | 'openai'
 
 type ProviderDraftState = {
   kind: ProviderKind
@@ -111,8 +111,8 @@ export function ProvidersDialog({
               API Connections & Keys
             </DialogTitle>
             <DialogDescription className="mt-1 text-pretty">
-              Add OpenRouter or OpenAI-compatible connections, or toggle default
-              server models.
+              Add OpenAI-compatible connections, or toggle default server
+              models.
             </DialogDescription>
           </div>
           <DialogClose

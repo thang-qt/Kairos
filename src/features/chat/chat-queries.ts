@@ -88,6 +88,7 @@ export function updateHistoryMessages(
     const messages = Array.isArray(current?.messages) ? current.messages : []
     const nextMessages = updater(messages)
     return {
+      ...current,
       sessionKey: current?.sessionKey ?? sessionKey,
       sessionId: current?.sessionId,
       messages: nextMessages,
