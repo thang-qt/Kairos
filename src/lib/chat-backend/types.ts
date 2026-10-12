@@ -125,7 +125,14 @@ export type ChatDeleteUserMessageInput = {
   messageId: string
 }
 
-export type ChatSendMessageResult = {
+export type ConversationCommandAck = {
+  revision?: number
+  userTurn?: ConversationTurn
+  invalidatedRunIds?: Array<string>
+  removedTurnIds?: Array<string>
+}
+
+export type ChatSendMessageResult = ConversationCommandAck & {
   runId: string
   sessionKey: string
   userTurnId?: string
@@ -133,14 +140,15 @@ export type ChatSendMessageResult = {
   clientId?: string
 }
 
-export type ChatConversationResult = SessionMeta & {
-  sessionKey: string
-  friendlyId: string
-  runId?: string
-  userTurnId?: string
-  assistantTurnId?: string
-  clientId?: string
-}
+export type ChatConversationResult = SessionMeta &
+  ConversationCommandAck & {
+    sessionKey: string
+    friendlyId: string
+    runId?: string
+    userTurnId?: string
+    assistantTurnId?: string
+    clientId?: string
+  }
 
 export type ChatConversationRunResult = ChatConversationResult & {
   runId: string

@@ -357,8 +357,14 @@ export function ChatScreen({
           description={
             lastTurn.error || 'The saved partial response is shown above.'
           }
-          actionLabel="Retry response (may repeat tools)"
-          onAction={handleRetryLastMessage}
+          actionLabel={
+            lastTurn.canRetry === false
+              ? undefined
+              : 'Retry response (may repeat tools)'
+          }
+          onAction={
+            lastTurn.canRetry === false ? undefined : handleRetryLastMessage
+          }
         />
       )
     }

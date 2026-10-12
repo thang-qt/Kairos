@@ -441,6 +441,9 @@ func TestRuntimeCloneIncludesWholeStoppedTurn(t *testing.T) {
 	if len(history.Messages) != 2 || history.Messages[1]["status"] != "aborted" || history.Messages[1]["id"] != run.AssistantTurnID {
 		t.Fatalf("cloned turn=%#v", history.Messages)
 	}
+	if history.Messages[1]["canRetry"] != false {
+		t.Fatal("cloned historical turn advertised an unavailable retry")
+	}
 	transcript, err := app.app.conversations.getTranscript(context.Background(), user, clone.FriendlyID)
 	if err != nil {
 		t.Fatal(err)
@@ -545,4 +548,109 @@ func TestRuntimeTimeoutAfterToolEffectIsNotAutomaticallyRetried(t *testing.T) {
 	if effects.Load() != 1 || driver.calls.Load() != 2 {
 		t.Fatalf("automatic effect replay: effects=%d requests=%d", effects.Load(), driver.calls.Load())
 	}
+}
+
+func TestRuntimeCompletedToolCheckpointSurvivesStoppingNextTool(t *testing.T) {
+	app, user, session := runtimeFixture(t)
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	finished := make(chan struct{})
+	app.app.providers.drivers[openAIProviderKind] = &runtimeTestDriver{generate: func(_ context.Context, _ int, _ ChatGenerationRequest, _ func(ChatGenerationDelta) error) (ChatGenerationResult, error) {
+		return ChatGenerationResult{OutputText: "two checks", ToolCalls: []ProviderToolCall{{ID: "first", Name: "fake", ArgsJSON: "{}"}, {ID: "second", Name: "fake", ArgsJSON: "{}"}}}, nil
+	}}
+	app.app.runtime.toolRuntime = func(context.Context, string, SubmitTurnInput) (toolExecutor, error) {
+		return runtimeTestTool{execute: func(_ context.Context, call ProviderToolCall) (WebToolResult, error) {
+			if call.ID == "second" {
+				close(entered)
+				<-release
+				defer close(finished)
+			}
+			return WebToolResult{Content: call.ID}, nil
+		}}, nil
+	}
+	run := startRuntimeTurn(t, app, user, session, "tool-boundary")
+	requireSignal(t, entered)
+	if _, err := app.app.runtime.CancelSessionRuns(context.Background(), user, session.FriendlyID); err != nil {
+		close(release)
+		t.Fatal(err)
+	}
+	close(release)
+	requireSignal(t, finished)
+	history := requireTwoTurns(t, app, user, session, run.AssistantTurnID, "aborted")
+	steps := history.Messages[1]["steps"].([]any)
+	if len(steps) != 2 || steps[1].(map[string]any)["toolCallId"] != "first" {
+		t.Fatalf("lost completed boundary or committed late result: %#v", steps)
+	}
+}
+
+func TestRuntimeTitleWorkerCannotWriteAfterEdit(t *testing.T) {
+	app, user, _ := runtimeFixture(t)
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	finished := make(chan struct{})
+	app.app.providers.drivers[openAIProviderKind] = &runtimeTestDriver{generate: func(_ context.Context, _ int, request ChatGenerationRequest, _ func(ChatGenerationDelta) error) (ChatGenerationResult, error) {
+		if isFakeTitleGenerationRequest(request) {
+			close(entered)
+			<-release
+			defer close(finished)
+			return ChatGenerationResult{OutputText: "Obsolete generated title"}, nil
+		}
+		return ChatGenerationResult{OutputText: "answer"}, nil
+	}}
+	if _, err := app.app.providers.UpdatePreferences(context.Background(), user, UpdateUserPreferencesInput{AutoGenerateTitle: boolPointer(true)}); err != nil {
+		t.Fatal(err)
+	}
+	first, err := app.app.runtime.StartRun(context.Background(), user, SubmitTurnInput{NewConversation: &newConversationInput{Settings: defaultConversationSettings()}, Message: "original", Model: "test-model"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	requireSignal(t, entered)
+	next, err := app.app.runtime.StartRun(context.Background(), user, SubmitTurnInput{FriendlyID: first.FriendlyID, EditMessageID: first.UserTurnID, Message: "edited", Model: "test-model"})
+	close(release)
+	requireSignal(t, finished)
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitForRunStatus(t, app, next.RunID, "completed")
+	// Wait for title publication/commit to finish, not just its provider call.
+	app.app.runtime.Close()
+	summary, err := app.app.conversations.GetSessionSummary(context.Background(), user, first.FriendlyID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if summary.Title == "Obsolete generated title" {
+		t.Fatal("title worker crossed the edit revision")
+	}
+	events, err := app.app.runtime.readEvents(context.Background(), first.SessionKey, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, event := range events {
+		if event.State == "title" && event.Session != nil && event.Session.Title == "Obsolete generated title" {
+			t.Fatal("obsolete title event leaked into the new revision")
+		}
+	}
+}
+
+func TestRuntimeOldAttemptCannotRemoveNewCancellationControl(t *testing.T) {
+	app, _, _ := runtimeFixture(t)
+	old := executionRecord{ID: "shared-turn", LeaseToken: "old"}
+	fresh := executionRecord{ID: "shared-turn", LeaseToken: "new"}
+	var cancelled atomic.Bool
+	app.app.runtime.registerRunCancel(old, func() {})
+	app.app.runtime.registerRunCancel(fresh, func() { cancelled.Store(true) })
+	app.app.runtime.unregisterRunCancel(old)
+	app.app.Stop()
+	if !cancelled.Load() {
+		t.Fatal("stale worker removed the current attempt's cancellation control")
+	}
+	app.app.runtime.unregisterRunCancel(fresh)
+}
+
+func TestRuntimeServiceShutdownCancelsRequestStreams(t *testing.T) {
+	app, _, _ := runtimeFixture(t)
+	ctx, cancel := app.app.runtime.requestContext(context.Background())
+	defer cancel()
+	app.app.Stop()
+	requireSignal(t, ctx.Done())
 }

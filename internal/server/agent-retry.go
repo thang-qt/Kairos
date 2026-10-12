@@ -47,12 +47,17 @@ func (service *AgentRuntime) RetryRun(ctx context.Context, userID, friendlyID, r
 	if expected != nil && *expected != revision {
 		return result, errConversationConflict
 	}
+	var sourceUserID string
+	if err := tx.QueryRowContext(ctx, `SELECT json_extract(m.message_json,'$.id') FROM chat_messages m JOIN chat_runs r ON r.id=? WHERE m.session_id=? AND m.role='user' AND (json_extract(m.message_json,'$.id')=r.user_message_id OR (r.user_message_id IS NULL AND m.timestamp=r.started_at)) LIMIT 1`, runID, session.ID).Scan(&sourceUserID); err != nil {
+		return result, errConversationConflict
+	}
+	result.UserTurnID = sourceUserID
 	if invalidated != 0 || (status != "error" && status != "interrupted" && status != "aborted") {
 		return result, errConversationConflict
 	}
 	// Only the last response can be replaced in a linear conversation.
 	var newer int
-	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM chat_runs WHERE session_id=? AND invalidated=0 AND created_at>(SELECT created_at FROM chat_runs WHERE id=?)`, session.ID, runID).Scan(&newer); err != nil {
+	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM chat_runs WHERE session_id=? AND invalidated=0 AND started_at>(SELECT started_at FROM chat_runs WHERE id=?)`, session.ID, runID).Scan(&newer); err != nil {
 		return result, err
 	}
 	if newer > 0 {
@@ -75,7 +80,7 @@ func (service *AgentRuntime) RetryRun(ctx context.Context, userID, friendlyID, r
 	if _, err := tx.ExecContext(ctx, `DELETE FROM chat_run_steps WHERE run_id=?`, runID); err != nil {
 		return result, err
 	}
-	if _, err := tx.ExecContext(ctx, `UPDATE chat_runs SET status='queued',revision=?,lease_token='',lease_until=0,completed_at=NULL,error_message=NULL,turn_json=NULL WHERE id=?`, revision, runID); err != nil {
+	if _, err := tx.ExecContext(ctx, `UPDATE chat_runs SET user_message_id=?,status='queued',revision=?,lease_token='',lease_until=0,completed_at=NULL,error_message=NULL,turn_json=NULL WHERE id=?`, sourceUserID, revision, runID); err != nil {
 		return result, err
 	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO chat_jobs(run_id,available_at) VALUES(?,?) ON CONFLICT(run_id) DO UPDATE SET available_at=excluded.available_at`, runID, time.Now().UnixMilli()); err != nil {

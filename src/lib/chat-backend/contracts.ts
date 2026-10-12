@@ -45,6 +45,7 @@ export type MessageContent =
   | ImageContent
 
 export type ConversationTurn = {
+  canRetry?: boolean
   steps?: Array<ConversationTurn>
   status?: string
   revision?: number
@@ -91,6 +92,7 @@ export type ConversationSettings = {
 }
 
 export type SessionSummary = {
+  revision?: number
   key?: string
   label?: string
   title?: string
@@ -118,6 +120,7 @@ export type HistoryResponse = {
 }
 
 export type SessionMeta = {
+  revision?: number
   key: string
   friendlyId: string
   title?: string

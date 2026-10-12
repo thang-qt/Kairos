@@ -115,6 +115,8 @@ func NewApp(config Config) (*App, error) {
 	return app, nil
 }
 
+func (app *App) Stop() { app.runtime.Close() }
+
 func (app *App) Close() error {
 	app.runtime.Close()
 	return app.db.Close()

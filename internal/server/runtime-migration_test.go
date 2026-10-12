@@ -58,6 +58,9 @@ func TestRuntimeMigrationPreservesLegacyTurnsAndProviderSecrets(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	if _, err := db.Exec(`INSERT INTO chat_runs(id,user_id,session_id,status,model,assistant_message_id,started_at,created_at) VALUES('deleted-run','user','session','completed','model','deleted-turn',10,10)`); err != nil {
+		t.Fatal(err)
+	}
 	if err := applyMigrations(db); err != nil {
 		t.Fatal(err)
 	}
@@ -77,6 +80,10 @@ func TestRuntimeMigrationPreservesLegacyTurnsAndProviderSecrets(t *testing.T) {
 	}
 	if kind != "openai" || baseURL != "https://openrouter.ai/api/v1" || secret != "encrypted-secret" {
 		t.Fatalf("provider migration changed credentials: %s %s", kind, baseURL)
+	}
+	var runs int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM chat_runs`).Scan(&runs); err != nil || runs != 2 {
+		t.Fatal("migration deleted run records")
 	}
 	var count int
 	if err := db.QueryRow(`SELECT COUNT(*) FROM chat_messages`).Scan(&count); err != nil || count != 3 {

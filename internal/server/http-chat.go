@@ -74,6 +74,7 @@ type pinSessionRequest struct {
 }
 
 type sessionMutationResponse struct {
+	UserTurn map[string]any `json:"userTurn,omitempty"`
 	SessionSummary
 	SessionKey      string `json:"sessionKey"`
 	RunID           string `json:"runId,omitempty"`
@@ -160,6 +161,7 @@ func (app *App) handleCreateSession(writer http.ResponseWriter, request *http.Re
 		response.UserTurnID = result.UserTurnID
 		response.AssistantTurnID = result.AssistantTurnID
 		response.ClientID = result.ClientID
+		response.UserTurn = result.UserTurn
 	} else {
 		session, err := app.conversations.CreateSessionWithSettings(request.Context(), user.ID, payload.Label, settings)
 		if err != nil {
@@ -465,6 +467,7 @@ func (app *App) handleEditUserMessage(writer http.ResponseWriter, request *http.
 	}
 
 	writeJSON(writer, http.StatusOK, map[string]any{
+		"revision": result.Revision, "userTurn": result.UserTurn, "invalidatedRunIds": result.InvalidatedRunIDs, "removedTurnIds": result.RemovedTurnIDs,
 		"sessionKey":      result.SessionKey,
 		"key":             result.SessionKey,
 		"friendlyId":      request.PathValue("friendlyId"),

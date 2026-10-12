@@ -3,9 +3,13 @@ import { useNavigate } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 
 import { createOptimisticMessage } from '../chat-screen-utils'
-import { applyConversationEvent } from '../conversation-event-reducer'
+import {
+  applyConversationEvent,
+  cancelEphemeralTurns,
+} from '../conversation-event-reducer'
 import {
   chatQueryKeys,
+  acceptConversationCommand,
   appendHistoryMessage,
   clearHistoryMessages,
   invalidateChatSessionQueries,
@@ -212,6 +216,12 @@ export function useChatMutations({
           attachments: attachmentsPayload,
         })
         .then((payload) => {
+          acceptConversationCommand(
+            queryClient,
+            friendlyId,
+            sessionKey,
+            payload,
+          )
           setRetryableNetworkSend(function clearMatchingRetryableSend(current) {
             return current?.idempotencyKey === idempotencyKey ? null : current
           })
@@ -363,6 +373,12 @@ export function useChatMutations({
             const aborted =
               error instanceof DOMException && error.name === 'AbortError'
             if (aborted) {
+              updateHistoryMessages(
+                queryClient,
+                'new',
+                'new',
+                cancelEphemeralTurns,
+              )
               updateHistoryMessageByClientId(
                 queryClient,
                 'new',
@@ -463,6 +479,12 @@ export function useChatMutations({
               'new',
               friendlyId,
               sessionKey,
+            )
+            acceptConversationCommand(
+              queryClient,
+              friendlyId,
+              sessionKey,
+              result,
             )
             updateHistoryMessageByClientId(
               queryClient,
@@ -605,7 +627,7 @@ export function useChatMutations({
         .find(function lastAssistant(message) {
           return message.role === 'assistant'
         })
-      if (!turn?.runId) return
+      if (!turn?.runId || turn.canRetry === false) return
       setStreamError(null)
       beginGeneration()
       getChatBackend()
@@ -799,6 +821,12 @@ export function useChatMutations({
           idempotencyKey: clientId,
           clientId,
         })
+        acceptConversationCommand(
+          queryClient,
+          activeFriendlyId,
+          sourceKey,
+          result,
+        )
         updateHistoryMessageByClientId(
           queryClient,
           activeFriendlyId,
@@ -867,7 +895,7 @@ export function useChatMutations({
           target.messageId,
         )
         const backend = getChatBackend()
-        await backend.deleteUserMessage({
+        const result = await backend.deleteUserMessage({
           expectedRevision: queryClient.getQueryData<HistoryResponse>(
             chatQueryKeys.history(
               activeFriendlyId,
@@ -878,6 +906,12 @@ export function useChatMutations({
           sourceFriendlyId: activeFriendlyId,
           messageId: target.messageId,
         })
+        acceptConversationCommand(
+          queryClient,
+          activeFriendlyId,
+          sourceKey,
+          result,
+        )
         refreshHistory()
         await invalidateChatSessionQueries(queryClient)
       } catch (err) {

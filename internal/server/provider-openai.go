@@ -85,6 +85,9 @@ func (driver *OpenAICompatibleDriver) GenerateChatStream(
 	if err := stream.Err(); err != nil {
 		return ChatGenerationResult{}, fmt.Errorf("stream OpenAI-compatible chat completion: %w", err)
 	}
+	if !accumulator.finished {
+		return ChatGenerationResult{}, fmt.Errorf("Chat Completions stream ended before completion")
+	}
 	return accumulator.result(provider.Record.Label, request.Model), nil
 }
 
@@ -264,6 +267,7 @@ func openAIFunctionParameters(value any) shared.FunctionParameters {
 }
 
 type openAIStreamAccumulator struct {
+	finished         bool
 	model            string
 	text             strings.Builder
 	thinking         strings.Builder
@@ -285,6 +289,9 @@ func (accumulator *openAIStreamAccumulator) addChunk(chunk openai.ChatCompletion
 	}
 	var delta ChatGenerationDelta
 	for _, choice := range chunk.Choices {
+		if choice.FinishReason != "" {
+			accumulator.finished = true
+		}
 		for _, key := range []string{"reasoning_content", "reasoning"} {
 			if field, ok := choice.Delta.JSON.ExtraFields[key]; ok {
 				var thinking string

@@ -48,6 +48,7 @@ func TestOpenAICompatibleDriverUsesOfficialSDKForModelsAndStreaming(t *testing.T
 			fmt.Fprint(writer, "data: {\"id\":\"completion-1\",\"object\":\"chat.completion.chunk\",\"created\":123,\"model\":\"gpt-test\",\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call-1\",\"type\":\"function\",\"function\":{\"name\":\"lookup\",\"arguments\":\"{\\\"query\\\":\\\"kai\"}}]}}]}\n\n")
 			fmt.Fprint(writer, "data: {\"id\":\"completion-1\",\"object\":\"chat.completion.chunk\",\"created\":123,\"model\":\"gpt-test\",\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"ros\\\"}\"}}]}}]}\n\n")
 			fmt.Fprint(writer, "data: {\"id\":\"completion-1\",\"object\":\"chat.completion.chunk\",\"created\":123,\"model\":\"gpt-test\",\"choices\":[],\"usage\":{\"prompt_tokens\":3,\"completion_tokens\":5,\"total_tokens\":8}}\n\n")
+			fmt.Fprint(writer, `data: {"id":"completion-1","object":"chat.completion.chunk","created":123,"model":"gpt-test","choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]}`+"\n\n")
 			fmt.Fprint(writer, "data: [DONE]\n\n")
 		default:
 			t.Errorf("unexpected path %s", request.URL.Path)
@@ -125,4 +126,18 @@ func containsOpenAIToolCallDelta(deltas []ChatGenerationDelta, arguments string)
 		}
 	}
 	return false
+}
+
+func TestChatCompletionsStreamWithoutFinishFails(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		writer.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprint(writer, `data: {"id":"partial","object":"chat.completion.chunk","model":"test-model","choices":[{"index":0,"delta":{"content":"partial"}}]}`+"\n\n")
+	}))
+	defer server.Close()
+	driver := &OpenAICompatibleDriver{httpClient: server.Client()}
+	observed := ""
+	_, err := driver.GenerateChatStream(context.Background(), resolvedProvider{BaseURL: server.URL}, ChatGenerationRequest{Model: "test-model"}, func(delta ChatGenerationDelta) error { observed += delta.Text; return nil })
+	if err == nil || observed != "partial" {
+		t.Fatalf("truncated stream: output=%q error=%v", observed, err)
+	}
 }

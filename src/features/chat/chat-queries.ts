@@ -1,3 +1,5 @@
+import { applyConversationCommand } from './conversation-event-reducer'
+import type { ConversationCommandAck } from '@/lib/chat-backend'
 import { getMessageTimestamp, normalizeSessions } from './utils'
 import type { QueryClient } from '@tanstack/react-query'
 import type { ConversationTurn, HistoryResponse, SessionMeta } from './types'
@@ -351,4 +353,25 @@ export function removeSessionFromCache(
       exact: false,
     })
   }
+}
+
+export function acceptConversationCommand(
+  queryClient: QueryClient,
+  friendlyId: string,
+  sessionKey: string,
+  ack: ConversationCommandAck,
+) {
+  const key = chatQueryKeys.history(friendlyId, sessionKey)
+  queryClient.setQueryData<HistoryResponse>(
+    key,
+    function acknowledge(previous) {
+      if ((ack.revision ?? -1) < (previous?.revision ?? -1)) return previous
+      return {
+        ...previous,
+        sessionKey,
+        revision: ack.revision ?? previous?.revision,
+        messages: applyConversationCommand(previous?.messages ?? [], ack),
+      }
+    },
+  )
 }

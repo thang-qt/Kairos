@@ -41,12 +41,15 @@ type AttachmentPayload struct {
 }
 
 type SubmitTurnResult struct {
-	FriendlyID      string `json:"friendlyId,omitempty"`
-	RunID           string `json:"runId"`
-	SessionKey      string `json:"sessionKey"`
-	UserTurnID      string `json:"userTurnId"`
-	AssistantTurnID string `json:"assistantTurnId"`
-	ClientID        string `json:"clientId,omitempty"`
+	CommandChanges
+	Revision        int64          `json:"revision"`
+	UserTurn        map[string]any `json:"userTurn,omitempty"`
+	FriendlyID      string         `json:"friendlyId,omitempty"`
+	RunID           string         `json:"runId"`
+	SessionKey      string         `json:"sessionKey"`
+	UserTurnID      string         `json:"userTurnId"`
+	AssistantTurnID string         `json:"assistantTurnId"`
+	ClientID        string         `json:"clientId,omitempty"`
 }
 
 type executionRecord struct {
@@ -68,7 +71,13 @@ type toolExecutor interface {
 	Execute(ctx context.Context, call ProviderToolCall) (WebToolResult, error)
 }
 
+type executionControl struct {
+	LeaseToken string
+	Cancel     context.CancelFunc
+}
+
 type AgentRuntime struct {
+	shutdownOnce  sync.Once
 	workerOnce    sync.Once
 	workerCancel  context.CancelFunc
 	workerContext context.Context
@@ -80,7 +89,7 @@ type AgentRuntime struct {
 	webSettings   *WebToolSettingsService
 	toolRuntime   func(ctx context.Context, userID string, input SubmitTurnInput) (toolExecutor, error)
 	runMu         sync.Mutex
-	runCancels    map[string]context.CancelFunc
+	runControls   map[string]executionControl
 }
 
 func NewAgentRuntime(
@@ -95,7 +104,7 @@ func NewAgentRuntime(
 		conversations: conversations,
 		providers:     providers,
 		webSettings:   webSettings,
-		runCancels:    make(map[string]context.CancelFunc),
+		runControls:   make(map[string]executionControl),
 	}
 	service.toolRuntime = service.defaultToolRuntime
 	return service
@@ -122,6 +131,7 @@ func (service *AgentRuntime) StartRun(
 	userID string,
 	input SubmitTurnInput,
 ) (SubmitTurnResult, error) {
+	acceptanceStarted := time.Now()
 	service.conversations.commandMu.Lock()
 	defer service.conversations.commandMu.Unlock()
 	var session sessionRecord
@@ -166,6 +176,7 @@ func (service *AgentRuntime) StartRun(
 		if found {
 			return SubmitTurnResult{
 				RunID:           existingRun.ID,
+				Revision:        existingRun.Revision,
 				FriendlyID:      session.FriendlyID,
 				SessionKey:      session.ID,
 				AssistantTurnID: existingRun.AssistantTurnID,
@@ -229,6 +240,12 @@ func (service *AgentRuntime) StartRun(
 			}
 		}
 	}
+	if !creating {
+		session, err = service.conversations.findSessionExec(ctx, transaction, userID, "id", session.ID)
+		if err != nil {
+			return SubmitTurnResult{}, err
+		}
+	}
 	if err := transaction.QueryRowContext(ctx, `SELECT revision FROM chat_sessions WHERE id=?`, session.ID).Scan(&record.Revision); err != nil {
 		return SubmitTurnResult{}, err
 	}
@@ -251,6 +268,10 @@ func (service *AgentRuntime) StartRun(
 		}
 		userMessage["id"] = input.EditMessageID
 		userMessage["timestamp"] = now
+		session.CommandChanges, err = collectCommandChanges(ctx, transaction, session.ID, records[index].Timestamp, input.EditMessageID)
+		if err != nil {
+			return SubmitTurnResult{}, err
+		}
 		if err := service.conversations.truncateSessionMessagesExec(ctx, transaction, &session, records, index); err != nil {
 			return SubmitTurnResult{}, err
 		}
@@ -264,6 +285,7 @@ func (service *AgentRuntime) StartRun(
 		return SubmitTurnResult{}, errConversationConflict
 	}
 
+	userMessage["revision"] = record.Revision
 	var latestTimestamp int64
 	if err := transaction.QueryRowContext(ctx, `SELECT MAX(COALESCE((SELECT MAX(timestamp) FROM chat_messages WHERE session_id=?),0),COALESCE((SELECT MAX(started_at) FROM chat_runs WHERE session_id=? AND invalidated=0),0))`, session.ID, session.ID).Scan(&latestTimestamp); err != nil {
 		return SubmitTurnResult{}, err
@@ -302,6 +324,7 @@ func (service *AgentRuntime) StartRun(
 			if found {
 				return SubmitTurnResult{
 					RunID:           existingRun.ID,
+					Revision:        existingRun.Revision,
 					FriendlyID:      session.FriendlyID,
 					SessionKey:      session.ID,
 					AssistantTurnID: existingRun.AssistantTurnID,
@@ -321,12 +344,13 @@ func (service *AgentRuntime) StartRun(
 
 	service.StartWorkers()
 	if shouldGenerateTitle && autoGenerateTitleEnabled {
-		service.maybeGenerateSessionTitle(session, input, userMessage, titlePreferences)
+		service.maybeGenerateSessionTitle(session, input, userMessage, titlePreferences, record.Revision)
 	}
 	service.notifyQueue()
-	log.Printf("kairos: stage=accepted run=%s revision=%d", record.ID, record.Revision)
+	log.Printf("kairos: stage=accepted run=%s revision=%d acceptance_ms=%d", record.ID, record.Revision, time.Since(acceptanceStarted).Milliseconds())
 
 	return SubmitTurnResult{
+		CommandChanges: session.CommandChanges, Revision: record.Revision, UserTurn: userMessage,
 		RunID:           runID,
 		FriendlyID:      session.FriendlyID,
 		SessionKey:      session.ID,
@@ -386,8 +410,8 @@ func (service *AgentRuntime) CancelSessionRuns(
 	service.runMu.Lock()
 	defer service.runMu.Unlock()
 	for _, id := range ids {
-		if cancel := service.runCancels[id]; cancel != nil {
-			cancel()
+		if control, ok := service.runControls[id]; ok {
+			control.Cancel()
 		}
 	}
 	return len(ids) > 0, nil
@@ -443,6 +467,7 @@ func (service *AgentRuntime) insertRunExec(
 	if _, err := exec.ExecContext(ctx, `INSERT INTO chat_jobs(run_id,available_at) VALUES(?,?)`, record.ID, now); err != nil {
 		return err
 	}
+	log.Printf("kairos: stage=job_enqueue run=%s", record.ID)
 	return service.refreshTurnExec(ctx, exec, record.ID, "delta")
 }
 
@@ -460,7 +485,7 @@ func (service *AgentRuntime) findRunByIdempotencyKey(
 	var record executionRecord
 	var assistantTurnID sql.NullString
 	err := service.db.QueryRowContext(ctx, `
-		SELECT id, user_id, session_id, status, model, assistant_message_id,COALESCE(user_message_id,'')
+		SELECT id, user_id, session_id, status, model, assistant_message_id,COALESCE(user_message_id,''),revision
 		FROM chat_runs
 		WHERE user_id = ? AND session_id = ? AND idempotency_key = ?
 		LIMIT 1
@@ -472,6 +497,7 @@ func (service *AgentRuntime) findRunByIdempotencyKey(
 		&record.Model,
 		&assistantTurnID,
 		&record.UserTurnID,
+		&record.Revision,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return executionRecord{}, false, nil
@@ -486,4 +512,17 @@ func (service *AgentRuntime) findRunByIdempotencyKey(
 
 func isUniqueConstraintError(err error) bool {
 	return strings.Contains(strings.ToLower(err.Error()), "unique constraint")
+}
+
+// Long-lived HTTP streams participate in service shutdown as well as client cancellation.
+func (service *AgentRuntime) requestContext(parent context.Context) (context.Context, context.CancelFunc) {
+	ctx, cancel := context.WithCancel(parent)
+	if service.workerContext == nil {
+		return ctx, cancel
+	}
+	if service.workerContext.Err() != nil {
+		cancel()
+	}
+	stop := context.AfterFunc(service.workerContext, cancel)
+	return ctx, func() { stop(); cancel() }
 }

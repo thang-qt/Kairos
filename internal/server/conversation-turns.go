@@ -17,8 +17,8 @@ var errConversationConflict = errors.New("conversation changed or already has an
 func (service *AgentRuntime) refreshTurnExec(ctx context.Context, exec sqlExecutor, runID, state string) error {
 	var sessionID, turnID, status, errorMessage string
 	var revision, started int64
-	var invalidated int
-	if err := exec.QueryRowContext(ctx, `SELECT session_id,COALESCE(assistant_message_id,id),status,COALESCE(error_message,''),revision,started_at,invalidated FROM chat_runs WHERE id=?`, runID).Scan(&sessionID, &turnID, &status, &errorMessage, &revision, &started, &invalidated); err != nil {
+	var invalidated, hasRequest int
+	if err := exec.QueryRowContext(ctx, `SELECT session_id,COALESCE(assistant_message_id,id),status,COALESCE(error_message,''),revision,started_at,invalidated,(request_json IS NOT NULL AND request_json!='') FROM chat_runs WHERE id=?`, runID).Scan(&sessionID, &turnID, &status, &errorMessage, &revision, &started, &invalidated, &hasRequest); err != nil {
 		return err
 	}
 	if invalidated != 0 {
@@ -69,6 +69,19 @@ func (service *AgentRuntime) refreshTurnExec(ctx context.Context, exec sqlExecut
 		}
 	}
 	turn := map[string]any{"id": turnID, "role": "assistant", "runId": runID, "status": status, "revision": revision, "timestamp": started, "content": content, "steps": steps}
+	canRetry := hasRequest != 0 && (status == "error" || status == "aborted" || status == "interrupted")
+	if canRetry {
+		var newer int
+		if err := exec.QueryRowContext(ctx, `SELECT COUNT(*) FROM chat_runs WHERE session_id=? AND invalidated=0 AND started_at>?`, sessionID, started).Scan(&newer); err != nil {
+			return err
+		}
+		var users int
+		if err := exec.QueryRowContext(ctx, `SELECT COUNT(*) FROM chat_messages m JOIN chat_runs r ON r.id=? WHERE m.session_id=? AND m.role='user' AND (json_extract(m.message_json,'$.id')=r.user_message_id OR (r.user_message_id IS NULL AND m.timestamp=r.started_at))`, runID, sessionID).Scan(&users); err != nil {
+			return err
+		}
+		canRetry = newer == 0 && users > 0
+	}
+	turn["canRetry"] = canRetry
 	if latest != nil {
 		for _, key := range []string{"model", "modelName", "modelDescription", "details"} {
 			if value, ok := latest[key]; ok {
@@ -135,6 +148,8 @@ func (service *AgentRuntime) finishOwnedRun(record executionRecord, status strin
 	}
 	if err = tx.Commit(); err != nil {
 		log.Printf("kairos: terminal commit: %v", err)
+	} else {
+		log.Printf("kairos: stage=event_commit run=%s state=%s", record.ID, status)
 	}
 }
 
@@ -159,18 +174,47 @@ func (service *ConversationService) GetHistory(ctx context.Context, userID, frie
 	if err != nil {
 		return history, err
 	}
-	rows, err := tx.QueryContext(ctx, `SELECT id,COALESCE(turn_json,''),status,COALESCE(assistant_message_id,id),started_at FROM chat_runs WHERE session_id=? AND invalidated=0 ORDER BY started_at,id`, session.ID)
+	legacyRuns := map[string]bool{}
+	legacyAssistants := map[string]int{}
+	legacyUserTimes := map[int64]bool{}
+	var latestLegacyAssistant int64
+	for index, record := range records {
+		if id := stringValueFromMap(record.Message, "runId"); id != "" {
+			legacyRuns[id] = true
+		}
+		if record.Role == "assistant" {
+			legacyAssistants[record.MessageID] = index
+			latestLegacyAssistant = maxInt64(latestLegacyAssistant, record.Timestamp)
+		}
+		if record.Role == "user" {
+			legacyUserTimes[record.Timestamp] = true
+		}
+	}
+	rows, err := tx.QueryContext(ctx, `SELECT id,COALESCE(turn_json,''),status,COALESCE(assistant_message_id,id),started_at,(request_json IS NOT NULL AND request_json!=''),COALESCE(error_message,'') FROM chat_runs WHERE session_id=? AND invalidated=0 ORDER BY started_at,id`, session.ID)
 	if err != nil {
 		return history, err
 	}
 	turns := map[string]map[string]any{}
 	ordered := []string{}
 	for rows.Next() {
-		var id, encoded, status, turnID string
+		var id, encoded, status, turnID, errorMessage string
+		var hasRequest int
 		var started int64
-		if err := rows.Scan(&id, &encoded, &status, &turnID, &started); err != nil {
+		if err := rows.Scan(&id, &encoded, &status, &turnID, &started, &hasRequest, &errorMessage); err != nil {
 			rows.Close()
 			return history, err
+		}
+		// Pre-refactor truncation left orphan run records. Do not resurrect an
+		// assistant turn unless the surviving history supplies lineage or its user.
+		if encoded == "" && !legacyRuns[id] {
+			if index, exists := legacyAssistants[turnID]; exists {
+				records[index].Message["status"] = status
+				records[index].Message["canRetry"] = false
+				continue
+			}
+			if status == "completed" || !legacyUserTimes[started] || latestLegacyAssistant >= started {
+				continue
+			}
 		}
 		if status == "queued" || status == "preparing" || status == "running" {
 			history.ActiveRunIDs = append(history.ActiveRunIDs, id)
@@ -184,6 +228,12 @@ func (service *ConversationService) GetHistory(ctx context.Context, userID, frie
 			turns[id] = turn
 		} else {
 			turns[id] = map[string]any{"id": turnID, "role": "assistant", "runId": id, "status": status, "timestamp": started, "content": []any{}, "steps": []any{}}
+		}
+		if hasRequest == 0 {
+			turns[id]["canRetry"] = false
+		}
+		if errorMessage != "" {
+			turns[id]["error"] = errorMessage
 		}
 		ordered = append(ordered, id)
 	}
@@ -230,6 +280,15 @@ func (service *ConversationService) GetHistory(ctx context.Context, userID, frie
 		}
 		turn["content"] = content
 		turn["steps"] = messages
+	}
+	latestRun := ""
+	if len(ordered) > 0 {
+		latestRun = ordered[len(ordered)-1]
+	}
+	for id, turn := range turns {
+		if id != latestRun {
+			turn["canRetry"] = false
+		}
 	}
 	emitted := map[string]bool{}
 	for _, r := range records {

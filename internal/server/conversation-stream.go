@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"log"
 	"time"
 )
 
@@ -21,6 +22,8 @@ func (service *AgentRuntime) StreamSessionFromCursor(
 	afterCursor int64,
 	onEvent func(ConversationEvent) error,
 ) error {
+	ctx, cancel := service.requestContext(ctx)
+	defer cancel()
 	session, err := service.conversations.findSessionByFriendlyID(ctx, userID, friendlyID)
 	if err != nil {
 		return err
@@ -33,6 +36,7 @@ func (service *AgentRuntime) StreamSessionFromCursor(
 	if err := onEvent(ConversationEvent{State: "reconcile", Snapshot: &history, SessionKey: session.ID, Revision: history.Revision, ActiveRunIDs: history.ActiveRunIDs}); err != nil {
 		return err
 	}
+	log.Printf("kairos: stage=snapshot_delivery conversation=%s cursor=%d", session.ID, history.Cursor)
 	ticker := time.NewTicker(50 * time.Millisecond)
 	defer ticker.Stop()
 	heartbeat := time.NewTicker(15 * time.Second)
@@ -45,6 +49,9 @@ func (service *AgentRuntime) StreamSessionFromCursor(
 		for _, event := range events {
 			if err := onEvent(event); err != nil {
 				return err
+			}
+			if event.State != "delta" {
+				log.Printf("kairos: stage=event_delivery conversation=%s run=%s cursor=%d state=%s", session.ID, event.RunID, event.Cursor, event.State)
 			}
 			afterCursor = event.Cursor
 		}

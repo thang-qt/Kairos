@@ -118,7 +118,9 @@ function MessageItemComponent({
     : null
 
   const assistantParts = Array.isArray(message.content) ? message.content : []
-  const assistantIsStreaming = Boolean(message.__streamRunId)
+  const assistantIsStreaming =
+    ['queued', 'preparing', 'running'].includes(message.status ?? '') ||
+    Boolean(message.__streamRunId)
   function handleStartEdit() {
     setEditDraft(text)
     setEditing(true)

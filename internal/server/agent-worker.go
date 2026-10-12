@@ -46,7 +46,7 @@ func (service *AgentRuntime) runAsync(record executionRecord, session sessionRec
 
 func (service *AgentRuntime) executeRun(ctx context.Context, record executionRecord, session sessionRecord, history []map[string]any, input SubmitTurnInput) {
 	sink := &persistedGenerationSink{service: service, record: record, session: &session}
-	_, err := service.executeGeneration(ctx, generationExecutionInput{AcceptedAt: record.AcceptedAt, UserID: record.UserID, RunID: record.ID, AssistantTurnID: record.AssistantTurnID, History: history, Request: input}, sink)
+	err := service.executeGeneration(ctx, generationExecutionInput{AcceptedAt: record.AcceptedAt, UserID: record.UserID, RunID: record.ID, AssistantTurnID: record.AssistantTurnID, History: history, Request: input}, sink)
 	if err != nil {
 		// Persist the last accepted checkpoint, never output obtained after invalidation.
 		status := "error"
@@ -55,7 +55,7 @@ func (service *AgentRuntime) executeRun(ctx context.Context, record executionRec
 		}
 		service.finishOwnedRun(record, status, err)
 	}
-	log.Printf("kairos: stage=run_completion run=%s error=%v", record.ID, err)
+	log.Printf("kairos: stage=run_completion run=%s duration_ms=%d error=%v", record.ID, time.Now().UnixMilli()-record.AcceptedAt, err)
 }
 
 type persistedGenerationSink struct {
@@ -99,6 +99,8 @@ func (sink *persistedGenerationSink) Delta(message map[string]any) error {
 	if !sink.lastCheckpoint.IsZero() && time.Since(sink.lastCheckpoint) < 50*time.Millisecond {
 		return nil
 	}
+	checkpointStarted := time.Now()
+	firstCheckpoint := sink.lastCheckpoint.IsZero()
 	ctx := context.Background()
 	tx, err := sink.service.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -122,6 +124,9 @@ func (sink *persistedGenerationSink) Delta(message map[string]any) error {
 		return err
 	}
 	sink.lastCheckpoint = time.Now()
+	if firstCheckpoint {
+		log.Printf("kairos: stage=event_commit run=%s state=delta duration_ms=%d", sink.record.ID, time.Since(checkpointStarted).Milliseconds())
+	}
 	return nil
 }
 
@@ -157,6 +162,7 @@ func (service *AgentRuntime) completeRunWithFinalMessage(ctx context.Context, re
 }
 
 func (service *AgentRuntime) commitRunMessages(ctx context.Context, record executionRecord, session sessionRecord, messages []map[string]any, options appendMessageOptions, final bool, totalTokens int64) (SessionSummary, bool, error) {
+	checkpointStarted := time.Now()
 	tx, err := service.db.BeginTx(ctx, nil)
 	if err != nil {
 		return SessionSummary{}, false, err
@@ -203,6 +209,7 @@ func (service *AgentRuntime) commitRunMessages(ctx context.Context, record execu
 	if err := tx.Commit(); err != nil {
 		return summary, false, err
 	}
+	log.Printf("kairos: stage=event_commit run=%s state=%s duration_ms=%d", record.ID, state, time.Since(checkpointStarted).Milliseconds())
 	return summary, true, nil
 }
 
@@ -217,28 +224,25 @@ func (service *AgentRuntime) runStatus(ctx context.Context, runID string) (strin
 func (service *AgentRuntime) registerRunCancel(record executionRecord, cancel context.CancelFunc) {
 	service.runMu.Lock()
 	defer service.runMu.Unlock()
-	service.runCancels[record.ID] = cancel
+	service.runControls[record.ID] = executionControl{LeaseToken: record.LeaseToken, Cancel: cancel}
 
 }
 func (service *AgentRuntime) unregisterRunCancel(record executionRecord) {
 	service.runMu.Lock()
 	defer service.runMu.Unlock()
-	delete(service.runCancels, record.ID)
+	if control, ok := service.runControls[record.ID]; ok && control.LeaseToken == record.LeaseToken {
+		delete(service.runControls, record.ID)
+	}
 
 }
 
 func (sink *persistedGenerationSink) BeforeTool(message map[string]any, call ProviderToolCall) error {
-	copy := map[string]any{}
-	for key, value := range message {
-		copy[key] = value
-	}
-	parts := contentPartsFromAny(message["content"])
-	for index := range parts {
-		if parts[index].Type == "toolCall" && parts[index].ID == call.ID {
-			parts[index].Status = "running"
-		}
-	}
-	copy["content"] = contentPartsToMaps(parts)
 	sink.lastCheckpoint = time.Time{}
-	return sink.Delta(copy)
+	return sink.Delta(toolStartedSnapshot(message, call.ID))
+}
+
+// Completed tool results checkpoint individually, before the next tool starts.
+func (sink *persistedGenerationSink) ToolCompleted(message map[string]any) error {
+	sink.lastCheckpoint = time.Time{}
+	return sink.Delta(message)
 }

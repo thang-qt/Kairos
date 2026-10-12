@@ -13,6 +13,16 @@ import (
 
 // Responses is explicit opt-in. It never falls back by guessing endpoint capabilities.
 func (driver *OpenAICompatibleDriver) generateResponses(ctx context.Context, provider resolvedProvider, request ChatGenerationRequest, onDelta func(ChatGenerationDelta) error) (ChatGenerationResult, error) {
+	instructions := request.SystemPrompt
+	if instructions == "" {
+		texts := []string{}
+		for _, message := range request.Messages {
+			if message.Role == "system" {
+				texts = append(texts, collectProviderMessageText(message.Parts))
+			}
+		}
+		instructions = strings.Join(texts, "\n\n")
+	}
 	input := []any{}
 	for _, message := range request.Messages {
 		if message.Role == "system" {
@@ -44,7 +54,7 @@ func (driver *OpenAICompatibleDriver) generateResponses(ctx context.Context, pro
 			}
 		}
 	}
-	body := map[string]any{"model": request.Model, "stream": true, "store": false, "input": input, "instructions": request.SystemPrompt}
+	body := map[string]any{"model": request.Model, "stream": true, "store": false, "input": input, "instructions": instructions}
 	if len(request.Tools) > 0 {
 		tools := []any{}
 		for _, tool := range request.Tools {

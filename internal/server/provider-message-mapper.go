@@ -251,3 +251,18 @@ func int64Value(value any) int64 {
 	}
 	return 0
 }
+
+func toolStartedSnapshot(message map[string]any, callID string) map[string]any {
+	copy := map[string]any{}
+	for key, value := range message {
+		copy[key] = value
+	}
+	parts := contentPartsFromAny(message["content"])
+	for index := range parts {
+		if parts[index].Type == "toolCall" && parts[index].ID == callID {
+			parts[index].Status = "running"
+		}
+	}
+	copy["content"] = contentPartsToMaps(parts)
+	return copy
+}

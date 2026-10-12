@@ -23,6 +23,7 @@ func (service *AgentRuntime) maybeGenerateSessionTitle(
 	input SubmitTurnInput,
 	userMessage map[string]any,
 	preferences UserPreferences,
+	revision int64,
 ) {
 	if service.workerContext == nil || service.workerContext.Err() != nil {
 		return
@@ -39,17 +40,19 @@ func (service *AgentRuntime) maybeGenerateSessionTitle(
 			input,
 			userMessage,
 			preferences,
+			revision,
 		); err != nil {
-			if titleCtx.Err() != nil {
+			if service.workerContext.Err() != nil {
 				return
 			}
 			fallbackTitle := deriveTitleFromMessage(userMessage)
 			if fallbackTitle != "" {
-				summary, updated, fallbackErr := service.conversations.UpdateSessionTitleIfEmpty(
+				_, fallbackErr := service.conversations.UpdateSessionTitleIfEmptyAtRevision(
 					context.Background(),
 					session.ID,
 					session.UserID,
 					fallbackTitle,
+					revision,
 				)
 				if fallbackErr != nil {
 					log.Printf(
@@ -58,8 +61,6 @@ func (service *AgentRuntime) maybeGenerateSessionTitle(
 						session.FriendlyID,
 						fallbackErr,
 					)
-				} else if updated {
-					service.publishTitleUpdated(session.ID, summary)
 				}
 			}
 			log.Printf(
@@ -78,6 +79,7 @@ func (service *AgentRuntime) generateSessionTitle(
 	input SubmitTurnInput,
 	userMessage map[string]any,
 	preferences UserPreferences,
+	revision int64,
 ) error {
 	if !preferences.AutoGenerateTitle {
 		return nil
@@ -139,34 +141,8 @@ func (service *AgentRuntime) generateSessionTitle(
 		return nil
 	}
 
-	summary, updated, err := service.conversations.UpdateSessionTitleIfEmpty(
-		ctx,
-		session.ID,
-		session.UserID,
-		title,
-	)
-	if err != nil {
-		return err
-	}
-	if updated {
-		service.publishTitleUpdated(session.ID, summary)
-	}
-	return nil
-}
-
-func (service *AgentRuntime) publishTitleUpdated(
-	sessionID string,
-	session SessionSummary,
-) {
-	ctx := context.Background()
-	var revision int64
-	if err := service.db.QueryRowContext(ctx, `SELECT revision FROM chat_sessions WHERE id=?`, sessionID).Scan(&revision); err != nil {
-		return
-	}
-	if err := insertChatEventExec(ctx, service.db, ConversationEvent{SessionKey: session.Key, FriendlyID: session.FriendlyID, Revision: revision, State: "title", Session: &session}); err != nil {
-		log.Printf("kairos: title event: %v", err)
-	}
-
+	_, err = service.conversations.UpdateSessionTitleIfEmptyAtRevision(ctx, session.ID, session.UserID, title, revision)
+	return err
 }
 
 func buildTitleGenerationMessages(userMessage map[string]any) []ProviderMessage {

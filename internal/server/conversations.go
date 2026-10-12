@@ -38,6 +38,8 @@ type ConversationSettings struct {
 }
 
 type SessionSummary struct {
+	CommandChanges
+	Revision      int64                `json:"revision"`
 	Key           string               `json:"key"`
 	FriendlyID    string               `json:"friendlyId"`
 	Title         string               `json:"title,omitempty"`
@@ -66,6 +68,8 @@ type ConversationService struct {
 }
 
 type sessionRecord struct {
+	CommandChanges
+	Revision                 int64
 	ID                       string
 	UserID                   string
 	FriendlyID               string
@@ -125,7 +129,7 @@ func (service *ConversationService) ListSessions(
 			NULL AS last_message_json,
 			total_tokens,
 			context_tokens,
-			conversation_settings_json
+			conversation_settings_json,revision
 		FROM chat_sessions
 		WHERE user_id = ?
 		ORDER BY is_pinned DESC, updated_at DESC, created_at DESC, id DESC
@@ -353,6 +357,12 @@ func (service *ConversationService) CloneSession(
 	records := []messageRecord{}
 	found := false
 	for _, turn := range history.Messages {
+		if messageIDFromMap(turn) == messageID {
+			status := stringValueFromMap(turn, "status")
+			if status == "queued" || status == "preparing" || status == "running" {
+				return SessionSummary{}, errConversationConflict
+			}
+		}
 		encoded, err := json.Marshal(turn)
 		if err != nil {
 			return SessionSummary{}, err
@@ -414,6 +424,10 @@ func (service *ConversationService) DeleteUserMessageAtRevision(
 		if revision != *expectedRevision {
 			return SessionSummary{}, errConversationConflict
 		}
+	}
+	source.CommandChanges, err = collectCommandChanges(ctx, tx, source.ID, messageRecords[messageIndex].Timestamp, "")
+	if err != nil {
+		return SessionSummary{}, err
 	}
 	if err := service.truncateSessionMessagesExec(ctx, tx, &source, messageRecords, messageIndex); err != nil {
 		return SessionSummary{}, err
@@ -480,6 +494,7 @@ func (service *ConversationService) truncateSessionMessagesExec(ctx context.Cont
 	if err := exec.QueryRowContext(ctx, `SELECT revision FROM chat_sessions WHERE id=?`, session.ID).Scan(&revision); err != nil {
 		return err
 	}
+	session.Revision = revision
 	return insertChatEventExec(ctx, exec, ConversationEvent{SessionKey: session.ID, Revision: revision, State: "reconcile", ActiveRunIDs: []string{}})
 }
 
@@ -668,47 +683,39 @@ func (service *ConversationService) UpdateSessionTotalTokens(
 	return nil
 }
 
-func (service *ConversationService) UpdateSessionTitleIfEmpty(
-	ctx context.Context,
-	sessionID string,
-	userID string,
-	title string,
-) (SessionSummary, bool, error) {
-	normalizedTitle := strings.TrimSpace(title)
-	if normalizedTitle == "" {
-		return SessionSummary{}, false, nil
+func (service *ConversationService) UpdateSessionTitleIfEmptyAtRevision(ctx context.Context, sessionID, userID, title string, revision int64) (bool, error) {
+	title = strings.TrimSpace(title)
+	if title == "" {
+		return false, nil
 	}
-
-	result, err := service.db.ExecContext(ctx, `
-		UPDATE chat_sessions
-		SET title = ?
-		WHERE
-			id = ? AND
-			user_id = ? AND
-			COALESCE(NULLIF(title, ''), '') = '' AND
-			COALESCE(NULLIF(label, ''), '') = ''
-	`, normalizedTitle, sessionID, userID)
+	tx, err := service.db.BeginTx(ctx, nil)
 	if err != nil {
-		return SessionSummary{}, false, fmt.Errorf("update session title: %w", err)
+		return false, err
 	}
-
-	rowsAffected, err := result.RowsAffected()
+	defer tx.Rollback()
+	result, err := tx.ExecContext(ctx, `UPDATE chat_sessions SET title=? WHERE id=? AND user_id=? AND revision=? AND COALESCE(NULLIF(title,''),'')='' AND COALESCE(NULLIF(label,''),'')=''`, title, sessionID, userID, revision)
 	if err != nil {
-		return SessionSummary{}, false, fmt.Errorf("session title rows affected: %w", err)
+		return false, err
 	}
-	if rowsAffected == 0 {
-		return SessionSummary{}, false, nil
+	count, err := result.RowsAffected()
+	if err != nil || count == 0 {
+		return false, err
 	}
-
-	record, err := service.findSessionByID(ctx, userID, sessionID)
+	record, err := scanSessionRecord(tx.QueryRowContext(ctx, `SELECT id,user_id,friendly_id,title,derived_title,label,is_pinned,updated_at,last_message_json,total_tokens,context_tokens,conversation_settings_json,revision FROM chat_sessions WHERE id=? AND user_id=?`, sessionID, userID))
 	if err != nil {
-		return SessionSummary{}, false, err
+		return false, err
 	}
 	summary, err := sessionRecordToSummary(record)
 	if err != nil {
-		return SessionSummary{}, false, err
+		return false, err
 	}
-	return summary, true, nil
+	if err := insertChatEventExec(ctx, tx, ConversationEvent{SessionKey: sessionID, FriendlyID: record.FriendlyID, Revision: revision, State: "title", Session: &summary}); err != nil {
+		return false, err
+	}
+	if err := tx.Commit(); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 func (service *ConversationService) listMessageRecords(
@@ -873,8 +880,11 @@ func (service *ConversationService) findSession(
 	field string,
 	value string,
 ) (sessionRecord, error) {
+	return service.findSessionExec(ctx, service.db, userID, field, value)
+}
+func (service *ConversationService) findSessionExec(ctx context.Context, exec sqlExecutor, userID, field, value string) (sessionRecord, error) {
 	var record sessionRecord
-	err := service.db.QueryRowContext(ctx, `
+	err := exec.QueryRowContext(ctx, `
 		SELECT
 			id,
 			user_id,
@@ -887,7 +897,7 @@ func (service *ConversationService) findSession(
 			last_message_json,
 			total_tokens,
 			context_tokens,
-			conversation_settings_json
+			conversation_settings_json,revision
 		FROM chat_sessions
 		WHERE user_id = ? AND `+field+` = ?
 	`, userID, value).Scan(
@@ -903,6 +913,7 @@ func (service *ConversationService) findSession(
 		&record.TotalTokens,
 		&record.ContextTokens,
 		&record.ConversationSettingsJSON,
+		&record.Revision,
 	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -930,6 +941,7 @@ func scanSessionRecord(scanner interface {
 		&record.TotalTokens,
 		&record.ContextTokens,
 		&record.ConversationSettingsJSON,
+		&record.Revision,
 	); err != nil {
 		return sessionRecord{}, fmt.Errorf("scan session: %w", err)
 	}
@@ -1043,6 +1055,7 @@ func sessionRecordToSummary(record sessionRecord) (SessionSummary, error) {
 	}
 
 	return SessionSummary{
+		CommandChanges: record.CommandChanges, Revision: record.Revision,
 		Key:           record.ID,
 		FriendlyID:    record.FriendlyID,
 		Title:         nullStringValue(record.Title),

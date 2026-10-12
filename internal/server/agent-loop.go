@@ -10,14 +10,11 @@ import (
 
 var errGenerationInactive = errors.New("generation is no longer active")
 
-type generationOutcome struct {
-	PartialMessage map[string]any
-}
-
 type generationSink interface {
 	ModelResolved(model ProviderModel) error
 	Delta(message map[string]any) error
 	ToolRound(messages []map[string]any, totalTokens int64) error
+	ToolCompleted(message map[string]any) error
 	Final(message map[string]any, totalTokens int64) error
 }
 
@@ -34,25 +31,27 @@ func (service *AgentRuntime) executeGeneration(
 	ctx context.Context,
 	input generationExecutionInput,
 	sink generationSink,
-) (generationOutcome, error) {
+) error {
 	if ctx.Err() != nil {
-		return generationOutcome{}, ctx.Err()
+		return ctx.Err()
 	}
 
+	resolutionStarted := time.Now()
 	provider, model, _, err := service.providers.ResolveGenerationTarget(
 		ctx,
 		input.UserID,
 		normalizeModel(input.Request.Model),
 	)
 	if err != nil {
-		return generationOutcome{}, err
+		return err
 	}
+	log.Printf("kairos: stage=provider_resolution run=%s duration_ms=%d", input.RunID, time.Since(resolutionStarted).Milliseconds())
 	if err := sink.ModelResolved(model); err != nil {
-		return generationOutcome{}, err
+		return err
 	}
 	driver := service.providers.drivers[provider.Record.Kind]
 	if driver == nil {
-		return generationOutcome{}, fmt.Errorf(
+		return fmt.Errorf(
 			"unsupported provider kind: %s",
 			provider.Record.Kind,
 		)
@@ -80,7 +79,7 @@ func (service *AgentRuntime) executeGeneration(
 			input.UserID,
 		)
 		if err != nil {
-			return generationOutcome{}, err
+			return err
 		}
 	}
 	toolRuntime := toolExecutor(NewWebToolRuntimeFromEnv())
@@ -92,7 +91,7 @@ func (service *AgentRuntime) executeGeneration(
 		)
 		err = runtimeErr
 		if err != nil {
-			return generationOutcome{}, err
+			return err
 		}
 		if resolvedRuntime != nil {
 			toolRuntime = resolvedRuntime
@@ -115,7 +114,7 @@ func (service *AgentRuntime) executeGeneration(
 	assistantMessageID := input.AssistantTurnID
 	for roundIndex := 0; ; roundIndex++ {
 		if ctx.Err() != nil {
-			return generationOutcome{}, ctx.Err()
+			return ctx.Err()
 		}
 		if assistantMessageID == "" {
 			assistantMessageID = newID()
@@ -174,28 +173,11 @@ func (service *AgentRuntime) executeGeneration(
 			},
 		)
 		if generationErr != nil {
-			content := buildAssistantContent(
-				accumulatedThinking,
-				accumulatedText,
-				accumulatedToolCalls,
-			)
-			outcome := generationOutcome{}
-			if errors.Is(generationErr, context.Canceled) &&
-				len(accumulatedToolCalls) == 0 &&
-				len(content) > 0 {
-				outcome.PartialMessage = buildAssistantMessageWithLineage(
-					assistantMessageID,
-					displayModel,
-					assistantTimestamp,
-					content,
-					input.RunID,
-					roundIndex,
-				)
-			}
-			return outcome, generationErr
+			return generationErr
 		}
+
 		if ctx.Err() != nil {
-			return generationOutcome{}, ctx.Err()
+			return ctx.Err()
 		}
 
 		displayModel = displayModel.withProviderResult(result)
@@ -223,7 +205,7 @@ func (service *AgentRuntime) executeGeneration(
 			assistantMessage["details"] = generationDetails
 		}
 		if len(result.ToolCalls) == 0 {
-			return generationOutcome{}, sink.Final(
+			return sink.Final(
 				assistantMessage,
 				result.TotalTokens,
 			)
@@ -273,14 +255,14 @@ func (service *AgentRuntime) executeGeneration(
 				BeforeTool(map[string]any, ProviderToolCall) error
 			}); ok {
 				if err := fence.BeforeTool(assistantMessage, call); err != nil {
-					return generationOutcome{}, err
+					return err
 				}
 			}
 			log.Printf("kairos: stage=tool_start run=%s call=%s", input.RunID, call.ID)
 			startedAt := time.Now()
 			toolResult, toolErr := toolRuntime.Execute(ctx, call)
 			if ctx.Err() != nil || errors.Is(toolErr, context.Canceled) {
-				return generationOutcome{}, context.Canceled
+				return context.Canceled
 			}
 			log.Printf("kairos: stage=tool_completion run=%s call=%s duration_ms=%d", input.RunID, call.ID, time.Since(startedAt).Milliseconds())
 			executedToolCalls++
@@ -298,19 +280,22 @@ func (service *AgentRuntime) executeGeneration(
 					messageIndex,
 				),
 			)
+			if err := sink.ToolCompleted(stagedMessages[len(stagedMessages)-1]); err != nil {
+				return err
+			}
 			providerToolMessages = append(
 				providerToolMessages,
 				providerToolResultMessage(call, toolResult, toolErr),
 			)
 		}
 		if ctx.Err() != nil {
-			return generationOutcome{}, ctx.Err()
+			return ctx.Err()
 		}
 		if err := sink.ToolRound(stagedMessages, result.TotalTokens); err != nil {
-			return generationOutcome{}, err
+			return err
 		}
 		if limitExceeded {
-			return generationOutcome{}, fmt.Errorf(
+			return fmt.Errorf(
 				"maximum tool calls exceeded (%d)",
 				toolCallLimit,
 			)

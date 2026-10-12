@@ -1,5 +1,8 @@
 import type { ConversationTurn } from './types'
-import type { ConversationEvent } from '@/lib/chat-backend'
+import type {
+  ConversationEvent,
+  ConversationCommandAck,
+} from '@/lib/chat-backend'
 
 export function turnFromConversationEvent(
   event: ConversationEvent,
@@ -36,5 +39,56 @@ export function applyConversationEvent(
   if (index < 0) return [...messages, turn]
   const next = [...messages]
   next[index] = turn
+  return next
+}
+
+// Throwaway chats have one request-bound stream. A local transport abort freezes
+// its last received snapshot; it does not mutate any persisted conversation.
+export function cancelEphemeralTurns(
+  turns: Array<ConversationTurn>,
+): Array<ConversationTurn> {
+  return turns.map(function stopLiveTurn(turn) {
+    if (turn.role !== 'assistant' || !turn.__streamRunId) return turn
+    const completedCalls = new Set(
+      (turn.steps ?? [])
+        .filter(function isResult(step) {
+          return step.role === 'toolResult'
+        })
+        .map(function callId(step) {
+          return step.toolCallId
+        }),
+    )
+    return {
+      ...turn,
+      status: 'aborted',
+      __streamRunId: null,
+      content: turn.content?.map(function stopPendingCall(part) {
+        return part.type === 'toolCall' && !completedCalls.has(part.id)
+          ? { ...part, status: 'aborted' }
+          : part
+      }),
+    }
+  })
+}
+
+export function applyConversationCommand(
+  turns: Array<ConversationTurn>,
+  ack: ConversationCommandAck,
+): Array<ConversationTurn> {
+  const removed = new Set(ack.removedTurnIds ?? [])
+  const invalidated = new Set(ack.invalidatedRunIds ?? [])
+  const next = turns.filter(function stillCanonical(turn) {
+    return !removed.has(turn.id ?? '') && !invalidated.has(turn.runId ?? '')
+  })
+  if (!ack.userTurn) return next
+  const user = ack.userTurn
+  const index = next.findIndex(function sameUser(turn) {
+    return (
+      turn.id === user.id ||
+      Boolean(user.clientId && turn.clientId === user.clientId)
+    )
+  })
+  if (index < 0) return [...next, user]
+  next[index] = user
   return next
 }

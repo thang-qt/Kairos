@@ -58,8 +58,8 @@ export function useChatStream({
         (payload.snapshot.cursor ?? 0) >= (cached?.cursor ?? 0)
       ) {
         queryClient.setQueryData(key, payload.snapshot)
+        onChatEvent?.(payload)
       }
-      onChatEvent?.(payload)
       return
     }
     if (

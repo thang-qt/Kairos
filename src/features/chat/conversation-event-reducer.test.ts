@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { applyConversationEvent } from './conversation-event-reducer'
+import {
+  applyConversationEvent,
+  applyConversationCommand,
+  cancelEphemeralTurns,
+} from './conversation-event-reducer'
 import type { ConversationTurn } from './types'
 
 describe('authoritative turn replacements', function () {
@@ -88,5 +92,64 @@ describe('accepted user turns', function () {
     expect(accepted).toHaveLength(1)
     expect(accepted[0].id).toBe('server')
     expect(accepted[0].status).toBeUndefined()
+  })
+})
+
+describe('throwaway stream cancellation', function () {
+  it('freezes partial content and stops pending calls without adding a turn', function () {
+    const turns: Array<ConversationTurn> = [
+      {
+        id: 'turn',
+        role: 'assistant',
+        __streamRunId: 'run',
+        status: 'running',
+        content: [
+          { type: 'text', text: 'partial' },
+          { type: 'toolCall', id: 'call', name: 'fake' },
+        ],
+      },
+    ]
+    const stopped = cancelEphemeralTurns(turns)
+    expect(stopped).toHaveLength(1)
+    expect(stopped[0].status).toBe('aborted')
+    expect(stopped[0].__streamRunId).toBeNull()
+    expect(stopped[0].content?.[0]).toEqual(turns[0].content?.[0])
+    expect(stopped[0].content?.[1]).toMatchObject({ status: 'aborted' })
+  })
+})
+
+describe('authoritative mutation acknowledgement', function () {
+  it('removes revoked turns and rejects an older event already in flight', function () {
+    const before: Array<ConversationTurn> = [
+      {
+        id: 'user',
+        role: 'user',
+        revision: 0,
+        content: [{ type: 'text', text: 'old' }],
+      },
+      { id: 'old-response', role: 'assistant', runId: 'old-run', revision: 0 },
+      { id: 'later-user', role: 'user', revision: 0 },
+    ]
+    const after = applyConversationCommand(before, {
+      revision: 1,
+      invalidatedRunIds: ['old-run'],
+      removedTurnIds: ['later-user'],
+      userTurn: {
+        id: 'user',
+        role: 'user',
+        revision: 1,
+        content: [{ type: 'text', text: 'edited' }],
+      },
+    })
+    expect(after).toHaveLength(1)
+    expect(after[0].content).toEqual([{ type: 'text', text: 'edited' }])
+    expect(
+      applyConversationEvent(after, {
+        revision: 0,
+        state: 'delta',
+        runId: 'old-run',
+        message: { id: 'old-response', role: 'assistant' },
+      }),
+    ).toBe(after)
   })
 })

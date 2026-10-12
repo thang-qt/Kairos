@@ -16,6 +16,8 @@ func (service *AgentRuntime) StreamEphemeral(
 	input SubmitTurnInput,
 	emit func(ConversationEvent) error,
 ) (runErr error) {
+	ctx, cancel := service.requestContext(ctx)
+	defer cancel()
 	runID := newID()
 	turnID := newID()
 	sink := &ephemeralGenerationSink{
@@ -50,7 +52,7 @@ func (service *AgentRuntime) StreamEphemeral(
 		userMessage,
 	)
 
-	_, err = service.executeGeneration(
+	err = service.executeGeneration(
 		ctx,
 		generationExecutionInput{
 			UserID:          userID,
@@ -171,4 +173,12 @@ func safeProviderTranscript(messages []map[string]any) []map[string]any {
 		safe = append(safe, copy)
 	}
 	return safe
+}
+
+func (sink *ephemeralGenerationSink) ToolCompleted(message map[string]any) error {
+	return sink.Delta(message)
+}
+
+func (sink *ephemeralGenerationSink) BeforeTool(message map[string]any, call ProviderToolCall) error {
+	return sink.Delta(toolStartedSnapshot(message, call.ID))
 }
