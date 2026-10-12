@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { GatewayMessage } from '../types'
+import type { ConversationTurn } from '../types'
 import {
   searchSourceCardsFromMessage,
   webToolEventCardsFromMessage,
@@ -7,7 +7,7 @@ import {
 
 describe('linked web tool results', function () {
   it('uses completed toolResult details rather than leaving the call running', function () {
-    const result: GatewayMessage = {
+    const result: ConversationTurn = {
       role: 'toolResult',
       toolCallId: 'call-1',
       toolName: 'web_search',

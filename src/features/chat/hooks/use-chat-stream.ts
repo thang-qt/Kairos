@@ -7,13 +7,12 @@ import {
   upsertSessionSummary,
 } from '../chat-queries'
 import {
-  findStreamMessageIndex,
-  messageFromChatEvent,
-  reduceChatEventMessages,
-} from '../chat-event-reducer'
+  turnFromConversationEvent,
+  applyConversationEvent,
+} from '../conversation-event-reducer'
 import type { QueryClient } from '@tanstack/react-query'
-import type { GatewayMessage, HistoryResponse } from '../types'
-import type { ChatEvent } from '@/lib/chat-backend'
+import type { ConversationTurn, HistoryResponse } from '../types'
+import type { ConversationEvent } from '@/lib/chat-backend'
 import { getChatBackend } from '@/lib/chat-backend'
 
 type UseChatStreamInput = {
@@ -30,7 +29,7 @@ type UseChatStreamInput = {
     state?: string
     error?: string
     activeRunIds?: Array<string>
-    message?: GatewayMessage
+    message?: ConversationTurn
   }) => void
 }
 
@@ -48,11 +47,21 @@ export function useChatStream({
   const refreshHistoryRef = useRef(refreshHistory)
   refreshHistoryRef.current = refreshHistory
   const handleChatEvent = useEffectEvent(function handleChatEvent(
-    payload: ChatEvent,
+    payload: ConversationEvent,
   ) {
     if (payload.state === 'heartbeat') return
     const key = chatQueryKeys.history(activeFriendlyId, sessionKeyForHistory)
     const cached = queryClient.getQueryData<HistoryResponse>(key)
+    if (payload.snapshot) {
+      if (
+        (payload.snapshot.revision ?? 0) >= (cached?.revision ?? -1) &&
+        (payload.snapshot.cursor ?? 0) >= (cached?.cursor ?? 0)
+      ) {
+        queryClient.setQueryData(key, payload.snapshot)
+      }
+      onChatEvent?.(payload)
+      return
+    }
     if (
       payload.revision !== undefined &&
       payload.revision < (cached?.revision ?? -1)
@@ -106,7 +115,7 @@ export function useChatStream({
           activeFriendlyId,
           sessionKeyForHistory,
           function reduceTerminalEvent(messages) {
-            return reduceChatEventMessages(messages, payload)
+            return applyConversationEvent(messages, payload)
           },
         )
         if (payloadSessionKey && payloadSessionKey !== sessionKeyForHistory) {
@@ -115,7 +124,7 @@ export function useChatStream({
             activeFriendlyId,
             payloadSessionKey,
             function reduceMirroredTerminalEvent(messages) {
-              return reduceChatEventMessages(messages, payload)
+              return applyConversationEvent(messages, payload)
             },
           )
         }
@@ -133,7 +142,7 @@ export function useChatStream({
       return
     }
 
-    const nextMessage = messageFromChatEvent(payload)
+    const nextMessage = turnFromConversationEvent(payload)
     if (!nextMessage) return
 
     updateHistoryMessages(
@@ -141,7 +150,7 @@ export function useChatStream({
       activeFriendlyId,
       sessionKeyForHistory,
       function reduceEvent(messages) {
-        return reduceChatEventMessages(messages, payload)
+        return applyConversationEvent(messages, payload)
       },
     )
 
@@ -151,7 +160,7 @@ export function useChatStream({
         activeFriendlyId,
         payloadSessionKey,
         function reduceMirroredEvent(messages) {
-          return reduceChatEventMessages(messages, payload)
+          return applyConversationEvent(messages, payload)
         },
       )
     }
@@ -223,5 +232,3 @@ export function useChatStream({
 function isTerminalState(state: string): boolean {
   return state === 'final' || state === 'error' || state === 'aborted'
 }
-
-export { findStreamMessageIndex }

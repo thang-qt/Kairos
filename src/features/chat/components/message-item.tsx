@@ -1,13 +1,13 @@
-import { memo, useMemo, useState } from 'react'
+import { memo, useState } from 'react'
 import {
-  getGatewayMessageId,
+  getTurnId,
   getMessageTimestamp,
   getRawMessageTimestamp,
   textFromMessage,
 } from '../utils'
 import { MessageActionsBar } from './message-actions-bar'
 import type {
-  GatewayMessage,
+  ConversationTurn,
   MessageContent as MessageContentPart,
 } from '../types'
 import { Message, MessageContent } from '@/components/prompt-kit/message'
@@ -16,12 +16,7 @@ import { Tool } from '@/components/prompt-kit/tool'
 import { useChatSettingsStore } from '@/app/preferences/app-preferences'
 import { cn } from '@/lib/utils'
 import { MessageItemEditor } from './message-item-editor'
-import {
-  ToolChain,
-  ToolStepItem,
-  type ToolChainItem,
-  type ToolStep,
-} from './tool-step-item'
+import { ToolStepItem, type ToolStep } from './tool-step-item'
 import {
   mapStandaloneToolResultToToolPart,
   mapToolCallToToolPart,
@@ -32,7 +27,6 @@ import {
   toolCallsSignature,
   toolResultsSignature,
   toolResultSignature,
-  toolChainMessagesSignature,
   runtimeToolDetailsSignature,
 } from './message-item-utils'
 import { toolResultLookupKey } from './chat-message-list-utils'
@@ -44,9 +38,8 @@ export {
 }
 
 type MessageItemProps = {
-  message: GatewayMessage
-  toolChainMessages?: Array<GatewayMessage>
-  toolResultsByCallId?: Map<string, GatewayMessage>
+  message: ConversationTurn
+  toolResultsByCallId?: Map<string, ConversationTurn>
   modelLabelById: ReadonlyMap<string, string>
   forceActionsVisible?: boolean
   showAssistantModel?: boolean
@@ -56,7 +49,7 @@ type MessageItemProps = {
   wrapperScrollMarginTop?: number
   isHighlighted?: boolean
   onClone?: (
-    message: GatewayMessage,
+    message: ConversationTurn,
     currentText: string,
     previousMessageId?: string,
   ) => void
@@ -88,7 +81,6 @@ function ReasoningBlock({ content, isThinking }: ReasoningBlockProps) {
 
 function MessageItemComponent({
   message,
-  toolChainMessages,
   toolResultsByCallId,
   modelLabelById,
   forceActionsVisible = false,
@@ -111,7 +103,7 @@ function MessageItemComponent({
   )
   const role = message.role || 'assistant'
   const text = textFromMessage(message)
-  const messageId = getGatewayMessageId(message) ?? ''
+  const messageId = getTurnId(message) ?? ''
   const [editing, setEditing] = useState(false)
   const [editDraft, setEditDraft] = useState(text)
   const [savingEdit, setSavingEdit] = useState(false)
@@ -127,66 +119,6 @@ function MessageItemComponent({
 
   const assistantParts = Array.isArray(message.content) ? message.content : []
   const assistantIsStreaming = Boolean(message.__streamRunId)
-  const toolTurn = useMemo(
-    function buildToolTurn() {
-      const items: Array<ToolChainItem> = []
-      const sourceMessages =
-        toolChainMessages && toolChainMessages.length > 0
-          ? toolChainMessages
-          : [message]
-
-      for (const sourceMessage of sourceMessages) {
-        const content = Array.isArray(sourceMessage.content)
-          ? sourceMessage.content
-          : []
-        for (let index = 0; index < content.length; index += 1) {
-          const part = content[index]
-          if (part.type === 'text') {
-            const value = String(part.text ?? '').trim()
-            if (value) {
-              items.push({
-                kind: 'text',
-                key: `text-${getGatewayMessageId(sourceMessage) || index}-${index}`,
-                text: value,
-              })
-            }
-            continue
-          }
-          if (part.type !== 'toolCall') continue
-
-          const resultMessage = part.id
-            ? (toolResultsByCallId?.get(
-                toolResultLookupKey(sourceMessage, part.id),
-              ) ?? toolResultsByCallId?.get(part.id))
-            : undefined
-          if (
-            (part.name === 'web_search' || part.name === 'web_fetch') &&
-            part.status === undefined
-          ) {
-            const step: ToolStep = {
-              kind: 'web',
-              key: `web-tool-${part.id || index}`,
-              message: resultMessage ?? sourceMessage,
-              toolCallIds: part.id ? [part.id] : undefined,
-            }
-            items.push({ kind: 'step', step })
-            continue
-          }
-          const step: ToolStep = {
-            kind: 'tool',
-            key: `tool-${part.id || index}`,
-            toolPart: mapToolCallToToolPart(part, resultMessage, sourceMessage),
-          }
-          items.push({ kind: 'step', step })
-        }
-      }
-
-      return { items }
-    },
-    [message, toolChainMessages, toolResultsByCallId],
-  )
-  const hasToolChainMessages = Boolean(toolChainMessages?.length)
-
   function handleStartEdit() {
     setEditDraft(text)
     setEditing(true)
@@ -341,10 +273,6 @@ function MessageItemComponent({
         </div>
       ) : null}
 
-      {isAssistant && hasToolChainMessages && showToolMessages ? (
-        <ToolChain items={toolTurn.items} />
-      ) : null}
-
       {isAssistant && assistantParts.map(renderAssistantPart)}
 
       {isAssistant && message.status ? (
@@ -443,6 +371,13 @@ export function areMessagesEqual(
     return false
   }
   if (
+    prevProps.message.status !== nextProps.message.status ||
+    prevProps.message.error !== nextProps.message.error ||
+    JSON.stringify(prevProps.message.content) !==
+      JSON.stringify(nextProps.message.content)
+  )
+    return false
+  if (
     runtimeToolDetailsSignature(prevProps.message) !==
     runtimeToolDetailsSignature(nextProps.message)
   ) {
@@ -457,18 +392,6 @@ export function areMessagesEqual(
   if (
     toolResultsSignature(prevProps.message, prevProps.toolResultsByCallId) !==
     toolResultsSignature(nextProps.message, nextProps.toolResultsByCallId)
-  ) {
-    return false
-  }
-  if (
-    toolChainMessagesSignature(
-      prevProps.toolChainMessages,
-      prevProps.toolResultsByCallId,
-    ) !==
-    toolChainMessagesSignature(
-      nextProps.toolChainMessages,
-      nextProps.toolResultsByCallId,
-    )
   ) {
     return false
   }

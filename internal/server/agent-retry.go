@@ -10,28 +10,28 @@ import (
 
 // Retry is explicit: the caller accepts that already-executed tools may run again.
 // It replaces this attempt's checkpoints while retaining the same visible turn.
-func (service *ChatRunService) RetryRun(ctx context.Context, userID, friendlyID, runID, key string, expected *int64) (SendMessageResult, error) {
+func (service *AgentRuntime) RetryRun(ctx context.Context, userID, friendlyID, runID, key string, expected *int64) (SubmitTurnResult, error) {
 	if strings.TrimSpace(key) == "" {
-		return SendMessageResult{}, errors.New("retry requires an idempotencyKey")
+		return SubmitTurnResult{}, errors.New("retry requires an idempotencyKey")
 	}
 	service.chat.commandMu.Lock()
 	defer service.chat.commandMu.Unlock()
 	session, err := service.chat.findSessionByFriendlyID(ctx, userID, friendlyID)
 	if err != nil {
-		return SendMessageResult{}, err
+		return SubmitTurnResult{}, err
 	}
 	tx, err := service.db.BeginTx(ctx, nil)
 	if err != nil {
-		return SendMessageResult{}, err
+		return SubmitTurnResult{}, err
 	}
 	defer tx.Rollback()
-	var result SendMessageResult
+	var result SubmitTurnResult
 	result.RunID = runID
 	result.SessionKey = session.ID
 	var status string
 	var invalidated int
 	var revision int64
-	if err := tx.QueryRowContext(ctx, `SELECT status,COALESCE(assistant_message_id,id),COALESCE(user_message_id,''),invalidated FROM chat_runs WHERE id=? AND session_id=? AND user_id=?`, runID, session.ID, userID).Scan(&status, &result.AssistantMessageID, &result.UserMessageID, &invalidated); err != nil {
+	if err := tx.QueryRowContext(ctx, `SELECT status,COALESCE(assistant_message_id,id),COALESCE(user_message_id,''),invalidated FROM chat_runs WHERE id=? AND session_id=? AND user_id=?`, runID, session.ID, userID).Scan(&status, &result.AssistantTurnID, &result.UserTurnID, &invalidated); err != nil {
 		return result, errChatSessionNotFound
 	}
 	var repeated int
@@ -59,6 +59,17 @@ func (service *ChatRunService) RetryRun(ctx context.Context, userID, friendlyID,
 		return result, errConversationConflict
 	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM chat_messages WHERE session_id=? AND run_id=?`, session.ID, runID); err != nil {
+		return result, err
+	}
+	remaining, err := service.chat.listMessageRecordsExec(ctx, tx, session.ID)
+	if err != nil {
+		return result, err
+	}
+	var lastMessage any
+	if len(remaining) > 0 {
+		lastMessage = remaining[len(remaining)-1].Message
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE chat_sessions SET total_tokens=?,last_message_json=? WHERE id=?`, countMessageRecordTokens(remaining), nullableJSONObject(lastMessage), session.ID); err != nil {
 		return result, err
 	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM chat_run_steps WHERE run_id=?`, runID); err != nil {

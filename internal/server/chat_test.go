@@ -579,12 +579,12 @@ func TestSendMessagePersistsHistoryAndStreamsFinalEvent(t *testing.T) {
 	decodeResponseJSON(t, createResponse, &created)
 	userID := userIDFromCookie(t, testServer, cookie)
 
-	eventResult := make(chan []ChatEvent, 1)
+	eventResult := make(chan []ConversationEvent, 1)
 	streamContext, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go func() {
-		events := make([]ChatEvent, 0, 2)
-		err := testServer.app.runs.StreamSession(streamContext, userID, created.FriendlyID, func(event ChatEvent) error {
+		events := make([]ConversationEvent, 0, 2)
+		err := testServer.app.runs.StreamSession(streamContext, userID, created.FriendlyID, func(event ConversationEvent) error {
 			events = append(events, event)
 			if event.State == "final" {
 				eventResult <- events
@@ -739,13 +739,13 @@ func TestSendMessageIdempotencyKeyReusesExistingRun(t *testing.T) {
 	firstResponse := performJSONRequest(t, testServer.handler, http.MethodPost, "/api/sessions/"+created.FriendlyID+"/messages", payload, []*http.Cookie{cookie})
 	assertStatusCode(t, firstResponse, http.StatusOK)
 
-	var firstResult SendMessageResult
+	var firstResult SubmitTurnResult
 	decodeResponseJSON(t, firstResponse, &firstResult)
 
 	secondResponse := performJSONRequest(t, testServer.handler, http.MethodPost, "/api/sessions/"+created.FriendlyID+"/messages", payload, []*http.Cookie{cookie})
 	assertStatusCode(t, secondResponse, http.StatusOK)
 
-	var secondResult SendMessageResult
+	var secondResult SubmitTurnResult
 	decodeResponseJSON(t, secondResponse, &secondResult)
 	if secondResult.RunID != firstResult.RunID {
 		t.Fatalf("second run id = %q, want %q", secondResult.RunID, firstResult.RunID)
@@ -875,8 +875,8 @@ func TestSendMessagePassesModelSettingsToProvider(t *testing.T) {
 	if !strings.HasPrefix(capturedRequest.SystemPrompt, "You are terse and precise.\n\nRuntime context:\n- Current time: ") {
 		t.Fatalf("request system prompt = %q, want configured system prompt with runtime context", capturedRequest.SystemPrompt)
 	}
-	if capturedRequest.WebSearch == nil {
-		t.Fatalf("request web search = nil, want enabled")
+	if len(capturedRequest.Tools) == 0 {
+		t.Fatal("web search tools missing")
 	}
 	if len(capturedRequest.Messages) < 2 {
 		t.Fatalf("request messages length = %d, want system + user", len(capturedRequest.Messages))
@@ -1134,7 +1134,7 @@ func TestSendMessageAutoGeneratesSessionTitleFromFirstTurn(t *testing.T) {
 	}, []*http.Cookie{cookie})
 	assertStatusCode(t, sendResponse, http.StatusOK)
 
-	var sendPayload SendMessageResult
+	var sendPayload SubmitTurnResult
 	decodeResponseJSON(t, sendResponse, &sendPayload)
 	waitForRunStatus(t, testServer, sendPayload.RunID, "completed")
 	waitForSessionTitle(t, testServer, created.SessionKey, "Weekly roadmap review")
@@ -1246,11 +1246,11 @@ func TestSendMessagePublishesTitleEvent(t *testing.T) {
 	decodeResponseJSON(t, createResponse, &created)
 	userID := userIDFromCookie(t, testServer, cookie)
 
-	titleEventResult := make(chan ChatEvent, 1)
+	titleEventResult := make(chan ConversationEvent, 1)
 	streamContext, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go func() {
-		err := testServer.app.runs.StreamSession(streamContext, userID, created.FriendlyID, func(event ChatEvent) error {
+		err := testServer.app.runs.StreamSession(streamContext, userID, created.FriendlyID, func(event ConversationEvent) error {
 			if event.State == "title" {
 				titleEventResult <- event
 				cancel()
@@ -1346,7 +1346,7 @@ func TestSendMessageUsesSeparateTitleModelWhenConfigured(t *testing.T) {
 	}, []*http.Cookie{cookie})
 	assertStatusCode(t, sendResponse, http.StatusOK)
 
-	var sendPayload SendMessageResult
+	var sendPayload SubmitTurnResult
 	decodeResponseJSON(t, sendResponse, &sendPayload)
 	waitForRunStatus(t, testServer, sendPayload.RunID, "completed")
 	waitForSessionTitle(t, testServer, created.SessionKey, "Priority bugs triage")
@@ -1424,13 +1424,13 @@ func TestStopSessionRunPublishesAbortedEventAndKeepsPartialAssistantHistory(t *t
 	decodeResponseJSON(t, createResponse, &created)
 	userID := userIDFromCookie(t, testServer, cookie)
 
-	eventResult := make(chan []ChatEvent, 1)
+	eventResult := make(chan []ConversationEvent, 1)
 	deltaSeen := make(chan struct{}, 1)
 	streamContext, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go func() {
-		events := make([]ChatEvent, 0, 2)
-		err := testServer.app.runs.StreamSession(streamContext, userID, created.FriendlyID, func(event ChatEvent) error {
+		events := make([]ConversationEvent, 0, 2)
+		err := testServer.app.runs.StreamSession(streamContext, userID, created.FriendlyID, func(event ConversationEvent) error {
 			events = append(events, event)
 			if event.State == "delta" && len(contentPartsFromAny(event.Message["content"])) > 0 {
 				select {
@@ -1528,7 +1528,7 @@ func TestStartingNextRunDoesNotWaitForFencedStoppedWorker(t *testing.T) {
 	var created sessionMutationResponse
 	decodeResponseJSON(t, createResponse, &created)
 
-	_, err := testServer.app.runs.StartRun(context.Background(), userID, SendMessageInput{
+	_, err := testServer.app.runs.StartRun(context.Background(), userID, SubmitTurnInput{
 		FriendlyID: created.FriendlyID,
 		Message:    "Prompt A",
 		Model:      "test-model",
@@ -1556,14 +1556,14 @@ func TestStartingNextRunDoesNotWaitForFencedStoppedWorker(t *testing.T) {
 	}
 
 	type startResult struct {
-		run SendMessageResult
+		run SubmitTurnResult
 		err error
 	}
 	startedSecond := make(chan struct{})
 	secondResult := make(chan startResult, 1)
 	go func() {
 		close(startedSecond)
-		run, startErr := testServer.app.runs.StartRun(context.Background(), userID, SendMessageInput{
+		run, startErr := testServer.app.runs.StartRun(context.Background(), userID, SubmitTurnInput{
 			FriendlyID: created.FriendlyID,
 			Message:    "Prompt B",
 			Model:      "test-model",

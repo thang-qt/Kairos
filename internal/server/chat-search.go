@@ -28,7 +28,7 @@ type SessionSearchResult struct {
 	Snippet      string `json:"snippet,omitempty"`
 }
 
-func (service *ChatService) SearchSessions(
+func (service *ConversationService) SearchSessions(
 	ctx context.Context,
 	userID string,
 	query string,

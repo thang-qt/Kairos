@@ -1,6 +1,6 @@
-import { getToolCallsFromMessage, textFromMessage } from '../utils'
+import { getToolCallsFromMessage } from '../utils'
 import type {
-  GatewayMessage,
+  ConversationTurn,
   ImageContent,
   MessageContent as MessageContentPart,
   ToolCallContent,
@@ -18,8 +18,8 @@ type MessageModelMetadata = {
 
 export function mapToolCallToToolPart(
   toolCall: ToolCallContent,
-  resultMessage: GatewayMessage | undefined,
-  assistantMessage?: GatewayMessage,
+  resultMessage: ConversationTurn | undefined,
+  assistantMessage?: ConversationTurn,
 ): ToolPart {
   const resultText = toolResultText(resultMessage)
   const output = toolCallOutput(
@@ -30,10 +30,15 @@ export function mapToolCallToToolPart(
   )
   const outputError = normalizedString(output?.error)
   const hasResult = resultMessage !== undefined || output !== undefined
-  const isError = resultMessage?.isError ?? Boolean(outputError)
+  const stopped =
+    ['aborted', 'interrupted', 'error'].includes(toolCall.status ?? '') &&
+    !hasResult
+  const isError = stopped || (resultMessage?.isError ?? Boolean(outputError))
 
   let state: ToolPart['state']
-  if (toolCall.status === 'running') {
+  if (stopped) {
+    state = 'output-error'
+  } else if (toolCall.status === 'running') {
     state = 'input-streaming'
   } else if (toolCall.status === 'completed') {
     state = 'output-available'
@@ -48,7 +53,9 @@ export function mapToolCallToToolPart(
   // Extract error text from result message content
   let errorText: string | undefined
   if (isError) {
-    errorText = resultText || outputError || 'Unknown error'
+    errorText = stopped
+      ? 'No result was saved for this call.'
+      : resultText || outputError || 'Unknown error'
   }
 
   return {
@@ -65,9 +72,9 @@ export function mapToolCallToToolPart(
 
 function toolCallOutput(
   toolCall: ToolCallContent,
-  resultMessage: GatewayMessage | undefined,
+  resultMessage: ConversationTurn | undefined,
   resultText: string,
-  assistantMessage?: GatewayMessage,
+  assistantMessage?: ConversationTurn,
 ): Record<string, unknown> | undefined {
   const details = detailsRecord(resultMessage?.details)
   const persistedResult = persistedToolResult(
@@ -83,8 +90,8 @@ function toolCallOutput(
 
 function persistedToolResult(
   toolCall: ToolCallContent,
-  resultMessage: GatewayMessage | undefined,
-  assistantMessage: GatewayMessage | undefined,
+  resultMessage: ConversationTurn | undefined,
+  assistantMessage: ConversationTurn | undefined,
 ): Record<string, unknown> | undefined {
   const callId = normalizedString(toolCall.id)
   if (!callId || resultMessage) return undefined
@@ -119,7 +126,7 @@ function parseToolResultText(
   return { text }
 }
 
-export function runtimeToolDetailsSignature(message: GatewayMessage): string {
+export function runtimeToolDetailsSignature(message: ConversationTurn): string {
   const details = detailsRecord(message.details)
   if (!details) return ''
   const tools = Array.isArray(details.tools) ? details.tools : []
@@ -127,7 +134,7 @@ export function runtimeToolDetailsSignature(message: GatewayMessage): string {
 }
 
 export function toolResultText(
-  resultMessage: GatewayMessage | undefined,
+  resultMessage: ConversationTurn | undefined,
 ): string {
   if (!resultMessage) return ''
   const content = Array.isArray(resultMessage.content)
@@ -140,7 +147,7 @@ export function toolResultText(
 }
 
 export function mapStandaloneToolResultToToolPart(
-  message: GatewayMessage,
+  message: ConversationTurn,
 ): ToolPart {
   const isError = Boolean(message.isError)
   const text = toolResultText(message)
@@ -165,7 +172,7 @@ export function mapStandaloneToolResultToToolPart(
 }
 
 export function assistantPartRenderOrder(
-  message: GatewayMessage,
+  message: ConversationTurn,
   showReasoningBlocks: boolean,
   showToolMessages: boolean,
 ): Array<'thinking' | 'text' | 'toolCall'> {
@@ -193,7 +200,7 @@ export function assistantPartRenderOrder(
   return order
 }
 
-export function toolCallsSignature(message: GatewayMessage): string {
+export function toolCallsSignature(message: ConversationTurn): string {
   const toolCalls = getToolCallsFromMessage(message)
   return toolCalls
     .map((toolCall) => {
@@ -209,7 +216,7 @@ export function toolCallsSignature(message: GatewayMessage): string {
 }
 
 export function toolResultSignature(
-  result: GatewayMessage | undefined,
+  result: ConversationTurn | undefined,
 ): string {
   if (!result) return 'missing'
   const content = Array.isArray(result.content) ? result.content : []
@@ -222,8 +229,8 @@ export function toolResultSignature(
 }
 
 export function toolResultsSignature(
-  message: GatewayMessage,
-  toolResultsByCallId: Map<string, GatewayMessage> | undefined,
+  message: ConversationTurn,
+  toolResultsByCallId: Map<string, ConversationTurn> | undefined,
 ): string {
   if (!toolResultsByCallId) return ''
   const toolCalls = getToolCallsFromMessage(message)
@@ -240,20 +247,7 @@ export function toolResultsSignature(
     .join('||')
 }
 
-export function toolChainMessagesSignature(
-  messages: Array<GatewayMessage> | undefined,
-  toolResultsByCallId: Map<string, GatewayMessage> | undefined,
-): string {
-  if (!messages?.length) return ''
-  return messages
-    .map(
-      (message) =>
-        `${message.id ?? ''}:${textFromMessage(message)}:${thinkingFromMessage(message) ?? ''}:${toolCallsSignature(message)}:${toolResultsSignature(message, toolResultsByCallId)}`,
-    )
-    .join('##')
-}
-
-export function thinkingFromMessage(msg: GatewayMessage): string | null {
+export function thinkingFromMessage(msg: ConversationTurn): string | null {
   const parts = Array.isArray(msg.content) ? msg.content : []
   const thinkingPart = parts.find((part) => part.type === 'thinking')
   if (thinkingPart && 'thinking' in thinkingPart) {
@@ -274,7 +268,7 @@ export function isRenderableImagePart(
   )
 }
 
-export function imagesFromMessage(msg: GatewayMessage): Array<ImageContent> {
+export function imagesFromMessage(msg: ConversationTurn): Array<ImageContent> {
   const parts = Array.isArray(msg.content) ? msg.content : []
   return parts.filter(isRenderableImagePart)
 }
@@ -291,14 +285,14 @@ function normalizedNumber(value: unknown): number | undefined {
 }
 
 export function detailsRecord(
-  value: GatewayMessage['details'] | unknown,
+  value: ConversationTurn['details'] | unknown,
 ): Record<string, unknown> | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null
   return value as Record<string, unknown>
 }
 
 export function modelFromMessage(
-  message: GatewayMessage,
+  message: ConversationTurn,
   modelLabelById: ReadonlyMap<string, string>,
 ): string | null {
   const directMetadata = messageModelMetadata(message)
@@ -310,7 +304,7 @@ export function modelFromMessage(
 }
 
 export function messageModelMetadata(
-  message: GatewayMessage,
+  message: ConversationTurn,
 ): MessageModelMetadata {
   return {
     id: normalizedString(message.model),
@@ -319,7 +313,7 @@ export function messageModelMetadata(
 }
 
 export function detailsModelMetadata(
-  message: GatewayMessage,
+  message: ConversationTurn,
 ): MessageModelMetadata {
   const details = detailsRecord(message.details)
   const detailsModel = detailsRecord(details?.model)

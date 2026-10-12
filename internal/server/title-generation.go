@@ -18,14 +18,19 @@ func shouldAutoGenerateSessionTitle(session sessionRecord) bool {
 	return true
 }
 
-func (service *ChatRunService) maybeGenerateSessionTitle(
+func (service *AgentRuntime) maybeGenerateSessionTitle(
 	session sessionRecord,
-	input SendMessageInput,
+	input SubmitTurnInput,
 	userMessage map[string]any,
 	preferences UserPreferences,
 ) {
+	if service.workerContext == nil || service.workerContext.Err() != nil {
+		return
+	}
+	service.workerWG.Add(1)
 	go func() {
-		titleCtx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
+		defer service.workerWG.Done()
+		titleCtx, cancel := context.WithTimeout(service.workerContext, 12*time.Second)
 		defer cancel()
 
 		if err := service.generateSessionTitle(
@@ -35,6 +40,9 @@ func (service *ChatRunService) maybeGenerateSessionTitle(
 			userMessage,
 			preferences,
 		); err != nil {
+			if titleCtx.Err() != nil {
+				return
+			}
 			fallbackTitle := deriveTitleFromMessage(userMessage)
 			if fallbackTitle != "" {
 				summary, updated, fallbackErr := service.chat.UpdateSessionTitleIfEmpty(
@@ -64,10 +72,10 @@ func (service *ChatRunService) maybeGenerateSessionTitle(
 	}()
 }
 
-func (service *ChatRunService) generateSessionTitle(
+func (service *AgentRuntime) generateSessionTitle(
 	ctx context.Context,
 	session sessionRecord,
-	input SendMessageInput,
+	input SubmitTurnInput,
 	userMessage map[string]any,
 	preferences UserPreferences,
 ) error {
@@ -146,7 +154,7 @@ func (service *ChatRunService) generateSessionTitle(
 	return nil
 }
 
-func (service *ChatRunService) publishTitleUpdated(
+func (service *AgentRuntime) publishTitleUpdated(
 	sessionID string,
 	session SessionSummary,
 ) {
@@ -155,7 +163,7 @@ func (service *ChatRunService) publishTitleUpdated(
 	if err := service.db.QueryRowContext(ctx, `SELECT revision FROM chat_sessions WHERE id=?`, sessionID).Scan(&revision); err != nil {
 		return
 	}
-	if err := insertChatEventExec(ctx, service.db, ChatEvent{SessionKey: session.Key, FriendlyID: session.FriendlyID, Revision: revision, State: "title", Session: &session}); err != nil {
+	if err := insertChatEventExec(ctx, service.db, ConversationEvent{SessionKey: session.Key, FriendlyID: session.FriendlyID, Revision: revision, State: "title", Session: &session}); err != nil {
 		log.Printf("kairos: title event: %v", err)
 	}
 

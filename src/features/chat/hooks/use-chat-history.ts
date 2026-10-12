@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 
 import { chatQueryKeys, fetchHistory } from '../chat-queries'
 import type { QueryClient } from '@tanstack/react-query'
-import type { GatewayMessage, HistoryResponse } from '../types'
+import type { ConversationTurn, HistoryResponse } from '../types'
 
 type UseChatHistoryInput = {
   activeFriendlyId: string
@@ -43,7 +43,7 @@ export function useChatHistory({
       const optimisticMessages = cachedMessages.filter((message) => {
         if (message.status === 'sending') return true
         if (message.__optimisticId) return true
-        return Boolean(message.clientId)
+        return false
       })
       const serverData = await fetchHistory({
         sessionKey: sessionKeyForHistory,
@@ -111,9 +111,9 @@ export function useChatHistory({
 }
 
 function mergeOptimisticHistoryMessages(
-  serverMessages: Array<GatewayMessage>,
-  optimisticMessages: Array<GatewayMessage>,
-): Array<GatewayMessage> {
+  serverMessages: Array<ConversationTurn>,
+  optimisticMessages: Array<ConversationTurn>,
+): Array<ConversationTurn> {
   if (!optimisticMessages.length) return serverMessages
 
   const merged = [...serverMessages]

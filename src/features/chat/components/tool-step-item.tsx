@@ -6,15 +6,7 @@ import {
   ToolsIcon,
 } from '@hugeicons/core-free-icons'
 import type { ToolPart } from '@/components/prompt-kit/tool'
-import { MessageContent } from '@/components/prompt-kit/message'
-import {
-  ChainOfThought,
-  ChainOfThoughtContent,
-  ChainOfThoughtItem,
-  ChainOfThoughtStep,
-  ChainOfThoughtTrigger,
-} from '@/components/prompt-kit/chain-of-thought'
-import type { GatewayMessage } from '../types'
+import type { ConversationTurn } from '../types'
 import {
   TooltipContent,
   TooltipProvider,
@@ -36,106 +28,9 @@ export type ToolStep =
   | {
       kind: 'web'
       key: string
-      message: GatewayMessage
+      message: ConversationTurn
       toolCallIds?: string[]
     }
-
-export type ToolChainItem =
-  | {
-      kind: 'text'
-      key: string
-      text: string
-    }
-  | {
-      kind: 'step'
-      step: ToolStep
-    }
-
-type ToolChainProps = {
-  items: Array<ToolChainItem>
-  modelLabel?: string | null
-}
-
-export function ToolChain({ items, modelLabel }: ToolChainProps) {
-  const steps = items.flatMap(function collectSteps(item) {
-    return item.kind === 'step' ? [item.step] : []
-  })
-  if (steps.length === 0) return null
-  const toolCount = steps.length
-  const durationMs = totalToolDurationMs(steps)
-  const label =
-    durationMs > 0
-      ? `Worked for ${formatDuration(durationMs)}`
-      : toolCount === 1
-        ? 'Used 1 tool'
-        : `Used ${toolCount} tools`
-
-  return (
-    <div className="w-full max-w-[900px] py-1">
-      {modelLabel ? (
-        <div className="mb-1 flex items-center gap-2 text-sm text-primary-800">
-          <span className="font-mono font-medium text-primary-900">
-            {modelLabel}
-          </span>
-        </div>
-      ) : null}
-      <ChainOfThought>
-        <ChainOfThoughtStep>
-          <ChainOfThoughtTrigger
-            className="px-1 text-primary-500 hover:text-primary-700"
-            right={toolCount === 1 ? '1 step' : `${toolCount} steps`}
-          >
-            {label}
-          </ChainOfThoughtTrigger>
-          <ChainOfThoughtContent>
-            {items.map((item) => (
-              <ChainOfThoughtItem
-                key={item.kind === 'text' ? item.key : item.step.key}
-              >
-                {item.kind === 'text' ? (
-                  <MessageContent
-                    markdown
-                    className="bg-transparent p-0 text-primary-700"
-                  >
-                    {item.text}
-                  </MessageContent>
-                ) : (
-                  <ToolStepItem step={item.step} />
-                )}
-              </ChainOfThoughtItem>
-            ))}
-          </ChainOfThoughtContent>
-        </ChainOfThoughtStep>
-      </ChainOfThought>
-    </div>
-  )
-}
-
-function totalToolDurationMs(steps: Array<ToolStep>) {
-  return steps.reduce(function sum(total, step) {
-    if (step.kind === 'web') {
-      return (
-        total +
-        webToolEventCardsFromMessage(step.message, step.toolCallIds).reduce(
-          (eventTotal, event) => eventTotal + (event.durationMs ?? 0),
-          0,
-        )
-      )
-    }
-    const duration = step.toolPart.durationMs
-    return (
-      total +
-      (typeof duration === 'number' && Number.isFinite(duration) ? duration : 0)
-    )
-  }, 0)
-}
-
-function formatDuration(durationMs: number) {
-  if (durationMs < 1000) return `${Math.max(1, Math.round(durationMs))}ms`
-  const seconds = durationMs / 1000
-  if (seconds < 10) return `${seconds.toFixed(1)}s`
-  return `${Math.round(seconds)}s`
-}
 
 export function ToolStepItem({ step }: { step: ToolStep }) {
   const [sourcesExpanded, setSourcesExpanded] = useState(false)

@@ -33,8 +33,8 @@ type App struct {
 	config     Config
 	db         *sql.DB
 	auth       *AuthService
-	chat       *ChatService
-	runs       *ChatRunService
+	chat       *ConversationService
+	runs       *AgentRuntime
 	providers  *ProviderService
 	webTools   *WebToolSettingsService
 	capability CapabilitySet
@@ -79,10 +79,10 @@ func NewApp(config Config) (*App, error) {
 		db.Close()
 		return nil, err
 	}
-	chat := NewChatService(db)
+	chat := NewConversationService(db)
 	providers := NewProviderService(db, config)
 	webTools := NewWebToolSettingsService(db, config)
-	runs := NewChatRunService(db, chat, providers, webTools)
+	runs := NewAgentRuntime(db, chat, providers, webTools)
 
 	app := &App{
 		config:    config,

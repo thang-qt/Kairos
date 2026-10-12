@@ -4,7 +4,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { chatQueryKeys } from '@/features/chat/chat-queries'
 import { getMessageTimestamp, textFromMessage } from '@/features/chat/utils'
 import type {
-  GatewayMessage,
+  ConversationTurn,
   HistoryResponse,
 } from '@/lib/chat-backend/contracts'
 
@@ -70,7 +70,7 @@ export function useConversationExport({
   return { exportConversation }
 }
 
-function formatTimestamp(message: GatewayMessage): string {
+function formatTimestamp(message: ConversationTurn): string {
   const ts = getMessageTimestamp(message)
   return new Date(ts).toLocaleString('en-GB', {
     year: 'numeric',
@@ -87,7 +87,7 @@ function roleLabel(role: string | undefined): string {
   return role || 'Unknown'
 }
 
-function modelLabel(message: GatewayMessage): string | null {
+function modelLabel(message: ConversationTurn): string | null {
   if (
     typeof message.modelName === 'string' &&
     message.modelName.trim().length > 0
@@ -100,7 +100,7 @@ function modelLabel(message: GatewayMessage): string | null {
   return null
 }
 
-function toMarkdown(messages: Array<GatewayMessage>, title: string): string {
+function toMarkdown(messages: Array<ConversationTurn>, title: string): string {
   const lines: Array<string> = []
   lines.push('# ' + title)
   lines.push('')
@@ -126,7 +126,7 @@ function toMarkdown(messages: Array<GatewayMessage>, title: string): string {
   return lines.join('\n')
 }
 
-function toJSON(messages: Array<GatewayMessage>, title: string): string {
+function toJSON(messages: Array<ConversationTurn>, title: string): string {
   const entries = messages
     .map(function mapMessage(message) {
       const text = textFromMessage(message)
@@ -152,7 +152,7 @@ function toJSON(messages: Array<GatewayMessage>, title: string): string {
   )
 }
 
-function toPlainText(messages: Array<GatewayMessage>, title: string): string {
+function toPlainText(messages: Array<ConversationTurn>, title: string): string {
   const lines: Array<string> = []
   lines.push(title)
   lines.push('Exported on ' + new Date().toLocaleString('en-GB'))

@@ -74,21 +74,6 @@ func newToolCallContentPart(toolCall ProviderToolCall) chatMessageContentPart {
 	}
 }
 
-func newToolProgressContentPart(progress ProviderToolProgress) chatMessageContentPart {
-	arguments := map[string]any{}
-	if label := strings.TrimSpace(progress.Label); label != "" {
-		arguments["label"] = label
-	}
-	return chatMessageContentPart{
-		Type:   "toolCall",
-		ID:     strings.TrimSpace(progress.ID),
-		Name:   strings.TrimSpace(progress.Name),
-		Args:   arguments,
-		Status: strings.TrimSpace(progress.Status),
-		Emoji:  strings.TrimSpace(progress.Emoji),
-	}
-}
-
 func (message chatMessage) toMap() map[string]any {
 	value := map[string]any{
 		"id":      message.ID,

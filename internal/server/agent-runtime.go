@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-type SendMessageInput struct {
+type SubmitTurnInput struct {
 	EditMessageID    string               `json:"-"`
 	ExpectedRevision *int64               `json:"expectedRevision,omitempty"`
 	FriendlyID       string               `json:"-"`
@@ -34,53 +34,56 @@ type AttachmentPayload struct {
 	Content  string `json:"content"`
 }
 
-type SendMessageResult struct {
-	RunID              string `json:"runId"`
-	SessionKey         string `json:"sessionKey"`
-	UserMessageID      string `json:"userMessageId"`
-	AssistantMessageID string `json:"assistantMessageId"`
-	ClientID           string `json:"clientId,omitempty"`
+type SubmitTurnResult struct {
+	RunID           string `json:"runId"`
+	SessionKey      string `json:"sessionKey"`
+	UserTurnID      string `json:"userTurnId"`
+	AssistantTurnID string `json:"assistantTurnId"`
+	ClientID        string `json:"clientId,omitempty"`
 }
 
-type runRecord struct {
-	Revision           int64
-	LeaseToken         string
-	ID                 string
-	UserID             string
-	SessionID          string
-	Status             string
-	Model              string
-	IdempotencyKey     string
-	AssistantMessageID string
+type executionRecord struct {
+	UserTurnID      string
+	AcceptedAt      int64
+	TurnTimestamp   int64
+	Revision        int64
+	LeaseToken      string
+	ID              string
+	UserID          string
+	SessionID       string
+	Status          string
+	Model           string
+	IdempotencyKey  string
+	AssistantTurnID string
 }
 
 type toolExecutor interface {
 	Execute(ctx context.Context, call ProviderToolCall) (WebToolResult, error)
 }
 
-type ChatRunService struct {
+type AgentRuntime struct {
 	workerOnce    sync.Once
 	workerCancel  context.CancelFunc
 	workerContext context.Context
 	workerWG      sync.WaitGroup
 	wake          chan struct{}
 	db            *sql.DB
-	chat          *ChatService
+	chat          *ConversationService
 	providers     *ProviderService
 	webSettings   *WebToolSettingsService
-	toolRuntime   func(ctx context.Context, userID string, input SendMessageInput) (toolExecutor, error)
+	toolRuntime   func(ctx context.Context, userID string, input SubmitTurnInput) (toolExecutor, error)
 	runMu         sync.Mutex
 	runCancels    map[string]context.CancelFunc
 	sessionRuns   map[string]map[string]struct{}
 }
 
-func NewChatRunService(
+func NewAgentRuntime(
 	db *sql.DB,
-	chat *ChatService,
+	chat *ConversationService,
 	providers *ProviderService,
 	webSettings *WebToolSettingsService,
-) *ChatRunService {
-	service := &ChatRunService{
+) *AgentRuntime {
+	service := &AgentRuntime{
 		wake:        make(chan struct{}, 1),
 		db:          db,
 		chat:        chat,
@@ -93,10 +96,10 @@ func NewChatRunService(
 	return service
 }
 
-func (service *ChatRunService) defaultToolRuntime(
+func (service *AgentRuntime) defaultToolRuntime(
 	ctx context.Context,
 	userID string,
-	input SendMessageInput,
+	input SubmitTurnInput,
 ) (toolExecutor, error) {
 	runtime := NewWebToolRuntimeFromEnv()
 	if input.WebSearch && service.webSettings != nil {
@@ -109,16 +112,16 @@ func (service *ChatRunService) defaultToolRuntime(
 	return runtime, nil
 }
 
-func (service *ChatRunService) StartRun(
+func (service *AgentRuntime) StartRun(
 	ctx context.Context,
 	userID string,
-	input SendMessageInput,
-) (SendMessageResult, error) {
+	input SubmitTurnInput,
+) (SubmitTurnResult, error) {
 	service.chat.commandMu.Lock()
 	defer service.chat.commandMu.Unlock()
 	session, err := service.chat.findSessionByFriendlyID(ctx, userID, input.FriendlyID)
 	if err != nil {
-		return SendMessageResult{}, err
+		return SubmitTurnResult{}, err
 	}
 	idempotencyKey := strings.TrimSpace(input.IdempotencyKey)
 	if idempotencyKey != "" {
@@ -129,14 +132,15 @@ func (service *ChatRunService) StartRun(
 			idempotencyKey,
 		)
 		if err != nil {
-			return SendMessageResult{}, err
+			return SubmitTurnResult{}, err
 		}
 		if found {
-			return SendMessageResult{
-				RunID:              existingRun.ID,
-				SessionKey:         session.ID,
-				AssistantMessageID: existingRun.AssistantMessageID,
-				ClientID:           strings.TrimSpace(input.ClientID),
+			return SubmitTurnResult{
+				RunID:           existingRun.ID,
+				SessionKey:      session.ID,
+				AssistantTurnID: existingRun.AssistantTurnID,
+				UserTurnID:      existingRun.UserTurnID,
+				ClientID:        strings.TrimSpace(input.ClientID),
 			}, nil
 		}
 	}
@@ -160,7 +164,7 @@ func (service *ChatRunService) StartRun(
 
 	userMessage, _, err := buildUserMessage(input.Message, input.Attachments, input.ClientID)
 	if err != nil {
-		return SendMessageResult{}, err
+		return SubmitTurnResult{}, err
 	}
 
 	now := time.Now().UnixMilli()
@@ -168,70 +172,81 @@ func (service *ChatRunService) StartRun(
 	runID := newID()
 	assistantMessageID := newID()
 	model := normalizeModel(input.Model)
-	record := runRecord{
-		ID:                 runID,
-		UserID:             userID,
-		SessionID:          session.ID,
-		Status:             "queued",
-		Model:              model,
-		IdempotencyKey:     idempotencyKey,
-		AssistantMessageID: assistantMessageID,
+	record := executionRecord{
+		ID:              runID,
+		UserID:          userID,
+		SessionID:       session.ID,
+		Status:          "queued",
+		AcceptedAt:      now,
+		Model:           model,
+		IdempotencyKey:  idempotencyKey,
+		AssistantTurnID: assistantMessageID,
 	}
 
 	transaction, err := service.db.BeginTx(ctx, nil)
 	if err != nil {
-		return SendMessageResult{}, fmt.Errorf("begin run tx: %w", err)
+		return SubmitTurnResult{}, fmt.Errorf("begin run tx: %w", err)
 	}
 	defer transaction.Rollback()
 
 	if err := transaction.QueryRowContext(ctx, `SELECT revision FROM chat_sessions WHERE id=?`, session.ID).Scan(&record.Revision); err != nil {
-		return SendMessageResult{}, err
+		return SubmitTurnResult{}, err
 	}
 	if input.ExpectedRevision != nil && *input.ExpectedRevision != record.Revision {
-		return SendMessageResult{}, errConversationConflict
+		return SubmitTurnResult{}, errConversationConflict
 	}
 	if input.EditMessageID != "" {
 		records, err := service.chat.listMessageRecordsExec(ctx, transaction, session.ID)
 		if err != nil {
-			return SendMessageResult{}, err
+			return SubmitTurnResult{}, err
 		}
 		index := findMessageRecordIndex(records, input.EditMessageID)
 		if index < 0 || records[index].Role != "user" {
-			return SendMessageResult{}, errConversationConflict
+			return SubmitTurnResult{}, errConversationConflict
 		}
 		input.Attachments = extractAttachmentPayloads(records[index].Message)
 		userMessage, _, err = buildUserMessage(input.Message, input.Attachments, input.ClientID)
 		if err != nil {
-			return SendMessageResult{}, err
+			return SubmitTurnResult{}, err
 		}
 		userMessage["id"] = input.EditMessageID
 		userMessage["timestamp"] = now
 		if err := service.chat.truncateSessionMessagesExec(ctx, transaction, &session, records, index); err != nil {
-			return SendMessageResult{}, err
+			return SubmitTurnResult{}, err
 		}
 		record.Revision++
 	}
 	var active int
 	if err := transaction.QueryRowContext(ctx, `SELECT COUNT(*) FROM chat_runs WHERE session_id=? AND status IN ('queued','preparing','running')`, session.ID).Scan(&active); err != nil {
-		return SendMessageResult{}, err
+		return SubmitTurnResult{}, err
 	}
 	if active > 0 {
-		return SendMessageResult{}, errConversationConflict
+		return SubmitTurnResult{}, errConversationConflict
 	}
 
+	var latestTimestamp int64
+	if err := transaction.QueryRowContext(ctx, `SELECT MAX(COALESCE((SELECT MAX(timestamp) FROM chat_messages WHERE session_id=?),0),COALESCE((SELECT MAX(started_at) FROM chat_runs WHERE session_id=? AND invalidated=0),0))`, session.ID, session.ID).Scan(&latestTimestamp); err != nil {
+		return SubmitTurnResult{}, err
+	}
+	userTimestamp := maxInt64(now, latestTimestamp+1)
+	userMessage["timestamp"] = userTimestamp
+	record.TurnTimestamp = userTimestamp + 1
 	if _, err := service.chat.appendMessageWithOptionsExec(
 		ctx,
 		transaction,
 		session,
 		userMessage,
-		now,
+		userTimestamp,
 		appendMessageOptions{
 			SkipDerivedTitle: shouldGenerateTitle && autoGenerateTitleEnabled,
 		},
 	); err != nil {
-		return SendMessageResult{}, err
+		return SubmitTurnResult{}, err
 	}
 
+	if err := insertChatEventExec(ctx, transaction, ConversationEvent{SessionKey: session.ID, Revision: record.Revision, TurnID: messageIDFromMap(userMessage), RunID: record.ID, State: "user", Message: userMessage}); err != nil {
+		return SubmitTurnResult{}, err
+	}
 	if err := service.insertRunExec(ctx, transaction, record, input, now); err != nil {
 		if idempotencyKey != "" && isUniqueConstraintError(err) {
 			_ = transaction.Rollback()
@@ -242,57 +257,58 @@ func (service *ChatRunService) StartRun(
 				idempotencyKey,
 			)
 			if lookupErr != nil {
-				return SendMessageResult{}, lookupErr
+				return SubmitTurnResult{}, lookupErr
 			}
 			if found {
-				return SendMessageResult{
-					RunID:              existingRun.ID,
-					SessionKey:         session.ID,
-					AssistantMessageID: existingRun.AssistantMessageID,
-					ClientID:           strings.TrimSpace(input.ClientID),
+				return SubmitTurnResult{
+					RunID:           existingRun.ID,
+					SessionKey:      session.ID,
+					AssistantTurnID: existingRun.AssistantTurnID,
+					UserTurnID:      existingRun.UserTurnID,
+					ClientID:        strings.TrimSpace(input.ClientID),
 				}, nil
 			}
 		}
-		return SendMessageResult{}, err
+		return SubmitTurnResult{}, err
 	}
 	if _, err := transaction.ExecContext(ctx, `UPDATE chat_runs SET user_message_id=? WHERE id=?`, messageIDFromMap(userMessage), record.ID); err != nil {
-		return SendMessageResult{}, err
+		return SubmitTurnResult{}, err
 	}
 	if err := transaction.Commit(); err != nil {
-		return SendMessageResult{}, fmt.Errorf("commit run tx: %w", err)
+		return SubmitTurnResult{}, fmt.Errorf("commit run tx: %w", err)
 	}
 
+	service.StartWorkers()
 	if shouldGenerateTitle && autoGenerateTitleEnabled {
 		service.maybeGenerateSessionTitle(session, input, userMessage, titlePreferences)
 	}
-	service.StartWorkers()
 	service.notifyQueue()
 	log.Printf("kairos: stage=accepted run=%s revision=%d", record.ID, record.Revision)
 
-	return SendMessageResult{
-		RunID:              runID,
-		SessionKey:         session.ID,
-		UserMessageID:      stringValueFromMap(userMessage, "id"),
-		AssistantMessageID: assistantMessageID,
-		ClientID:           strings.TrimSpace(input.ClientID),
+	return SubmitTurnResult{
+		RunID:           runID,
+		SessionKey:      session.ID,
+		UserTurnID:      stringValueFromMap(userMessage, "id"),
+		AssistantTurnID: assistantMessageID,
+		ClientID:        strings.TrimSpace(input.ClientID),
 	}, nil
 }
 
-func (service *ChatRunService) StreamSession(
+func (service *AgentRuntime) StreamSession(
 	ctx context.Context,
 	userID string,
 	friendlyID string,
-	onEvent func(ChatEvent) error,
+	onEvent func(ConversationEvent) error,
 ) error {
 	return service.StreamSessionFromCursor(ctx, userID, friendlyID, 0, onEvent)
 }
 
-func (service *ChatRunService) StreamSessionFromCursor(
+func (service *AgentRuntime) StreamSessionFromCursor(
 	ctx context.Context,
 	userID string,
 	friendlyID string,
 	afterCursor int64,
-	onEvent func(ChatEvent) error,
+	onEvent func(ConversationEvent) error,
 ) error {
 	session, err := service.chat.findSessionByFriendlyID(ctx, userID, friendlyID)
 	if err != nil {
@@ -303,7 +319,7 @@ func (service *ChatRunService) StreamSessionFromCursor(
 	if err != nil {
 		return err
 	}
-	if err := onEvent(ChatEvent{State: "reconcile", SessionKey: session.ID, Revision: history.Revision, ActiveRunIDs: history.ActiveRunIDs}); err != nil {
+	if err := onEvent(ConversationEvent{State: "reconcile", Snapshot: &history, SessionKey: session.ID, Revision: history.Revision, ActiveRunIDs: history.ActiveRunIDs}); err != nil {
 		return err
 	}
 	ticker := time.NewTicker(50 * time.Millisecond)
@@ -326,7 +342,7 @@ func (service *ChatRunService) StreamSessionFromCursor(
 			return nil
 		case <-ticker.C:
 		case <-heartbeat.C:
-			if err := onEvent(ChatEvent{State: "heartbeat"}); err != nil {
+			if err := onEvent(ConversationEvent{State: "heartbeat"}); err != nil {
 				return err
 			}
 		}
@@ -334,7 +350,7 @@ func (service *ChatRunService) StreamSessionFromCursor(
 
 }
 
-func (service *ChatRunService) ResolveSession(
+func (service *AgentRuntime) ResolveSession(
 	ctx context.Context,
 	userID string,
 	friendlyID string,
@@ -342,7 +358,7 @@ func (service *ChatRunService) ResolveSession(
 	return service.chat.findSessionByFriendlyID(ctx, userID, friendlyID)
 }
 
-func (service *ChatRunService) CancelSessionRuns(
+func (service *AgentRuntime) CancelSessionRuns(
 	ctx context.Context,
 	userID string,
 	friendlyID string,
@@ -400,7 +416,7 @@ func (service *ChatRunService) CancelSessionRuns(
 
 }
 
-func (service *ChatRunService) activeRunIDsForSession(
+func (service *AgentRuntime) activeRunIDsForSession(
 	ctx context.Context,
 	sessionID string,
 ) ([]string, error) {
@@ -429,22 +445,26 @@ func (service *ChatRunService) activeRunIDsForSession(
 	return runIDs, nil
 }
 
-func (service *ChatRunService) insertRun(
+func (service *AgentRuntime) insertRun(
 	ctx context.Context,
-	record runRecord,
-	input SendMessageInput,
+	record executionRecord,
+	input SubmitTurnInput,
 	now int64,
 ) error {
 	return service.insertRunExec(ctx, service.db, record, input, now)
 }
 
-func (service *ChatRunService) insertRunExec(
+func (service *AgentRuntime) insertRunExec(
 	ctx context.Context,
 	exec sqlExecutor,
-	record runRecord,
-	input SendMessageInput,
+	record executionRecord,
+	input SubmitTurnInput,
 	now int64,
 ) error {
+	turnTimestamp := record.TurnTimestamp
+	if turnTimestamp == 0 {
+		turnTimestamp = now + 1
+	}
 	requestJSON, err := json.Marshal(input)
 	if err != nil {
 		return fmt.Errorf("encode run request: %w", err)
@@ -464,11 +484,11 @@ func (service *ChatRunService) insertRunExec(
 			created_at
 		)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, record.ID, record.UserID, record.SessionID, record.Status, record.Model, nullableString(record.IdempotencyKey), nullableString(record.AssistantMessageID), string(requestJSON), now, now); err != nil {
+	`, record.ID, record.UserID, record.SessionID, record.Status, record.Model, nullableString(record.IdempotencyKey), nullableString(record.AssistantTurnID), string(requestJSON), turnTimestamp, now); err != nil {
 		return fmt.Errorf("insert run: %w", err)
 	}
 
-	if _, err := exec.ExecContext(ctx, `UPDATE chat_runs SET revision=?,user_message_id=? WHERE id=?`, record.Revision, input.ClientID, record.ID); err != nil {
+	if _, err := exec.ExecContext(ctx, `UPDATE chat_runs SET revision=?,user_message_id=?,lease_token=?,lease_until=? WHERE id=?`, record.Revision, input.ClientID, record.LeaseToken, time.Now().Add(workerLease).UnixMilli(), record.ID); err != nil {
 		return err
 	}
 	if _, err := exec.ExecContext(ctx, `INSERT INTO chat_jobs(run_id,available_at) VALUES(?,?)`, record.ID, now); err != nil {
@@ -477,21 +497,21 @@ func (service *ChatRunService) insertRunExec(
 	return service.refreshTurnExec(ctx, exec, record.ID, "delta")
 }
 
-func (service *ChatRunService) findRunByIdempotencyKey(
+func (service *AgentRuntime) findRunByIdempotencyKey(
 	ctx context.Context,
 	userID string,
 	sessionID string,
 	idempotencyKey string,
-) (runRecord, bool, error) {
+) (executionRecord, bool, error) {
 	normalizedKey := strings.TrimSpace(idempotencyKey)
 	if normalizedKey == "" {
-		return runRecord{}, false, nil
+		return executionRecord{}, false, nil
 	}
 
-	var record runRecord
+	var record executionRecord
 	var assistantMessageID sql.NullString
 	err := service.db.QueryRowContext(ctx, `
-		SELECT id, user_id, session_id, status, model, assistant_message_id
+		SELECT id, user_id, session_id, status, model, assistant_message_id,COALESCE(user_message_id,'')
 		FROM chat_runs
 		WHERE user_id = ? AND session_id = ? AND idempotency_key = ?
 		LIMIT 1
@@ -502,15 +522,16 @@ func (service *ChatRunService) findRunByIdempotencyKey(
 		&record.Status,
 		&record.Model,
 		&assistantMessageID,
+		&record.UserTurnID,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
-		return runRecord{}, false, nil
+		return executionRecord{}, false, nil
 	}
 	if err != nil {
-		return runRecord{}, false, fmt.Errorf("find idempotent run: %w", err)
+		return executionRecord{}, false, fmt.Errorf("find idempotent run: %w", err)
 	}
 	record.IdempotencyKey = normalizedKey
-	record.AssistantMessageID = nullStringValue(assistantMessageID)
+	record.AssistantTurnID = nullStringValue(assistantMessageID)
 	return record, true, nil
 }
 

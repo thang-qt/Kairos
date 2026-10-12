@@ -2,7 +2,7 @@ import type {
   ChatBackend,
   ChatCreateConversationInput,
   ChatDeleteConversationInput,
-  ChatEvent,
+  ConversationEvent,
   ChatHistoryInput,
   ChatRenameConversationInput,
   ChatStatus,
@@ -50,14 +50,14 @@ type SessionMutationPayload = {
   contextTokens?: number
   settings?: SessionMeta['settings']
   runId?: string
-  userMessageId?: string
-  assistantMessageId?: string
+  userTurnId?: string
+  assistantTurnId?: string
   clientId?: string
 }
 
 export async function consumeSSEChatEvents(
   response: Response,
-  onEvent: (event: ChatEvent) => void,
+  onEvent: (event: ConversationEvent) => void,
 ) {
   if (!response.body) {
     throw new Error('Streaming response unavailable')
@@ -75,7 +75,7 @@ export async function consumeSSEChatEvents(
       .map((line) => line.slice(5).trimStart())
       .join('\n')
     if (!data) return
-    const event = JSON.parse(data) as ChatEvent
+    const event = JSON.parse(data) as ConversationEvent
     if (
       event.state === 'final' ||
       event.state === 'error' ||

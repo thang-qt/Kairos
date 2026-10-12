@@ -44,8 +44,8 @@ export type MessageContent =
   | ThinkingContent
   | ImageContent
 
-export type GatewayMessage = {
-  steps?: Array<GatewayMessage>
+export type ConversationTurn = {
+  steps?: Array<ConversationTurn>
   status?: string
   revision?: number
   error?: string
@@ -97,7 +97,7 @@ export type SessionSummary = {
   derivedTitle?: string
   isPinned?: boolean
   updatedAt?: number
-  lastMessage?: GatewayMessage | null
+  lastMessage?: ConversationTurn | null
   friendlyId?: string
   totalTokens?: number
   contextTokens?: number
@@ -114,7 +114,7 @@ export type HistoryResponse = {
   activeRunIds?: Array<string>
   sessionKey: string
   sessionId?: string
-  messages: Array<GatewayMessage>
+  messages: Array<ConversationTurn>
 }
 
 export type SessionMeta = {
@@ -125,7 +125,7 @@ export type SessionMeta = {
   label?: string
   isPinned?: boolean
   updatedAt?: number
-  lastMessage?: GatewayMessage | null
+  lastMessage?: ConversationTurn | null
   totalTokens?: number
   contextTokens?: number
   settings?: ConversationSettings

@@ -75,11 +75,11 @@ type pinSessionRequest struct {
 
 type sessionMutationResponse struct {
 	SessionSummary
-	SessionKey         string `json:"sessionKey"`
-	RunID              string `json:"runId,omitempty"`
-	UserMessageID      string `json:"userMessageId,omitempty"`
-	AssistantMessageID string `json:"assistantMessageId,omitempty"`
-	ClientID           string `json:"clientId,omitempty"`
+	SessionKey      string `json:"sessionKey"`
+	RunID           string `json:"runId,omitempty"`
+	UserTurnID      string `json:"userTurnId,omitempty"`
+	AssistantTurnID string `json:"assistantTurnId,omitempty"`
+	ClientID        string `json:"clientId,omitempty"`
 }
 
 func newSessionMutationResponse(session SessionSummary) sessionMutationResponse {
@@ -147,7 +147,7 @@ func (app *App) handleCreateSession(writer http.ResponseWriter, request *http.Re
 
 	response := newSessionMutationResponse(session)
 	if strings.TrimSpace(payload.Message) != "" || len(payload.Attachments) > 0 {
-		result, err := app.runs.StartRun(request.Context(), user.ID, SendMessageInput{
+		result, err := app.runs.StartRun(request.Context(), user.ID, SubmitTurnInput{
 			FriendlyID:     session.FriendlyID,
 			Message:        payload.Message,
 			Model:          payload.Model,
@@ -180,8 +180,8 @@ func (app *App) handleCreateSession(writer http.ResponseWriter, request *http.Re
 			response = newSessionMutationResponse(updatedSession)
 		}
 		response.RunID = result.RunID
-		response.UserMessageID = result.UserMessageID
-		response.AssistantMessageID = result.AssistantMessageID
+		response.UserTurnID = result.UserTurnID
+		response.AssistantTurnID = result.AssistantTurnID
 		response.ClientID = result.ClientID
 	}
 
@@ -322,7 +322,7 @@ func (app *App) handleSendMessage(writer http.ResponseWriter, request *http.Requ
 		return
 	}
 
-	result, err := app.runs.StartRun(request.Context(), user.ID, SendMessageInput{
+	result, err := app.runs.StartRun(request.Context(), user.ID, SubmitTurnInput{
 		ExpectedRevision: payload.ExpectedRevision,
 		FriendlyID:       request.PathValue("friendlyId"),
 		Message:          payload.Message,
@@ -384,7 +384,7 @@ func (app *App) handleEphemeralMessage(writer http.ResponseWriter, request *http
 	writer.WriteHeader(http.StatusOK)
 	flusher.Flush()
 
-	err := app.runs.StreamEphemeral(request.Context(), user.ID, payload.History, SendMessageInput{
+	err := app.runs.StreamEphemeral(request.Context(), user.ID, payload.History, SubmitTurnInput{
 		Message:        payload.Message,
 		Model:          payload.Model,
 		SystemPrompt:   payload.SystemPrompt,
@@ -395,7 +395,7 @@ func (app *App) handleEphemeralMessage(writer http.ResponseWriter, request *http
 		ClientTime:     payload.ClientTime,
 		ClientTimeZone: payload.ClientTimeZone,
 		Attachments:    payload.Attachments,
-	}, func(event ChatEvent) error {
+	}, func(event ConversationEvent) error {
 		encoded, encodeErr := json.Marshal(event)
 		if encodeErr != nil {
 			return encodeErr
@@ -462,7 +462,7 @@ func (app *App) handleEditUserMessage(writer http.ResponseWriter, request *http.
 		return
 	}
 
-	result, err := app.runs.StartRun(request.Context(), user.ID, SendMessageInput{
+	result, err := app.runs.StartRun(request.Context(), user.ID, SubmitTurnInput{
 		FriendlyID: request.PathValue("friendlyId"), EditMessageID: request.PathValue("messageId"), ExpectedRevision: payload.ExpectedRevision,
 		Message: payload.Message, Model: payload.Model, SystemPrompt: payload.SystemPrompt, WebSearch: payload.WebSearch, MathTools: payload.MathTools, Advanced: payload.Advanced, IdempotencyKey: payload.IdempotencyKey, ClientID: payload.ClientID, ClientTime: payload.ClientTime, ClientTimeZone: payload.ClientTimeZone,
 	})
@@ -481,13 +481,13 @@ func (app *App) handleEditUserMessage(writer http.ResponseWriter, request *http.
 	}
 
 	writeJSON(writer, http.StatusOK, map[string]any{
-		"sessionKey":         result.SessionKey,
-		"key":                result.SessionKey,
-		"friendlyId":         request.PathValue("friendlyId"),
-		"runId":              result.RunID,
-		"userMessageId":      result.UserMessageID,
-		"assistantMessageId": result.AssistantMessageID,
-		"clientId":           result.ClientID,
+		"sessionKey":      result.SessionKey,
+		"key":             result.SessionKey,
+		"friendlyId":      request.PathValue("friendlyId"),
+		"runId":           result.RunID,
+		"userTurnId":      result.UserTurnID,
+		"assistantTurnId": result.AssistantTurnID,
+		"clientId":        result.ClientID,
 	})
 }
 

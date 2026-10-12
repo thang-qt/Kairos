@@ -13,136 +13,8 @@ import (
 
 var errConversationConflict = errors.New("conversation changed or already has an active run; reload and retry")
 
-const workerLease = 30 * time.Second
-
-func (service *ChatRunService) StartWorkers() {
-	service.workerOnce.Do(func() {
-		ctx, cancel := context.WithCancel(context.Background())
-		service.workerCancel = cancel
-		service.workerContext = ctx
-		service.workerWG.Add(1)
-		go func() {
-			defer service.workerWG.Done()
-			ticker := time.NewTicker(100 * time.Millisecond)
-			defer ticker.Stop()
-			for {
-				if err := service.dispatchJobs(ctx); err != nil && ctx.Err() == nil {
-					log.Printf("kairos: queue: %v", err)
-				}
-				select {
-				case <-ctx.Done():
-					return
-				case <-service.wake:
-				case <-ticker.C:
-				}
-			}
-		}()
-	})
-}
-
-func (service *ChatRunService) Close() {
-	if service.workerCancel != nil {
-		service.workerCancel()
-	}
-	service.runMu.Lock()
-	for _, cancel := range service.runCancels {
-		cancel()
-	}
-	service.runMu.Unlock()
-	service.workerWG.Wait()
-}
-
-func (service *ChatRunService) dispatchJobs(ctx context.Context) error {
-	now := time.Now().UnixMilli()
-	// Never replay uncertain model/tool execution automatically.
-	tx, err := service.db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-	rows, err := tx.QueryContext(ctx, `SELECT id FROM chat_runs WHERE status IN ('preparing','running') AND lease_until < ?`, now)
-	if err != nil {
-		return err
-	}
-	var expired []string
-	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
-			rows.Close()
-			return err
-		}
-		expired = append(expired, id)
-	}
-	if err := rows.Err(); err != nil {
-		rows.Close()
-		return err
-	}
-	rows.Close()
-	for _, id := range expired {
-		if _, err := tx.ExecContext(ctx, `UPDATE chat_runs SET status='interrupted', completed_at=?, error_message='Execution interrupted; retry explicitly to avoid repeating tool effects', lease_token='' WHERE id=?`, now, id); err != nil {
-			return err
-		}
-		if err := service.refreshTurnExec(ctx, tx, id, "error"); err != nil {
-			return err
-		}
-		if _, err := tx.ExecContext(ctx, `DELETE FROM chat_jobs WHERE run_id=?`, id); err != nil {
-			return err
-		}
-	}
-	var record runRecord
-	var requestJSON, friendlyID string
-	err = tx.QueryRowContext(ctx, `SELECT r.id,r.user_id,r.session_id,r.model,r.assistant_message_id,r.revision,r.request_json,s.friendly_id FROM chat_jobs j JOIN chat_runs r ON r.id=j.run_id JOIN chat_sessions s ON s.id=r.session_id WHERE r.status='queued' AND r.invalidated=0 AND r.revision=s.revision AND j.available_at<=? ORDER BY j.available_at,r.created_at LIMIT 1`, now).Scan(&record.ID, &record.UserID, &record.SessionID, &record.Model, &record.AssistantMessageID, &record.Revision, &requestJSON, &friendlyID)
-	if errors.Is(err, sql.ErrNoRows) {
-		return tx.Commit()
-	}
-	if err != nil {
-		return err
-	}
-	record.LeaseToken = newID()
-	record.Status = "preparing"
-	if _, err := tx.ExecContext(ctx, `UPDATE chat_runs SET status='preparing',lease_token=?,lease_until=? WHERE id=? AND status='queued'`, record.LeaseToken, now+workerLease.Milliseconds(), record.ID); err != nil {
-		return err
-	}
-	if _, err := tx.ExecContext(ctx, `UPDATE chat_jobs SET attempts=attempts+1 WHERE run_id=?`, record.ID); err != nil {
-		return err
-	}
-	if err := service.refreshTurnExec(ctx, tx, record.ID, "delta"); err != nil {
-		return err
-	}
-	if err := tx.Commit(); err != nil {
-		return err
-	}
-	var input SendMessageInput
-	if err := json.Unmarshal([]byte(requestJSON), &input); err != nil {
-		service.finishOwnedRun(record, "error", err)
-		return nil
-	}
-	input.FriendlyID = friendlyID
-	session, err := service.chat.findSessionByFriendlyID(ctx, record.UserID, friendlyID)
-	if err != nil {
-		return err
-	}
-	history, err := service.chat.getTranscript(ctx, record.UserID, friendlyID)
-	if err != nil {
-		service.finishOwnedRun(record, "error", err)
-		return nil
-	}
-	log.Printf("kairos: stage=worker_claim run=%s revision=%d", record.ID, record.Revision)
-	service.runAsync(record, session, history.Messages, input)
-	return nil
-}
-
-func (service *ChatRunService) guardRunExec(ctx context.Context, exec sqlExecutor, record runRecord) (bool, error) {
-	result, err := exec.ExecContext(ctx, `UPDATE chat_runs SET lease_until=? WHERE id=? AND status IN ('preparing','running') AND invalidated=0 AND revision=(SELECT revision FROM chat_sessions WHERE id=chat_runs.session_id) AND lease_token=? AND lease_until>?`, time.Now().Add(workerLease).UnixMilli(), record.ID, record.LeaseToken, time.Now().UnixMilli())
-	if err != nil {
-		return false, err
-	}
-	n, err := result.RowsAffected()
-	return n > 0, err
-}
-
 // refreshTurnExec is the sole projection writer. Its event is committed with its checkpoint.
-func (service *ChatRunService) refreshTurnExec(ctx context.Context, exec sqlExecutor, runID, state string) error {
+func (service *AgentRuntime) refreshTurnExec(ctx context.Context, exec sqlExecutor, runID, state string) error {
 	var sessionID, turnID, status, errorMessage string
 	var revision, started int64
 	var invalidated int
@@ -183,6 +55,19 @@ func (service *ChatRunService) refreshTurnExec(ctx context.Context, exec sqlExec
 		return err
 	}
 	rows.Close()
+	if status == "aborted" || status == "interrupted" || status == "error" {
+		results := map[string]bool{}
+		for _, step := range steps {
+			if stringValueFromMap(step, "role") == "toolResult" {
+				results[stringValueFromMap(step, "toolCallId")] = true
+			}
+		}
+		for _, value := range content {
+			if part, ok := value.(map[string]any); ok && stringValueFromMap(part, "type") == "toolCall" && !results[stringValueFromMap(part, "id")] {
+				part["status"] = status
+			}
+		}
+	}
 	turn := map[string]any{"id": turnID, "role": "assistant", "runId": runID, "status": status, "revision": revision, "timestamp": started, "content": content, "steps": steps}
 	if latest != nil {
 		for _, key := range []string{"model", "modelName", "modelDescription", "details"} {
@@ -201,11 +86,11 @@ func (service *ChatRunService) refreshTurnExec(ctx context.Context, exec sqlExec
 	if _, err := exec.ExecContext(ctx, `UPDATE chat_runs SET turn_json=? WHERE id=?`, string(encoded), runID); err != nil {
 		return err
 	}
-	event := ChatEvent{RunID: runID, SessionKey: sessionID, Revision: revision, TurnID: turnID, State: state, Error: errorMessage, Message: turn}
+	event := ConversationEvent{RunID: runID, SessionKey: sessionID, Revision: revision, TurnID: turnID, State: state, Error: errorMessage, Message: turn}
 	return insertChatEventExec(ctx, exec, event)
 }
 
-func insertChatEventExec(ctx context.Context, exec sqlExecutor, event ChatEvent) error {
+func insertChatEventExec(ctx context.Context, exec sqlExecutor, event ConversationEvent) error {
 	encoded, err := json.Marshal(event)
 	if err != nil {
 		return err
@@ -223,7 +108,7 @@ func checkpointStepExec(ctx context.Context, exec sqlExecutor, runID string, mes
 	return err
 }
 
-func (service *ChatRunService) finishOwnedRun(record runRecord, status string, runErr error) {
+func (service *AgentRuntime) finishOwnedRun(record executionRecord, status string, runErr error) {
 	ctx := context.Background()
 	tx, err := service.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -253,7 +138,7 @@ func (service *ChatRunService) finishOwnedRun(record runRecord, status string, r
 	}
 }
 
-func (service *ChatService) GetHistory(ctx context.Context, userID, friendlyID string) (HistoryPayload, error) {
+func (service *ConversationService) GetHistory(ctx context.Context, userID, friendlyID string) (HistoryPayload, error) {
 	session, err := service.findSessionByFriendlyID(ctx, userID, friendlyID)
 	if err != nil {
 		return HistoryPayload{}, err
@@ -316,6 +201,12 @@ func (service *ChatService) GetHistory(ctx context.Context, userID, friendlyID s
 		}
 	}
 	for id, messages := range historical {
+		if len(messages) == 1 && messages[0]["steps"] != nil {
+			if _, exists := turns[id]; !exists {
+				turns[id] = messages[0]
+				continue
+			}
+		}
 		turn, ok := turns[id]
 		if !ok {
 			turn = map[string]any{"id": messageIDFromMap(messages[0]), "role": "assistant", "runId": id, "status": "completed", "timestamp": messages[0]["timestamp"]}
@@ -362,20 +253,20 @@ func (service *ChatService) GetHistory(ctx context.Context, userID, friendlyID s
 	return history, tx.Commit()
 }
 
-func (service *ChatRunService) readEvents(ctx context.Context, sessionID string, after int64) ([]ChatEvent, error) {
+func (service *AgentRuntime) readEvents(ctx context.Context, sessionID string, after int64) ([]ConversationEvent, error) {
 	rows, err := service.db.QueryContext(ctx, `SELECT sequence,event_json FROM chat_events WHERE session_id=? AND sequence>? AND revision=(SELECT revision FROM chat_sessions WHERE id=?) ORDER BY sequence LIMIT 256`, sessionID, after, sessionID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	events := []ChatEvent{}
+	events := []ConversationEvent{}
 	for rows.Next() {
 		var cursor int64
 		var encoded string
 		if err := rows.Scan(&cursor, &encoded); err != nil {
 			return nil, err
 		}
-		var event ChatEvent
+		var event ConversationEvent
 		if err := json.Unmarshal([]byte(encoded), &event); err != nil {
 			return nil, err
 		}
@@ -385,7 +276,7 @@ func (service *ChatRunService) readEvents(ctx context.Context, sessionID string,
 	return events, rows.Err()
 }
 
-func (service *ChatRunService) notifyQueue() {
+func (service *AgentRuntime) notifyQueue() {
 	select {
 	case service.wake <- struct{}{}:
 	default:

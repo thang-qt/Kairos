@@ -48,7 +48,7 @@ func (app *App) handleSessionEvents(writer http.ResponseWriter, request *http.Re
 		}
 	}
 
-	streamErr := app.runs.StreamSessionFromCursor(request.Context(), user.ID, friendlyID, afterCursor, func(event ChatEvent) error {
+	streamErr := app.runs.StreamSessionFromCursor(request.Context(), user.ID, friendlyID, afterCursor, func(event ConversationEvent) error {
 		payload, err := json.Marshal(event)
 		if err != nil {
 			return err

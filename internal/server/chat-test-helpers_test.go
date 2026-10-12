@@ -226,16 +226,16 @@ func findHistoryMessageByRole(messages []map[string]any, role string) map[string
 func decodeSSEChatEvents(
 	t *testing.T,
 	response *httptest.ResponseRecorder,
-) []ChatEvent {
+) []ConversationEvent {
 	t.Helper()
 
-	events := make([]ChatEvent, 0)
+	events := make([]ConversationEvent, 0)
 	for _, frame := range strings.Split(response.Body.String(), "\n\n") {
 		for _, line := range strings.Split(frame, "\n") {
 			if !strings.HasPrefix(line, "data: ") {
 				continue
 			}
-			var event ChatEvent
+			var event ConversationEvent
 			if err := json.Unmarshal(
 				[]byte(strings.TrimPrefix(line, "data: ")),
 				&event,

@@ -9,12 +9,12 @@ import (
 
 // StreamEphemeral runs a complete chat turn through the shared generation
 // engine without creating a session, run, or message row.
-func (service *ChatRunService) StreamEphemeral(
+func (service *AgentRuntime) StreamEphemeral(
 	ctx context.Context,
 	userID string,
 	history []map[string]any,
-	input SendMessageInput,
-	emit func(ChatEvent) error,
+	input SubmitTurnInput,
+	emit func(ConversationEvent) error,
 ) (runErr error) {
 	runID := newID()
 	turnID := newID()
@@ -46,18 +46,18 @@ func (service *ChatRunService) StreamEphemeral(
 	}
 	userMessage["timestamp"] = time.Now().UnixMilli()
 	requestHistory := append(
-		append([]map[string]any(nil), flattenTurnHistory(history)...),
+		append([]map[string]any(nil), safeProviderTranscript(flattenTurnHistory(history))...),
 		userMessage,
 	)
 
 	_, err = service.executeGeneration(
 		ctx,
 		generationExecutionInput{
-			UserID:             userID,
-			RunID:              runID,
-			AssistantMessageID: turnID,
-			History:            requestHistory,
-			Request:            input,
+			UserID:          userID,
+			RunID:           runID,
+			AssistantTurnID: turnID,
+			History:         requestHistory,
+			Request:         input,
 		},
 		sink,
 	)
@@ -68,7 +68,7 @@ type ephemeralGenerationSink struct {
 	runID  string
 	turnID string
 	steps  []map[string]any
-	emit   func(ChatEvent) error
+	emit   func(ConversationEvent) error
 }
 
 func (sink *ephemeralGenerationSink) ModelResolved(_ ProviderModel) error {
@@ -117,7 +117,7 @@ func (sink *ephemeralGenerationSink) publish(state, errorMessage string) error {
 		}
 	}
 	turn["content"] = content
-	return sink.emit(ChatEvent{RunID: sink.runID, TurnID: sink.turnID, State: state, Error: errorMessage, Message: turn})
+	return sink.emit(ConversationEvent{RunID: sink.runID, TurnID: sink.turnID, State: state, Error: errorMessage, Message: turn})
 }
 func flattenTurnHistory(turns []map[string]any) []map[string]any {
 	messages := []map[string]any{}
@@ -136,4 +136,39 @@ func flattenTurnHistory(turns []map[string]any) []map[string]any {
 		}
 	}
 	return messages
+}
+
+// A cancelled model/tool step may contain an unfinished call. Never send an
+// unmatched call to a provider; preserve genuine partial text and completed pairs.
+func safeProviderTranscript(messages []map[string]any) []map[string]any {
+	results := map[string]bool{}
+	for _, message := range messages {
+		if stringValueFromMap(message, "role") == "toolResult" {
+			results[stringValueFromMap(message, "runId")+"\x00"+stringValueFromMap(message, "toolCallId")] = true
+		}
+	}
+	safe := []map[string]any{}
+	for _, message := range messages {
+		if stringValueFromMap(message, "role") != "assistant" {
+			safe = append(safe, message)
+			continue
+		}
+		parts := contentPartsFromAny(message["content"])
+		filtered := []chatMessageContentPart{}
+		for _, part := range parts {
+			if part.Type != "toolCall" || results[stringValueFromMap(message, "runId")+"\x00"+part.ID] {
+				filtered = append(filtered, part)
+			}
+		}
+		if len(filtered) == 0 {
+			continue
+		}
+		copy := map[string]any{}
+		for key, value := range message {
+			copy[key] = value
+		}
+		copy["content"] = contentPartsToMaps(filtered)
+		safe = append(safe, copy)
+	}
+	return safe
 }

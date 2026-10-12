@@ -48,8 +48,8 @@ The backend is a Go HTTP server under `internal/server`, with the entrypoint in 
 
 - Frontend chat requests go through `src/lib/chat-backend/http-chat-backend.ts`.
 - Go HTTP handlers live in `internal/server/http-*.go`; chat handlers are in `internal/server/http-chat.go`.
-- Chat run lifecycle lives in `internal/server/chat-run-service.go` and `internal/server/chat-run-executor.go`.
-- Provider-neutral generation types live in `internal/server/providers.go`; OpenRouter-specific mapping lives in `internal/server/provider-openrouter.go`.
+- Chat run lifecycle lives in `internal/server/agent-runtime.go` and `internal/server/agent-worker.go`.
+- Provider-neutral generation types live in `internal/server/providers.go`; OpenAI protocol normalization lives in `internal/server/provider-openai.go` and `internal/server/provider-responses.go`.
 - Shared chat request option structs live in `internal/server/chat-request-options.go`.
 - Backend JSON decoding uses `DisallowUnknownFields()`, so every new frontend request field must be added to the matching Go request struct before the UI sends it.
 - `/api` routes are served by the Go backend; `src/lib/chat-backend/*` is only the frontend adapter layer.

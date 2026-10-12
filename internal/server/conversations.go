@@ -60,7 +60,7 @@ type HistoryPayload struct {
 	Messages     []map[string]any `json:"messages"`
 }
 
-type ChatService struct {
+type ConversationService struct {
 	db        *sql.DB
 	commandMu sync.Mutex
 }
@@ -104,11 +104,11 @@ type sqlExecutor interface {
 	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
 }
 
-func NewChatService(db *sql.DB) *ChatService {
-	return &ChatService{db: db}
+func NewConversationService(db *sql.DB) *ConversationService {
+	return &ConversationService{db: db}
 }
 
-func (service *ChatService) ListSessions(
+func (service *ConversationService) ListSessions(
 	ctx context.Context,
 	userID string,
 ) ([]SessionSummary, error) {
@@ -154,7 +154,7 @@ func (service *ChatService) ListSessions(
 	return summaries, nil
 }
 
-func (service *ChatService) CreateSession(
+func (service *ConversationService) CreateSession(
 	ctx context.Context,
 	userID string,
 	label string,
@@ -162,7 +162,7 @@ func (service *ChatService) CreateSession(
 	return service.CreateSessionWithSettings(ctx, userID, label, defaultConversationSettings())
 }
 
-func (service *ChatService) CreateSessionWithSettings(
+func (service *ConversationService) CreateSessionWithSettings(
 	ctx context.Context,
 	userID string,
 	label string,
@@ -211,7 +211,7 @@ func (service *ChatService) CreateSessionWithSettings(
 	}, nil
 }
 
-func (service *ChatService) UpdateConversationSettings(
+func (service *ConversationService) UpdateConversationSettings(
 	ctx context.Context,
 	userID string,
 	friendlyID string,
@@ -236,7 +236,7 @@ func (service *ChatService) UpdateConversationSettings(
 	return sessionRecordToSummary(record)
 }
 
-func (service *ChatService) GetSessionSummary(
+func (service *ConversationService) GetSessionSummary(
 	ctx context.Context,
 	userID string,
 	friendlyID string,
@@ -248,7 +248,7 @@ func (service *ChatService) GetSessionSummary(
 	return sessionRecordToSummary(record)
 }
 
-func (service *ChatService) PinSession(
+func (service *ConversationService) PinSession(
 	ctx context.Context,
 	userID string,
 	friendlyID string,
@@ -271,7 +271,7 @@ func (service *ChatService) PinSession(
 	return sessionRecordToSummary(record)
 }
 
-func (service *ChatService) RenameSession(
+func (service *ConversationService) RenameSession(
 	ctx context.Context,
 	userID string,
 	friendlyID string,
@@ -298,7 +298,7 @@ func (service *ChatService) RenameSession(
 	return sessionRecordToSummary(record)
 }
 
-func (service *ChatService) DeleteSession(
+func (service *ConversationService) DeleteSession(
 	ctx context.Context,
 	userID string,
 	friendlyID string,
@@ -322,34 +322,20 @@ func (service *ChatService) DeleteSession(
 	return nil
 }
 
-func (service *ChatService) getTranscript(
+func (service *ConversationService) getTranscript(
 	ctx context.Context,
 	userID string,
 	friendlyID string,
 ) (HistoryPayload, error) {
-	record, err := service.findSessionByFriendlyID(ctx, userID, friendlyID)
+	history, err := service.GetHistory(ctx, userID, friendlyID)
 	if err != nil {
-		return HistoryPayload{}, err
+		return history, err
 	}
-
-	messageRecords, err := service.listMessageRecords(ctx, record.ID)
-	if err != nil {
-		return HistoryPayload{}, err
-	}
-
-	messages := make([]map[string]any, 0, len(messageRecords))
-	for _, record := range messageRecords {
-		messages = append(messages, record.Message)
-	}
-
-	return HistoryPayload{
-		SessionKey: record.ID,
-		SessionID:  record.FriendlyID,
-		Messages:   messages,
-	}, nil
+	history.Messages = safeProviderTranscript(flattenTurnHistory(history.Messages))
+	return history, nil
 }
 
-func (service *ChatService) CloneSession(
+func (service *ConversationService) CloneSession(
 	ctx context.Context,
 	userID string,
 	friendlyID string,
@@ -360,20 +346,35 @@ func (service *ChatService) CloneSession(
 		return SessionSummary{}, err
 	}
 
-	messageRecords, err := service.listMessageRecords(ctx, source.ID)
+	history, err := service.GetHistory(ctx, userID, friendlyID)
 	if err != nil {
 		return SessionSummary{}, err
 	}
-
-	cloneIndex := findMessageRecordIndex(messageRecords, messageID)
-	if cloneIndex < 0 {
-		return SessionSummary{}, fmt.Errorf("clone point message not found")
+	records := []messageRecord{}
+	found := false
+	for _, turn := range history.Messages {
+		encoded, err := json.Marshal(turn)
+		if err != nil {
+			return SessionSummary{}, err
+		}
+		content, err := encodeMessageContent(turn["content"])
+		if err != nil {
+			return SessionSummary{}, err
+		}
+		records = append(records, messageRecord{MessageID: messageIDFromMap(turn), Role: stringValueFromMap(turn, "role"), Message: turn, MessageJSON: string(encoded), ContentJSON: content, Timestamp: int64Value(turn["timestamp"]), RunID: nullableString(stringValueFromMap(turn, "runId"))})
+		if messageIDFromMap(turn) == messageID {
+			found = true
+			break
+		}
 	}
+	if !found {
+		return SessionSummary{}, fmt.Errorf("clone point turn not found")
+	}
+	return service.createClonedSession(ctx, source, records)
 
-	return service.createClonedSession(ctx, source, messageRecords[:cloneIndex+1])
 }
 
-func (service *ChatService) DeleteUserMessageAtRevision(
+func (service *ConversationService) DeleteUserMessageAtRevision(
 	ctx context.Context,
 	userID string,
 	friendlyID string,
@@ -423,7 +424,7 @@ func (service *ChatService) DeleteUserMessageAtRevision(
 	return sessionRecordToSummary(source)
 }
 
-func (service *ChatService) truncateSessionMessagesExec(ctx context.Context, exec sqlExecutor, session *sessionRecord, messageRecords []messageRecord, startIndex int) error {
+func (service *ConversationService) truncateSessionMessagesExec(ctx context.Context, exec sqlExecutor, session *sessionRecord, messageRecords []messageRecord, startIndex int) error {
 	if startIndex < 0 || startIndex > len(messageRecords) {
 		return fmt.Errorf("invalid truncate index")
 	}
@@ -479,10 +480,10 @@ func (service *ChatService) truncateSessionMessagesExec(ctx context.Context, exe
 	if err := exec.QueryRowContext(ctx, `SELECT revision FROM chat_sessions WHERE id=?`, session.ID).Scan(&revision); err != nil {
 		return err
 	}
-	return insertChatEventExec(ctx, exec, ChatEvent{SessionKey: session.ID, Revision: revision, State: "reconcile", ActiveRunIDs: []string{}})
+	return insertChatEventExec(ctx, exec, ConversationEvent{SessionKey: session.ID, Revision: revision, State: "reconcile", ActiveRunIDs: []string{}})
 }
 
-func (service *ChatService) appendMessage(
+func (service *ConversationService) appendMessage(
 	ctx context.Context,
 	session sessionRecord,
 	message map[string]any,
@@ -497,7 +498,7 @@ func (service *ChatService) appendMessage(
 	)
 }
 
-func (service *ChatService) appendMessageWithOptions(
+func (service *ConversationService) appendMessageWithOptions(
 	ctx context.Context,
 	session sessionRecord,
 	message map[string]any,
@@ -514,7 +515,7 @@ func (service *ChatService) appendMessageWithOptions(
 	)
 }
 
-func (service *ChatService) appendMessagesWithOptions(
+func (service *ConversationService) appendMessagesWithOptions(
 	ctx context.Context,
 	session sessionRecord,
 	messages []map[string]any,
@@ -554,7 +555,7 @@ func (service *ChatService) appendMessagesWithOptions(
 	return summary, nil
 }
 
-func (service *ChatService) appendMessageWithOptionsExec(
+func (service *ConversationService) appendMessageWithOptionsExec(
 	ctx context.Context,
 	exec sqlExecutor,
 	session sessionRecord,
@@ -625,7 +626,7 @@ func (service *ChatService) appendMessageWithOptionsExec(
 	return sessionRecordToSummary(session)
 }
 
-func (service *ChatService) UpdateSessionContextTokens(
+func (service *ConversationService) UpdateSessionContextTokens(
 	ctx context.Context,
 	sessionID string,
 	userID string,
@@ -646,7 +647,7 @@ func (service *ChatService) UpdateSessionContextTokens(
 	return nil
 }
 
-func (service *ChatService) UpdateSessionTotalTokens(
+func (service *ConversationService) UpdateSessionTotalTokens(
 	ctx context.Context,
 	sessionID string,
 	userID string,
@@ -667,7 +668,7 @@ func (service *ChatService) UpdateSessionTotalTokens(
 	return nil
 }
 
-func (service *ChatService) UpdateSessionTitleIfEmpty(
+func (service *ConversationService) UpdateSessionTitleIfEmpty(
 	ctx context.Context,
 	sessionID string,
 	userID string,
@@ -710,13 +711,13 @@ func (service *ChatService) UpdateSessionTitleIfEmpty(
 	return summary, true, nil
 }
 
-func (service *ChatService) listMessageRecords(
+func (service *ConversationService) listMessageRecords(
 	ctx context.Context,
 	sessionID string,
 ) ([]messageRecord, error) {
 	return service.listMessageRecordsExec(ctx, service.db, sessionID)
 }
-func (service *ChatService) listMessageRecordsExec(ctx context.Context, exec sqlExecutor, sessionID string) ([]messageRecord, error) {
+func (service *ConversationService) listMessageRecordsExec(ctx context.Context, exec sqlExecutor, sessionID string) ([]messageRecord, error) {
 	rows, err := exec.QueryContext(ctx, `
 		SELECT
 			id,
@@ -768,7 +769,7 @@ func (service *ChatService) listMessageRecordsExec(ctx context.Context, exec sql
 	return records, nil
 }
 
-func (service *ChatService) createClonedSession(
+func (service *ConversationService) createClonedSession(
 	ctx context.Context,
 	source sessionRecord,
 	messageRecords []messageRecord,
@@ -850,7 +851,7 @@ func (service *ChatService) createClonedSession(
 	}, nil
 }
 
-func (service *ChatService) findSessionByFriendlyID(
+func (service *ConversationService) findSessionByFriendlyID(
 	ctx context.Context,
 	userID string,
 	friendlyID string,
@@ -858,7 +859,7 @@ func (service *ChatService) findSessionByFriendlyID(
 	return service.findSession(ctx, userID, "friendly_id", strings.TrimSpace(friendlyID))
 }
 
-func (service *ChatService) findSessionByID(
+func (service *ConversationService) findSessionByID(
 	ctx context.Context,
 	userID string,
 	sessionID string,
@@ -866,7 +867,7 @@ func (service *ChatService) findSessionByID(
 	return service.findSession(ctx, userID, "id", strings.TrimSpace(sessionID))
 }
 
-func (service *ChatService) findSession(
+func (service *ConversationService) findSession(
 	ctx context.Context,
 	userID string,
 	field string,
@@ -1270,6 +1271,6 @@ func max(left int, right int) int {
 	return right
 }
 
-func (service *ChatService) DeleteUserMessage(ctx context.Context, userID, friendlyID, messageID string) (SessionSummary, error) {
+func (service *ConversationService) DeleteUserMessage(ctx context.Context, userID, friendlyID, messageID string) (SessionSummary, error) {
 	return service.DeleteUserMessageAtRevision(ctx, userID, friendlyID, messageID, nil)
 }

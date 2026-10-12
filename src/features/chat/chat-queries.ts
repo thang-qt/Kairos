@@ -1,6 +1,6 @@
 import { getMessageTimestamp, normalizeSessions } from './utils'
 import type { QueryClient } from '@tanstack/react-query'
-import type { GatewayMessage, HistoryResponse, SessionMeta } from './types'
+import type { ConversationTurn, HistoryResponse, SessionMeta } from './types'
 import type { ChatStatus, SessionSearchResult } from '@/lib/chat-backend'
 import { getChatBackend } from '@/lib/chat-backend'
 
@@ -80,7 +80,7 @@ export function updateHistoryMessages(
   queryClient: QueryClient,
   friendlyId: string,
   sessionKey: string,
-  updater: (messages: Array<GatewayMessage>) => Array<GatewayMessage>,
+  updater: (messages: Array<ConversationTurn>) => Array<ConversationTurn>,
 ) {
   const queryKey = chatQueryKeys.history(friendlyId, sessionKey)
   queryClient.setQueryData(queryKey, function update(data: unknown) {
@@ -100,7 +100,7 @@ export function appendHistoryMessage(
   queryClient: QueryClient,
   friendlyId: string,
   sessionKey: string,
-  message: GatewayMessage,
+  message: ConversationTurn,
 ) {
   updateHistoryMessages(
     queryClient,
@@ -117,7 +117,7 @@ export function updateHistoryMessageByClientId(
   friendlyId: string,
   sessionKey: string,
   clientId: string,
-  updater: (message: GatewayMessage) => GatewayMessage,
+  updater: (message: ConversationTurn) => ConversationTurn,
 ) {
   const optimisticId = `opt-${clientId}`
   updateHistoryMessages(
@@ -198,7 +198,7 @@ export function updateSessionLastMessage(
   queryClient: QueryClient,
   sessionKey: string,
   friendlyId: string,
-  message: GatewayMessage,
+  message: ConversationTurn,
 ) {
   const messageUpdatedAt = getMessageTimestamp(message)
   queryClient.setQueryData(
@@ -268,7 +268,7 @@ export function upsertSessionSummary(
 
 function mergeSessionMessage(
   session: SessionMeta,
-  message: GatewayMessage,
+  message: ConversationTurn,
   messageUpdatedAt: number,
 ): SessionMeta {
   const totalTokens = extractUsageTotalTokens(message)
@@ -286,7 +286,9 @@ function mergeSessionMessage(
   }
 }
 
-function extractUsageTotalTokens(message: GatewayMessage): number | undefined {
+function extractUsageTotalTokens(
+  message: ConversationTurn,
+): number | undefined {
   const details = message.details
   if (!details || typeof details !== 'object') {
     return undefined

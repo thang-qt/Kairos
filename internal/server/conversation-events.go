@@ -1,6 +1,7 @@
 package server
 
-type ChatEvent struct {
+type ConversationEvent struct {
+	Snapshot     *HistoryPayload `json:"snapshot,omitempty"`
 	Revision     int64           `json:"revision"`
 	TurnID       string          `json:"turnId,omitempty"`
 	Cursor       int64           `json:"cursor,omitempty"`

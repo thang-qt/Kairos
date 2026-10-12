@@ -22,14 +22,15 @@ type generationSink interface {
 }
 
 type generationExecutionInput struct {
-	UserID             string
-	RunID              string
-	AssistantMessageID string
-	History            []map[string]any
-	Request            SendMessageInput
+	AcceptedAt      int64
+	UserID          string
+	RunID           string
+	AssistantTurnID string
+	History         []map[string]any
+	Request         SubmitTurnInput
 }
 
-func (service *ChatRunService) executeGeneration(
+func (service *AgentRuntime) executeGeneration(
 	ctx context.Context,
 	input generationExecutionInput,
 	sink generationSink,
@@ -111,7 +112,7 @@ func (service *ChatRunService) executeGeneration(
 	}
 
 	executedToolCalls := 0
-	assistantMessageID := input.AssistantMessageID
+	assistantMessageID := input.AssistantTurnID
 	for roundIndex := 0; ; roundIndex++ {
 		if ctx.Err() != nil {
 			return generationOutcome{}, ctx.Err()
@@ -123,14 +124,13 @@ func (service *ChatRunService) executeGeneration(
 		accumulatedText := ""
 		accumulatedThinking := ""
 		accumulatedToolCalls := []ProviderToolCall{}
-		accumulatedToolProgress := []ProviderToolProgress{}
-		toolProgressStartedAt := make(map[string]time.Time)
 		log.Printf("kairos: stage=provider_request run=%s round=%d", input.RunID, roundIndex)
 		providerStarted := time.Now()
 		firstEvent := true
 		firstVisible := true
-		result, generationErr := driver.GenerateChatStream(
+		result, generationErr := generateWithRetry(
 			ctx,
+			driver,
 			provider,
 			ChatGenerationRequest{
 				Model:        model.ID,
@@ -138,11 +138,9 @@ func (service *ChatRunService) executeGeneration(
 				Messages:     providerMessages,
 				Tools:        tools,
 				ToolChoice:   toolChoiceForTools(tools),
-				WebSearch: buildProviderWebSearchOptions(
-					input.Request.WebSearch,
-				),
-				Advanced: input.Request.Advanced,
+				Advanced:     input.Request.Advanced,
 			},
+			executedToolCalls == 0,
 			func(delta ChatGenerationDelta) error {
 				if ctx.Err() != nil {
 					return ctx.Err()
@@ -152,7 +150,7 @@ func (service *ChatRunService) executeGeneration(
 					firstEvent = false
 				}
 				if firstVisible && delta.Text != "" {
-					log.Printf("kairos: stage=first_text run=%s latency_ms=%d", input.RunID, time.Since(providerStarted).Milliseconds())
+					log.Printf("kairos: stage=first_text run=%s provider_ms=%d accepted_ms=%d", input.RunID, time.Since(providerStarted).Milliseconds(), time.Now().UnixMilli()-input.AcceptedAt)
 					firstVisible = false
 				}
 				accumulatedThinking += delta.Thinking
@@ -161,30 +159,7 @@ func (service *ChatRunService) executeGeneration(
 					accumulatedToolCalls,
 					delta.ToolCalls,
 				)
-				for progressIndex := range delta.ToolProgress {
-					progress := &delta.ToolProgress[progressIndex]
-					if progress.Status == "running" {
-						toolProgressStartedAt[progress.ID] = time.Now()
-					}
-					if progress.Status == "completed" {
-						if startedAt, ok := toolProgressStartedAt[progress.ID]; ok {
-							progress.DurationMS = maxInt64(
-								1,
-								time.Since(startedAt).Milliseconds(),
-							)
-						}
-					}
-				}
-				accumulatedToolProgress = mergeProviderToolProgress(
-					accumulatedToolProgress,
-					delta.ToolProgress,
-				)
-				content := buildAssistantStreamingContent(
-					accumulatedThinking,
-					accumulatedText,
-					accumulatedToolCalls,
-					accumulatedToolProgress,
-				)
+				content := buildAssistantContent(accumulatedThinking, accumulatedText, accumulatedToolCalls)
 				if len(content) == 0 {
 					return nil
 				}
@@ -228,14 +203,6 @@ func (service *ChatRunService) executeGeneration(
 			result.ThinkingText,
 			accumulatedThinking,
 		)
-		if progressDetails := providerToolProgressDetails(
-			accumulatedToolProgress,
-		); len(progressDetails) > 0 {
-			if result.Details == nil {
-				result.Details = make(map[string]any)
-			}
-			result.Details["toolProgress"] = progressDetails
-		}
 		accumulatedToolCalls = mergeProviderToolCalls(
 			accumulatedToolCalls,
 			result.ToolCalls,
@@ -302,8 +269,10 @@ func (service *ChatRunService) executeGeneration(
 				continue
 			}
 
-			if fence, ok := sink.(interface{ BeforeTool(map[string]any) error }); ok {
-				if err := fence.BeforeTool(assistantMessage); err != nil {
+			if fence, ok := sink.(interface {
+				BeforeTool(map[string]any, ProviderToolCall) error
+			}); ok {
+				if err := fence.BeforeTool(assistantMessage, call); err != nil {
 					return generationOutcome{}, err
 				}
 			}
@@ -313,6 +282,7 @@ func (service *ChatRunService) executeGeneration(
 			if ctx.Err() != nil || errors.Is(toolErr, context.Canceled) {
 				return generationOutcome{}, context.Canceled
 			}
+			log.Printf("kairos: stage=tool_completion run=%s call=%s duration_ms=%d", input.RunID, call.ID, time.Since(startedAt).Milliseconds())
 			executedToolCalls++
 			stagedMessages = append(
 				stagedMessages,

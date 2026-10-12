@@ -1,11 +1,11 @@
-import type { GatewayMessage } from './types'
+import type { ConversationTurn } from './types'
 import type { AttachmentFile } from '@/features/chat/components/composer/attachment-button'
 import { randomUUID } from '@/lib/utils'
 
 type OptimisticMessagePayload = {
   clientId: string
   optimisticId: string
-  optimisticMessage: GatewayMessage
+  optimisticMessage: ConversationTurn
 }
 
 export function createOptimisticMessage(
@@ -43,9 +43,9 @@ export function createOptimisticMessage(
     content.push({ type: 'text', text: '' })
   }
 
-  const optimisticMessage: GatewayMessage = {
+  const optimisticMessage: ConversationTurn = {
     role: 'user',
-    content: content as GatewayMessage['content'],
+    content: content as ConversationTurn['content'],
     __optimisticId: optimisticId,
     clientId,
     status: 'sending',

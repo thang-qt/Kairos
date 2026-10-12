@@ -1,5 +1,5 @@
 import type {
-  GatewayMessage,
+  ConversationTurn,
   SessionMeta,
   SessionSummary,
   ToolCallContent,
@@ -29,7 +29,7 @@ export function deriveFriendlyIdFromKey(key: string | undefined): string {
   return tailTrimmed.length > 0 ? tailTrimmed : trimmed
 }
 
-export function textFromMessage(msg: GatewayMessage): string {
+export function textFromMessage(msg: ConversationTurn): string {
   const parts = Array.isArray(msg.content) ? msg.content : []
   return parts
     .map((part) => (part.type === 'text' ? String(part.text ?? '') : ''))
@@ -44,7 +44,7 @@ export function countApproximateTokens(text: string): number {
 }
 
 export function countConversationTokens(
-  messages: Array<GatewayMessage>,
+  messages: Array<ConversationTurn>,
 ): number {
   return messages.reduce(function count(total, message) {
     const parts = Array.isArray(message.content) ? message.content : []
@@ -58,7 +58,7 @@ export function countConversationTokens(
 }
 
 export function getToolCallsFromMessage(
-  msg: GatewayMessage,
+  msg: ConversationTurn,
 ): Array<ToolCallContent> {
   const parts = Array.isArray(msg.content) ? msg.content : []
   return parts.filter(
@@ -66,7 +66,7 @@ export function getToolCallsFromMessage(
   )
 }
 
-export function getGatewayMessageId(message: GatewayMessage): string | null {
+export function getTurnId(message: ConversationTurn): string | null {
   const id = message.id
   return typeof id === 'string' && id.trim().length > 0 ? id : null
 }
@@ -83,7 +83,9 @@ export function normalizeMessageTimestamp(value: unknown): number | null {
   return null
 }
 
-export function getRawMessageTimestamp(message: GatewayMessage): number | null {
+export function getRawMessageTimestamp(
+  message: ConversationTurn,
+): number | null {
   const candidates = [
     message.createdAt,
     message.created_at,
@@ -100,7 +102,7 @@ export function getRawMessageTimestamp(message: GatewayMessage): number | null {
   return null
 }
 
-export function getMessageTimestamp(message: GatewayMessage): number {
+export function getMessageTimestamp(message: ConversationTurn): number {
   return getRawMessageTimestamp(message) ?? Date.now()
 }
 

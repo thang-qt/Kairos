@@ -389,6 +389,8 @@ export function ChatScreen({
       />
     )
   }, [
+    displayMessages,
+    throwawayMode,
     backendError,
     handleBackendRefetch,
     handleRetryLastMessage,

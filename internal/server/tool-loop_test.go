@@ -58,7 +58,7 @@ func TestToolLoopPersistsConventionalAssistantToolResultTurns(t *testing.T) {
 		MathTools: true,
 	}, []*http.Cookie{cookie})
 	assertStatusCode(t, sendResponse, http.StatusOK)
-	var sent SendMessageResult
+	var sent SubmitTurnResult
 	decodeResponseJSON(t, sendResponse, &sent)
 	waitForRunStatus(t, testServer, sent.RunID, "completed")
 
@@ -84,7 +84,7 @@ func TestToolLoopPersistsConventionalAssistantToolResultTurns(t *testing.T) {
 		t.Fatalf("history has %d turns, want 2", len(history.Messages))
 	}
 	turn := history.Messages[1]
-	if turn["id"] != sent.AssistantMessageID || turn["status"] != "completed" {
+	if turn["id"] != sent.AssistantTurnID || turn["status"] != "completed" {
 		t.Fatalf("canonical turn: %#v", turn)
 	}
 	steps := turn["steps"].([]any)
@@ -207,16 +207,16 @@ func TestFinalCompletionDoesNotPersistAfterAbortClaim(t *testing.T) {
 	if err != nil {
 		t.Fatalf("find session: %v", err)
 	}
-	record := runRecord{
-		ID:                 newID(),
-		UserID:             userID,
-		SessionID:          session.ID,
-		Status:             "running",
-		LeaseToken:         newID(),
-		Model:              "test-model",
-		AssistantMessageID: newID(),
+	record := executionRecord{
+		ID:              newID(),
+		UserID:          userID,
+		SessionID:       session.ID,
+		Status:          "running",
+		LeaseToken:      newID(),
+		Model:           "test-model",
+		AssistantTurnID: newID(),
 	}
-	if err := testServer.app.runs.insertRun(context.Background(), record, SendMessageInput{FriendlyID: created.FriendlyID, Message: "race", Model: "test-model"}, time.Now().UnixMilli()); err != nil {
+	if err := testServer.app.runs.insertRun(context.Background(), record, SubmitTurnInput{FriendlyID: created.FriendlyID, Message: "race", Model: "test-model"}, time.Now().UnixMilli()); err != nil {
 		t.Fatalf("insert run: %v", err)
 	}
 	claimed, err := testServer.app.runs.CancelSessionRuns(context.Background(), userID, created.FriendlyID)
@@ -228,7 +228,7 @@ func TestFinalCompletionDoesNotPersistAfterAbortClaim(t *testing.T) {
 	}
 
 	finalMessage := buildAssistantMessageWithLineage(
-		record.AssistantMessageID,
+		record.AssistantTurnID,
 		assistantModelDisplay{ID: "test-model", Name: "Test Model", Description: "Test provider"},
 		time.Now().UnixMilli(),
 		buildAssistantContent("", "final answer", nil),
@@ -277,16 +277,16 @@ func TestStagedToolRoundDoesNotPersistAfterAbortClaim(t *testing.T) {
 	if err != nil {
 		t.Fatalf("find session: %v", err)
 	}
-	record := runRecord{
-		ID:                 newID(),
-		UserID:             userID,
-		SessionID:          session.ID,
-		Status:             "running",
-		LeaseToken:         newID(),
-		Model:              "test-model",
-		AssistantMessageID: newID(),
+	record := executionRecord{
+		ID:              newID(),
+		UserID:          userID,
+		SessionID:       session.ID,
+		Status:          "running",
+		LeaseToken:      newID(),
+		Model:           "test-model",
+		AssistantTurnID: newID(),
 	}
-	if err := testServer.app.runs.insertRun(context.Background(), record, SendMessageInput{FriendlyID: created.FriendlyID, Message: "race", Model: "test-model"}, time.Now().UnixMilli()); err != nil {
+	if err := testServer.app.runs.insertRun(context.Background(), record, SubmitTurnInput{FriendlyID: created.FriendlyID, Message: "race", Model: "test-model"}, time.Now().UnixMilli()); err != nil {
 		t.Fatalf("insert run: %v", err)
 	}
 	claimed, err := testServer.app.runs.CancelSessionRuns(context.Background(), userID, created.FriendlyID)
@@ -299,7 +299,7 @@ func TestStagedToolRoundDoesNotPersistAfterAbortClaim(t *testing.T) {
 
 	call := ProviderToolCall{ID: "call-1", Name: "missing_tool", Args: map[string]any{"value": 1}}
 	assistantMessage := buildAssistantMessageWithLineage(
-		record.AssistantMessageID,
+		record.AssistantTurnID,
 		assistantModelDisplay{ID: "test-model", Name: "Test Model", Description: "Test provider"},
 		time.Now().UnixMilli(),
 		buildAssistantContent("", "Need a tool", []ProviderToolCall{call}),
@@ -348,23 +348,23 @@ func TestCompleteRunWithFinalMessageStoresFinalTokensAtomically(t *testing.T) {
 	if err != nil {
 		t.Fatalf("find session: %v", err)
 	}
-	record := runRecord{
-		ID:                 newID(),
-		UserID:             userID,
-		SessionID:          session.ID,
-		Status:             "running",
-		LeaseToken:         newID(),
-		Model:              "test-model",
-		AssistantMessageID: newID(),
+	record := executionRecord{
+		ID:              newID(),
+		UserID:          userID,
+		SessionID:       session.ID,
+		Status:          "running",
+		LeaseToken:      newID(),
+		Model:           "test-model",
+		AssistantTurnID: newID(),
 	}
-	if err := testServer.app.runs.insertRun(context.Background(), record, SendMessageInput{FriendlyID: created.FriendlyID, Message: "final", Model: "test-model"}, time.Now().UnixMilli()); err != nil {
+	if err := testServer.app.runs.insertRun(context.Background(), record, SubmitTurnInput{FriendlyID: created.FriendlyID, Message: "final", Model: "test-model"}, time.Now().UnixMilli()); err != nil {
 		t.Fatalf("insert run: %v", err)
 	}
 	if _, err := testServer.app.db.Exec(`UPDATE chat_runs SET lease_token=?,lease_until=? WHERE id=?`, record.LeaseToken, time.Now().Add(time.Minute).UnixMilli(), record.ID); err != nil {
 		t.Fatal(err)
 	}
 	finalMessage := buildAssistantMessageWithLineage(
-		record.AssistantMessageID,
+		record.AssistantTurnID,
 		assistantModelDisplay{ID: "test-model", Name: "Test Model", Description: "Test provider"},
 		time.Now().UnixMilli(),
 		buildAssistantContent("", "final answer", nil),
@@ -412,7 +412,7 @@ func TestToolLoopEnforcesTotalToolCallLimitAndLinksRejectedCalls(t *testing.T) {
 		MathTools: true,
 	}, []*http.Cookie{cookie})
 	assertStatusCode(t, sendResponse, http.StatusOK)
-	var sent SendMessageResult
+	var sent SubmitTurnResult
 	decodeResponseJSON(t, sendResponse, &sent)
 	waitForRunStatus(t, testServer, sent.RunID, "error")
 

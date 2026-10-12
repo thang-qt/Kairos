@@ -1,7 +1,7 @@
 export type { SessionSearchResult } from './contracts'
 
 import type {
-  GatewayMessage,
+  ConversationTurn,
   HistoryResponse,
   SessionMeta,
   SessionSearchResult,
@@ -47,7 +47,7 @@ export type ChatSendEphemeralMessageInput = Omit<
   ChatSendMessageInput,
   'sessionKey' | 'friendlyId' | 'idempotencyKey'
 > & {
-  history: Array<GatewayMessage>
+  history: Array<ConversationTurn>
   signal?: AbortSignal
 }
 
@@ -128,8 +128,8 @@ export type ChatDeleteUserMessageInput = {
 export type ChatSendMessageResult = {
   runId: string
   sessionKey: string
-  userMessageId?: string
-  assistantMessageId?: string
+  userTurnId?: string
+  assistantTurnId?: string
   clientId?: string
 }
 
@@ -137,8 +137,8 @@ export type ChatConversationResult = SessionMeta & {
   sessionKey: string
   friendlyId: string
   runId?: string
-  userMessageId?: string
-  assistantMessageId?: string
+  userTurnId?: string
+  assistantTurnId?: string
   clientId?: string
 }
 
@@ -146,7 +146,8 @@ export type ChatConversationRunResult = ChatConversationResult & {
   runId: string
 }
 
-export type ChatEvent = {
+export type ConversationEvent = {
+  snapshot?: HistoryResponse
   revision?: number
   turnId?: string
   cursor?: number
@@ -161,18 +162,19 @@ export type ChatEvent = {
     | 'title'
     | 'reconcile'
     | 'heartbeat'
+    | 'user'
   error?: string
   activeRunIds?: Array<string>
-  message?: GatewayMessage
+  message?: ConversationTurn
   session?: SessionMeta
 }
 
 export type ChatSubscription = {
   sessionKey?: string
   friendlyId?: string
-  onEvent: (event: ChatEvent) => void
+  onEvent: (event: ConversationEvent) => void
   onReconnect?: () => void
-  onReconcile?: (event: ChatEvent) => void
+  onReconcile?: (event: ConversationEvent) => void
 }
 
 export type ChatBackend = {
@@ -204,7 +206,7 @@ export type ChatBackend = {
   sendMessage: (input: ChatSendMessageInput) => Promise<ChatSendMessageResult>
   streamEphemeralMessage: (
     input: ChatSendEphemeralMessageInput,
-    onEvent: (event: ChatEvent) => void,
+    onEvent: (event: ConversationEvent) => void,
   ) => Promise<void>
   cloneConversation: (
     input: ChatCloneConversationInput,

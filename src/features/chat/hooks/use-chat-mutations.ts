@@ -3,7 +3,7 @@ import { useNavigate } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 
 import { createOptimisticMessage } from '../chat-screen-utils'
-import { reduceChatEventMessages } from '../chat-event-reducer'
+import { applyConversationEvent } from '../conversation-event-reducer'
 import {
   chatQueryKeys,
   appendHistoryMessage,
@@ -16,7 +16,7 @@ import {
   updateSessionLastMessage,
   upsertSessionSummary,
 } from '../chat-queries'
-import { getGatewayMessageId } from '../utils'
+import { getTurnId } from '../utils'
 import { setRecentSession } from '../pending-send'
 import { beginFreshNewChat } from '../conversation-settings'
 import { getChatBackend } from '@/lib/chat-backend'
@@ -29,7 +29,7 @@ import type { AttachmentFile } from '@/features/chat/components/composer/attachm
 import type { ChatComposerHelpers } from '../components/chat-composer'
 import type {
   ChatRequestAdvancedSettings,
-  GatewayMessage,
+  ConversationTurn,
   HistoryResponse,
 } from '../types'
 import type { ConversationSettings } from '../conversation-settings'
@@ -76,7 +76,7 @@ type UseChatMutationsInput = {
   setPinToTop: (pin: boolean) => void
   storeCloneScrollRestore: () => void
   stashCloneComposerDraft: (targetFriendlyId: string, value: string) => void
-  displayMessages: Array<GatewayMessage>
+  displayMessages: Array<ConversationTurn>
   throwawayMode: boolean
 }
 
@@ -196,6 +196,9 @@ export function useChatMutations({
       const idempotencyKey = idempotencyKeyOverride || clientId || randomUUID()
       void backend
         .sendMessage({
+          expectedRevision: queryClient.getQueryData<HistoryResponse>(
+            chatQueryKeys.history(friendlyId, sessionKey),
+          )?.revision,
           sessionKey,
           friendlyId,
           message: body,
@@ -334,9 +337,7 @@ export function useChatMutations({
                 'new',
                 'new',
                 function reduceEphemeralEvent(messages) {
-                  return reduceChatEventMessages(messages, event, {
-                    retainRunMessagesOnTerminal: true,
-                  })
+                  return applyConversationEvent(messages, event)
                 },
               )
               if (event.state === 'error') {
@@ -471,7 +472,7 @@ export function useChatMutations({
               function markSent(message) {
                 return {
                   ...message,
-                  id: result.userMessageId || message.id,
+                  id: result.userTurnId || message.id,
                   status: undefined,
                 }
               },
@@ -631,6 +632,11 @@ export function useChatMutations({
         })
     },
     [
+      beginGeneration,
+      finishGeneration,
+      startRun,
+      refreshHistory,
+      resolvedSessionKey,
       activeFriendlyId,
       activeSessionKey,
       displayMessages,
@@ -755,6 +761,9 @@ export function useChatMutations({
         return
       }
 
+      const historyKey = chatQueryKeys.history(activeFriendlyId, sourceKey)
+      const previousHistory =
+        queryClient.getQueryData<HistoryResponse>(historyKey)
       try {
         const { clientId, optimisticMessage } =
           createOptimisticMessage(normalizedMessage)
@@ -787,6 +796,7 @@ export function useChatMutations({
           webSearch: resolvedWebSearch,
           mathTools: resolvedMathTools,
           advanced: resolvedAdvancedSettings,
+          idempotencyKey: clientId,
           clientId,
         })
         updateHistoryMessageByClientId(
@@ -797,7 +807,7 @@ export function useChatMutations({
           function markSent(message) {
             return {
               ...message,
-              id: result.userMessageId || message.id,
+              id: result.userTurnId || message.id,
               status: undefined,
             }
           },
@@ -808,6 +818,8 @@ export function useChatMutations({
         refreshHistory()
         await invalidateChatSessionQueries(queryClient)
       } catch (err) {
+        queryClient.setQueryData(historyKey, previousHistory)
+        refreshHistory()
         finishGeneration()
         setPinToTop(false)
         setStreamError(
@@ -844,6 +856,9 @@ export function useChatMutations({
 
       setDeletingUserTurn(null)
 
+      const historyKey = chatQueryKeys.history(activeFriendlyId, sourceKey)
+      const previousHistory =
+        queryClient.getQueryData<HistoryResponse>(historyKey)
       try {
         deleteTurnFromUserMessage(
           queryClient,
@@ -866,6 +881,8 @@ export function useChatMutations({
         refreshHistory()
         await invalidateChatSessionQueries(queryClient)
       } catch (err) {
+        queryClient.setQueryData(historyKey, previousHistory)
+        refreshHistory()
         setStreamError(
           err instanceof Error ? err.message : 'Failed to delete message.',
         )
@@ -936,22 +953,20 @@ export function useChatMutations({
 }
 
 function findMessageIndexById(
-  messages: Array<GatewayMessage>,
+  messages: Array<ConversationTurn>,
   messageId: string,
 ): number {
-  return messages.findIndex(
-    (message) => getGatewayMessageId(message) === messageId,
-  )
+  return messages.findIndex((message) => getTurnId(message) === messageId)
 }
 
-function findLastUserMessageIndex(messages: Array<GatewayMessage>): number {
+function findLastUserMessageIndex(messages: Array<ConversationTurn>): number {
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     if (messages[index].role === 'user') return index
   }
   return -1
 }
 
-function messageText(message: GatewayMessage): string {
+function messageText(message: ConversationTurn): string {
   if (!Array.isArray(message.content)) return ''
   return message.content
     .filter((part) => part.type === 'text')
@@ -960,7 +975,7 @@ function messageText(message: GatewayMessage): string {
 }
 
 function attachmentFilesFromMessage(
-  message: GatewayMessage,
+  message: ConversationTurn,
 ): Array<AttachmentFile> {
   if (!Array.isArray(message.content)) return []
   return message.content.flatMap(function mapAttachment(part) {
@@ -985,7 +1000,7 @@ function replaceTurnFromUserMessage(
   friendlyId: string,
   sessionKey: string,
   messageId: string,
-  replacementMessage: GatewayMessage,
+  replacementMessage: ConversationTurn,
 ) {
   updateHistoryMessages(
     queryClient,

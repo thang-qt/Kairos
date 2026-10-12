@@ -12,8 +12,8 @@ const (
 	maxToolCallLimit    = 100
 )
 
-func (service *ChatRunService) runAsync(record runRecord, session sessionRecord, history []map[string]any, input SendMessageInput) {
-	ctx, cancel := context.WithCancel(service.workerContext)
+func (service *AgentRuntime) runAsync(record executionRecord, session sessionRecord, history []map[string]any, input SubmitTurnInput) {
+	ctx, cancel := context.WithTimeout(service.workerContext, 10*time.Minute)
 	service.registerRunCancel(record, cancel)
 	service.workerWG.Add(1)
 	go func() {
@@ -44,19 +44,23 @@ func (service *ChatRunService) runAsync(record runRecord, session sessionRecord,
 	}()
 }
 
-func (service *ChatRunService) executeRun(ctx context.Context, record runRecord, session sessionRecord, history []map[string]any, input SendMessageInput) {
+func (service *AgentRuntime) executeRun(ctx context.Context, record executionRecord, session sessionRecord, history []map[string]any, input SubmitTurnInput) {
 	sink := &persistedGenerationSink{service: service, record: record, session: &session}
-	_, err := service.executeGeneration(ctx, generationExecutionInput{UserID: record.UserID, RunID: record.ID, AssistantMessageID: record.AssistantMessageID, History: history, Request: input}, sink)
+	_, err := service.executeGeneration(ctx, generationExecutionInput{AcceptedAt: record.AcceptedAt, UserID: record.UserID, RunID: record.ID, AssistantTurnID: record.AssistantTurnID, History: history, Request: input}, sink)
 	if err != nil {
 		// Persist the last accepted checkpoint, never output obtained after invalidation.
-		service.finishOwnedRun(record, "error", err)
+		status := "error"
+		if service.workerContext.Err() != nil {
+			status = "interrupted"
+		}
+		service.finishOwnedRun(record, status, err)
 	}
 	log.Printf("kairos: stage=run_completion run=%s error=%v", record.ID, err)
 }
 
 type persistedGenerationSink struct {
-	service        *ChatRunService
-	record         runRecord
+	service        *AgentRuntime
+	record         executionRecord
 	session        *sessionRecord
 	lastCheckpoint time.Time
 }
@@ -144,15 +148,15 @@ func (sink *persistedGenerationSink) Final(message map[string]any, totalTokens i
 	return nil
 }
 
-func (service *ChatRunService) appendStagedRunMessagesIfRunning(ctx context.Context, record runRecord, session sessionRecord, messages []map[string]any, options appendMessageOptions) (SessionSummary, bool, error) {
+func (service *AgentRuntime) appendStagedRunMessagesIfRunning(ctx context.Context, record executionRecord, session sessionRecord, messages []map[string]any, options appendMessageOptions) (SessionSummary, bool, error) {
 	return service.commitRunMessages(ctx, record, session, messages, options, false, 0)
 }
 
-func (service *ChatRunService) completeRunWithFinalMessage(ctx context.Context, record runRecord, session sessionRecord, message map[string]any, timestamp, finalTotalTokens int64) (SessionSummary, bool, error) {
+func (service *AgentRuntime) completeRunWithFinalMessage(ctx context.Context, record executionRecord, session sessionRecord, message map[string]any, timestamp, finalTotalTokens int64) (SessionSummary, bool, error) {
 	return service.commitRunMessages(ctx, record, session, []map[string]any{message}, appendMessageOptions{}, true, finalTotalTokens)
 }
 
-func (service *ChatRunService) commitRunMessages(ctx context.Context, record runRecord, session sessionRecord, messages []map[string]any, options appendMessageOptions, final bool, totalTokens int64) (SessionSummary, bool, error) {
+func (service *AgentRuntime) commitRunMessages(ctx context.Context, record executionRecord, session sessionRecord, messages []map[string]any, options appendMessageOptions, final bool, totalTokens int64) (SessionSummary, bool, error) {
 	tx, err := service.db.BeginTx(ctx, nil)
 	if err != nil {
 		return SessionSummary{}, false, err
@@ -202,7 +206,7 @@ func (service *ChatRunService) commitRunMessages(ctx context.Context, record run
 	return summary, true, nil
 }
 
-func (service *ChatRunService) runStatus(ctx context.Context, runID string) (string, error) {
+func (service *AgentRuntime) runStatus(ctx context.Context, runID string) (string, error) {
 	var status string
 	if err := service.db.QueryRowContext(ctx, `SELECT status FROM chat_runs WHERE id=?`, runID).Scan(&status); err != nil {
 		return "", fmt.Errorf("load run status: %w", err)
@@ -210,7 +214,7 @@ func (service *ChatRunService) runStatus(ctx context.Context, runID string) (str
 	return status, nil
 }
 
-func (service *ChatRunService) registerRunCancel(record runRecord, cancel context.CancelFunc) {
+func (service *AgentRuntime) registerRunCancel(record executionRecord, cancel context.CancelFunc) {
 	service.runMu.Lock()
 	defer service.runMu.Unlock()
 	service.runCancels[record.ID] = cancel
@@ -219,7 +223,7 @@ func (service *ChatRunService) registerRunCancel(record runRecord, cancel contex
 	}
 	service.sessionRuns[record.SessionID][record.ID] = struct{}{}
 }
-func (service *ChatRunService) unregisterRunCancel(record runRecord) {
+func (service *AgentRuntime) unregisterRunCancel(record executionRecord) {
 	service.runMu.Lock()
 	defer service.runMu.Unlock()
 	delete(service.runCancels, record.ID)
@@ -229,7 +233,18 @@ func (service *ChatRunService) unregisterRunCancel(record runRecord) {
 	}
 }
 
-func (sink *persistedGenerationSink) BeforeTool(message map[string]any) error {
+func (sink *persistedGenerationSink) BeforeTool(message map[string]any, call ProviderToolCall) error {
+	copy := map[string]any{}
+	for key, value := range message {
+		copy[key] = value
+	}
+	parts := contentPartsFromAny(message["content"])
+	for index := range parts {
+		if parts[index].Type == "toolCall" && parts[index].ID == call.ID {
+			parts[index].Status = "running"
+		}
+	}
+	copy["content"] = contentPartsToMaps(parts)
 	sink.lastCheckpoint = time.Time{}
-	return sink.Delta(message)
+	return sink.Delta(copy)
 }

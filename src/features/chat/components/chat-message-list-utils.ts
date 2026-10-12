@@ -1,14 +1,14 @@
-import { getGatewayMessageId, getToolCallsFromMessage } from '../utils'
-import type { GatewayMessage } from '../types'
+import { getTurnId } from '../utils'
+import type { ConversationTurn } from '../types'
 
 export function findPreviousClonePoint(
-  messages: Array<GatewayMessage>,
+  messages: Array<ConversationTurn>,
   index: number,
-): GatewayMessage | undefined {
+): ConversationTurn | undefined {
   for (let previousIndex = index - 1; previousIndex >= 0; previousIndex -= 1) {
     const message = messages[previousIndex]
     if (message.role === 'toolResult') continue
-    if (getGatewayMessageId(message)) return message
+    if (getTurnId(message)) return message
   }
   return undefined
 }
@@ -20,41 +20,15 @@ export function isEditableTarget(target: EventTarget | null): boolean {
   return target.isContentEditable
 }
 
-export function collectLinkedToolCallIds(
-  messages: Array<GatewayMessage>,
-): Set<string> {
-  const linkedToolCallIds = new Set<string>()
-  for (const message of messages) {
-    if (message.role !== 'assistant') continue
-    const toolCalls = getToolCallsFromMessage(message)
-    for (const toolCall of toolCalls) {
-      const toolCallId = normalizeID(toolCall.id)
-      if (!toolCallId) continue
-      linkedToolCallIds.add(toolCallId)
-    }
-  }
-  return linkedToolCallIds
-}
-
-export function isLinkedToolResultMessage(
-  message: GatewayMessage,
-  linkedToolCallIds: ReadonlySet<string>,
-): boolean {
-  if (message.role !== 'toolResult') return false
-  const toolCallId = normalizeID(message.toolCallId)
-  return toolCallId.length > 0 && linkedToolCallIds.has(toolCallId)
-}
-
 export type MessageProjection = {
-  displayMessages: Array<GatewayMessage>
-  toolChainsByFinalMessageID: Map<string, Array<GatewayMessage>>
-  toolResultsByCallId: Map<string, GatewayMessage>
+  displayMessages: Array<ConversationTurn>
+  toolResultsByCallId: Map<string, ConversationTurn>
 }
 
-export function projectChatMessages(
-  messages: Array<GatewayMessage>,
+export function projectConversationTurns(
+  messages: Array<ConversationTurn>,
 ): MessageProjection {
-  const toolResultsByCallId = new Map<string, GatewayMessage>()
+  const toolResultsByCallId = new Map<string, ConversationTurn>()
   for (const turn of messages) {
     for (const step of turn.steps ?? []) {
       if (step.role !== 'toolResult' || !step.toolCallId) continue
@@ -63,13 +37,12 @@ export function projectChatMessages(
   }
   return {
     displayMessages: messages,
-    toolChainsByFinalMessageID: new Map(),
     toolResultsByCallId,
   }
 }
 
 export function toolResultLookupKey(
-  messageOrRunId: GatewayMessage | string | undefined,
+  messageOrRunId: ConversationTurn | string | undefined,
   toolCallId: string | undefined,
 ) {
   const callId = normalizeID(toolCallId)
