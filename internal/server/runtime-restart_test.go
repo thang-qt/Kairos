@@ -27,8 +27,8 @@ func TestRuntimeCrashChild(t *testing.T) {
 	user := os.Getenv("KAIROS_TEST_USER")
 	friendly := os.Getenv("KAIROS_TEST_SESSION")
 	if mode == "queued" {
-		app.runs.Close()
-		_, err := app.runs.StartRun(context.Background(), user, SubmitTurnInput{FriendlyID: friendly, Message: "recover queued", Model: "test-model", IdempotencyKey: "crash"})
+		app.runtime.Close()
+		_, err := app.runtime.StartRun(context.Background(), user, SubmitTurnInput{FriendlyID: friendly, Message: "recover queued", Model: "test-model", IdempotencyKey: "crash"})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -47,7 +47,7 @@ func TestRuntimeCrashChild(t *testing.T) {
 		}
 		return ChatGenerationResult{OutputText: "partial before crash", ToolCalls: []ProviderToolCall{call}}, nil
 	}}
-	app.runs.toolRuntime = func(context.Context, string, SubmitTurnInput) (toolExecutor, error) {
+	app.runtime.toolRuntime = func(context.Context, string, SubmitTurnInput) (toolExecutor, error) {
 		return runtimeTestTool{execute: func(context.Context, ProviderToolCall) (WebToolResult, error) {
 			if err := os.WriteFile(os.Getenv("KAIROS_TEST_EFFECT"), []byte("one effect"), 0600); err != nil {
 				return WebToolResult{}, err
@@ -56,7 +56,7 @@ func TestRuntimeCrashChild(t *testing.T) {
 			return WebToolResult{}, nil
 		}}, nil
 	}
-	_, err = app.runs.StartRun(context.Background(), user, SubmitTurnInput{FriendlyID: friendly, Message: "crash active", Model: "test-model", MathTools: true, IdempotencyKey: "crash"})
+	_, err = app.runtime.StartRun(context.Background(), user, SubmitTurnInput{FriendlyID: friendly, Message: "crash active", Model: "test-model", MathTools: true, IdempotencyKey: "crash"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -107,7 +107,7 @@ func TestRuntimeRecoversAcrossProcessCrash(t *testing.T) {
 				if _, err := recovered.db.Exec(`UPDATE chat_runs SET lease_until=0 WHERE id=?`, runID); err != nil {
 					t.Fatal(err)
 				}
-				recovered.runs.notifyQueue()
+				recovered.runtime.notifyQueue()
 				waitForRunStatus(t, fixture, runID, "interrupted")
 				history := requireTwoTurns(t, fixture, user, session, turnID, "interrupted")
 				if len(contentPartsFromAny(history.Messages[1]["content"])) == 0 {

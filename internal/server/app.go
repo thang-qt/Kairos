@@ -30,14 +30,14 @@ var frontendFiles = func() fs.FS {
 }()
 
 type App struct {
-	config     Config
-	db         *sql.DB
-	auth       *AuthService
-	chat       *ConversationService
-	runs       *AgentRuntime
-	providers  *ProviderService
-	webTools   *WebToolSettingsService
-	capability CapabilitySet
+	config        Config
+	db            *sql.DB
+	auth          *AuthService
+	conversations *ConversationService
+	runtime       *AgentRuntime
+	providers     *ProviderService
+	webTools      *WebToolSettingsService
+	capability    CapabilitySet
 }
 
 func NewApp(config Config) (*App, error) {
@@ -79,19 +79,19 @@ func NewApp(config Config) (*App, error) {
 		db.Close()
 		return nil, err
 	}
-	chat := NewConversationService(db)
+	conversations := NewConversationService(db)
 	providers := NewProviderService(db, config)
 	webTools := NewWebToolSettingsService(db, config)
-	runs := NewAgentRuntime(db, chat, providers, webTools)
+	runtime := NewAgentRuntime(db, conversations, providers, webTools)
 
 	app := &App{
-		config:    config,
-		db:        db,
-		auth:      auth,
-		chat:      chat,
-		runs:      runs,
-		providers: providers,
-		webTools:  webTools,
+		config:        config,
+		db:            db,
+		auth:          auth,
+		conversations: conversations,
+		runtime:       runtime,
+		providers:     providers,
+		webTools:      webTools,
 		capability: CapabilitySet{
 			Auth: AuthCapabilities{
 				Enabled:       config.AuthEnabled,
@@ -111,12 +111,12 @@ func NewApp(config Config) (*App, error) {
 		},
 	}
 
-	runs.StartWorkers()
+	runtime.StartWorkers()
 	return app, nil
 }
 
 func (app *App) Close() error {
-	app.runs.Close()
+	app.runtime.Close()
 	return app.db.Close()
 }
 

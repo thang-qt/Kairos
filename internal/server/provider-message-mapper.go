@@ -27,6 +27,9 @@ func buildUserMessage(
 		content = append(content, newTextContentPart(normalizedMessage))
 	}
 
+	if len(content) == 0 {
+		return nil, "", fmt.Errorf("message must contain text or a valid attachment")
+	}
 	userMessage := chatMessage{
 		ID:      newID(),
 		Role:    "user",

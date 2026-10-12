@@ -171,7 +171,7 @@ func (service *AgentRuntime) commitRunMessages(ctx context.Context, record execu
 		return summary, false, err
 	}
 	for _, message := range messages {
-		summary, err = service.chat.appendMessageWithOptionsExec(ctx, tx, session, message, int64Value(message["timestamp"]), options)
+		summary, err = service.conversations.appendMessageWithOptionsExec(ctx, tx, session, message, int64Value(message["timestamp"]), options)
 		if err != nil {
 			return summary, false, err
 		}
@@ -218,19 +218,13 @@ func (service *AgentRuntime) registerRunCancel(record executionRecord, cancel co
 	service.runMu.Lock()
 	defer service.runMu.Unlock()
 	service.runCancels[record.ID] = cancel
-	if service.sessionRuns[record.SessionID] == nil {
-		service.sessionRuns[record.SessionID] = map[string]struct{}{}
-	}
-	service.sessionRuns[record.SessionID][record.ID] = struct{}{}
+
 }
 func (service *AgentRuntime) unregisterRunCancel(record executionRecord) {
 	service.runMu.Lock()
 	defer service.runMu.Unlock()
 	delete(service.runCancels, record.ID)
-	delete(service.sessionRuns[record.SessionID], record.ID)
-	if len(service.sessionRuns[record.SessionID]) == 0 {
-		delete(service.sessionRuns, record.SessionID)
-	}
+
 }
 
 func (sink *persistedGenerationSink) BeforeTool(message map[string]any, call ProviderToolCall) error {

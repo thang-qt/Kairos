@@ -45,7 +45,7 @@ func (service *AgentRuntime) maybeGenerateSessionTitle(
 			}
 			fallbackTitle := deriveTitleFromMessage(userMessage)
 			if fallbackTitle != "" {
-				summary, updated, fallbackErr := service.chat.UpdateSessionTitleIfEmpty(
+				summary, updated, fallbackErr := service.conversations.UpdateSessionTitleIfEmpty(
 					context.Background(),
 					session.ID,
 					session.UserID,
@@ -139,7 +139,7 @@ func (service *AgentRuntime) generateSessionTitle(
 		return nil
 	}
 
-	summary, updated, err := service.chat.UpdateSessionTitleIfEmpty(
+	summary, updated, err := service.conversations.UpdateSessionTitleIfEmpty(
 		ctx,
 		session.ID,
 		session.UserID,

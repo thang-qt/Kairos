@@ -16,7 +16,7 @@ func (app *App) handleSessionEvents(writer http.ResponseWriter, request *http.Re
 	}
 
 	friendlyID := request.PathValue("friendlyId")
-	if _, err := app.runs.ResolveSession(request.Context(), user.ID, friendlyID); err != nil {
+	if _, err := app.runtime.ResolveSession(request.Context(), user.ID, friendlyID); err != nil {
 		if errors.Is(err, errChatSessionNotFound) {
 			writeError(writer, http.StatusNotFound, err.Error())
 			return
@@ -48,7 +48,7 @@ func (app *App) handleSessionEvents(writer http.ResponseWriter, request *http.Re
 		}
 	}
 
-	streamErr := app.runs.StreamSessionFromCursor(request.Context(), user.ID, friendlyID, afterCursor, func(event ConversationEvent) error {
+	streamErr := app.runtime.StreamSessionFromCursor(request.Context(), user.ID, friendlyID, afterCursor, func(event ConversationEvent) error {
 		payload, err := json.Marshal(event)
 		if err != nil {
 			return err

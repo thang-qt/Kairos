@@ -95,7 +95,7 @@ func (app *App) handleListSessions(writer http.ResponseWriter, request *http.Req
 		return
 	}
 
-	sessions, err := app.chat.ListSessions(request.Context(), user.ID)
+	sessions, err := app.conversations.ListSessions(request.Context(), user.ID)
 	if err != nil {
 		writeError(writer, http.StatusInternalServerError, "failed to list sessions")
 		return
@@ -110,7 +110,7 @@ func (app *App) handleSearchSessions(writer http.ResponseWriter, request *http.R
 		return
 	}
 
-	sessions, err := app.chat.SearchSessions(request.Context(), user.ID, request.URL.Query().Get("q"))
+	sessions, err := app.conversations.SearchSessions(request.Context(), user.ID, request.URL.Query().Get("q"))
 	if err != nil {
 		if errors.Is(err, errSessionSearchQueryTooLong) {
 			writeError(writer, http.StatusBadRequest, "Search query is too long.")
@@ -139,50 +139,34 @@ func (app *App) handleCreateSession(writer http.ResponseWriter, request *http.Re
 	if payload.Settings != nil {
 		settings = *payload.Settings
 	}
-	session, err := app.chat.CreateSessionWithSettings(request.Context(), user.ID, payload.Label, settings)
-	if err != nil {
-		writeError(writer, http.StatusInternalServerError, "failed to create session")
-		return
-	}
-
-	response := newSessionMutationResponse(session)
+	var response sessionMutationResponse
 	if strings.TrimSpace(payload.Message) != "" || len(payload.Attachments) > 0 {
-		result, err := app.runs.StartRun(request.Context(), user.ID, SubmitTurnInput{
-			FriendlyID:     session.FriendlyID,
-			Message:        payload.Message,
-			Model:          payload.Model,
-			SystemPrompt:   payload.SystemPrompt,
-			WebSearch:      payload.WebSearch,
-			MathTools:      payload.MathTools,
-			Advanced:       payload.Advanced,
-			IdempotencyKey: payload.IdempotencyKey,
-			ClientID:       payload.ClientID,
-			ClientTime:     payload.ClientTime,
-			ClientTimeZone: payload.ClientTimeZone,
-			Attachments:    payload.Attachments,
-		})
+		result, err := app.runtime.StartRun(request.Context(), user.ID, SubmitTurnInput{NewConversation: &newConversationInput{Label: payload.Label, Settings: settings}, Message: payload.Message, Model: payload.Model, SystemPrompt: payload.SystemPrompt, WebSearch: payload.WebSearch, MathTools: payload.MathTools, Advanced: payload.Advanced, IdempotencyKey: payload.IdempotencyKey, ClientID: payload.ClientID, ClientTime: payload.ClientTime, ClientTimeZone: payload.ClientTimeZone, Attachments: payload.Attachments})
 		if err != nil {
-			switch {
-			case errors.Is(err, errNoProviderAvailable),
-				errors.Is(err, errNoModelAvailable),
-				errors.Is(err, errModelNotAvailable):
+			if errors.Is(err, errConversationConflict) {
+				writeError(writer, http.StatusConflict, err.Error())
+			} else {
 				writeError(writer, http.StatusBadRequest, err.Error())
-			default:
-				writeError(writer, http.StatusBadGateway, err.Error())
 			}
 			return
 		}
-		if updatedSession, err := app.chat.GetSessionSummary(
-			request.Context(),
-			user.ID,
-			session.FriendlyID,
-		); err == nil {
-			response = newSessionMutationResponse(updatedSession)
+		session, err := app.conversations.GetSessionSummary(request.Context(), user.ID, result.FriendlyID)
+		if err != nil {
+			writeError(writer, http.StatusInternalServerError, "failed to load created conversation")
+			return
 		}
+		response = newSessionMutationResponse(session)
 		response.RunID = result.RunID
 		response.UserTurnID = result.UserTurnID
 		response.AssistantTurnID = result.AssistantTurnID
 		response.ClientID = result.ClientID
+	} else {
+		session, err := app.conversations.CreateSessionWithSettings(request.Context(), user.ID, payload.Label, settings)
+		if err != nil {
+			writeError(writer, http.StatusInternalServerError, "failed to create session")
+			return
+		}
+		response = newSessionMutationResponse(session)
 	}
 
 	writeJSON(writer, http.StatusCreated, response)
@@ -200,7 +184,7 @@ func (app *App) handleUpdateConversationSettings(writer http.ResponseWriter, req
 		return
 	}
 
-	session, err := app.chat.UpdateConversationSettings(
+	session, err := app.conversations.UpdateConversationSettings(
 		request.Context(),
 		user.ID,
 		request.PathValue("friendlyId"),
@@ -230,7 +214,7 @@ func (app *App) handleRenameSession(writer http.ResponseWriter, request *http.Re
 		return
 	}
 
-	session, err := app.chat.RenameSession(request.Context(), user.ID, request.PathValue("friendlyId"), payload.Label)
+	session, err := app.conversations.RenameSession(request.Context(), user.ID, request.PathValue("friendlyId"), payload.Label)
 	if err != nil {
 		if errors.Is(err, errChatSessionNotFound) {
 			writeError(writer, http.StatusNotFound, err.Error())
@@ -249,7 +233,7 @@ func (app *App) handleDeleteSession(writer http.ResponseWriter, request *http.Re
 		return
 	}
 
-	if err := app.chat.DeleteSession(request.Context(), user.ID, request.PathValue("friendlyId")); err != nil {
+	if err := app.conversations.DeleteSession(request.Context(), user.ID, request.PathValue("friendlyId")); err != nil {
 		if errors.Is(err, errChatSessionNotFound) {
 			writeError(writer, http.StatusNotFound, err.Error())
 			return
@@ -273,7 +257,7 @@ func (app *App) handlePinSession(writer http.ResponseWriter, request *http.Reque
 		return
 	}
 
-	session, err := app.chat.PinSession(
+	session, err := app.conversations.PinSession(
 		request.Context(),
 		user.ID,
 		request.PathValue("friendlyId"),
@@ -297,7 +281,7 @@ func (app *App) handleSessionHistory(writer http.ResponseWriter, request *http.R
 		return
 	}
 
-	history, err := app.chat.GetHistory(request.Context(), user.ID, request.PathValue("friendlyId"))
+	history, err := app.conversations.GetHistory(request.Context(), user.ID, request.PathValue("friendlyId"))
 	if err != nil {
 		if errors.Is(err, errChatSessionNotFound) {
 			writeError(writer, http.StatusNotFound, err.Error())
@@ -322,7 +306,7 @@ func (app *App) handleSendMessage(writer http.ResponseWriter, request *http.Requ
 		return
 	}
 
-	result, err := app.runs.StartRun(request.Context(), user.ID, SubmitTurnInput{
+	result, err := app.runtime.StartRun(request.Context(), user.ID, SubmitTurnInput{
 		ExpectedRevision: payload.ExpectedRevision,
 		FriendlyID:       request.PathValue("friendlyId"),
 		Message:          payload.Message,
@@ -384,7 +368,7 @@ func (app *App) handleEphemeralMessage(writer http.ResponseWriter, request *http
 	writer.WriteHeader(http.StatusOK)
 	flusher.Flush()
 
-	err := app.runs.StreamEphemeral(request.Context(), user.ID, payload.History, SubmitTurnInput{
+	err := app.runtime.StreamEphemeral(request.Context(), user.ID, payload.History, SubmitTurnInput{
 		Message:        payload.Message,
 		Model:          payload.Model,
 		SystemPrompt:   payload.SystemPrompt,
@@ -429,7 +413,7 @@ func (app *App) handleCloneSession(writer http.ResponseWriter, request *http.Req
 		return
 	}
 
-	session, err := app.chat.CloneSession(
+	session, err := app.conversations.CloneSession(
 		request.Context(),
 		user.ID,
 		request.PathValue("friendlyId"),
@@ -462,7 +446,7 @@ func (app *App) handleEditUserMessage(writer http.ResponseWriter, request *http.
 		return
 	}
 
-	result, err := app.runs.StartRun(request.Context(), user.ID, SubmitTurnInput{
+	result, err := app.runtime.StartRun(request.Context(), user.ID, SubmitTurnInput{
 		FriendlyID: request.PathValue("friendlyId"), EditMessageID: request.PathValue("messageId"), ExpectedRevision: payload.ExpectedRevision,
 		Message: payload.Message, Model: payload.Model, SystemPrompt: payload.SystemPrompt, WebSearch: payload.WebSearch, MathTools: payload.MathTools, Advanced: payload.Advanced, IdempotencyKey: payload.IdempotencyKey, ClientID: payload.ClientID, ClientTime: payload.ClientTime, ClientTimeZone: payload.ClientTimeZone,
 	})
@@ -506,7 +490,7 @@ func (app *App) handleDeleteUserMessage(writer http.ResponseWriter, request *htt
 		}
 		expectedRevision = &value
 	}
-	session, err := app.chat.DeleteUserMessageAtRevision(
+	session, err := app.conversations.DeleteUserMessageAtRevision(
 		request.Context(),
 		user.ID,
 		request.PathValue("friendlyId"),
@@ -534,7 +518,7 @@ func (app *App) handleStopSessionRuns(writer http.ResponseWriter, request *http.
 		return
 	}
 
-	_, err := app.runs.CancelSessionRuns(
+	_, err := app.runtime.CancelSessionRuns(
 		request.Context(),
 		user.ID,
 		request.PathValue("friendlyId"),

@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"sync/atomic"
 	"testing"
@@ -39,7 +40,7 @@ func runtimeFixture(t *testing.T) (*testApp, string, SessionSummary) {
 	})
 	cookie := signupAndRequireCookie(t, app, "runtime@example.com")
 	userID := userIDFromCookie(t, app, cookie)
-	session, err := app.app.chat.CreateSession(context.Background(), userID, "Runtime")
+	session, err := app.app.conversations.CreateSession(context.Background(), userID, "Runtime")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -55,7 +56,7 @@ func requireSignal(t *testing.T, signal <-chan struct{}) {
 }
 func startRuntimeTurn(t *testing.T, app *testApp, userID string, session SessionSummary, key string) SubmitTurnResult {
 	t.Helper()
-	result, err := app.app.runs.StartRun(context.Background(), userID, SubmitTurnInput{FriendlyID: session.FriendlyID, Message: "run tools", Model: "test-model", MathTools: true, IdempotencyKey: key})
+	result, err := app.app.runtime.StartRun(context.Background(), userID, SubmitTurnInput{FriendlyID: session.FriendlyID, Message: "run tools", Model: "test-model", MathTools: true, IdempotencyKey: key})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -63,7 +64,7 @@ func startRuntimeTurn(t *testing.T, app *testApp, userID string, session Session
 }
 func requireTwoTurns(t *testing.T, app *testApp, userID string, session SessionSummary, id, status string) HistoryPayload {
 	t.Helper()
-	history, err := app.app.chat.GetHistory(context.Background(), userID, session.FriendlyID)
+	history, err := app.app.conversations.GetHistory(context.Background(), userID, session.FriendlyID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -105,11 +106,11 @@ func TestRuntimeEditDeleteFenceLateWorker(t *testing.T) {
 			var err error
 			revision := int64(0)
 			if mutation == "edit" {
-				next, err = app.app.runs.StartRun(context.Background(), user, SubmitTurnInput{FriendlyID: session.FriendlyID, EditMessageID: first.UserTurnID, Message: "edited", Model: "test-model", ExpectedRevision: &revision, IdempotencyKey: "edit"})
+				next, err = app.app.runtime.StartRun(context.Background(), user, SubmitTurnInput{FriendlyID: session.FriendlyID, EditMessageID: first.UserTurnID, Message: "edited", Model: "test-model", ExpectedRevision: &revision, IdempotencyKey: "edit"})
 			} else {
-				_, err = app.app.chat.DeleteUserMessageAtRevision(context.Background(), user, session.FriendlyID, first.UserTurnID, &revision)
+				_, err = app.app.conversations.DeleteUserMessageAtRevision(context.Background(), user, session.FriendlyID, first.UserTurnID, &revision)
 				if err == nil {
-					next, err = app.app.runs.StartRun(context.Background(), user, SubmitTurnInput{FriendlyID: session.FriendlyID, Message: "replacement", Model: "test-model"})
+					next, err = app.app.runtime.StartRun(context.Background(), user, SubmitTurnInput{FriendlyID: session.FriendlyID, Message: "replacement", Model: "test-model"})
 				}
 			}
 			close(release)
@@ -122,7 +123,7 @@ func TestRuntimeEditDeleteFenceLateWorker(t *testing.T) {
 			if history.Revision != 1 {
 				t.Fatalf("revision=%d", history.Revision)
 			}
-			transcript, err := app.app.chat.getTranscript(context.Background(), user, session.FriendlyID)
+			transcript, err := app.app.conversations.getTranscript(context.Background(), user, session.FriendlyID)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -150,7 +151,7 @@ func TestRuntimeConcurrentEditsAndIdempotency(t *testing.T) {
 	results := make(chan error, 2)
 	for i := 0; i < 2; i++ {
 		go func() {
-			_, err := app.app.runs.StartRun(context.Background(), user, SubmitTurnInput{FriendlyID: session.FriendlyID, EditMessageID: first.UserTurnID, Message: "edited", Model: "test-model", ExpectedRevision: &revision})
+			_, err := app.app.runtime.StartRun(context.Background(), user, SubmitTurnInput{FriendlyID: session.FriendlyID, EditMessageID: first.UserTurnID, Message: "edited", Model: "test-model", ExpectedRevision: &revision})
 			results <- err
 		}()
 	}
@@ -200,7 +201,7 @@ func TestRuntimeCancellationDuringToolAndArgumentStream(t *testing.T) {
 				return ChatGenerationResult{OutputText: "checking", ToolCalls: []ProviderToolCall{call}}, nil
 			}}
 			var effects atomic.Int32
-			app.app.runs.toolRuntime = func(context.Context, string, SubmitTurnInput) (toolExecutor, error) {
+			app.app.runtime.toolRuntime = func(context.Context, string, SubmitTurnInput) (toolExecutor, error) {
 				return runtimeTestTool{execute: func(context.Context, ProviderToolCall) (WebToolResult, error) {
 					effects.Add(1)
 					close(entered)
@@ -211,7 +212,7 @@ func TestRuntimeCancellationDuringToolAndArgumentStream(t *testing.T) {
 			}
 			run := startRuntimeTurn(t, app, user, session, "stop")
 			requireSignal(t, entered)
-			stopped, err := app.app.runs.CancelSessionRuns(context.Background(), user, session.FriendlyID)
+			stopped, err := app.app.runtime.CancelSessionRuns(context.Background(), user, session.FriendlyID)
 			if err != nil || !stopped {
 				t.Fatalf("stop=%v %v", stopped, err)
 			}
@@ -229,7 +230,7 @@ func TestRuntimeCancellationDuringToolAndArgumentStream(t *testing.T) {
 			if phase == "tool" && effects.Load() != 1 {
 				t.Fatal("unexpected tool replay")
 			}
-			again, err := app.app.runs.CancelSessionRuns(context.Background(), user, session.FriendlyID)
+			again, err := app.app.runtime.CancelSessionRuns(context.Background(), user, session.FriendlyID)
 			if err != nil || again {
 				t.Fatal("cancel resurrected terminal run")
 			}
@@ -239,31 +240,31 @@ func TestRuntimeCancellationDuringToolAndArgumentStream(t *testing.T) {
 
 func TestRuntimeLeaseExpiryRejectsStaleWorker(t *testing.T) {
 	app, user, session := runtimeFixture(t)
-	app.app.runs.Close()
+	app.app.runtime.Close()
 	record := executionRecord{ID: newID(), UserID: user, SessionID: session.Key, Status: "running", Model: "test-model", AssistantTurnID: newID(), LeaseToken: "old-owner"}
-	if err := app.app.runs.insertRun(context.Background(), record, SubmitTurnInput{Message: "leased"}, time.Now().UnixMilli()); err != nil {
+	if err := app.app.runtime.insertRun(context.Background(), record, SubmitTurnInput{Message: "leased"}, time.Now().UnixMilli()); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := app.app.db.Exec(`UPDATE chat_runs SET lease_until=0 WHERE id=?`, record.ID); err != nil {
 		t.Fatal(err)
 	}
-	if err := app.app.runs.dispatchJobs(context.Background()); err != nil {
+	if err := app.app.runtime.dispatchJobs(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	waitForRunStatus(t, app, record.ID, "interrupted")
-	sessionRecord, err := app.app.chat.findSessionByFriendlyID(context.Background(), user, session.FriendlyID)
+	sessionRecord, err := app.app.conversations.findSessionByFriendlyID(context.Background(), user, session.FriendlyID)
 	if err != nil {
 		t.Fatal(err)
 	}
 	message := buildAssistantMessageWithLineage(record.AssistantTurnID, assistantModelDisplay{ID: "test-model"}, time.Now().UnixMilli(), buildAssistantContent("", "stale", nil), record.ID, 0)
-	if _, committed, err := app.app.runs.completeRunWithFinalMessage(context.Background(), record, sessionRecord, message, time.Now().UnixMilli(), 0); err != nil || committed {
+	if _, committed, err := app.app.runtime.completeRunWithFinalMessage(context.Background(), record, sessionRecord, message, time.Now().UnixMilli(), 0); err != nil || committed {
 		t.Fatalf("stale completion=%v %v", committed, err)
 	}
 	// A replacement ownership token also fences a duplicate delivery before its lease expires.
 	if _, err := app.app.db.Exec(`UPDATE chat_runs SET status='running',lease_token='new-owner',lease_until=? WHERE id=?`, time.Now().Add(time.Minute).UnixMilli(), record.ID); err != nil {
 		t.Fatal(err)
 	}
-	if valid, err := app.app.runs.guardRunExec(context.Background(), app.app.db, record); err != nil || valid {
+	if valid, err := app.app.runtime.guardRunExec(context.Background(), app.app.db, record); err != nil || valid {
 		t.Fatalf("old owner valid=%v %v", valid, err)
 	}
 }
@@ -279,11 +280,11 @@ func TestRuntimeRetryRetainsTurnAndNoDuplicateUser(t *testing.T) {
 	}}
 	run := startRuntimeTurn(t, app, user, session, "start")
 	waitForRunStatus(t, app, run.RunID, "error")
-	first, err := app.app.runs.RetryRun(context.Background(), user, session.FriendlyID, run.RunID, "retry", nil)
+	first, err := app.app.runtime.RetryRun(context.Background(), user, session.FriendlyID, run.RunID, "retry", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := app.app.runs.RetryRun(context.Background(), user, session.FriendlyID, run.RunID, "retry", nil)
+	second, err := app.app.runtime.RetryRun(context.Background(), user, session.FriendlyID, run.RunID, "retry", nil)
 	if err != nil || first.RunID != second.RunID {
 		t.Fatalf("retry=%#v %v", second, err)
 	}
@@ -292,7 +293,7 @@ func TestRuntimeRetryRetainsTurnAndNoDuplicateUser(t *testing.T) {
 	if text := textFromContentParts(contentPartsFromAny(history.Messages[1]["content"])); text != "recovered" {
 		t.Fatalf("retry retained obsolete partial: %s", text)
 	}
-	_, err = app.app.runs.CancelSessionRuns(context.Background(), user, session.FriendlyID)
+	_, err = app.app.runtime.CancelSessionRuns(context.Background(), user, session.FriendlyID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -307,7 +308,7 @@ func TestRuntimeEventsReplayAndSnapshotAgree(t *testing.T) {
 	}}
 	run := startRuntimeTurn(t, app, user, session, "events")
 	waitForRunStatus(t, app, run.RunID, "completed")
-	events, err := app.app.runs.readEvents(context.Background(), session.Key, 0)
+	events, err := app.app.runtime.readEvents(context.Background(), session.Key, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -324,7 +325,7 @@ func TestRuntimeEventsReplayAndSnapshotAgree(t *testing.T) {
 			t.Fatal("changed visible identity")
 		}
 	}
-	replay, err := app.app.runs.readEvents(context.Background(), session.Key, events[0].Cursor)
+	replay, err := app.app.runtime.readEvents(context.Background(), session.Key, events[0].Cursor)
 	if err != nil || len(replay) != len(events)-1 {
 		t.Fatalf("replay=%d %v", len(replay), err)
 	}
@@ -333,7 +334,7 @@ func TestRuntimeEventsReplayAndSnapshotAgree(t *testing.T) {
 		t.Fatalf("snapshot cursor=%d journal=%d", history.Cursor, cursor)
 	}
 	// A new runtime has no in-memory stream state and still replays all events.
-	other := NewAgentRuntime(app.app.db, app.app.chat, app.app.providers, app.app.webTools)
+	other := NewAgentRuntime(app.app.db, app.app.conversations, app.app.providers, app.app.webTools)
 	replay, err = other.readEvents(context.Background(), session.Key, 0)
 	if err != nil || len(replay) != len(events) {
 		t.Fatal("replay depends on process memory")
@@ -342,9 +343,9 @@ func TestRuntimeEventsReplayAndSnapshotAgree(t *testing.T) {
 
 func TestRuntimeInvalidEditRollsBackHistoryAndQueue(t *testing.T) {
 	app, user, session := runtimeFixture(t)
-	app.app.runs.Close()
+	app.app.runtime.Close()
 	run := startRuntimeTurn(t, app, user, session, "queued")
-	_, err := app.app.runs.StartRun(context.Background(), user, SubmitTurnInput{FriendlyID: session.FriendlyID, EditMessageID: run.UserTurnID, Message: "", Model: "test-model"})
+	_, err := app.app.runtime.StartRun(context.Background(), user, SubmitTurnInput{FriendlyID: session.FriendlyID, EditMessageID: run.UserTurnID, Message: "", Model: "test-model"})
 	if err == nil {
 		t.Fatal("accepted empty edit")
 	}
@@ -426,21 +427,21 @@ func TestRuntimeCloneIncludesWholeStoppedTurn(t *testing.T) {
 	}}
 	run := startRuntimeTurn(t, app, user, session, "clone")
 	requireSignal(t, entered)
-	if _, err := app.app.runs.CancelSessionRuns(context.Background(), user, session.FriendlyID); err != nil {
+	if _, err := app.app.runtime.CancelSessionRuns(context.Background(), user, session.FriendlyID); err != nil {
 		t.Fatal(err)
 	}
-	clone, err := app.app.chat.CloneSession(context.Background(), user, session.FriendlyID, run.AssistantTurnID)
+	clone, err := app.app.conversations.CloneSession(context.Background(), user, session.FriendlyID, run.AssistantTurnID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	history, err := app.app.chat.GetHistory(context.Background(), user, clone.FriendlyID)
+	history, err := app.app.conversations.GetHistory(context.Background(), user, clone.FriendlyID)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(history.Messages) != 2 || history.Messages[1]["status"] != "aborted" || history.Messages[1]["id"] != run.AssistantTurnID {
 		t.Fatalf("cloned turn=%#v", history.Messages)
 	}
-	transcript, err := app.app.chat.getTranscript(context.Background(), user, clone.FriendlyID)
+	transcript, err := app.app.conversations.getTranscript(context.Background(), user, clone.FriendlyID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -450,5 +451,98 @@ func TestRuntimeCloneIncludesWholeStoppedTurn(t *testing.T) {
 				t.Fatal("unfinished tool call leaked into provider transcript")
 			}
 		}
+	}
+}
+
+func TestRuntimeNewConversationCommandIsAtomicAndIdempotent(t *testing.T) {
+	app, user, _ := runtimeFixture(t)
+	app.app.runtime.Close()
+	input := SubmitTurnInput{NewConversation: &newConversationInput{Label: "Atomic", Settings: defaultConversationSettings()}, Message: "first", Model: "test-model", IdempotencyKey: "create-key"}
+	first, err := app.app.runtime.StartRun(context.Background(), user, input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := app.app.runtime.StartRun(context.Background(), user, input)
+	if err != nil || second.SessionKey != first.SessionKey || second.RunID != first.RunID || second.UserTurnID != first.UserTurnID {
+		t.Fatalf("repeated create=%#v %v", second, err)
+	}
+	var conversations, jobs int
+	if err := app.app.db.QueryRow(`SELECT COUNT(*) FROM conversation_commands WHERE user_id=? AND command_key='create-key'`, user).Scan(&conversations); err != nil {
+		t.Fatal(err)
+	}
+	if err := app.app.db.QueryRow(`SELECT COUNT(*) FROM chat_jobs WHERE run_id=?`, first.RunID).Scan(&jobs); err != nil {
+		t.Fatal(err)
+	}
+	if conversations != 1 || jobs != 1 {
+		t.Fatalf("created commands=%d jobs=%d", conversations, jobs)
+	}
+	before, err := app.app.conversations.ListSessions(context.Background(), user)
+	if err != nil {
+		t.Fatal(err)
+	}
+	input.IdempotencyKey = "bad-create"
+	input.Message = ""
+	input.Attachments = []AttachmentPayload{{MimeType: "", Content: ""}}
+	if _, err := app.app.runtime.StartRun(context.Background(), user, input); err == nil {
+		t.Fatal("accepted invalid creation")
+	}
+	after, err := app.app.conversations.ListSessions(context.Background(), user)
+	if err != nil || len(after) != len(before) {
+		t.Fatal("failed creation left an empty conversation")
+	}
+}
+
+func TestRuntimeMultipleToolRoundsKeepOneTurn(t *testing.T) {
+	app, user, session := runtimeFixture(t)
+	var effects atomic.Int32
+	driver := &runtimeTestDriver{generate: func(_ context.Context, round int, request ChatGenerationRequest, emit func(ChatGenerationDelta) error) (ChatGenerationResult, error) {
+		if round <= 2 {
+			call := ProviderToolCall{ID: fmt.Sprintf("call-%d", round), Name: "fake", ArgsJSON: "{}"}
+			if err := emit(ChatGenerationDelta{Text: "checking", ToolCalls: []ProviderToolCall{call}}); err != nil {
+				return ChatGenerationResult{}, err
+			}
+			return ChatGenerationResult{OutputText: "checking", ToolCalls: []ProviderToolCall{call}}, nil
+		}
+		if len(request.Messages) != 6 || request.Messages[5].Role != "tool" {
+			t.Errorf("transcript order=%#v", request.Messages)
+		}
+		return ChatGenerationResult{OutputText: "done"}, nil
+	}}
+	app.app.providers.drivers[openAIProviderKind] = driver
+	app.app.runtime.toolRuntime = func(context.Context, string, SubmitTurnInput) (toolExecutor, error) {
+		return runtimeTestTool{execute: func(context.Context, ProviderToolCall) (WebToolResult, error) {
+			effects.Add(1)
+			return WebToolResult{Content: "result"}, nil
+		}}, nil
+	}
+	run := startRuntimeTurn(t, app, user, session, "rounds")
+	waitForRunStatus(t, app, run.RunID, "completed")
+	history := requireTwoTurns(t, app, user, session, run.AssistantTurnID, "completed")
+	if len(history.Messages[1]["steps"].([]any)) != 5 || effects.Load() != 2 || driver.calls.Load() != 3 {
+		t.Fatalf("steps/effects/calls=%#v/%d/%d", history.Messages[1]["steps"], effects.Load(), driver.calls.Load())
+	}
+}
+
+func TestRuntimeTimeoutAfterToolEffectIsNotAutomaticallyRetried(t *testing.T) {
+	app, user, session := runtimeFixture(t)
+	var effects atomic.Int32
+	driver := &runtimeTestDriver{generate: func(_ context.Context, round int, _ ChatGenerationRequest, _ func(ChatGenerationDelta) error) (ChatGenerationResult, error) {
+		if round == 1 {
+			return ChatGenerationResult{ToolCalls: []ProviderToolCall{{ID: "effect", Name: "fake", ArgsJSON: "{}"}}}, nil
+		}
+		return ChatGenerationResult{}, providerTimeout{}
+	}}
+	app.app.providers.drivers[openAIProviderKind] = driver
+	app.app.runtime.toolRuntime = func(context.Context, string, SubmitTurnInput) (toolExecutor, error) {
+		return runtimeTestTool{execute: func(context.Context, ProviderToolCall) (WebToolResult, error) {
+			effects.Add(1)
+			return WebToolResult{Content: "effect saved"}, nil
+		}}, nil
+	}
+	run := startRuntimeTurn(t, app, user, session, "effect-timeout")
+	waitForRunStatus(t, app, run.RunID, "error")
+	requireTwoTurns(t, app, user, session, run.AssistantTurnID, "error")
+	if effects.Load() != 1 || driver.calls.Load() != 2 {
+		t.Fatalf("automatic effect replay: effects=%d requests=%d", effects.Load(), driver.calls.Load())
 	}
 }

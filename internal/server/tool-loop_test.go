@@ -203,7 +203,7 @@ func TestFinalCompletionDoesNotPersistAfterAbortClaim(t *testing.T) {
 	var created sessionMutationResponse
 	decodeResponseJSON(t, createResponse, &created)
 
-	session, err := testServer.app.chat.findSessionByFriendlyID(context.Background(), userID, created.FriendlyID)
+	session, err := testServer.app.conversations.findSessionByFriendlyID(context.Background(), userID, created.FriendlyID)
 	if err != nil {
 		t.Fatalf("find session: %v", err)
 	}
@@ -216,10 +216,10 @@ func TestFinalCompletionDoesNotPersistAfterAbortClaim(t *testing.T) {
 		Model:           "test-model",
 		AssistantTurnID: newID(),
 	}
-	if err := testServer.app.runs.insertRun(context.Background(), record, SubmitTurnInput{FriendlyID: created.FriendlyID, Message: "race", Model: "test-model"}, time.Now().UnixMilli()); err != nil {
+	if err := testServer.app.runtime.insertRun(context.Background(), record, SubmitTurnInput{FriendlyID: created.FriendlyID, Message: "race", Model: "test-model"}, time.Now().UnixMilli()); err != nil {
 		t.Fatalf("insert run: %v", err)
 	}
-	claimed, err := testServer.app.runs.CancelSessionRuns(context.Background(), userID, created.FriendlyID)
+	claimed, err := testServer.app.runtime.CancelSessionRuns(context.Background(), userID, created.FriendlyID)
 	if err != nil {
 		t.Fatalf("claim abort: %v", err)
 	}
@@ -235,14 +235,14 @@ func TestFinalCompletionDoesNotPersistAfterAbortClaim(t *testing.T) {
 		record.ID,
 		0,
 	)
-	_, completed, err := testServer.app.runs.completeRunWithFinalMessage(context.Background(), record, session, finalMessage, int64Value(finalMessage["timestamp"]), 0)
+	_, completed, err := testServer.app.runtime.completeRunWithFinalMessage(context.Background(), record, session, finalMessage, int64Value(finalMessage["timestamp"]), 0)
 	if err != nil {
 		t.Fatalf("complete run: %v", err)
 	}
 	if completed {
 		t.Fatal("complete after abort = true, want false")
 	}
-	status, err := testServer.app.runs.runStatus(context.Background(), record.ID)
+	status, err := testServer.app.runtime.runStatus(context.Background(), record.ID)
 	if err != nil {
 		t.Fatalf("load status: %v", err)
 	}
@@ -273,7 +273,7 @@ func TestStagedToolRoundDoesNotPersistAfterAbortClaim(t *testing.T) {
 	var created sessionMutationResponse
 	decodeResponseJSON(t, createResponse, &created)
 
-	session, err := testServer.app.chat.findSessionByFriendlyID(context.Background(), userID, created.FriendlyID)
+	session, err := testServer.app.conversations.findSessionByFriendlyID(context.Background(), userID, created.FriendlyID)
 	if err != nil {
 		t.Fatalf("find session: %v", err)
 	}
@@ -286,10 +286,10 @@ func TestStagedToolRoundDoesNotPersistAfterAbortClaim(t *testing.T) {
 		Model:           "test-model",
 		AssistantTurnID: newID(),
 	}
-	if err := testServer.app.runs.insertRun(context.Background(), record, SubmitTurnInput{FriendlyID: created.FriendlyID, Message: "race", Model: "test-model"}, time.Now().UnixMilli()); err != nil {
+	if err := testServer.app.runtime.insertRun(context.Background(), record, SubmitTurnInput{FriendlyID: created.FriendlyID, Message: "race", Model: "test-model"}, time.Now().UnixMilli()); err != nil {
 		t.Fatalf("insert run: %v", err)
 	}
-	claimed, err := testServer.app.runs.CancelSessionRuns(context.Background(), userID, created.FriendlyID)
+	claimed, err := testServer.app.runtime.CancelSessionRuns(context.Background(), userID, created.FriendlyID)
 	if err != nil {
 		t.Fatalf("claim abort: %v", err)
 	}
@@ -307,7 +307,7 @@ func TestStagedToolRoundDoesNotPersistAfterAbortClaim(t *testing.T) {
 		0,
 	)
 	toolMessage := buildToolResultMessageWithLineage(newID(), call, WebToolResult{Content: "result"}, nil, time.Now().UnixMilli()+1, 1, record.ID, 0, 1)
-	_, committed, err := testServer.app.runs.appendStagedRunMessagesIfRunning(
+	_, committed, err := testServer.app.runtime.appendStagedRunMessagesIfRunning(
 		context.Background(),
 		record,
 		session,
@@ -344,7 +344,7 @@ func TestCompleteRunWithFinalMessageStoresFinalTokensAtomically(t *testing.T) {
 	var created sessionMutationResponse
 	decodeResponseJSON(t, createResponse, &created)
 
-	session, err := testServer.app.chat.findSessionByFriendlyID(context.Background(), userID, created.FriendlyID)
+	session, err := testServer.app.conversations.findSessionByFriendlyID(context.Background(), userID, created.FriendlyID)
 	if err != nil {
 		t.Fatalf("find session: %v", err)
 	}
@@ -357,7 +357,7 @@ func TestCompleteRunWithFinalMessageStoresFinalTokensAtomically(t *testing.T) {
 		Model:           "test-model",
 		AssistantTurnID: newID(),
 	}
-	if err := testServer.app.runs.insertRun(context.Background(), record, SubmitTurnInput{FriendlyID: created.FriendlyID, Message: "final", Model: "test-model"}, time.Now().UnixMilli()); err != nil {
+	if err := testServer.app.runtime.insertRun(context.Background(), record, SubmitTurnInput{FriendlyID: created.FriendlyID, Message: "final", Model: "test-model"}, time.Now().UnixMilli()); err != nil {
 		t.Fatalf("insert run: %v", err)
 	}
 	if _, err := testServer.app.db.Exec(`UPDATE chat_runs SET lease_token=?,lease_until=? WHERE id=?`, record.LeaseToken, time.Now().Add(time.Minute).UnixMilli(), record.ID); err != nil {
@@ -371,7 +371,7 @@ func TestCompleteRunWithFinalMessageStoresFinalTokensAtomically(t *testing.T) {
 		record.ID,
 		0,
 	)
-	summary, completed, err := testServer.app.runs.completeRunWithFinalMessage(context.Background(), record, session, finalMessage, int64Value(finalMessage["timestamp"]), 42)
+	summary, completed, err := testServer.app.runtime.completeRunWithFinalMessage(context.Background(), record, session, finalMessage, int64Value(finalMessage["timestamp"]), 42)
 	if err != nil {
 		t.Fatalf("complete run: %v", err)
 	}
@@ -381,7 +381,7 @@ func TestCompleteRunWithFinalMessageStoresFinalTokensAtomically(t *testing.T) {
 	if summary.TotalTokens != 42 {
 		t.Fatalf("summary total tokens = %d, want 42", summary.TotalTokens)
 	}
-	updatedSession, err := testServer.app.chat.findSessionByFriendlyID(context.Background(), userID, created.FriendlyID)
+	updatedSession, err := testServer.app.conversations.findSessionByFriendlyID(context.Background(), userID, created.FriendlyID)
 	if err != nil {
 		t.Fatalf("reload session: %v", err)
 	}

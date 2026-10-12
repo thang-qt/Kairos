@@ -53,3 +53,5 @@ The original interface was extracted and adapted from [webclaw](https://github.c
 ## License
 
 See [LICENSE](LICENSE).
+
+Conversation architecture, API contracts and upgrade notes are documented in [docs/agent-runtime.md](docs/agent-runtime.md).

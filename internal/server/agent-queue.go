@@ -159,11 +159,11 @@ func (service *AgentRuntime) dispatchJobs(ctx context.Context) error {
 		return nil
 	}
 	input.FriendlyID = friendlyID
-	session, err := service.chat.findSessionByFriendlyID(ctx, record.UserID, friendlyID)
+	session, err := service.conversations.findSessionByFriendlyID(ctx, record.UserID, friendlyID)
 	if err != nil {
 		return err
 	}
-	history, err := service.chat.getTranscript(ctx, record.UserID, friendlyID)
+	history, err := service.conversations.getTranscript(ctx, record.UserID, friendlyID)
 	if err != nil {
 		service.finishOwnedRun(record, "error", err)
 		return nil

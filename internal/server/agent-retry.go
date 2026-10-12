@@ -14,9 +14,9 @@ func (service *AgentRuntime) RetryRun(ctx context.Context, userID, friendlyID, r
 	if strings.TrimSpace(key) == "" {
 		return SubmitTurnResult{}, errors.New("retry requires an idempotencyKey")
 	}
-	service.chat.commandMu.Lock()
-	defer service.chat.commandMu.Unlock()
-	session, err := service.chat.findSessionByFriendlyID(ctx, userID, friendlyID)
+	service.conversations.commandMu.Lock()
+	defer service.conversations.commandMu.Unlock()
+	session, err := service.conversations.findSessionByFriendlyID(ctx, userID, friendlyID)
 	if err != nil {
 		return SubmitTurnResult{}, err
 	}
@@ -61,7 +61,7 @@ func (service *AgentRuntime) RetryRun(ctx context.Context, userID, friendlyID, r
 	if _, err := tx.ExecContext(ctx, `DELETE FROM chat_messages WHERE session_id=? AND run_id=?`, session.ID, runID); err != nil {
 		return result, err
 	}
-	remaining, err := service.chat.listMessageRecordsExec(ctx, tx, session.ID)
+	remaining, err := service.conversations.listMessageRecordsExec(ctx, tx, session.ID)
 	if err != nil {
 		return result, err
 	}
@@ -107,7 +107,7 @@ func (app *App) handleRetryRun(writer http.ResponseWriter, request *http.Request
 		writeError(writer, http.StatusBadRequest, err.Error())
 		return
 	}
-	result, err := app.runs.RetryRun(request.Context(), user.ID, request.PathValue("friendlyId"), request.PathValue("runId"), payload.IdempotencyKey, payload.ExpectedRevision)
+	result, err := app.runtime.RetryRun(request.Context(), user.ID, request.PathValue("friendlyId"), request.PathValue("runId"), payload.IdempotencyKey, payload.ExpectedRevision)
 	if err != nil {
 		status := http.StatusBadRequest
 		if errors.Is(err, errConversationConflict) {

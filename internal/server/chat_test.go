@@ -541,7 +541,7 @@ func TestChatServiceCreateSessionCreatesUserPreferencesIncrementally(t *testing.
 		t.Fatalf("Signup() error = %v", err)
 	}
 
-	if _, err := testServer.app.chat.CreateSession(context.Background(), user.ID, ""); err != nil {
+	if _, err := testServer.app.conversations.CreateSession(context.Background(), user.ID, ""); err != nil {
 		t.Fatalf("CreateSession() error = %v", err)
 	}
 }
@@ -584,7 +584,7 @@ func TestSendMessagePersistsHistoryAndStreamsFinalEvent(t *testing.T) {
 	defer cancel()
 	go func() {
 		events := make([]ConversationEvent, 0, 2)
-		err := testServer.app.runs.StreamSession(streamContext, userID, created.FriendlyID, func(event ConversationEvent) error {
+		err := testServer.app.runtime.StreamSession(streamContext, userID, created.FriendlyID, func(event ConversationEvent) error {
 			events = append(events, event)
 			if event.State == "final" {
 				eventResult <- events
@@ -1250,7 +1250,7 @@ func TestSendMessagePublishesTitleEvent(t *testing.T) {
 	streamContext, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go func() {
-		err := testServer.app.runs.StreamSession(streamContext, userID, created.FriendlyID, func(event ConversationEvent) error {
+		err := testServer.app.runtime.StreamSession(streamContext, userID, created.FriendlyID, func(event ConversationEvent) error {
 			if event.State == "title" {
 				titleEventResult <- event
 				cancel()
@@ -1430,7 +1430,7 @@ func TestStopSessionRunPublishesAbortedEventAndKeepsPartialAssistantHistory(t *t
 	defer cancel()
 	go func() {
 		events := make([]ConversationEvent, 0, 2)
-		err := testServer.app.runs.StreamSession(streamContext, userID, created.FriendlyID, func(event ConversationEvent) error {
+		err := testServer.app.runtime.StreamSession(streamContext, userID, created.FriendlyID, func(event ConversationEvent) error {
 			events = append(events, event)
 			if event.State == "delta" && len(contentPartsFromAny(event.Message["content"])) > 0 {
 				select {
@@ -1528,7 +1528,7 @@ func TestStartingNextRunDoesNotWaitForFencedStoppedWorker(t *testing.T) {
 	var created sessionMutationResponse
 	decodeResponseJSON(t, createResponse, &created)
 
-	_, err := testServer.app.runs.StartRun(context.Background(), userID, SubmitTurnInput{
+	_, err := testServer.app.runtime.StartRun(context.Background(), userID, SubmitTurnInput{
 		FriendlyID: created.FriendlyID,
 		Message:    "Prompt A",
 		Model:      "test-model",
@@ -1542,7 +1542,7 @@ func TestStartingNextRunDoesNotWaitForFencedStoppedWorker(t *testing.T) {
 		t.Fatal("timed out waiting for first run delta")
 	}
 
-	stopped, err := testServer.app.runs.CancelSessionRuns(context.Background(), userID, created.FriendlyID)
+	stopped, err := testServer.app.runtime.CancelSessionRuns(context.Background(), userID, created.FriendlyID)
 	if err != nil {
 		t.Fatalf("stop first run: %v", err)
 	}
@@ -1563,7 +1563,7 @@ func TestStartingNextRunDoesNotWaitForFencedStoppedWorker(t *testing.T) {
 	secondResult := make(chan startResult, 1)
 	go func() {
 		close(startedSecond)
-		run, startErr := testServer.app.runs.StartRun(context.Background(), userID, SubmitTurnInput{
+		run, startErr := testServer.app.runtime.StartRun(context.Background(), userID, SubmitTurnInput{
 			FriendlyID: created.FriendlyID,
 			Message:    "Prompt B",
 			Model:      "test-model",
@@ -1590,7 +1590,7 @@ func TestStartingNextRunDoesNotWaitForFencedStoppedWorker(t *testing.T) {
 	}
 	waitForRunStatus(t, testServer, second.run.RunID, "completed")
 
-	history, err := testServer.app.chat.GetHistory(context.Background(), userID, created.FriendlyID)
+	history, err := testServer.app.conversations.GetHistory(context.Background(), userID, created.FriendlyID)
 	if err != nil {
 		t.Fatalf("get history: %v", err)
 	}

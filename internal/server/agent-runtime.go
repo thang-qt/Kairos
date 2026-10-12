@@ -12,21 +12,27 @@ import (
 	"time"
 )
 
+type newConversationInput struct {
+	Label    string
+	Settings ConversationSettings
+}
+
 type SubmitTurnInput struct {
-	EditMessageID    string               `json:"-"`
-	ExpectedRevision *int64               `json:"expectedRevision,omitempty"`
-	FriendlyID       string               `json:"-"`
-	Message          string               `json:"message"`
-	Model            string               `json:"model"`
-	SystemPrompt     string               `json:"systemPrompt"`
-	WebSearch        bool                 `json:"webSearch"`
-	MathTools        bool                 `json:"mathTools"`
-	Advanced         *ChatAdvancedOptions `json:"advanced"`
-	IdempotencyKey   string               `json:"idempotencyKey"`
-	ClientID         string               `json:"clientId"`
-	ClientTime       string               `json:"clientTime"`
-	ClientTimeZone   string               `json:"clientTimeZone"`
-	Attachments      []AttachmentPayload  `json:"attachments"`
+	NewConversation  *newConversationInput `json:"-"`
+	EditMessageID    string                `json:"-"`
+	ExpectedRevision *int64                `json:"expectedRevision,omitempty"`
+	FriendlyID       string                `json:"-"`
+	Message          string                `json:"message"`
+	Model            string                `json:"model"`
+	SystemPrompt     string                `json:"systemPrompt"`
+	WebSearch        bool                  `json:"webSearch"`
+	MathTools        bool                  `json:"mathTools"`
+	Advanced         *ChatAdvancedOptions  `json:"advanced"`
+	IdempotencyKey   string                `json:"idempotencyKey"`
+	ClientID         string                `json:"clientId"`
+	ClientTime       string                `json:"clientTime"`
+	ClientTimeZone   string                `json:"clientTimeZone"`
+	Attachments      []AttachmentPayload   `json:"attachments"`
 }
 
 type AttachmentPayload struct {
@@ -35,6 +41,7 @@ type AttachmentPayload struct {
 }
 
 type SubmitTurnResult struct {
+	FriendlyID      string `json:"friendlyId,omitempty"`
 	RunID           string `json:"runId"`
 	SessionKey      string `json:"sessionKey"`
 	UserTurnID      string `json:"userTurnId"`
@@ -68,29 +75,27 @@ type AgentRuntime struct {
 	workerWG      sync.WaitGroup
 	wake          chan struct{}
 	db            *sql.DB
-	chat          *ConversationService
+	conversations *ConversationService
 	providers     *ProviderService
 	webSettings   *WebToolSettingsService
 	toolRuntime   func(ctx context.Context, userID string, input SubmitTurnInput) (toolExecutor, error)
 	runMu         sync.Mutex
 	runCancels    map[string]context.CancelFunc
-	sessionRuns   map[string]map[string]struct{}
 }
 
 func NewAgentRuntime(
 	db *sql.DB,
-	chat *ConversationService,
+	conversations *ConversationService,
 	providers *ProviderService,
 	webSettings *WebToolSettingsService,
 ) *AgentRuntime {
 	service := &AgentRuntime{
-		wake:        make(chan struct{}, 1),
-		db:          db,
-		chat:        chat,
-		providers:   providers,
-		webSettings: webSettings,
-		runCancels:  make(map[string]context.CancelFunc),
-		sessionRuns: make(map[string]map[string]struct{}),
+		wake:          make(chan struct{}, 1),
+		db:            db,
+		conversations: conversations,
+		providers:     providers,
+		webSettings:   webSettings,
+		runCancels:    make(map[string]context.CancelFunc),
 	}
 	service.toolRuntime = service.defaultToolRuntime
 	return service
@@ -117,13 +122,37 @@ func (service *AgentRuntime) StartRun(
 	userID string,
 	input SubmitTurnInput,
 ) (SubmitTurnResult, error) {
-	service.chat.commandMu.Lock()
-	defer service.chat.commandMu.Unlock()
-	session, err := service.chat.findSessionByFriendlyID(ctx, userID, input.FriendlyID)
+	service.conversations.commandMu.Lock()
+	defer service.conversations.commandMu.Unlock()
+	var session sessionRecord
+	var err error
+	creating := input.NewConversation != nil
+	idempotencyKey := strings.TrimSpace(input.IdempotencyKey)
+	if creating && idempotencyKey != "" {
+		var existingID string
+		lookupErr := service.db.QueryRowContext(ctx, `SELECT session_id FROM conversation_commands WHERE user_id=? AND command_key=?`, userID, idempotencyKey).Scan(&existingID)
+		if lookupErr == nil {
+			session, err = service.conversations.findSessionByID(ctx, userID, existingID)
+			creating = false
+			input.FriendlyID = session.FriendlyID
+		} else if !errors.Is(lookupErr, sql.ErrNoRows) {
+			return SubmitTurnResult{}, lookupErr
+		}
+	}
+	if creating {
+		settingsJSON, encodeErr := encodeConversationSettings(input.NewConversation.Settings)
+		if encodeErr != nil {
+			return SubmitTurnResult{}, encodeErr
+		}
+		label := nullableString(normalizeSessionLabel(input.NewConversation.Label))
+		session = sessionRecord{ID: newID(), UserID: userID, FriendlyID: newFriendlyID(), Title: label, DerivedTitle: label, Label: label, ContextTokens: defaultContextTokens, ConversationSettingsJSON: settingsJSON}
+	} else if session.ID == "" {
+		session, err = service.conversations.findSessionByFriendlyID(ctx, userID, input.FriendlyID)
+	}
 	if err != nil {
 		return SubmitTurnResult{}, err
 	}
-	idempotencyKey := strings.TrimSpace(input.IdempotencyKey)
+	input.FriendlyID = session.FriendlyID
 	if idempotencyKey != "" {
 		existingRun, found, err := service.findRunByIdempotencyKey(
 			ctx,
@@ -137,6 +166,7 @@ func (service *AgentRuntime) StartRun(
 		if found {
 			return SubmitTurnResult{
 				RunID:           existingRun.ID,
+				FriendlyID:      session.FriendlyID,
 				SessionKey:      session.ID,
 				AssistantTurnID: existingRun.AssistantTurnID,
 				UserTurnID:      existingRun.UserTurnID,
@@ -170,7 +200,7 @@ func (service *AgentRuntime) StartRun(
 	now := time.Now().UnixMilli()
 	userMessage["timestamp"] = now
 	runID := newID()
-	assistantMessageID := newID()
+	assistantTurnID := newID()
 	model := normalizeModel(input.Model)
 	record := executionRecord{
 		ID:              runID,
@@ -180,7 +210,7 @@ func (service *AgentRuntime) StartRun(
 		AcceptedAt:      now,
 		Model:           model,
 		IdempotencyKey:  idempotencyKey,
-		AssistantTurnID: assistantMessageID,
+		AssistantTurnID: assistantTurnID,
 	}
 
 	transaction, err := service.db.BeginTx(ctx, nil)
@@ -189,6 +219,16 @@ func (service *AgentRuntime) StartRun(
 	}
 	defer transaction.Rollback()
 
+	if creating {
+		if _, err := transaction.ExecContext(ctx, `INSERT INTO chat_sessions(id,user_id,friendly_id,title,derived_title,label,is_pinned,updated_at,created_at,total_tokens,context_tokens,conversation_settings_json) VALUES(?,?,?,?,?,?,0,?,?,0,?,?)`, session.ID, userID, session.FriendlyID, session.Title, session.DerivedTitle, session.Label, now, now, defaultContextTokens, session.ConversationSettingsJSON); err != nil {
+			return SubmitTurnResult{}, err
+		}
+		if idempotencyKey != "" {
+			if _, err := transaction.ExecContext(ctx, `INSERT INTO conversation_commands(user_id,command_key,session_id) VALUES(?,?,?)`, userID, idempotencyKey, session.ID); err != nil {
+				return SubmitTurnResult{}, err
+			}
+		}
+	}
 	if err := transaction.QueryRowContext(ctx, `SELECT revision FROM chat_sessions WHERE id=?`, session.ID).Scan(&record.Revision); err != nil {
 		return SubmitTurnResult{}, err
 	}
@@ -196,7 +236,7 @@ func (service *AgentRuntime) StartRun(
 		return SubmitTurnResult{}, errConversationConflict
 	}
 	if input.EditMessageID != "" {
-		records, err := service.chat.listMessageRecordsExec(ctx, transaction, session.ID)
+		records, err := service.conversations.listMessageRecordsExec(ctx, transaction, session.ID)
 		if err != nil {
 			return SubmitTurnResult{}, err
 		}
@@ -211,7 +251,7 @@ func (service *AgentRuntime) StartRun(
 		}
 		userMessage["id"] = input.EditMessageID
 		userMessage["timestamp"] = now
-		if err := service.chat.truncateSessionMessagesExec(ctx, transaction, &session, records, index); err != nil {
+		if err := service.conversations.truncateSessionMessagesExec(ctx, transaction, &session, records, index); err != nil {
 			return SubmitTurnResult{}, err
 		}
 		record.Revision++
@@ -231,7 +271,7 @@ func (service *AgentRuntime) StartRun(
 	userTimestamp := maxInt64(now, latestTimestamp+1)
 	userMessage["timestamp"] = userTimestamp
 	record.TurnTimestamp = userTimestamp + 1
-	if _, err := service.chat.appendMessageWithOptionsExec(
+	if _, err := service.conversations.appendMessageWithOptionsExec(
 		ctx,
 		transaction,
 		session,
@@ -262,6 +302,7 @@ func (service *AgentRuntime) StartRun(
 			if found {
 				return SubmitTurnResult{
 					RunID:           existingRun.ID,
+					FriendlyID:      session.FriendlyID,
 					SessionKey:      session.ID,
 					AssistantTurnID: existingRun.AssistantTurnID,
 					UserTurnID:      existingRun.UserTurnID,
@@ -287,75 +328,12 @@ func (service *AgentRuntime) StartRun(
 
 	return SubmitTurnResult{
 		RunID:           runID,
+		FriendlyID:      session.FriendlyID,
 		SessionKey:      session.ID,
 		UserTurnID:      stringValueFromMap(userMessage, "id"),
-		AssistantTurnID: assistantMessageID,
+		AssistantTurnID: assistantTurnID,
 		ClientID:        strings.TrimSpace(input.ClientID),
 	}, nil
-}
-
-func (service *AgentRuntime) StreamSession(
-	ctx context.Context,
-	userID string,
-	friendlyID string,
-	onEvent func(ConversationEvent) error,
-) error {
-	return service.StreamSessionFromCursor(ctx, userID, friendlyID, 0, onEvent)
-}
-
-func (service *AgentRuntime) StreamSessionFromCursor(
-	ctx context.Context,
-	userID string,
-	friendlyID string,
-	afterCursor int64,
-	onEvent func(ConversationEvent) error,
-) error {
-	session, err := service.chat.findSessionByFriendlyID(ctx, userID, friendlyID)
-	if err != nil {
-		return err
-	}
-
-	history, err := service.chat.GetHistory(ctx, userID, friendlyID)
-	if err != nil {
-		return err
-	}
-	if err := onEvent(ConversationEvent{State: "reconcile", Snapshot: &history, SessionKey: session.ID, Revision: history.Revision, ActiveRunIDs: history.ActiveRunIDs}); err != nil {
-		return err
-	}
-	ticker := time.NewTicker(50 * time.Millisecond)
-	defer ticker.Stop()
-	heartbeat := time.NewTicker(15 * time.Second)
-	defer heartbeat.Stop()
-	for {
-		events, err := service.readEvents(ctx, session.ID, afterCursor)
-		if err != nil {
-			return err
-		}
-		for _, event := range events {
-			if err := onEvent(event); err != nil {
-				return err
-			}
-			afterCursor = event.Cursor
-		}
-		select {
-		case <-ctx.Done():
-			return nil
-		case <-ticker.C:
-		case <-heartbeat.C:
-			if err := onEvent(ConversationEvent{State: "heartbeat"}); err != nil {
-				return err
-			}
-		}
-	}
-
-}
-
-func (service *AgentRuntime) ResolveSession(
-	ctx context.Context,
-	userID string,
-	friendlyID string,
-) (sessionRecord, error) {
-	return service.chat.findSessionByFriendlyID(ctx, userID, friendlyID)
 }
 
 func (service *AgentRuntime) CancelSessionRuns(
@@ -363,7 +341,7 @@ func (service *AgentRuntime) CancelSessionRuns(
 	userID string,
 	friendlyID string,
 ) (bool, error) {
-	session, err := service.chat.findSessionByFriendlyID(ctx, userID, friendlyID)
+	session, err := service.conversations.findSessionByFriendlyID(ctx, userID, friendlyID)
 	if err != nil {
 		return false, err
 	}
@@ -414,35 +392,6 @@ func (service *AgentRuntime) CancelSessionRuns(
 	}
 	return len(ids) > 0, nil
 
-}
-
-func (service *AgentRuntime) activeRunIDsForSession(
-	ctx context.Context,
-	sessionID string,
-) ([]string, error) {
-	rows, err := service.db.QueryContext(ctx, `
-		SELECT id
-		FROM chat_runs
-		WHERE session_id = ? AND status IN ('queued','preparing','running')
-		ORDER BY started_at ASC, id ASC
-	`, sessionID)
-	if err != nil {
-		return nil, fmt.Errorf("list active runs: %w", err)
-	}
-	defer rows.Close()
-
-	runIDs := []string{}
-	for rows.Next() {
-		var runID string
-		if err := rows.Scan(&runID); err != nil {
-			return nil, fmt.Errorf("scan active run: %w", err)
-		}
-		runIDs = append(runIDs, runID)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate active runs: %w", err)
-	}
-	return runIDs, nil
 }
 
 func (service *AgentRuntime) insertRun(
@@ -509,7 +458,7 @@ func (service *AgentRuntime) findRunByIdempotencyKey(
 	}
 
 	var record executionRecord
-	var assistantMessageID sql.NullString
+	var assistantTurnID sql.NullString
 	err := service.db.QueryRowContext(ctx, `
 		SELECT id, user_id, session_id, status, model, assistant_message_id,COALESCE(user_message_id,'')
 		FROM chat_runs
@@ -521,7 +470,7 @@ func (service *AgentRuntime) findRunByIdempotencyKey(
 		&record.SessionID,
 		&record.Status,
 		&record.Model,
-		&assistantMessageID,
+		&assistantTurnID,
 		&record.UserTurnID,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -531,7 +480,7 @@ func (service *AgentRuntime) findRunByIdempotencyKey(
 		return executionRecord{}, false, fmt.Errorf("find idempotent run: %w", err)
 	}
 	record.IdempotencyKey = normalizedKey
-	record.AssistantTurnID = nullStringValue(assistantMessageID)
+	record.AssistantTurnID = nullStringValue(assistantTurnID)
 	return record, true, nil
 }
 
