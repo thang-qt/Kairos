@@ -182,3 +182,5 @@ func (sink *ephemeralGenerationSink) ToolCompleted(message map[string]any) error
 func (sink *ephemeralGenerationSink) BeforeTool(message map[string]any, call ProviderToolCall) error {
 	return sink.Delta(toolStartedSnapshot(message, call.ID))
 }
+
+func (sink *ephemeralGenerationSink) ModelStarted() error { return nil }

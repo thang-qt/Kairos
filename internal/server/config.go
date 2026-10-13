@@ -11,35 +11,36 @@ import (
 )
 
 type Config struct {
-	AppEnv                      string
-	HTTPAddr                    string
-	DBPath                      string
-	CookieName                  string
-	CookieSecure                bool
-	SessionTTL                  time.Duration
-	AuthEnabled                 bool
-	AllowSignup                 bool
-	BootstrapAdmin              bool
-	AdminEmail                  string
-	AdminPassword               string
-	AdminPasswordHash           string
-	UserProvidersEnabled        bool
-	AllowUserCustomProviderURL  bool
-	AllowUserDisableSystem      bool
-	AllowUserModelSync          bool
-	DefaultChatModel            string
-	LockChatModel               bool
-	SystemProviderID            string
-	SystemProviderKind          string
-	SystemProviderLabel         string
-	SystemProviderBaseURL       string
-	SystemProviderAPIKey        string
-	SystemProviderEnabled       bool
-	SystemProviderAllowDisable  bool
-	SystemProviderModelSync     bool
-	SystemProviderStaticModels  []string
-	ProviderEncryptionSecretKey string
-	MaxToolCalls                int
+	AppEnv                        string
+	HTTPAddr                      string
+	DBPath                        string
+	CookieName                    string
+	CookieSecure                  bool
+	SessionTTL                    time.Duration
+	AuthEnabled                   bool
+	AllowSignup                   bool
+	BootstrapAdmin                bool
+	AdminEmail                    string
+	AdminPassword                 string
+	AdminPasswordHash             string
+	UserProvidersEnabled          bool
+	AllowUserCustomProviderURL    bool
+	AllowUserDisableSystem        bool
+	AllowUserModelSync            bool
+	DefaultChatModel              string
+	LockChatModel                 bool
+	SystemProviderID              string
+	SystemProviderKind            string
+	SystemProviderUseResponsesAPI bool
+	SystemProviderLabel           string
+	SystemProviderBaseURL         string
+	SystemProviderAPIKey          string
+	SystemProviderEnabled         bool
+	SystemProviderAllowDisable    bool
+	SystemProviderModelSync       bool
+	SystemProviderStaticModels    []string
+	ProviderEncryptionSecretKey   string
+	MaxToolCalls                  int
 }
 
 func LoadConfig() (Config, error) {
@@ -53,35 +54,36 @@ func LoadConfig() (Config, error) {
 	}
 
 	config := Config{
-		AppEnv:                      getEnv("APP_ENV", "development"),
-		HTTPAddr:                    getEnv("HTTP_ADDR", ":8080"),
-		DBPath:                      getEnv("KAIROS_DB_PATH", "./tmp/kairos.db"),
-		CookieName:                  getEnv("SESSION_COOKIE_NAME", "kairos_session"),
-		CookieSecure:                getEnvBool("SESSION_COOKIE_SECURE", false),
-		SessionTTL:                  time.Duration(sessionTTLHours) * time.Hour,
-		AuthEnabled:                 getEnvBool("AUTH_ENABLED", true),
-		AllowSignup:                 getEnvBool("ALLOW_SIGNUP", true),
-		BootstrapAdmin:              getEnvBool("BOOTSTRAP_ADMIN", false),
-		AdminEmail:                  strings.TrimSpace(os.Getenv("ADMIN_EMAIL")),
-		AdminPassword:               os.Getenv("ADMIN_PASSWORD"),
-		AdminPasswordHash:           strings.TrimSpace(os.Getenv("ADMIN_PASSWORD_HASH")),
-		UserProvidersEnabled:        getEnvBool("ENABLE_USER_PROVIDERS", true),
-		AllowUserCustomProviderURL:  getEnvBool("ALLOW_USER_CUSTOM_BASE_URL", true),
-		AllowUserDisableSystem:      getEnvBool("ALLOW_USER_DISABLE_SYSTEM_PROVIDER", true),
-		AllowUserModelSync:          getEnvBool("ALLOW_USER_MODEL_SYNC", true),
-		DefaultChatModel:            strings.TrimSpace(os.Getenv("DEFAULT_CHAT_MODEL")),
-		LockChatModel:               getEnvBool("LOCK_CHAT_MODEL", false),
-		SystemProviderID:            getEnv("SYSTEM_PROVIDER_1_ID", "system-default"),
-		SystemProviderKind:          strings.ToLower(getEnv("SYSTEM_PROVIDER_1_KIND", defaultProviderKind)),
-		SystemProviderLabel:         getEnv("SYSTEM_PROVIDER_1_LABEL", "Server Default"),
-		SystemProviderBaseURL:       strings.TrimSpace(os.Getenv("SYSTEM_PROVIDER_1_BASE_URL")),
-		SystemProviderAPIKey:        strings.TrimSpace(os.Getenv("SYSTEM_PROVIDER_1_API_KEY")),
-		SystemProviderEnabled:       getEnvBool("SYSTEM_PROVIDER_1_ENABLED", false),
-		SystemProviderAllowDisable:  getEnvBool("SYSTEM_PROVIDER_1_ALLOW_DISABLE", true),
-		SystemProviderModelSync:     getEnvBool("SYSTEM_PROVIDER_1_MODEL_SYNC", true),
-		SystemProviderStaticModels:  splitCSVEnv("SYSTEM_PROVIDER_1_MODELS"),
-		ProviderEncryptionSecretKey: strings.TrimSpace(os.Getenv("PROVIDER_SECRET_KEY")),
-		MaxToolCalls:                maxToolCalls,
+		AppEnv:                        getEnv("APP_ENV", "development"),
+		HTTPAddr:                      getEnv("HTTP_ADDR", ":8080"),
+		DBPath:                        getEnv("KAIROS_DB_PATH", "./tmp/kairos.db"),
+		CookieName:                    getEnv("SESSION_COOKIE_NAME", "kairos_session"),
+		CookieSecure:                  getEnvBool("SESSION_COOKIE_SECURE", false),
+		SessionTTL:                    time.Duration(sessionTTLHours) * time.Hour,
+		AuthEnabled:                   getEnvBool("AUTH_ENABLED", true),
+		AllowSignup:                   getEnvBool("ALLOW_SIGNUP", true),
+		BootstrapAdmin:                getEnvBool("BOOTSTRAP_ADMIN", false),
+		AdminEmail:                    strings.TrimSpace(os.Getenv("ADMIN_EMAIL")),
+		AdminPassword:                 os.Getenv("ADMIN_PASSWORD"),
+		AdminPasswordHash:             strings.TrimSpace(os.Getenv("ADMIN_PASSWORD_HASH")),
+		UserProvidersEnabled:          getEnvBool("ENABLE_USER_PROVIDERS", true),
+		AllowUserCustomProviderURL:    getEnvBool("ALLOW_USER_CUSTOM_BASE_URL", true),
+		AllowUserDisableSystem:        getEnvBool("ALLOW_USER_DISABLE_SYSTEM_PROVIDER", true),
+		AllowUserModelSync:            getEnvBool("ALLOW_USER_MODEL_SYNC", true),
+		DefaultChatModel:              strings.TrimSpace(os.Getenv("DEFAULT_CHAT_MODEL")),
+		LockChatModel:                 getEnvBool("LOCK_CHAT_MODEL", false),
+		SystemProviderID:              getEnv("SYSTEM_PROVIDER_1_ID", "system-default"),
+		SystemProviderKind:            strings.ToLower(getEnv("SYSTEM_PROVIDER_1_KIND", defaultProviderKind)),
+		SystemProviderUseResponsesAPI: getEnvBool("SYSTEM_PROVIDER_1_USE_RESPONSES_API", false),
+		SystemProviderLabel:           getEnv("SYSTEM_PROVIDER_1_LABEL", "Server Default"),
+		SystemProviderBaseURL:         strings.TrimSpace(os.Getenv("SYSTEM_PROVIDER_1_BASE_URL")),
+		SystemProviderAPIKey:          strings.TrimSpace(os.Getenv("SYSTEM_PROVIDER_1_API_KEY")),
+		SystemProviderEnabled:         getEnvBool("SYSTEM_PROVIDER_1_ENABLED", false),
+		SystemProviderAllowDisable:    getEnvBool("SYSTEM_PROVIDER_1_ALLOW_DISABLE", true),
+		SystemProviderModelSync:       getEnvBool("SYSTEM_PROVIDER_1_MODEL_SYNC", true),
+		SystemProviderStaticModels:    splitCSVEnv("SYSTEM_PROVIDER_1_MODELS"),
+		ProviderEncryptionSecretKey:   strings.TrimSpace(os.Getenv("PROVIDER_SECRET_KEY")),
+		MaxToolCalls:                  maxToolCalls,
 	}
 
 	if config.CookieName == "" {

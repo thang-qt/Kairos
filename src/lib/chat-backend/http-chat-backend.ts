@@ -256,6 +256,8 @@ export function createHTTPChatBackend(): ChatBackend {
         {
           method: 'POST',
           credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ runId: input.runId }),
         },
       )
       await parseJSON(response)

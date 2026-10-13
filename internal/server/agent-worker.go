@@ -78,9 +78,7 @@ func (sink *persistedGenerationSink) ModelResolved(model ProviderModel) error {
 	if !valid {
 		return errGenerationInactive
 	}
-	if _, err := tx.Exec(`UPDATE chat_runs SET status='running' WHERE id=?`, sink.record.ID); err != nil {
-		return err
-	}
+
 	if model.ContextWindow > 0 {
 		if _, err := tx.Exec(`UPDATE chat_sessions SET context_tokens=? WHERE id=?`, model.ContextWindow, sink.session.ID); err != nil {
 			return err
@@ -94,9 +92,37 @@ func (sink *persistedGenerationSink) ModelResolved(model ProviderModel) error {
 	return tx.Commit()
 }
 
+// This boundary is crossed immediately before contacting the model provider.
+func (sink *persistedGenerationSink) ModelStarted() error {
+	if sink.service.workerContext.Err() != nil {
+		return sink.service.workerContext.Err()
+	}
+	ctx := context.Background()
+	tx, err := sink.service.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	valid, err := sink.service.guardRunExec(ctx, tx, sink.record)
+	if err != nil {
+		return err
+	}
+	if !valid {
+		return errGenerationInactive
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE chat_runs SET status='running' WHERE id=?`, sink.record.ID); err != nil {
+		return err
+	}
+	if err := sink.service.refreshTurnExec(ctx, tx, sink.record.ID, "delta"); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
 func (sink *persistedGenerationSink) Delta(message map[string]any) error {
-	// Full replacements are safe to replay. At most 20 checkpoints/s, with immediate first progress.
-	if !sink.lastCheckpoint.IsZero() && time.Since(sink.lastCheckpoint) < 50*time.Millisecond {
+	// Full snapshots stay in chat_runs; the journal stores compact patches.
+	// At most 10 checkpoints/s, with immediate first progress.
+	if !sink.lastCheckpoint.IsZero() && time.Since(sink.lastCheckpoint) < 100*time.Millisecond {
 		return nil
 	}
 	checkpointStarted := time.Now()

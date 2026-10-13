@@ -1432,7 +1432,15 @@ func TestStopSessionRunPublishesAbortedEventAndKeepsPartialAssistantHistory(t *t
 		events := make([]ConversationEvent, 0, 2)
 		err := testServer.app.runtime.StreamSession(streamContext, userID, created.FriendlyID, func(event ConversationEvent) error {
 			events = append(events, event)
-			if event.State == "delta" && len(contentPartsFromAny(event.Message["content"])) > 0 {
+			progress := event.State == "delta" && (len(contentPartsFromAny(event.Message["content"])) > 0 || hasContentPatch(event))
+			if event.Snapshot != nil {
+				for _, message := range event.Snapshot.Messages {
+					if message["role"] == "assistant" && len(contentPartsFromAny(message["content"])) > 0 {
+						progress = true
+					}
+				}
+			}
+			if progress {
 				select {
 				case deltaSeen <- struct{}{}:
 				default:
@@ -1462,7 +1470,9 @@ func TestStopSessionRunPublishesAbortedEventAndKeepsPartialAssistantHistory(t *t
 		t.Fatal("timed out waiting for first streamed delta")
 	}
 
-	stopResponse := performJSONRequest(t, testServer.handler, http.MethodPost, "/api/sessions/"+created.FriendlyID+"/stop", nil, []*http.Cookie{cookie})
+	var stoppedRun SubmitTurnResult
+	decodeResponseJSON(t, sendResponse, &stoppedRun)
+	stopResponse := performJSONRequest(t, testServer.handler, http.MethodPost, "/api/sessions/"+created.FriendlyID+"/stop", map[string]string{"runId": stoppedRun.RunID}, []*http.Cookie{cookie})
 	assertStatusCode(t, stopResponse, http.StatusOK)
 
 	select {
@@ -1710,4 +1720,13 @@ func TestBuildAssistantContentPreservesAssistantPartOrder(t *testing.T) {
 	if content[2].Type != "toolCall" || content[2].ID != "call-1" {
 		t.Fatalf("content[2] = %#v, want tool call", content[2])
 	}
+}
+
+func hasContentPatch(event ConversationEvent) bool {
+	for _, operation := range event.TurnPatch {
+		if len(operation.Path) > 0 && operation.Path[0] == "content" {
+			return true
+		}
+	}
+	return false
 }

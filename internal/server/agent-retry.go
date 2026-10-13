@@ -31,7 +31,7 @@ func (service *AgentRuntime) RetryRun(ctx context.Context, userID, friendlyID, r
 	var status string
 	var invalidated int
 	var revision int64
-	if err := tx.QueryRowContext(ctx, `SELECT status,COALESCE(assistant_message_id,id),COALESCE(user_message_id,''),invalidated FROM chat_runs WHERE id=? AND session_id=? AND user_id=?`, runID, session.ID, userID).Scan(&status, &result.AssistantTurnID, &result.UserTurnID, &invalidated); err != nil {
+	if err := tx.QueryRowContext(ctx, `SELECT status,COALESCE(assistant_message_id,id),COALESCE(user_message_id,''),invalidated,revision FROM chat_runs WHERE id=? AND session_id=? AND user_id=?`, runID, session.ID, userID).Scan(&status, &result.AssistantTurnID, &result.UserTurnID, &invalidated, &result.Revision); err != nil {
 		return result, errChatSessionNotFound
 	}
 	var repeated int
@@ -62,6 +62,11 @@ func (service *AgentRuntime) RetryRun(ctx context.Context, userID, friendlyID, r
 	}
 	if newer > 0 {
 		return result, errConversationConflict
+	}
+	revision++
+	result.Revision = revision
+	if _, err := tx.ExecContext(ctx, `UPDATE chat_sessions SET revision=? WHERE id=?`, revision, session.ID); err != nil {
+		return result, err
 	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM chat_messages WHERE session_id=? AND run_id=?`, session.ID, runID); err != nil {
 		return result, err

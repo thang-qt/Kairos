@@ -42,6 +42,7 @@ func (service *AgentRuntime) Close() {
 		if service.workerCancel != nil {
 			service.workerCancel()
 		}
+		service.dispatchMu.Lock()
 		service.runMu.Lock()
 		ids := []string{}
 		for id, control := range service.runControls {
@@ -54,6 +55,16 @@ func (service *AgentRuntime) Close() {
 		tx, err := service.db.BeginTx(ctx, nil)
 		if err == nil {
 			for _, id := range ids {
+				requeued, updateErr := tx.ExecContext(ctx, `UPDATE chat_runs SET status='queued',lease_token='',lease_until=0 WHERE id=? AND status='preparing'`, id)
+				if updateErr != nil {
+					err = updateErr
+					break
+				}
+				if n, _ := requeued.RowsAffected(); n > 0 {
+					if err = service.refreshTurnExec(ctx, tx, id, "delta"); err != nil {
+						break
+					}
+				}
 				result, updateErr := tx.ExecContext(ctx, `UPDATE chat_runs SET status='interrupted',completed_at=?,error_message='Server shut down during execution',lease_token='' WHERE id=? AND status IN ('preparing','running')`, time.Now().UnixMilli(), id)
 				if updateErr != nil {
 					err = updateErr
@@ -78,6 +89,7 @@ func (service *AgentRuntime) Close() {
 		if err != nil {
 			log.Printf("kairos: shutdown checkpoint: %v", err)
 		}
+		service.dispatchMu.Unlock()
 		done := make(chan struct{})
 		go func() { service.workerWG.Wait(); close(done) }()
 		timer := time.NewTimer(5 * time.Second)
@@ -91,14 +103,23 @@ func (service *AgentRuntime) Close() {
 }
 
 func (service *AgentRuntime) dispatchJobs(ctx context.Context) error {
+	service.dispatchMu.Lock()
+	defer service.dispatchMu.Unlock()
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
 	now := time.Now().UnixMilli()
+	// Preparing has not crossed the execution boundary; reclaim it safely.
 	// Never replay uncertain model/tool execution automatically.
 	tx, err := service.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
-	rows, err := tx.QueryContext(ctx, `SELECT id FROM chat_runs WHERE status IN ('preparing','running') AND lease_until < ?`, now)
+	if _, err := tx.ExecContext(ctx, `UPDATE chat_runs SET status='queued',lease_token='',lease_until=0 WHERE status='preparing' AND lease_until<? AND invalidated=0 AND revision=(SELECT revision FROM chat_sessions WHERE id=chat_runs.session_id)`, now); err != nil {
+		return err
+	}
+	rows, err := tx.QueryContext(ctx, `SELECT id FROM chat_runs WHERE status='running' AND lease_until < ?`, now)
 	if err != nil {
 		return err
 	}
@@ -156,6 +177,18 @@ func (service *AgentRuntime) dispatchJobs(ctx context.Context) error {
 	if err := tx.Commit(); err != nil {
 		return err
 	}
+	launched := false
+	defer func() {
+		if !launched {
+			service.releaseUnstartedClaim(record)
+		}
+	}()
+	if service.afterClaim != nil {
+		service.afterClaim(record)
+	}
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
 	var input SubmitTurnInput
 	if err := json.Unmarshal([]byte(requestJSON), &input); err != nil {
 		service.finishOwnedRun(record, "error", fmt.Errorf("saved execution request is unavailable; edit the user turn to regenerate: %w", err))
@@ -173,6 +206,7 @@ func (service *AgentRuntime) dispatchJobs(ctx context.Context) error {
 	}
 	log.Printf("kairos: stage=worker_claim run=%s revision=%d queue_ms=%d", record.ID, record.Revision, time.Now().UnixMilli()-record.AcceptedAt)
 	service.runAsync(record, session, history.Messages, input)
+	launched = true
 	return nil
 }
 
@@ -183,4 +217,24 @@ func (service *AgentRuntime) guardRunExec(ctx context.Context, exec sqlExecutor,
 	}
 	n, err := result.RowsAffected()
 	return n > 0, err
+}
+
+func (service *AgentRuntime) releaseUnstartedClaim(record executionRecord) {
+	ctx := context.Background()
+	tx, err := service.db.BeginTx(ctx, nil)
+	if err != nil {
+		return
+	}
+	defer tx.Rollback()
+	result, err := tx.ExecContext(ctx, `UPDATE chat_runs SET status='queued',lease_token='',lease_until=0 WHERE id=? AND status='preparing' AND lease_token=? AND invalidated=0 AND revision=(SELECT revision FROM chat_sessions WHERE id=chat_runs.session_id)`, record.ID, record.LeaseToken)
+	if err != nil {
+		return
+	}
+	n, _ := result.RowsAffected()
+	if n > 0 {
+		if err := service.refreshTurnExec(ctx, tx, record.ID, "delta"); err != nil {
+			return
+		}
+	}
+	_ = tx.Commit()
 }

@@ -8,6 +8,7 @@ import {
 } from './chat-queries'
 import { getChatBackend } from '@/lib/chat-backend'
 import { providerModelKey } from '@/lib/model-utils'
+import { resolveReasoningEffort } from './reasoning-options'
 
 import type { ProviderModel } from '@/lib/app-api'
 import type {
@@ -235,10 +236,11 @@ export function resolveConversationModelID(
 
 export function buildChatRequestAdvancedSettings(
   settings: ConversationAdvancedSettings,
+  model?: ProviderModel,
 ): ChatRequestAdvancedSettings | undefined {
   const advanced: ChatRequestAdvancedSettings = {}
-  if (settings.reasoning)
-    advanced.reasoning = { effort: settings.reasoningEffort }
+  const effort = resolveReasoningEffort(settings.reasoningEffort, model)
+  if (settings.reasoning && effort) advanced.reasoning = { effort }
   if (settings.sampling) {
     advanced.sampling = {
       temperature: clampNumber(settings.temperature, 0, 2),

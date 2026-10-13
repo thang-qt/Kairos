@@ -142,7 +142,14 @@ export type SessionSearchResult = Pick<
   snippet?: string
 }
 
-export type ReasoningEffort = 'low' | 'medium' | 'high'
+export type ReasoningEffort =
+  | 'none'
+  | 'minimal'
+  | 'low'
+  | 'medium'
+  | 'high'
+  | 'xhigh'
+  | 'max'
 
 export type ChatRequestAdvancedSettings = {
   reasoning?: {

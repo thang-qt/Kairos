@@ -143,3 +143,84 @@ describe('snapshot and live event reconciliation', function () {
     hook.unmount()
   })
 })
+
+it('streams compact patches and rejects duplicate cursors', function () {
+  const client = new QueryClient()
+  const hook = mountStream(client, vi.fn())
+  const key = chatQueryKeys.history('friendly', 'session')
+  act(function seed() {
+    transport.receive?.({
+      state: 'reconcile',
+      snapshot: {
+        sessionKey: 'session',
+        revision: 1,
+        cursor: 4,
+        messages: [
+          {
+            id: 'turn',
+            role: 'assistant',
+            revision: 1,
+            content: [{ type: 'thinking', thinking: 'First' }],
+          },
+        ],
+      },
+    })
+  })
+  const patch: ConversationEvent = {
+    state: 'delta',
+    sessionKey: 'session',
+    revision: 1,
+    cursor: 5,
+    turnId: 'turn',
+    runId: 'run',
+    turnPatch: [
+      { op: 'append', path: ['content', '0', 'thinking'], value: ' next' },
+    ],
+  }
+  act(function append() {
+    transport.receive?.(patch)
+  })
+  act(function duplicate() {
+    transport.receive?.(patch)
+  })
+  expect(
+    client.getQueryData<HistoryResponse>(key)?.messages[0].content,
+  ).toEqual([{ type: 'thinking', thinking: 'First next' }])
+  expect(client.getQueryData<HistoryResponse>(key)?.cursor).toBe(5)
+  hook.unmount()
+})
+
+it('keeps previous turns when another client appends a newer revision', function () {
+  const client = new QueryClient()
+  const hook = mountStream(client, vi.fn())
+  const key = chatQueryKeys.history('friendly', 'session')
+  act(function seed() {
+    transport.receive?.({
+      state: 'reconcile',
+      snapshot: {
+        sessionKey: 'session',
+        revision: 1,
+        cursor: 5,
+        messages: [
+          { id: 'old-user', role: 'user', revision: 1 },
+          { id: 'old-answer', role: 'assistant', revision: 1 },
+        ],
+      },
+    })
+  })
+  act(function append() {
+    transport.receive?.({
+      state: 'user',
+      sessionKey: 'session',
+      revision: 2,
+      cursor: 6,
+      message: { id: 'new-user', role: 'user', revision: 2 },
+    })
+  })
+  expect(
+    client.getQueryData<HistoryResponse>(key)?.messages.map(function id(turn) {
+      return turn.id
+    }),
+  ).toEqual(['old-user', 'old-answer', 'new-user'])
+  hook.unmount()
+})

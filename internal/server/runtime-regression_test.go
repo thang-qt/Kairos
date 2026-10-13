@@ -104,7 +104,7 @@ func TestRuntimeEditDeleteFenceLateWorker(t *testing.T) {
 			requireSignal(t, entered)
 			var next SubmitTurnResult
 			var err error
-			revision := int64(0)
+			revision := first.Revision
 			if mutation == "edit" {
 				next, err = app.app.runtime.StartRun(context.Background(), user, SubmitTurnInput{FriendlyID: session.FriendlyID, EditMessageID: first.UserTurnID, Message: "edited", Model: "test-model", ExpectedRevision: &revision, IdempotencyKey: "edit"})
 			} else {
@@ -120,7 +120,7 @@ func TestRuntimeEditDeleteFenceLateWorker(t *testing.T) {
 			}
 			waitForRunStatus(t, app, next.RunID, "completed")
 			history := requireTwoTurns(t, app, user, session, next.AssistantTurnID, "completed")
-			if history.Revision != 1 {
+			if history.Revision != next.Revision {
 				t.Fatalf("revision=%d", history.Revision)
 			}
 			transcript, err := app.app.conversations.getTranscript(context.Background(), user, session.FriendlyID)
@@ -147,7 +147,7 @@ func TestRuntimeConcurrentEditsAndIdempotency(t *testing.T) {
 		t.Fatal("duplicate command scheduled new turn")
 	}
 	waitForRunStatus(t, app, first.RunID, "completed")
-	revision := int64(0)
+	revision := first.Revision
 	results := make(chan error, 2)
 	for i := 0; i < 2; i++ {
 		go func() {
@@ -350,7 +350,7 @@ func TestRuntimeInvalidEditRollsBackHistoryAndQueue(t *testing.T) {
 		t.Fatal("accepted empty edit")
 	}
 	history := requireTwoTurns(t, app, user, session, run.AssistantTurnID, "queued")
-	if history.Revision != 0 {
+	if history.Revision != run.Revision {
 		t.Fatal("failed edit truncated history")
 	}
 	var jobs int

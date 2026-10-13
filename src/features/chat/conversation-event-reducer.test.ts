@@ -5,6 +5,7 @@ import {
   cancelEphemeralTurns,
 } from './conversation-event-reducer'
 import type { ConversationTurn } from './types'
+import type { ConversationEvent } from '@/lib/chat-backend'
 
 describe('authoritative turn replacements', function () {
   it('replays snapshots without appending duplicate content', function () {
@@ -152,4 +153,40 @@ describe('authoritative mutation acknowledgement', function () {
       }),
     ).toBe(after)
   })
+})
+
+it('applies compact string and tool patches without duplicating content', function () {
+  const before = [
+    {
+      id: 'turn',
+      role: 'assistant',
+      revision: 1,
+      content: [{ type: 'text', text: 'Hello' }],
+      steps: [],
+    },
+  ] as Array<ConversationTurn>
+  const event: ConversationEvent = {
+    state: 'delta',
+    revision: 1,
+    turnId: 'turn',
+    runId: 'run',
+    turnPatch: [
+      { op: 'append', path: ['content', '0', 'text'], value: ' world' },
+      {
+        op: 'set',
+        path: ['steps', '0'],
+        value: {
+          id: 'tool',
+          role: 'toolResult',
+          content: [{ type: 'text', text: '4' }],
+        },
+      },
+      { op: 'set', path: ['details'], value: null },
+    ],
+  }
+  const after = applyConversationEvent(before, event)
+  expect(after[0].content?.[0]).toEqual({ type: 'text', text: 'Hello world' })
+  expect(after[0].steps).toHaveLength(1)
+  expect(before[0].content?.[0]).toEqual({ type: 'text', text: 'Hello' })
+  expect(applyConversationEvent(after, { ...event, revision: 0 })).toBe(after)
 })

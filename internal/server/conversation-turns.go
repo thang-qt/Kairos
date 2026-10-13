@@ -15,10 +15,10 @@ var errConversationConflict = errors.New("conversation changed or already has an
 
 // refreshTurnExec is the sole projection writer. Its event is committed with its checkpoint.
 func (service *AgentRuntime) refreshTurnExec(ctx context.Context, exec sqlExecutor, runID, state string) error {
-	var sessionID, turnID, status, errorMessage string
+	var sessionID, turnID, status, errorMessage, previousJSON string
 	var revision, started int64
 	var invalidated, hasRequest int
-	if err := exec.QueryRowContext(ctx, `SELECT session_id,COALESCE(assistant_message_id,id),status,COALESCE(error_message,''),revision,started_at,invalidated,(request_json IS NOT NULL AND request_json!='') FROM chat_runs WHERE id=?`, runID).Scan(&sessionID, &turnID, &status, &errorMessage, &revision, &started, &invalidated, &hasRequest); err != nil {
+	if err := exec.QueryRowContext(ctx, `SELECT session_id,COALESCE(assistant_message_id,id),status,COALESCE(error_message,''),revision,started_at,invalidated,(request_json IS NOT NULL AND request_json!=''),COALESCE(turn_json,'') FROM chat_runs WHERE id=?`, runID).Scan(&sessionID, &turnID, &status, &errorMessage, &revision, &started, &invalidated, &hasRequest, &previousJSON); err != nil {
 		return err
 	}
 	if invalidated != 0 {
@@ -100,6 +100,17 @@ func (service *AgentRuntime) refreshTurnExec(ctx context.Context, exec sqlExecut
 		return err
 	}
 	event := ConversationEvent{RunID: runID, SessionKey: sessionID, Revision: revision, TurnID: turnID, State: state, Error: errorMessage, Message: turn}
+	if state == "delta" && previousJSON != "" {
+		var previous, next map[string]any
+		if json.Unmarshal([]byte(previousJSON), &previous) == nil && json.Unmarshal(encoded, &next) == nil {
+			event.TurnPatch = diffTurn(previous, next)
+			if len(event.TurnPatch) == 0 {
+				return nil
+			}
+			event.Message = nil
+		}
+	}
+
 	return insertChatEventExec(ctx, exec, event)
 }
 

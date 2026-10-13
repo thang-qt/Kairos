@@ -6,6 +6,7 @@ import {
   textFromMessage,
 } from '../utils'
 import { MessageActionsBar } from './message-actions-bar'
+import { AssistantWork } from './assistant-work'
 import type {
   ConversationTurn,
   MessageContent as MessageContentPart,
@@ -147,6 +148,25 @@ function MessageItemComponent({
     }
   }
 
+  const toolCount = assistantParts.filter(function tool(part) {
+    return part.type === 'toolCall'
+  }).length
+  const finalTextIndex = assistantParts.findLastIndex(function text(part) {
+    return part.type === 'text'
+  })
+  const lastToolIndex = assistantParts.findLastIndex(function tool(part) {
+    return part.type === 'toolCall'
+  })
+  const answerIndex =
+    finalTextIndex > lastToolIndex ? finalTextIndex : assistantParts.length
+  const durationMs = (message.steps ?? []).reduce(function sum(total, step) {
+    const duration = step.role === 'toolResult' ? step.details?.durationMs : 0
+    return (
+      total +
+      (typeof duration === 'number' && Number.isFinite(duration) ? duration : 0)
+    )
+  }, 0)
+
   function renderAssistantPart(part: MessageContentPart, index: number) {
     if (part.type === 'thinking') {
       const thinking = String(part.thinking ?? '')
@@ -275,15 +295,35 @@ function MessageItemComponent({
         </div>
       ) : null}
 
-      {isAssistant && assistantParts.map(renderAssistantPart)}
+      {isAssistant &&
+        (toolCount > 0 && showToolMessages ? (
+          <>
+            <AssistantWork
+              key={`${message.runId ?? ''}:${message.revision ?? 0}`}
+              streaming={assistantIsStreaming}
+              durationMs={durationMs}
+              toolCount={toolCount}
+            >
+              {assistantParts.slice(0, answerIndex).map(renderAssistantPart)}
+            </AssistantWork>
+            {assistantParts
+              .slice(answerIndex)
+              .map(function answer(part, index) {
+                return renderAssistantPart(part, answerIndex + index)
+              })}
+          </>
+        ) : (
+          assistantParts.map(renderAssistantPart)
+        ))}
 
-      {isAssistant && message.status ? (
+      {isAssistant &&
+      ['aborted', 'error', 'interrupted'].includes(message.status ?? '') ? (
         <div className="text-pretty text-xs text-primary-600" role="status">
           {message.status === 'aborted'
             ? 'Cancelled'
             : message.status === 'error'
               ? 'Failed'
-              : message.status}
+              : 'Interrupted'}
           {message.error ? `: ${message.error}` : ''}
         </div>
       ) : null}

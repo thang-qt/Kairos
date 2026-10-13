@@ -53,6 +53,7 @@ export type UserPreferences = {
 }
 
 export type ProviderRecord = {
+  useResponsesApi?: boolean
   id: string
   ref: string
   owner: 'system' | 'user'
@@ -129,6 +130,7 @@ export type UpdateModelMetadataPayload = {
 }
 
 export type CreateProviderPayload = {
+  useResponsesApi?: boolean
   kind?: string
   label: string
   baseUrl: string
@@ -138,6 +140,7 @@ export type CreateProviderPayload = {
 }
 
 export type UpdateProviderPayload = {
+  useResponsesApi?: boolean
   label?: string
   baseUrl?: string
   apiKey?: string

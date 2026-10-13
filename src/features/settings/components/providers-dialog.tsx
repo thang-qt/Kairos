@@ -30,10 +30,8 @@ type ProviderEditorState =
       providerId: string
     }
 
-type ProviderKind = 'openai-responses' | 'openai'
-
 type ProviderDraftState = {
-  kind: ProviderKind
+  useResponsesApi: boolean
   label: string
   baseURL: string
   apiKey: string

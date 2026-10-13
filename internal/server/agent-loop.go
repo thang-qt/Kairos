@@ -12,6 +12,7 @@ var errGenerationInactive = errors.New("generation is no longer active")
 
 type generationSink interface {
 	ModelResolved(model ProviderModel) error
+	ModelStarted() error
 	Delta(message map[string]any) error
 	ToolRound(messages []map[string]any, totalTokens int64) error
 	ToolCompleted(message map[string]any) error
@@ -43,6 +44,9 @@ func (service *AgentRuntime) executeGeneration(
 		normalizeModel(input.Request.Model),
 	)
 	if err != nil {
+		return err
+	}
+	if err := validateReasoningOptions(model, input.Request.Advanced); err != nil {
 		return err
 	}
 	log.Printf("kairos: stage=provider_resolution run=%s duration_ms=%d", input.RunID, time.Since(resolutionStarted).Milliseconds())
@@ -123,6 +127,9 @@ func (service *AgentRuntime) executeGeneration(
 		accumulatedText := ""
 		accumulatedThinking := ""
 		accumulatedToolCalls := []ProviderToolCall{}
+		if err := sink.ModelStarted(); err != nil {
+			return err
+		}
 		log.Printf("kairos: stage=provider_request run=%s round=%d", input.RunID, roundIndex)
 		providerStarted := time.Now()
 		firstEvent := true

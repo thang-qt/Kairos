@@ -91,6 +91,7 @@ export type ChatPinConversationInput = {
 }
 
 export type ChatStopConversationInput = {
+  runId: string
   sessionKey: string
   friendlyId?: string
 }
@@ -154,7 +155,14 @@ export type ChatConversationRunResult = ChatConversationResult & {
   runId: string
 }
 
+export type TurnPatchOperation = {
+  op: 'set' | 'append' | 'remove'
+  path: Array<string>
+  value?: unknown
+}
+
 export type ConversationEvent = {
+  turnPatch?: Array<TurnPatchOperation>
   snapshot?: HistoryResponse
   revision?: number
   turnId?: string

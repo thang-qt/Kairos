@@ -6,6 +6,6 @@ Matching first uses the configured endpoint host and an exact model ID or an exp
 
 The model API returns optional `catalogMetadata` with the catalog source, provider, match method, and the original model entry. That entry preserves capabilities, reasoning options, modalities, input/output/context limits, pricing, dates, and other catalog fields. Catalog prices are the listed catalog provider's prices and are not guaranteed to be the configured endpoint's current charges when the match came from another provider.
 
-Catalog names replace empty or raw-ID names for synced models. Descriptions and context windows fill missing values. Existing provider metadata and custom names are preserved; user metadata overrides apply last. Catalog metadata is descriptive: it does not change the model ID sent to the provider or automatically constrain generation options.
+Catalog names replace empty or raw-ID names for synced models. Descriptions and context windows fill missing values. Existing provider metadata and custom names are preserved; user metadata overrides apply last. Catalog metadata does not change the model ID sent to the provider. Reasoning controls use advertised effort levels; exact endpoint matches also validate explicit reasoning efforts before the provider request. Other capabilities remain descriptive.
 
 The catalog cache uses migration `0023_model_catalog.sql`. No provider keys are included in catalog requests or stored in this table.

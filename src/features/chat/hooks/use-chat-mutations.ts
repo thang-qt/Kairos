@@ -80,6 +80,7 @@ type UseChatMutationsInput = {
   setPinToTop: (pin: boolean) => void
   storeCloneScrollRestore: () => void
   stashCloneComposerDraft: (targetFriendlyId: string, value: string) => void
+  activeRunIds: ReadonlySet<string>
   displayMessages: Array<ConversationTurn>
   throwawayMode: boolean
 }
@@ -104,6 +105,7 @@ export function useChatMutations({
   setPinToTop,
   storeCloneScrollRestore,
   stashCloneComposerDraft,
+  activeRunIds,
   displayMessages,
   throwawayMode,
 }: UseChatMutationsInput) {
@@ -691,9 +693,19 @@ export function useChatMutations({
         activeFriendlyId
       if (!sessionKeyForStop) return
 
+      const runId =
+        [...displayMessages].reverse().find(function activeTurn(turn) {
+          return (
+            turn.role === 'assistant' &&
+            turn.runId &&
+            ['queued', 'preparing', 'running'].includes(turn.status ?? '')
+          )
+        })?.runId ?? [...activeRunIds][0]
+      if (!runId) return
       try {
         await getChatBackend().stopConversation({
           sessionKey: sessionKeyForStop,
+          runId,
           friendlyId: activeFriendlyId,
         })
       } catch (error) {
@@ -703,6 +715,8 @@ export function useChatMutations({
       }
     },
     [
+      displayMessages,
+      activeRunIds,
       activeFriendlyId,
       activeSessionKey,
       forcedSessionKey,

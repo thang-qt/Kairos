@@ -144,6 +144,7 @@ func (service *ProviderService) resolveProvider(
 				Ref:               "system:" + service.system.ID,
 				Owner:             "system",
 				Kind:              service.system.Kind,
+				UseResponsesAPI:   service.system.UseResponsesAPI,
 				Label:             service.system.Label,
 				BaseURL:           service.system.BaseURL,
 				Enabled:           service.system.Enabled,

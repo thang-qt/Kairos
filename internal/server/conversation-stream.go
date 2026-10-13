@@ -36,6 +36,7 @@ func (service *AgentRuntime) StreamSessionFromCursor(
 	if err := onEvent(ConversationEvent{State: "reconcile", Snapshot: &history, SessionKey: session.ID, Revision: history.Revision, ActiveRunIDs: history.ActiveRunIDs}); err != nil {
 		return err
 	}
+	afterCursor = maxInt64(afterCursor, history.Cursor)
 	log.Printf("kairos: stage=snapshot_delivery conversation=%s cursor=%d", session.ID, history.Cursor)
 	ticker := time.NewTicker(50 * time.Millisecond)
 	defer ticker.Stop()

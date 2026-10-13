@@ -9,6 +9,10 @@ import {
   providerModelKey,
 } from '@/lib/model-utils'
 import { cn } from '@/lib/utils'
+import {
+  modelReasoningEfforts,
+  resolveReasoningEffort,
+} from '../reasoning-options'
 
 type ModelSettingsValue = {
   model: string
@@ -83,11 +87,13 @@ function SettingCard({
   description,
   checked,
   onCheckedChange,
+  disabled = false,
   children,
 }: {
   label: string
   description?: string
   checked: boolean
+  disabled?: boolean
   onCheckedChange: (checked: boolean) => void
   children?: React.ReactNode
 }) {
@@ -104,7 +110,11 @@ function SettingCard({
             </div>
           ) : null}
         </div>
-        <Switch checked={checked} onCheckedChange={onCheckedChange} />
+        <Switch
+          checked={checked}
+          disabled={disabled}
+          onCheckedChange={onCheckedChange}
+        />
       </div>
       {checked && children ? (
         <div className="space-y-3 border-t border-primary-200 pt-3">
@@ -181,6 +191,8 @@ export function ModelSettingsPanel({
       )
   const modelDescription = selectedModel?.description?.trim()
   const advanced = value.advanced
+  const effortOptions = modelReasoningEfforts(selectedModel)
+  const effort = resolveReasoningEffort(advanced.reasoningEffort, selectedModel)
 
   return (
     <div className="pb-4">
@@ -271,17 +283,30 @@ export function ModelSettingsPanel({
       <PanelSection title="Advanced">
         <div className="space-y-3">
           <SettingCard
-            label="Reasoning"
-            description="Control thinking depth for reasoning models."
-            checked={advanced.reasoning}
+            label="Override reasoning effort"
+            disabled={effortOptions.length === 0}
+            description={
+              effortOptions.length === 0
+                ? 'This model does not advertise effort control.'
+                : selectedModel?.catalogMetadata
+                  ? 'Off uses the provider default. Choose a supported effort to override it.'
+                  : 'Off uses the provider default. Supported levels are unknown for this model.'
+            }
+            checked={advanced.reasoning && effortOptions.length > 0}
             onCheckedChange={function handleReasoningChange(checked) {
-              onChange({ advanced: { ...advanced, reasoning: checked } })
+              onChange({
+                advanced: {
+                  ...advanced,
+                  reasoning: checked,
+                  reasoningEffort: effort ?? advanced.reasoningEffort,
+                },
+              })
             }}
           >
             <label className="grid grid-cols-[minmax(0,1fr)_8rem] items-center gap-3 text-sm text-primary-800">
               <span className="truncate">Effort</span>
               <select
-                value={advanced.reasoningEffort}
+                value={effort ?? ''}
                 onChange={function handleEffortChange(event) {
                   onChange({
                     advanced: {
@@ -293,9 +318,17 @@ export function ModelSettingsPanel({
                 className="h-8 rounded-lg border border-primary-200 bg-surface px-2 text-sm text-primary-900 outline-none focus:border-primary-500"
                 aria-label="Reasoning effort"
               >
-                <option value="low">Low</option>
-                <option value="medium">Medium</option>
-                <option value="high">High</option>
+                {effortOptions.map(function option(value) {
+                  return (
+                    <option key={value} value={value}>
+                      {value === 'none'
+                        ? 'None (disable thinking)'
+                        : value === 'xhigh'
+                          ? 'Extra high'
+                          : value[0].toUpperCase() + value.slice(1)}
+                    </option>
+                  )
+                })}
               </select>
             </label>
           </SettingCard>

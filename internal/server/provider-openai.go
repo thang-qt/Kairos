@@ -66,7 +66,7 @@ func (driver *OpenAICompatibleDriver) GenerateChatStream(
 	request ChatGenerationRequest,
 	onDelta func(delta ChatGenerationDelta) error,
 ) (ChatGenerationResult, error) {
-	if provider.Record.Kind == openAIResponsesProviderKind {
+	if provider.Record.UseResponsesAPI || provider.Record.Kind == openAIResponsesProviderKind {
 		return driver.generateResponses(ctx, provider, request, onDelta)
 	}
 	stream := driver.client(provider).Chat.Completions.NewStreaming(ctx, buildOpenAIChatRequest(request))
@@ -83,7 +83,7 @@ func (driver *OpenAICompatibleDriver) GenerateChatStream(
 		}
 	}
 	if err := stream.Err(); err != nil {
-		return ChatGenerationResult{}, fmt.Errorf("stream OpenAI-compatible chat completion: %w", err)
+		return ChatGenerationResult{}, fmt.Errorf("stream OpenAI-compatible chat completion: %w", normalizeProviderHTTPError(err))
 	}
 	if !accumulator.finished {
 		return ChatGenerationResult{}, fmt.Errorf("Chat Completions stream ended before completion")

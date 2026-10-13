@@ -521,10 +521,21 @@ func (app *App) handleStopSessionRuns(writer http.ResponseWriter, request *http.
 		return
 	}
 
-	_, err := app.runtime.CancelSessionRuns(
+	var payload struct {
+		RunID string `json:"runId"`
+	}
+	if err := decodeJSON(request, &payload); err != nil {
+		writeError(writer, http.StatusBadRequest, err.Error())
+		return
+	}
+	if strings.TrimSpace(payload.RunID) == "" {
+		writeError(writer, http.StatusBadRequest, "runId is required")
+		return
+	}
+	_, err := app.runtime.CancelRun(
 		request.Context(),
 		user.ID,
-		request.PathValue("friendlyId"),
+		request.PathValue("friendlyId"), payload.RunID,
 	)
 	if err != nil {
 		if errors.Is(err, errChatSessionNotFound) {

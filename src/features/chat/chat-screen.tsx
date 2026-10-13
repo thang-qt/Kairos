@@ -135,6 +135,7 @@ export function ChatScreen({
   const resolvedMathTools = conversationSettings.mathTools
   const resolvedAdvancedSettings = buildChatRequestAdvancedSettings(
     conversationSettings.advanced,
+    resolvedConversationModelDetails,
   )
   const {
     historyQuery,
@@ -282,6 +283,7 @@ export function ChatScreen({
     storeCloneScrollRestore,
     stashCloneComposerDraft,
     displayMessages,
+    activeRunIds,
     throwawayMode,
   })
 
@@ -396,6 +398,7 @@ export function ChatScreen({
     )
   }, [
     displayMessages,
+    activeRunIds,
     throwawayMode,
     backendError,
     handleBackendRefetch,

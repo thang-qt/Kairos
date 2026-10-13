@@ -79,11 +79,10 @@ export function useChatStream({
             ...previous,
             sessionKey: previous?.sessionKey ?? sessionKeyForHistory,
             messages:
-              previous?.revision === undefined
-                ? (previous?.messages ?? [])
-                : [],
+              payload.state === 'reconcile' && previous?.revision !== undefined
+                ? []
+                : (previous?.messages ?? []),
             revision: payload.revision,
-            cursor: payload.cursor,
           }
         },
       )
@@ -103,7 +102,10 @@ export function useChatStream({
 
     const payloadSessionKey =
       typeof payload.sessionKey === 'string' ? payload.sessionKey : ''
-    if (!payload.message || typeof payload.message !== 'object') {
+    if (
+      (!payload.message || typeof payload.message !== 'object') &&
+      !payload.turnPatch?.length
+    ) {
       if (
         payloadState === 'reconcile' ||
         payloadState === 'final' ||
@@ -142,8 +144,15 @@ export function useChatStream({
       return
     }
 
-    const nextMessage = turnFromConversationEvent(payload)
-    if (!nextMessage) return
+    if (
+      !payload.message &&
+      !cached?.messages.some(function target(turn) {
+        return turn.id === payload.turnId
+      })
+    ) {
+      refreshHistoryRef.current()
+      return
+    }
 
     updateHistoryMessages(
       queryClient,
@@ -165,6 +174,14 @@ export function useChatStream({
       )
     }
 
+    const nextMessage = payload.message
+      ? turnFromConversationEvent(payload)
+      : queryClient
+          .getQueryData<HistoryResponse>(key)
+          ?.messages.find(function target(turn) {
+            return turn.id === payload.turnId
+          })
+    if (!nextMessage) return
     if (payloadSessionKey && !authoritativeSession) {
       updateSessionLastMessage(
         queryClient,

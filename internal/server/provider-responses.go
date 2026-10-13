@@ -100,7 +100,7 @@ func (driver *OpenAICompatibleDriver) generateResponses(ctx context.Context, pro
 	defer response.Body.Close()
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		data, _ := io.ReadAll(io.LimitReader(response.Body, 8192))
-		return ChatGenerationResult{}, fmt.Errorf("Responses API HTTP %d: %s", response.StatusCode, strings.TrimSpace(string(data)))
+		return ChatGenerationResult{}, &ProviderHTTPError{StatusCode: response.StatusCode, Body: strings.TrimSpace(string(data))}
 	}
 	result := ChatGenerationResult{Model: request.Model}
 	calls := map[string]int{}

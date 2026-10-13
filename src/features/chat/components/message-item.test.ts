@@ -160,7 +160,7 @@ describe('modelFromMessage', function () {
 })
 
 describe('MessageItem', function () {
-  it('renders an ungrouped tool turn naturally', function () {
+  it('renders active tool work in an expandable chain', function () {
     const message: ConversationTurn = {
       role: 'assistant',
       model: 'gpt-4.1',
@@ -204,7 +204,7 @@ describe('MessageItem', function () {
 
     const html = renderToStaticMarkup(
       React.createElement(MessageItem, {
-        message,
+        message: { ...message, status: 'running' },
         toolResultsByCallId,
         modelLabelById,
       }),

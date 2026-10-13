@@ -42,6 +42,7 @@ type UserPreferences struct {
 }
 
 type ProviderRecord struct {
+	UseResponsesAPI   bool   `json:"useResponsesApi"`
 	ID                string `json:"id"`
 	Ref               string `json:"ref"`
 	Owner             string `json:"owner"`
@@ -69,6 +70,7 @@ type ProviderModel struct {
 }
 
 type CreateProviderInput struct {
+	UseResponsesAPI   bool   `json:"useResponsesApi"`
 	Kind              string `json:"kind"`
 	Label             string `json:"label"`
 	BaseURL           string `json:"baseUrl"`
@@ -78,6 +80,7 @@ type CreateProviderInput struct {
 }
 
 type UpdateProviderInput struct {
+	UseResponsesAPI   *bool   `json:"useResponsesApi"`
 	Label             *string `json:"label"`
 	BaseURL           *string `json:"baseUrl"`
 	APIKey            *string `json:"apiKey"`
@@ -101,6 +104,7 @@ type UpdateModelMetadataInput struct {
 }
 
 type providerRow struct {
+	UseResponsesAPI   bool
 	ID                string
 	UserID            string
 	Kind              string
@@ -114,6 +118,7 @@ type providerRow struct {
 }
 
 type systemProvider struct {
+	UseResponsesAPI   bool
 	ID                string
 	Kind              string
 	Label             string
@@ -247,6 +252,10 @@ type ProviderService struct {
 }
 
 func NewProviderService(db *sql.DB, config Config) *ProviderService {
+	if config.SystemProviderKind == openAIResponsesProviderKind {
+		config.SystemProviderKind = openAIProviderKind
+		config.SystemProviderUseResponsesAPI = true
+	}
 	if config.SystemProviderKind == "openrouter" {
 		config.SystemProviderKind = openAIProviderKind
 		if config.SystemProviderBaseURL == "" {
@@ -266,6 +275,7 @@ func NewProviderService(db *sql.DB, config Config) *ProviderService {
 		service.system = &systemProvider{
 			ID:                config.SystemProviderID,
 			Kind:              config.SystemProviderKind,
+			UseResponsesAPI:   config.SystemProviderUseResponsesAPI,
 			Label:             config.SystemProviderLabel,
 			BaseURL:           config.SystemProviderBaseURL,
 			APIKey:            config.SystemProviderAPIKey,

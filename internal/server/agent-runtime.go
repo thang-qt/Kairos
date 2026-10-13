@@ -88,6 +88,8 @@ type AgentRuntime struct {
 	providers     *ProviderService
 	webSettings   *WebToolSettingsService
 	toolRuntime   func(ctx context.Context, userID string, input SubmitTurnInput) (toolExecutor, error)
+	dispatchMu    sync.Mutex
+	afterClaim    func(executionRecord)
 	runMu         sync.Mutex
 	runControls   map[string]executionControl
 }
@@ -285,6 +287,12 @@ func (service *AgentRuntime) StartRun(
 		return SubmitTurnResult{}, errConversationConflict
 	}
 
+	if input.EditMessageID == "" {
+		record.Revision++
+		if _, err := transaction.ExecContext(ctx, `UPDATE chat_sessions SET revision=? WHERE id=?`, record.Revision, session.ID); err != nil {
+			return SubmitTurnResult{}, err
+		}
+	}
 	userMessage["revision"] = record.Revision
 	var latestTimestamp int64
 	if err := transaction.QueryRowContext(ctx, `SELECT MAX(COALESCE((SELECT MAX(timestamp) FROM chat_messages WHERE session_id=?),0),COALESCE((SELECT MAX(started_at) FROM chat_runs WHERE session_id=? AND invalidated=0),0))`, session.ID, session.ID).Scan(&latestTimestamp); err != nil {
@@ -365,6 +373,17 @@ func (service *AgentRuntime) CancelSessionRuns(
 	userID string,
 	friendlyID string,
 ) (bool, error) {
+	return service.cancelRuns(ctx, userID, friendlyID, "")
+}
+
+func (service *AgentRuntime) CancelRun(ctx context.Context, userID, friendlyID, runID string) (bool, error) {
+	if strings.TrimSpace(runID) == "" {
+		return false, errors.New("runId is required")
+	}
+	return service.cancelRuns(ctx, userID, friendlyID, runID)
+}
+
+func (service *AgentRuntime) cancelRuns(ctx context.Context, userID, friendlyID, runID string) (bool, error) {
 	session, err := service.conversations.findSessionByFriendlyID(ctx, userID, friendlyID)
 	if err != nil {
 		return false, err
@@ -375,7 +394,7 @@ func (service *AgentRuntime) CancelSessionRuns(
 		return false, err
 	}
 	defer tx.Rollback()
-	rows, err := tx.QueryContext(ctx, `SELECT id FROM chat_runs WHERE session_id=? AND status IN ('queued','preparing','running')`, session.ID)
+	rows, err := tx.QueryContext(ctx, `SELECT id FROM chat_runs WHERE session_id=? AND status IN ('queued','preparing','running') AND (?='' OR id=?)`, session.ID, runID, runID)
 	if err != nil {
 		return false, err
 	}

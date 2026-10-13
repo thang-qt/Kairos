@@ -2,6 +2,7 @@ import type { ConversationTurn } from './types'
 import type {
   ConversationEvent,
   ConversationCommandAck,
+  TurnPatchOperation,
 } from '@/lib/chat-backend'
 
 export function turnFromConversationEvent(
@@ -16,7 +17,7 @@ export function turnFromConversationEvent(
   }
 }
 
-// Events contain authoritative replacements for one stable turn identity.
+// Full turns establish identity; patches apply only after the authoritative snapshot.
 export function applyConversationEvent(
   messages: Array<ConversationTurn>,
   event: ConversationEvent,
@@ -28,7 +29,20 @@ export function applyConversationEvent(
     }),
   )
   if (event.revision !== undefined && event.revision < revision) return messages
-  const turn = turnFromConversationEvent(event)
+  let turn = turnFromConversationEvent(event)
+  if (event.turnPatch?.length && event.turnId) {
+    const previous = messages.find(function target(turn) {
+      return turn.id === event.turnId
+    })
+    if (!previous) return messages
+    const patched = applyTurnPatch(previous, event.turnPatch)
+    if (!patched) return messages
+    turn = {
+      ...patched,
+      revision: event.revision ?? patched.revision,
+      __streamRunId: event.runId ?? null,
+    }
+  }
   if (!turn) return messages
   const index = messages.findIndex(function sameTurn(previous) {
     return (
@@ -91,4 +105,54 @@ export function applyConversationCommand(
   if (index < 0) return [...next, user]
   next[index] = user
   return next
+}
+
+// Clone only modified paths, preserving unchanged tool outputs and sibling turns.
+export function applyTurnPatch(
+  turn: ConversationTurn,
+  operations: Array<TurnPatchOperation>,
+): ConversationTurn | null {
+  let result: unknown = turn
+  for (const operation of operations) {
+    if (
+      operation.path.some(function unsafe(key) {
+        return ['__proto__', 'constructor', 'prototype'].includes(key)
+      })
+    )
+      return null
+    result = patchValue(result, operation.path, operation)
+    if (result === undefined) return null
+  }
+  return result as ConversationTurn
+}
+
+function patchValue(
+  current: unknown,
+  path: Array<string>,
+  operation: TurnPatchOperation,
+): unknown {
+  if (!path.length) {
+    if (operation.op === 'append')
+      return typeof current === 'string' && typeof operation.value === 'string'
+        ? current + operation.value
+        : undefined
+    return operation.op === 'remove' ? undefined : operation.value
+  }
+  if (current === null || typeof current !== 'object') return undefined
+  const [key, ...rest] = path
+  const copy: Record<string, unknown> | Array<unknown> = Array.isArray(current)
+    ? [...current]
+    : { ...current }
+  const record = copy as Record<string, unknown>
+  if (Array.isArray(copy) && (!/^\d+$/.test(key) || Number(key) > copy.length))
+    return undefined
+  if (!rest.length && operation.op === 'remove') {
+    if (Array.isArray(copy)) copy.splice(Number(key), 1)
+    else delete record[key]
+  } else {
+    const value = patchValue(record[key], rest, operation)
+    if (value === undefined) return undefined
+    record[key] = value
+  }
+  return copy
 }

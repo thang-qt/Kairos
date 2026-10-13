@@ -2,12 +2,11 @@ import { HugeiconsIcon } from '@hugeicons/react'
 import { Cancel01Icon, Tick02Icon, Add01Icon } from '@hugeicons/core-free-icons'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Switch } from '@/components/ui/switch'
 import { cn } from '@/lib/utils'
 
-type ProviderKind = 'openai-responses' | 'openai'
-
 type ProviderDraftState = {
-  kind: ProviderKind
+  useResponsesApi: boolean
   label: string
   baseURL: string
   apiKey: string
@@ -61,23 +60,20 @@ export function ProviderEditorForm({
       </div>
 
       <div className="space-y-2.5">
-        <div className="space-y-1.5">
-          <label className="text-xs font-medium text-primary-600">
-            Provider type
-          </label>
-          <select
-            value={draft.kind}
-            disabled={isEdit}
-            aria-label="Provider type"
-            className="h-10 w-full rounded-lg border border-primary-200 bg-surface px-3 text-sm text-primary-900 outline-none transition-colors hover:border-primary-300 focus:border-primary-400 disabled:cursor-not-allowed disabled:opacity-60"
-            onChange={function handleChange(event) {
-              updateDraft('kind', event.target.value as ProviderKind)
+        <label className="flex items-center justify-between gap-3 text-sm text-primary-800">
+          <span>Use Responses API</span>
+          <Switch
+            checked={draft.useResponsesApi}
+            onCheckedChange={function change(checked) {
+              updateDraft('useResponsesApi', checked)
             }}
-          >
-            <option value="openai-responses">Responses API (opt-in)</option>
-            <option value="openai">OpenAI compatible</option>
-          </select>
-        </div>
+            aria-label="Use Responses API"
+          />
+        </label>
+        <p className="text-pretty text-xs text-primary-500">
+          Off uses Chat Completions. Enable for providers that support
+          Responses.
+        </p>
         <Input
           placeholder={isEdit ? 'Friendly Label' : 'Provider Label'}
           value={draft.label}
@@ -86,11 +82,7 @@ export function ProviderEditorForm({
           }}
         />
         <Input
-          placeholder={
-            draft.kind === 'openai'
-              ? 'https://api.openai.com/v1'
-              : 'https://api.openai.com/v1'
-          }
+          placeholder="https://api.openai.com/v1"
           value={draft.baseURL}
           disabled={!canAddCustomBaseUrl}
           onChange={function handleChange(event) {
