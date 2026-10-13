@@ -4,11 +4,8 @@ import type { ReasoningEffort } from '../types'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
-import {
-  formatContextWindow,
-  providerModelDisplayName,
-  providerModelKey,
-} from '@/lib/model-utils'
+import { ModelDetails } from '@/components/model-details'
+import { providerModelDisplayName, providerModelKey } from '@/lib/model-utils'
 import { cn } from '@/lib/utils'
 import {
   modelReasoningEfforts,
@@ -70,15 +67,6 @@ function FieldBlock({
         ) : null}
       </div>
       {children}
-    </div>
-  )
-}
-
-function ModelInfoRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="grid grid-cols-[5.5rem_minmax(0,1fr)] gap-3 text-xs">
-      <div className="text-primary-500">{label}</div>
-      <div className="min-w-0 break-words text-primary-800">{value}</div>
     </div>
   )
 }
@@ -190,7 +178,6 @@ export function ModelSettingsPanel({
         selectedModel,
         selectedModelId || 'No model selected',
       )
-  const modelDescription = selectedModel?.description?.trim()
   const advanced = value.advanced
   const effortOptions = modelReasoningEfforts(selectedModel)
   const effort = resolveReasoningEffort(advanced.reasoningEffort, selectedModel)
@@ -199,44 +186,11 @@ export function ModelSettingsPanel({
     <div className="pb-4">
       {showModelInfo ? (
         <PanelSection title="Model">
-          <FieldBlock label="Current model">
-            <div className="rounded-xl border border-primary-200 bg-primary-50/60 p-3">
-              <div className="text-pretty text-sm font-medium text-primary-950">
-                {modelName}
-              </div>
-
-              {modelDescription ? (
-                <details className="group mt-3">
-                  <summary className="cursor-pointer list-none text-sm leading-relaxed text-primary-700 outline-none">
-                    <span className="line-clamp-3 group-open:line-clamp-none">
-                      {modelDescription}
-                    </span>
-                    <span className="mt-1 inline-block text-xs font-medium text-primary-500 group-open:hidden">
-                      Read full description
-                    </span>
-                    <span className="mt-1 hidden text-xs font-medium text-primary-500 group-open:inline-block">
-                      Show less
-                    </span>
-                  </summary>
-                </details>
-              ) : null}
-
-              <div className="mt-4 space-y-2 rounded-lg border border-primary-200 bg-surface/70 p-3">
-                <ModelInfoRow
-                  label="Context"
-                  value={formatContextWindow(selectedModel?.contextWindow)}
-                />
-                {selectedModel?.created ? (
-                  <ModelInfoRow
-                    label="Created"
-                    value={new Date(
-                      selectedModel.created * 1000,
-                    ).toLocaleDateString()}
-                  />
-                ) : null}
-              </div>
-            </div>
-          </FieldBlock>
+          {selectedModel ? (
+            <ModelDetails model={selectedModel} />
+          ) : (
+            <div className="text-sm text-primary-500">{modelName}</div>
+          )}
         </PanelSection>
       ) : null}
 

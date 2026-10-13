@@ -12,6 +12,7 @@ import {
 import type { ProviderModel } from '@/lib/app-api'
 import type { ConversationSettings } from '@/features/chat/conversation-settings'
 import { ModelSettingsPanel } from '@/features/chat/components/model-settings-panel'
+import { ModelDetails } from '@/components/model-details'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
@@ -140,6 +141,13 @@ function ModelDialogBody({
           </TabsTab>
         </TabsList>
         <TabsPanel value="details" className="min-h-0 overflow-y-auto">
+          {model.catalogMetadata ? (
+            <ModelDetails
+              model={model}
+              showHeader={false}
+              className="border-b border-primary-200 p-5"
+            />
+          ) : null}
           <ModelDetailsForm model={model} onDeleted={onClose} />
         </TabsPanel>
         <TabsPanel value="chat" className="min-h-0 overflow-y-auto">

@@ -7,11 +7,11 @@ import {
 } from '@/lib/app-api'
 import { ModelSettingsPanel } from '@/features/chat/components/model-settings-panel'
 import type { ConversationSettings } from '@/features/chat/conversation-settings'
+import { ModelPicker } from '@/components/model-picker'
 import { Switch } from '@/components/ui/switch'
 import { mutationErrorMessage } from '@/lib/error-utils'
 import { providerModelKey } from '@/lib/model-utils'
 import { useUpdatePreferences } from '../hooks/use-update-preferences'
-import { ModelPicker } from './model-picker'
 import {
   SettingsEmpty,
   SettingsNotice,
@@ -79,6 +79,7 @@ export function ChatSettingsPanel() {
           }
         >
           <ModelPicker
+            align="end"
             label="Default model"
             models={models}
             selectedModelId={defaultModelId}
@@ -131,6 +132,7 @@ export function ChatSettingsPanel() {
         {autoTitle && separateTitleModel ? (
           <SettingsRow label="Title model">
             <ModelPicker
+              align="end"
               label="Title model"
               models={models}
               selectedModelId={preferences?.titleGenerationModelId}

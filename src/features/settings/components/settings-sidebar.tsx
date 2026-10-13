@@ -1,10 +1,10 @@
 import { HugeiconsIcon } from '@hugeicons/react'
 import type { IconSvgElement } from '@hugeicons/react'
 import {
-  AiBrain01Icon,
   ArrowLeft01Icon,
   BubbleChatIcon,
   CloudServerIcon,
+  CpuIcon,
   Globe02Icon,
   PaintBoardIcon,
   PlugSocketIcon,
@@ -44,7 +44,7 @@ const SETTINGS_GROUPS: Array<{ label: string; items: Array<SettingsNavItem> }> =
       label: 'AI',
       items: [
         { id: 'providers', label: 'Providers', icon: CloudServerIcon },
-        { id: 'models', label: 'Models', icon: AiBrain01Icon },
+        { id: 'models', label: 'Models', icon: CpuIcon },
         { id: 'chat', label: 'Chat defaults', icon: BubbleChatIcon },
       ],
     },

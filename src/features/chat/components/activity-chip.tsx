@@ -1,5 +1,5 @@
 import { HugeiconsIcon } from '@hugeicons/react'
-import { AiBrain01Icon, ArrowRight01Icon } from '@hugeicons/core-free-icons'
+import { ArrowRight01Icon, Brain01Icon } from '@hugeicons/core-free-icons'
 import { TextShimmer } from '@/components/prompt-kit/text-shimmer'
 import { activityLabel } from './message-item-utils'
 import { ElapsedTime } from './elapsed-time'
@@ -43,7 +43,7 @@ export function ActivityChip({
       className="group/activity -mx-2 inline-flex max-w-full items-center gap-2 rounded-lg px-2 py-1 text-sm text-primary-700 transition-colors hover:bg-primary-100"
     >
       <HugeiconsIcon
-        icon={AiBrain01Icon}
+        icon={Brain01Icon}
         size={16}
         strokeWidth={1.5}
         className="shrink-0 text-primary-500"
