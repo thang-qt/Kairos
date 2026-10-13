@@ -349,3 +349,34 @@ export function catalogModelLabel(
   if (!modelId) return null
   return modelLabelById.get(modelId) || modelId
 }
+
+export function splitAssistantActivity(
+  message: ConversationTurn,
+  streaming: boolean,
+): { activity: Array<MessageContentPart>; answer: Array<MessageContentPart> } {
+  const parts = Array.isArray(message.content) ? message.content : []
+  const lastTool = parts.findLastIndex(function tool(part) {
+    return part.type === 'toolCall'
+  })
+  const activity: Array<MessageContentPart> = []
+  const answer: Array<MessageContentPart> = []
+  parts.forEach(function route(part, index) {
+    if (part.type !== 'text') {
+      activity.push(part)
+      return
+    }
+    if (part.phase === 'final_answer') {
+      answer.push(part)
+      return
+    }
+    if (part.phase === 'commentary') {
+      activity.push(part)
+      return
+    }
+    const text = String(part.text ?? '')
+    const hold = streaming && text.length <= 160 && !text.includes('\n')
+    if (index <= lastTool || hold) activity.push(part)
+    else answer.push(part)
+  })
+  return { activity, answer }
+}

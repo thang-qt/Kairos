@@ -20,6 +20,7 @@ import { cn } from '@/lib/utils'
 import { MessageItemEditor } from './message-item-editor'
 import { ToolStepItem, type ToolStep } from './tool-step-item'
 import {
+  splitAssistantActivity,
   mapStandaloneToolResultToToolPart,
   mapToolCallToToolPart,
   assistantPartRenderOrder,
@@ -152,14 +153,17 @@ function MessageItemComponent({
   const toolCount = assistantParts.filter(function tool(part) {
     return part.type === 'toolCall'
   }).length
-  const finalTextIndex = assistantParts.findLastIndex(function text(part) {
-    return part.type === 'text'
+  const { activity, answer } = splitAssistantActivity(
+    message,
+    assistantIsStreaming,
+  )
+  const hasWork = activity.some(function visible(part) {
+    return (
+      part.type === 'text' ||
+      (part.type === 'thinking' && showReasoningBlocks) ||
+      (part.type === 'toolCall' && showToolMessages)
+    )
   })
-  const lastToolIndex = assistantParts.findLastIndex(function tool(part) {
-    return part.type === 'toolCall'
-  })
-  const answerIndex =
-    finalTextIndex > lastToolIndex ? finalTextIndex : assistantParts.length
   const durationMs = (message.steps ?? []).reduce(function sum(total, step) {
     const duration = step.role === 'toolResult' ? step.details?.durationMs : 0
     return (
@@ -307,25 +311,24 @@ function MessageItemComponent({
             active={message.status === 'running'}
           />
         )}
-      {isAssistant &&
-        (toolCount > 0 && showToolMessages && !assistantIsStreaming ? (
-          <>
+      {isAssistant && (
+        <>
+          {hasWork && !assistantIsStreaming ? (
             <AssistantWork
               key={`${message.runId ?? ''}:${message.revision ?? 0}`}
               durationMs={durationMs}
               toolCount={toolCount}
             >
-              {assistantParts.slice(0, answerIndex).map(renderAssistantPart)}
+              {activity.map(renderAssistantPart)}
             </AssistantWork>
-            {assistantParts
-              .slice(answerIndex)
-              .map(function answer(part, index) {
-                return renderAssistantPart(part, answerIndex + index)
-              })}
-          </>
-        ) : (
-          assistantParts.map(renderAssistantPart)
-        ))}
+          ) : (
+            activity.map(renderAssistantPart)
+          )}
+          {answer.map(function renderAnswer(part, index) {
+            return renderAssistantPart(part, activity.length + index)
+          })}
+        </>
+      )}
 
       {isAssistant &&
       ['aborted', 'error', 'interrupted'].includes(message.status ?? '') ? (

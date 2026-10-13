@@ -8,7 +8,10 @@ import {
   modelFromMessage,
   areMessagesEqual,
 } from './message-item'
-import { mapToolCallToToolPart } from './message-item-utils'
+import {
+  splitAssistantActivity,
+  mapToolCallToToolPart,
+} from './message-item-utils'
 import type { ConversationTurn } from '../types'
 
 const modelLabelById = new Map([
@@ -349,5 +352,70 @@ describe('canonical lifecycle render boundary', function () {
     )
     expect(tool.state).toBe('output-error')
     expect(tool.errorText).toBe('No result was saved for this call.')
+  })
+})
+
+describe('assistant message phases', function () {
+  it('routes explicit phases immediately and holds only unknown streaming text', function () {
+    const message: ConversationTurn = {
+      role: 'assistant',
+      content: [
+        { type: 'text', text: 'Searching', phase: 'commentary' },
+        { type: 'text', text: 'Yes', phase: 'final_answer' },
+        { type: 'text', text: 'Let me check' },
+      ],
+    }
+    expect(splitAssistantActivity(message, true)).toEqual({
+      activity: [message.content![0], message.content![2]],
+      answer: [message.content![1]],
+    })
+    expect(splitAssistantActivity(message, false)).toEqual({
+      activity: [message.content![0]],
+      answer: [message.content![1], message.content![2]],
+    })
+  })
+  it('keeps completed commentary in work while the next round streams', function () {
+    const message: ConversationTurn = {
+      role: 'assistant',
+      content: [
+        {
+          type: 'text',
+          text: 'Searching',
+          phase: 'commentary',
+          phaseSource: 'derived',
+        },
+        { type: 'toolCall', id: 'search', name: 'web_search' },
+        {
+          type: 'text',
+          text: 'A short answer',
+          phase: 'final_answer',
+          phaseSource: 'provider',
+        },
+      ],
+    }
+    expect(splitAssistantActivity(message, true).answer).toEqual([
+      message.content![2],
+    ])
+  })
+  it('preserves legacy history and unknown streaming fallbacks', function () {
+    const message: ConversationTurn = {
+      role: 'assistant',
+      content: [
+        { type: 'text', text: 'Searching' },
+        { type: 'toolCall', id: 'old', name: 'web_search' },
+        { type: 'text', text: 'Answer' },
+      ],
+    }
+    expect(splitAssistantActivity(message, false).answer).toEqual([
+      message.content![2],
+    ])
+    expect(splitAssistantActivity(message, true).answer).toEqual([])
+    message.content![2] = {
+      type: 'text',
+      text: 'A sufficiently clear\nmultiline answer',
+    }
+    expect(splitAssistantActivity(message, true).answer).toEqual([
+      message.content![2],
+    ])
   })
 })

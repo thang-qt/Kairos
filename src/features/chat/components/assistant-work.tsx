@@ -24,7 +24,9 @@ export function AssistantWork({
   const label =
     durationMs > 0
       ? `Worked for ${duration}`
-      : `Used ${toolCount} ${toolCount === 1 ? 'tool' : 'tools'}`
+      : toolCount > 0
+        ? `Used ${toolCount} ${toolCount === 1 ? 'tool' : 'tools'}`
+        : 'Worked'
   return (
     <Collapsible
       open={open}

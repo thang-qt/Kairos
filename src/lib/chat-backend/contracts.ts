@@ -18,6 +18,8 @@ export type ToolResultContent = {
 }
 
 export type TextContent = {
+  phase?: 'commentary' | 'final_answer'
+  phaseSource?: 'provider' | 'derived'
   type: 'text'
   text?: string
   textSignature?: string
