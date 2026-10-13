@@ -30,6 +30,7 @@ var frontendFiles = func() fs.FS {
 }()
 
 type App struct {
+	mcp           *MCPService
 	config        Config
 	db            *sql.DB
 	auth          *AuthService
@@ -82,9 +83,12 @@ func NewApp(config Config) (*App, error) {
 	conversations := NewConversationService(db)
 	providers := NewProviderService(db, config)
 	webTools := NewWebToolSettingsService(db, config)
+	mcp := NewMCPService(db, config)
 	runtime := NewAgentRuntime(db, conversations, providers, webTools)
+	runtime.mcp = mcp
 
 	app := &App{
+		mcp:           mcp,
 		config:        config,
 		db:            db,
 		auth:          auth,
@@ -115,15 +119,24 @@ func NewApp(config Config) (*App, error) {
 	return app, nil
 }
 
-func (app *App) Stop() { app.runtime.Close() }
+func (app *App) Stop() { app.runtime.Close(); app.mcp.Close() }
 
 func (app *App) Close() error {
 	app.runtime.Close()
+	app.mcp.Close()
 	return app.db.Close()
 }
 
 func (app *App) Handler() http.Handler {
 	mux := http.NewServeMux()
+	for _, route := range []string{
+		"GET /api/mcp/servers", "POST /api/mcp/servers", "GET /api/mcp/servers/{id}", "PATCH /api/mcp/servers/{id}", "DELETE /api/mcp/servers/{id}",
+		"GET /api/mcp/servers/{id}/{action}", "POST /api/mcp/servers/{id}/{action}", "PATCH /api/mcp/servers/{id}/tools/{toolId}",
+		"GET /api/mcp/approvals", "POST /api/mcp/approvals/{approvalId}",
+	} {
+		mux.HandleFunc(route, app.handleMCP)
+	}
+
 	mux.HandleFunc("GET /api/health", app.handleHealth)
 	mux.HandleFunc("GET /api/app/capabilities", app.handleCapabilities)
 	mux.HandleFunc("POST /api/auth/signup", app.handleSignup)

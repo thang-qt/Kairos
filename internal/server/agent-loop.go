@@ -76,18 +76,9 @@ func (service *AgentRuntime) executeGeneration(
 		input.Request.WebSearch,
 		input.Request.MathTools,
 	)
-	toolCallLimit := defaultMaxToolCalls
-	if len(tools) > 0 && service.webSettings != nil {
-		toolCallLimit, err = service.webSettings.ResolveToolCallLimit(
-			ctx,
-			input.UserID,
-		)
-		if err != nil {
-			return err
-		}
-	}
 	toolRuntime := toolExecutor(NewWebToolRuntimeFromEnv())
 	if service.toolRuntime != nil {
+		input.Request.ExecutionID = input.RunID
 		resolvedRuntime, runtimeErr := service.toolRuntime(
 			ctx,
 			input.UserID,
@@ -100,6 +91,25 @@ func (service *AgentRuntime) executeGeneration(
 		if resolvedRuntime != nil {
 			toolRuntime = resolvedRuntime
 		}
+	}
+
+	if registry, ok := toolRuntime.(interface{ Definitions() []ProviderTool }); ok {
+		tools = append(tools, registry.Definitions()...)
+	}
+
+	toolCallLimit := defaultMaxToolCalls
+	if len(tools) > 0 && service.webSettings != nil {
+		toolCallLimit, err = service.webSettings.ResolveToolCallLimit(
+			ctx,
+			input.UserID,
+		)
+		if err != nil {
+			return err
+		}
+	}
+
+	if len(tools) > 128 {
+		return fmt.Errorf("too many enabled tools for this run")
 	}
 
 	displayModel := assistantModelDisplay{

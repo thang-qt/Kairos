@@ -18,6 +18,7 @@ type newConversationInput struct {
 }
 
 type SubmitTurnInput struct {
+	ExecutionID      string                `json:"-"`
 	NewConversation  *newConversationInput `json:"-"`
 	EditMessageID    string                `json:"-"`
 	ExpectedRevision *int64                `json:"expectedRevision,omitempty"`
@@ -77,6 +78,7 @@ type executionControl struct {
 }
 
 type AgentRuntime struct {
+	mcp           *MCPService
 	shutdownOnce  sync.Once
 	workerOnce    sync.Once
 	workerCancel  context.CancelFunc
@@ -124,6 +126,9 @@ func (service *AgentRuntime) defaultToolRuntime(
 			return nil, err
 		}
 		runtime = resolvedRuntime
+	}
+	if service.mcp != nil {
+		return service.mcp.Registry(ctx, userID, input.ExecutionID, runtime)
 	}
 	return runtime, nil
 }
