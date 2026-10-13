@@ -296,11 +296,10 @@ function MessageItemComponent({
       ) : null}
 
       {isAssistant &&
-        (toolCount > 0 && showToolMessages ? (
+        (toolCount > 0 && showToolMessages && !assistantIsStreaming ? (
           <>
             <AssistantWork
               key={`${message.runId ?? ''}:${message.revision ?? 0}`}
-              streaming={assistantIsStreaming}
               durationMs={durationMs}
               toolCount={toolCount}
             >

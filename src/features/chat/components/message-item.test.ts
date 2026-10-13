@@ -160,7 +160,7 @@ describe('modelFromMessage', function () {
 })
 
 describe('MessageItem', function () {
-  it('renders active tool work in an expandable chain', function () {
+  it('renders streaming tool work inline without a collapse summary', function () {
     const message: ConversationTurn = {
       role: 'assistant',
       model: 'gpt-4.1',
@@ -213,6 +213,9 @@ describe('MessageItem', function () {
     expect(html).toContain('GPT-4.1')
     expect(html).toContain('Calculating: 2 + 2')
     expect(html).toContain('Calculating: 3 + 3')
+    expect(html).not.toContain('Worked for')
+    expect(html).not.toContain('Used 2 tools')
+    expect(html).not.toContain('Working…')
   })
 
   it('preserves user message line breaks in the rendered bubble', function () {
