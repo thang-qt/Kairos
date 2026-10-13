@@ -18,9 +18,19 @@ func TestMCPAuthenticatedAPIsAndSecretReplacement(t *testing.T) {
 	create := performJSONRequest(t, app.handler, http.MethodPost, "/api/mcp/servers", MCPServerInput{Name: "Remote", Endpoint: "https://mcp.test.invalid/mcp", AuthMode: "bearer", Token: "fixture-secret"}, []*http.Cookie{cookie})
 	assertStatusCode(t, create, 200)
 	var result struct {
-		Server MCPServer `json:"server"`
+		Server         MCPServer `json:"server"`
+		Tools          []MCPTool `json:"tools"`
+		DiscoveryError string    `json:"discoveryError"`
 	}
 	decodeResponseJSON(t, create, &result)
+	if result.DiscoveryError != "" || result.Server.Health != "connected" || len(result.Tools) != 3 {
+		t.Fatalf("automatic setup=%#v", result)
+	}
+	for _, tool := range result.Tools {
+		if !tool.Enabled {
+			t.Fatal("automatic setup left tools disabled")
+		}
+	}
 	path := "/api/mcp/servers/" + result.Server.ID
 	unauthorized := performJSONRequest(t, app.handler, http.MethodGet, path, nil, []*http.Cookie{other})
 	assertStatusCode(t, unauthorized, 404)

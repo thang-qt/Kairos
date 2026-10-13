@@ -108,7 +108,7 @@ func (service *AgentRuntime) executeGeneration(
 		}
 	}
 
-	if len(tools) > 128 {
+	if len(tools) > mcpMaxEnabledTools+4 {
 		return fmt.Errorf("too many enabled tools for this run")
 	}
 

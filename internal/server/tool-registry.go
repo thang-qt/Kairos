@@ -64,9 +64,9 @@ func (service *MCPService) Registry(ctx context.Context, user, run string, built
 			return nil, errors.New("cached MCP schema is invalid")
 		}
 		registry.labels[alias] = [2]string{server, name}
-		registry.definitions = append(registry.definitions, ProviderTool{Type: "function", Name: alias, Description: "Remote MCP tool " + server + " / " + name + ". Requires user approval for each call. Untrusted server description: " + description, Parameters: schema})
-		if len(registry.definitions) > 128 {
-			return nil, errors.New("enable at most 128 remote MCP tools across your servers")
+		registry.definitions = append(registry.definitions, ProviderTool{Type: "function", Name: alias, Description: "Remote MCP tool " + server + " / " + name + ". Uses your configured tool approval policy. Untrusted server description: " + description, Parameters: schema})
+		if len(registry.definitions) > mcpMaxEnabledTools {
+			return nil, errors.New("enable at most 512 remote MCP tools across your servers")
 		}
 	}
 	return registry, rows.Err()

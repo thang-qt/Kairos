@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 const mcpResponseLimit = 2 << 20
@@ -55,10 +56,12 @@ func publicMCPAddress(ip netip.Addr) bool {
 }
 
 type mcpSafeTransport struct {
-	roundTrip func(*http.Request, *http.Transport) (*http.Response, error)
-	endpoint  *url.URL
-	token     string
-	resolve   func(context.Context, string) ([]netip.Addr, error)
+	mu            sync.Mutex
+	httpTransport *http.Transport
+	roundTrip     func(*http.Request, *http.Transport) (*http.Response, error)
+	endpoint      *url.URL
+	token         string
+	resolve       func(context.Context, string) ([]netip.Addr, error)
 }
 
 func (transport *mcpSafeTransport) RoundTrip(request *http.Request) (*http.Response, error) {
@@ -96,8 +99,15 @@ func (transport *mcpSafeTransport) RoundTrip(request *http.Request) (*http.Respo
 	if transport.token != "" {
 		clone.Header.Set("Authorization", "Bearer "+transport.token)
 	}
-	httpTransport := http.DefaultTransport.(*http.Transport).Clone()
-	httpTransport.TLSClientConfig = &tls.Config{ServerName: request.URL.Hostname(), MinVersion: tls.VersionTLS12}
+	transport.mu.Lock()
+	if transport.httpTransport == nil {
+		transport.httpTransport = http.DefaultTransport.(*http.Transport).Clone()
+		transport.httpTransport.TLSClientConfig = &tls.Config{ServerName: transport.endpoint.Hostname(), MinVersion: tls.VersionTLS12}
+		transport.httpTransport.MaxIdleConnsPerHost = 4
+	}
+	httpTransport := transport.httpTransport
+	transport.mu.Unlock()
+
 	var response *http.Response
 	if transport.roundTrip != nil {
 		response, err = transport.roundTrip(clone, httpTransport)
@@ -113,7 +123,7 @@ func (transport *mcpSafeTransport) RoundTrip(request *http.Request) (*http.Respo
 		httpTransport.CloseIdleConnections()
 		return nil, errMCPAuth
 	}
-	response.Body = &mcpLimitedBody{ReadCloser: response.Body, remaining: mcpResponseLimit, cleanup: httpTransport.CloseIdleConnections}
+	response.Body = &mcpLimitedBody{ReadCloser: response.Body, remaining: mcpResponseLimit, cleanup: func() {}}
 	return response, nil
 }
 
@@ -149,4 +159,13 @@ func redactMCP(value, token string) string {
 		value = strings.ReplaceAll(value, secret, "[redacted]")
 	}
 	return value
+}
+
+func (transport *mcpSafeTransport) CloseIdleConnections() {
+	transport.mu.Lock()
+	client := transport.httpTransport
+	transport.mu.Unlock()
+	if client != nil {
+		client.CloseIdleConnections()
+	}
 }

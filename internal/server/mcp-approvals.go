@@ -50,11 +50,25 @@ func (service *MCPService) Approvals(ctx context.Context, user, friendly string)
 	}
 	return out, rows.Err()
 }
-func (service *MCPService) Decide(ctx context.Context, user, id, decision string) error {
+func (service *MCPService) Decide(ctx context.Context, user, id, decision string, scopes ...string) error {
 	if decision != "approved" && decision != "denied" {
 		return errors.New("decision must be approved or denied")
 	}
-	result, err := service.db.ExecContext(ctx, `UPDATE mcp_approvals SET state=? WHERE id=? AND user_id=? AND state='pending' AND expires_at>? AND EXISTS(SELECT 1 FROM chat_runs r JOIN chat_sessions s ON s.id=r.session_id WHERE r.id=mcp_approvals.run_id AND r.user_id=? AND r.status='running' AND r.invalidated=0 AND r.lease_token=mcp_approvals.lease_token AND r.lease_until>? AND r.revision=s.revision) AND EXISTS(SELECT 1 FROM user_mcp_servers m JOIN user_mcp_tools t ON t.server_id=m.id WHERE m.id=mcp_approvals.server_id AND m.user_id=? AND m.enabled=1 AND m.revision=mcp_approvals.server_revision AND t.id=mcp_approvals.tool_id AND t.enabled=1 AND t.available=1 AND t.schema_json=mcp_approvals.tool_schema)`, decision, id, user, time.Now().UnixMilli(), user, time.Now().UnixMilli(), user)
+	scope := "once"
+	if len(scopes) > 0 && scopes[0] != "" {
+		scope = scopes[0]
+	}
+	if err := validateMCPScope(decision, scope); err != nil {
+		return err
+	}
+	service.mu.Lock()
+	defer service.mu.Unlock()
+	tx, err := service.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	result, err := tx.ExecContext(ctx, `UPDATE mcp_approvals SET state=? WHERE id=? AND user_id=? AND state='pending' AND expires_at>? AND EXISTS(SELECT 1 FROM chat_runs r JOIN chat_sessions s ON s.id=r.session_id WHERE r.id=mcp_approvals.run_id AND r.user_id=? AND r.status='running' AND r.invalidated=0 AND r.lease_token=mcp_approvals.lease_token AND r.lease_until>? AND r.revision=s.revision) AND EXISTS(SELECT 1 FROM user_mcp_servers m JOIN user_mcp_tools t ON t.server_id=m.id WHERE m.id=mcp_approvals.server_id AND m.user_id=? AND m.enabled=1 AND m.revision=mcp_approvals.server_revision AND t.id=mcp_approvals.tool_id AND t.enabled=1 AND t.available=1 AND t.schema_json=mcp_approvals.tool_schema)`, decision, id, user, time.Now().UnixMilli(), user, time.Now().UnixMilli(), user)
 	if err != nil {
 		return err
 	}
@@ -62,7 +76,22 @@ func (service *MCPService) Decide(ctx context.Context, user, id, decision string
 	if n != 1 {
 		return errors.New("approval is unavailable, expired or no longer matches this execution")
 	}
-	return nil
+	if scope != "once" {
+		var server, tool, schema, session string
+		var revision int64
+		err = tx.QueryRowContext(ctx, `SELECT a.server_id,a.tool_id,a.tool_schema,a.server_revision,r.session_id FROM mcp_approvals a JOIN chat_runs r ON r.id=a.run_id WHERE a.id=? AND a.user_id=?`, id, user).Scan(&server, &tool, &schema, &revision, &session)
+		if err != nil {
+			return err
+		}
+		var target any
+		if scope == "chat" {
+			target = session
+		}
+		if err = writeMCPGrant(ctx, tx, user, server, tool, target, revision, schema); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }
 func (service *MCPService) checkCall(ctx context.Context, user, run, alias string) (MCPServer, MCPTool, string, string, error) {
 	var t MCPTool
@@ -94,6 +123,11 @@ func (service *MCPService) checkCall(ctx context.Context, user, run, alias strin
 func (service *MCPService) Execute(ctx context.Context, user, run string, call ProviderToolCall) (result WebToolResult, returnErr error) {
 	ctx, cancel := service.scope(ctx, 4*time.Minute)
 	defer cancel()
+	defer func() {
+		if ctx.Err() != nil {
+			returnErr = ctx.Err()
+		}
+	}()
 	service.mu.Lock()
 	server, tool, token, lease, err := service.checkCall(ctx, user, run, call.Name)
 	if err != nil {
@@ -138,9 +172,17 @@ func (service *MCPService) Execute(ctx context.Context, user, run string, call P
 	if err != nil || resolved.Validate(args) != nil {
 		return result, errors.New("MCP arguments do not match the tool schema")
 	}
+	allowed, err := service.grantMatches(ctx, user, run, server, tool)
+	if err != nil {
+		return result, err
+	}
+	initialState := "pending"
+	if allowed {
+		initialState = "approved"
+	}
 	approvalID := newID()
 	expires := time.Now().Add(3 * time.Minute).UnixMilli()
-	_, err = service.db.ExecContext(ctx, `INSERT INTO mcp_approvals(id,user_id,server_id,tool_id,run_id,call_id,lease_token,server_revision,tool_schema,arguments_json,server_name,tool_name,state,created_at,expires_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,'pending',?,?)`, approvalID, user, server.ID, tool.ID, run, call.ID, lease, server.Revision, string(tool.Schema), string(encoded), server.Name, tool.Name, time.Now().UnixMilli(), expires)
+	_, err = service.db.ExecContext(ctx, `INSERT INTO mcp_approvals(id,user_id,server_id,tool_id,run_id,call_id,lease_token,server_revision,tool_schema,arguments_json,server_name,tool_name,state,created_at,expires_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, approvalID, user, server.ID, tool.ID, run, call.ID, lease, server.Revision, string(tool.Schema), string(encoded), server.Name, tool.Name, initialState, time.Now().UnixMilli(), expires)
 	if err != nil {
 		return result, errors.New("MCP call cannot reuse an existing approval")
 	}
@@ -181,6 +223,20 @@ func (service *MCPService) Execute(ctx context.Context, user, run string, call P
 			_, _ = service.db.ExecContext(ctx, `UPDATE mcp_approvals SET state='expired' WHERE id=?`, approvalID)
 			return result, errors.New("MCP approval expired without execution")
 		}
+		if state == "pending" {
+			granted, grantErr := service.grantMatches(ctx, user, run, current, currentTool)
+			if grantErr != nil {
+				return result, grantErr
+			}
+			if granted {
+				allowed = true
+				_, err = service.db.ExecContext(ctx, `UPDATE mcp_approvals SET state='approved' WHERE id=? AND state='pending'`, approvalID)
+				if err != nil {
+					return result, err
+				}
+				continue
+			}
+		}
 		if state == "approved" {
 			break
 		}
@@ -200,6 +256,13 @@ func (service *MCPService) Execute(ctx context.Context, user, run string, call P
 		service.mu.Unlock()
 		return result, errors.New("MCP permission or ownership was revoked")
 	}
+	if allowed {
+		granted, grantErr := service.grantMatches(ctx, user, run, current, currentTool)
+		if grantErr != nil || !granted {
+			service.mu.Unlock()
+			return result, errors.New("MCP approval grant was revoked")
+		}
+	}
 	claimed, err := service.db.ExecContext(ctx, `UPDATE mcp_approvals SET state='executing' WHERE id=? AND user_id=? AND state='approved' AND expires_at>?`, approvalID, user, time.Now().UnixMilli())
 	service.mu.Unlock()
 	if err != nil {
@@ -214,7 +277,7 @@ func (service *MCPService) Execute(ctx context.Context, user, run string, call P
 	}
 	var progressMu sync.Mutex
 	var lastProgress time.Time
-	session, err := service.connect(ctx, server, token, func(params *mcp.ProgressNotificationParams) {
+	session, release, err := service.borrowSession(ctx, server, token, func(params *mcp.ProgressNotificationParams) {
 		if params.ProgressToken != approvalID {
 			return
 		}
@@ -240,7 +303,7 @@ func (service *MCPService) Execute(ctx context.Context, user, run string, call P
 			timer := time.NewTimer(250 * time.Millisecond)
 			<-timer.C
 		}
-		_ = session.Close()
+		release(returnErr == nil && ctx.Err() == nil)
 	}()
 	params := &mcp.CallToolParams{Name: tool.Name, Arguments: args}
 	params.SetProgressToken(approvalID)

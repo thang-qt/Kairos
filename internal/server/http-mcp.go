@@ -30,9 +30,10 @@ func (app *App) handleMCP(writer http.ResponseWriter, request *http.Request) {
 	case request.PathValue("approvalId") != "":
 		var input struct {
 			Decision string `json:"decision"`
+			Scope    string `json:"scope"`
 		}
 		if err = decodeJSON(request, &input); err == nil {
-			err = app.mcp.Decide(request.Context(), user.ID, request.PathValue("approvalId"), input.Decision)
+			err = app.mcp.Decide(request.Context(), user.ID, request.PathValue("approvalId"), input.Decision, input.Scope)
 		}
 		response = map[string]bool{"ok": true}
 	case toolID != "":
@@ -77,6 +78,19 @@ func (app *App) handleMCP(writer http.ResponseWriter, request *http.Request) {
 			server, err = app.mcp.Save(request.Context(), user.ID, id, input)
 		}
 		response = map[string]any{"server": server}
+		if err == nil && id == "" && server.Enabled {
+			tools, discoveryErr := app.mcp.Refresh(request.Context(), user.ID, server.ID)
+			if discoveryErr == nil {
+				discoveryErr = app.mcp.enableDiscovered(request.Context(), user.ID, server.ID)
+				tools, _ = app.mcp.Tools(request.Context(), user.ID, server.ID)
+			}
+			server, _, _ = app.mcp.get(request.Context(), user.ID, server.ID)
+			payload := map[string]any{"server": server, "tools": tools}
+			if discoveryErr != nil {
+				payload["discoveryError"] = discoveryErr.Error()
+			}
+			response = payload
+		}
 	}
 	if err != nil {
 		status := http.StatusBadRequest
