@@ -1,4 +1,8 @@
-import { getToolCallsFromMessage } from '../utils'
+import {
+  getToolCallsFromMessage,
+  getTurnId,
+  normalizeMessageTimestamp,
+} from '../utils'
 import type {
   ConversationTurn,
   ImageContent,
@@ -61,7 +65,7 @@ export function mapToolCallToToolPart(
   return {
     displayName:
       resultMessage?.details?.mcpServer && resultMessage?.details?.mcpTool
-        ? `${resultMessage.details.mcpServer} / ${resultMessage.details.mcpTool}`
+        ? `${resultMessage.details.mcpServer} · ${resultMessage.details.mcpTool}`
         : undefined,
     type: toolCall.name || 'unknown',
     state,
@@ -175,6 +179,174 @@ export function mapStandaloneToolResultToToolPart(
       typeof message.toolCallId === 'string' ? message.toolCallId : undefined,
     errorText: isError ? text || 'Unknown error' : undefined,
   }
+}
+
+export function activityKeyFromMessage(message: ConversationTurn): string {
+  return (
+    getTurnId(message) ||
+    message.__optimisticId ||
+    (typeof message.runId === 'string' ? message.runId : '')
+  )
+}
+
+export function isAssistantStreaming(message: ConversationTurn): boolean {
+  return (
+    ['queued', 'preparing', 'running'].includes(message.status ?? '') ||
+    Boolean(message.__streamRunId)
+  )
+}
+
+export type AssistantActivitySplit = {
+  // Parts that stay in the main column (the answer text).
+  answerIndexes: Set<number>
+  // Parts that move to the activity sidebar (thinking, tools, interim text).
+  activityIndexes: Array<number>
+  toolCount: number
+  thinkingCount: number
+  hasThinking: boolean
+  durationMs: number
+}
+
+export function splitAssistantActivity(
+  message: ConversationTurn,
+  showReasoningBlocks: boolean,
+  showToolMessages: boolean,
+): AssistantActivitySplit {
+  const parts = Array.isArray(message.content) ? message.content : []
+  const toolCount = showToolMessages
+    ? parts.filter((part) => part.type === 'toolCall').length
+    : 0
+  const finalTextIndex = parts.findLastIndex((part) => part.type === 'text')
+  const lastToolIndex = toolCount
+    ? parts.findLastIndex((part) => part.type === 'toolCall')
+    : -1
+  const answerStart =
+    toolCount === 0
+      ? 0
+      : finalTextIndex > lastToolIndex
+        ? finalTextIndex
+        : parts.length
+  const answerIndexes = new Set<number>()
+  const unphasedAnswerIndexes = new Set<number>()
+  const activityIndexes: Array<number> = []
+  let thinkingCount = 0
+  parts.forEach(function classify(part, index) {
+    if (part.type === 'thinking') {
+      if (!showReasoningBlocks || !String(part.thinking ?? '').trim()) return
+      thinkingCount += 1
+      activityIndexes.push(index)
+      return
+    }
+    if (part.type === 'toolCall') {
+      if (showToolMessages) activityIndexes.push(index)
+      return
+    }
+    if (part.type !== 'text' || !String(part.text ?? '').trim()) return
+    // The backend labels completed rounds (and the provider may label the
+    // streaming one), so phased text routes exactly.
+    if (part.phase === 'final_answer') {
+      answerIndexes.add(index)
+    } else if (part.phase === 'commentary') {
+      activityIndexes.push(index)
+    } else if (index >= answerStart) {
+      unphasedAnswerIndexes.add(index)
+    } else {
+      activityIndexes.push(index)
+    }
+  })
+  // While streaming, short unphased trailing text may still turn out to be
+  // narration before the next tool call. Keep it in the activity panel until
+  // it is clearly an answer so it never flashes in the chat and jumps away.
+  if (
+    unphasedAnswerIndexes.size > 0 &&
+    activityIndexes.length > 0 &&
+    isAssistantStreaming(message) &&
+    !looksLikeAnswer(parts, unphasedAnswerIndexes)
+  ) {
+    for (const index of unphasedAnswerIndexes) activityIndexes.push(index)
+    activityIndexes.sort((left, right) => left - right)
+  } else {
+    for (const index of unphasedAnswerIndexes) answerIndexes.add(index)
+  }
+  const durationMs = workingDurationMs(message)
+  return {
+    answerIndexes,
+    activityIndexes,
+    toolCount,
+    thinkingCount,
+    hasThinking: thinkingCount > 0,
+    durationMs,
+  }
+}
+
+const ANSWER_HOLD_MAX_CHARS = 160
+
+function looksLikeAnswer(
+  parts: Array<MessageContentPart>,
+  answerIndexes: Set<number>,
+) {
+  let text = ''
+  for (const index of answerIndexes) {
+    const part = parts[index]
+    if (part.type === 'text') text += String(part.text ?? '')
+  }
+  const trimmed = text.trim()
+  return trimmed.length > ANSWER_HOLD_MAX_CHARS || trimmed.includes('\n')
+}
+
+// Wall-clock time from the start of the turn to its last recorded step,
+// falling back to summed tool durations when step timestamps are missing.
+export function workingDurationMs(message: ConversationTurn): number {
+  const steps = message.steps ?? []
+  const startedAt = normalizeMessageTimestamp(message.timestamp)
+  let endedAt: number | null = null
+  for (const step of steps) {
+    const timestamp = normalizeMessageTimestamp(step.timestamp)
+    if (timestamp !== null && (endedAt === null || timestamp > endedAt)) {
+      endedAt = timestamp
+    }
+  }
+  if (startedAt !== null && endedAt !== null && endedAt > startedAt) {
+    return endedAt - startedAt
+  }
+  return steps.reduce(function sum(total, step) {
+    const duration = step.role === 'toolResult' ? step.details?.durationMs : 0
+    return (
+      total +
+      (typeof duration === 'number' && Number.isFinite(duration) ? duration : 0)
+    )
+  }, 0)
+}
+
+export function formatActivityDuration(durationMs: number): string {
+  if (durationMs < 1000) return `${Math.max(1, Math.round(durationMs))}ms`
+  if (durationMs < 60_000) return `${(durationMs / 1000).toFixed(1)}s`
+  const totalSeconds = Math.round(durationMs / 1000)
+  return `${Math.floor(totalSeconds / 60)}m ${totalSeconds % 60}s`
+}
+
+export function activityLabel({
+  streaming,
+  toolCount,
+  hasThinking,
+  durationMs,
+}: {
+  streaming: boolean
+  toolCount: number
+  hasThinking: boolean
+  durationMs: number
+}): string {
+  if (streaming) return toolCount > 0 ? 'Working…' : 'Thinking…'
+  if (toolCount > 0 && durationMs > 0) {
+    return `Worked for ${formatActivityDuration(durationMs)}`
+  }
+  if (toolCount > 0) {
+    return `Used ${toolCount} ${toolCount === 1 ? 'tool' : 'tools'}`
+  }
+  if (hasThinking && durationMs > 0) {
+    return `Thought for ${formatActivityDuration(durationMs)}`
+  }
+  return hasThinking ? 'Thought' : 'Activity'
 }
 
 export function assistantPartRenderOrder(
@@ -348,35 +520,4 @@ export function catalogModelLabel(
 ): string | null {
   if (!modelId) return null
   return modelLabelById.get(modelId) || modelId
-}
-
-export function splitAssistantActivity(
-  message: ConversationTurn,
-  streaming: boolean,
-): { activity: Array<MessageContentPart>; answer: Array<MessageContentPart> } {
-  const parts = Array.isArray(message.content) ? message.content : []
-  const lastTool = parts.findLastIndex(function tool(part) {
-    return part.type === 'toolCall'
-  })
-  const activity: Array<MessageContentPart> = []
-  const answer: Array<MessageContentPart> = []
-  parts.forEach(function route(part, index) {
-    if (part.type !== 'text') {
-      activity.push(part)
-      return
-    }
-    if (part.phase === 'final_answer') {
-      answer.push(part)
-      return
-    }
-    if (part.phase === 'commentary') {
-      activity.push(part)
-      return
-    }
-    const text = String(part.text ?? '')
-    const hold = streaming && text.length <= 160 && !text.includes('\n')
-    if (index <= lastTool || hold) activity.push(part)
-    else answer.push(part)
-  })
-  return { activity, answer }
 }

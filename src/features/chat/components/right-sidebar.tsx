@@ -5,12 +5,13 @@ import {
   FilterHorizontalIcon,
   Pen01Icon,
   PinIcon,
+  PlugSocketIcon,
   Settings02Icon,
 } from '@hugeicons/core-free-icons'
 import { AnimatePresence, motion } from 'motion/react'
 import { usePinSession } from '../hooks/use-pin-session'
 import { useRenameSession } from '../hooks/use-rename-session'
-import { MCPServersPanel } from '@/features/settings/components/mcp-servers-panel'
+import { MCPToolsPanel } from './mcp-tools-panel'
 import { ModelSettingsPanel } from './model-settings-panel'
 import { SessionRenameDialog } from './sidebar/session-rename-dialog'
 import type { SessionMeta } from '../types'
@@ -56,7 +57,6 @@ type RightSidebarProps = {
 }
 
 const TABS = [
-  { id: 'mcp' as const, label: 'MCP', icon: Settings02Icon },
   {
     id: 'options' as const,
     label: 'Options',
@@ -67,6 +67,7 @@ const TABS = [
     label: 'Model',
     icon: Settings02Icon,
   },
+  { id: 'mcp' as const, label: 'MCP tools', icon: PlugSocketIcon },
 ]
 
 function PanelSection({
@@ -125,8 +126,9 @@ function SidebarTabs({
                   onTabChange(tab.id)
                 }}
                 className={cn(
-                  'inline-flex size-8 items-center justify-center rounded-md text-primary-600 transition-colors hover:bg-primary-100 hover:text-primary-900',
-                  activeTab === tab.id && 'bg-primary-200 text-primary-900',
+                  'inline-flex size-8 items-center justify-center rounded-md text-primary-600 transition-colors hover:bg-primary-200 hover:text-primary-900',
+                  activeTab === tab.id &&
+                    'bg-surface text-primary-900 shadow-xs/5 hover:bg-surface',
                 )}
                 aria-label={tab.label}
               >
@@ -265,7 +267,7 @@ function SidebarBody({
           exportDisabled={exportDisabled}
         />
       ) : null}
-      {activeTab === 'mcp' ? <MCPServersPanel /> : null}
+      {activeTab === 'mcp' ? <MCPToolsPanel /> : null}
       {activeTab === 'model' ? (
         <ModelSettingsPanel
           models={models}
@@ -331,7 +333,7 @@ function RightSidebarComponent({
               animate={{ x: 0, opacity: 1 }}
               exit={{ x: '100%', opacity: 0 }}
               transition={{ duration: 0.2, ease: 'easeInOut' }}
-              className="fixed inset-y-0 right-0 z-50 flex w-[280px] max-w-[calc(100vw-2rem)] flex-col overflow-hidden border-l border-primary-200 bg-surface shadow-xl"
+              className="fixed inset-y-0 right-0 z-50 flex w-[280px] max-w-[calc(100vw-2rem)] flex-col overflow-hidden bg-primary-100 shadow-xl"
             >
               <div className="flex h-12 shrink-0 items-center justify-between border-b border-primary-200 px-2">
                 <SidebarTabs activeTab={activeTab} onTabChange={onTabChange} />
@@ -339,7 +341,7 @@ function RightSidebarComponent({
                   size="icon-sm"
                   variant="ghost"
                   onClick={onClose}
-                  className="text-primary-500 hover:bg-primary-100"
+                  className="text-primary-500 hover:bg-primary-200"
                   aria-label="Close panel"
                 >
                   <HugeiconsIcon
@@ -379,7 +381,7 @@ function RightSidebarComponent({
           animate={{ width: 280, opacity: 1 }}
           exit={{ width: 0, opacity: 0 }}
           transition={{ duration: 0.2, ease: 'easeInOut' }}
-          className="relative z-30 flex h-full shrink-0 flex-col overflow-hidden border-l border-primary-200 bg-surface"
+          className="relative z-30 flex h-full shrink-0 flex-col overflow-hidden bg-primary-100"
         >
           <div className="flex h-12 shrink-0 items-center justify-between border-b border-primary-200 px-2">
             <SidebarTabs activeTab={activeTab} onTabChange={onTabChange} />
@@ -387,7 +389,7 @@ function RightSidebarComponent({
               size="icon-sm"
               variant="ghost"
               onClick={onClose}
-              className="text-primary-500 hover:bg-primary-100"
+              className="text-primary-500 hover:bg-primary-200"
               aria-label="Close panel"
             >
               <HugeiconsIcon icon={Cancel01Icon} size={16} strokeWidth={1.5} />

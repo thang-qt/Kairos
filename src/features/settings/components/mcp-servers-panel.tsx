@@ -115,166 +115,208 @@ export function MCPServersPanel() {
     })
     setFeedback('')
   }
+  const formTitle = draft.id ? 'Edit server' : 'Add server'
   return (
-    <div className="space-y-5 p-4">
-      <div>
-        <h2 className="text-balance text-lg font-medium text-primary-900">
-          MCP Servers
-        </h2>
-        <p className="text-pretty text-sm text-primary-600">
-          New connections are tested automatically and their discovered tools
-          are enabled. Choose whether to approve each call, a tool for one chat,
-          or a tool across all chats. These settings apply to all your chats.
-        </p>
-      </div>
-      {feedback && (
-        <p role="alert" className="text-pretty text-sm text-primary-700">
-          {feedback}
-        </p>
-      )}
-      {servers.error && <p role="alert">{servers.error.message}</p>}
-      <div className="space-y-3 rounded-xl border border-primary-200 bg-surface p-4">
-        <h3 className="font-medium text-primary-900">
-          {draft.id ? 'Edit server' : 'Add server'}
-        </h3>
-        {!draft.id && (
-          <label className="block text-sm text-primary-700">
-            Preset
-            <select
-              aria-label="MCP preset"
-              className="ml-2 rounded border border-primary-200 bg-surface p-2"
-              value={
-                draft.endpoint === 'https://api.githubcopilot.com/mcp/readonly'
-                  ? 'github-readonly'
-                  : draft.endpoint === 'https://api.githubcopilot.com/mcp/'
-                    ? 'github'
-                    : 'custom'
-              }
-              onChange={function choose(event) {
-                preset(event.target.value)
-              }}
+    <main className="min-h-0 flex-1 overflow-y-auto px-4 pb-10 pt-2">
+      <div className="mx-auto flex w-full max-w-3xl flex-col gap-4">
+        <section className="rounded-xl border border-primary-200 bg-surface p-5">
+          <div className="mb-4 max-w-2xl">
+            <h2 className="text-balance text-base font-medium text-primary-950">
+              MCP servers
+            </h2>
+            <p className="mt-1 text-pretty text-sm text-primary-500">
+              Connect remote tools. New servers are tested and their tools
+              turned on automatically. Each call asks for approval unless you
+              allow the tool for a chat or everywhere.
+            </p>
+          </div>
+          {servers.error ? (
+            <p role="alert" className="text-pretty text-sm text-primary-800">
+              {servers.error.message}
+            </p>
+          ) : null}
+          {servers.isLoading ? (
+            <p role="status" className="text-sm text-primary-500">
+              Loading MCP servers…
+            </p>
+          ) : null}
+          {servers.data?.length === 0 ? (
+            <p className="rounded-lg border border-dashed border-primary-300 px-4 py-6 text-center text-pretty text-sm text-primary-500">
+              No servers yet. Add one below.
+            </p>
+          ) : null}
+          <div className="flex flex-col gap-3">
+            {servers.data?.map(function card(server) {
+              return (
+                <MCPServerCard
+                  key={server.id}
+                  server={server}
+                  pending={mutation.isPending}
+                  onEdit={edit}
+                  onChange={function change(path, method, body) {
+                    mutation.mutate({ path, method, body })
+                  }}
+                />
+              )
+            })}
+          </div>
+        </section>
+
+        <section className="rounded-xl border border-primary-200 bg-surface p-5">
+          <h3 className="mb-4 text-balance text-base font-medium text-primary-950">
+            {formTitle}
+          </h3>
+          {feedback ? (
+            <p
+              role="alert"
+              className="mb-4 rounded-lg border border-primary-200 bg-primary-50 px-3 py-2 text-pretty text-sm text-primary-800"
             >
-              <option value="custom">Custom server</option>
-              <option value="github-readonly">GitHub — read-only</option>
-              <option value="github">GitHub — all available tools</option>
-            </select>
-          </label>
-        )}
-        <label className="block text-sm text-primary-700">
-          Name
-          <Input
-            aria-label="MCP server name"
-            value={draft.name}
-            onChange={function change(event) {
-              update('name', event.target.value)
-            }}
-          />
-        </label>
-        <label className="block text-sm text-primary-700">
-          HTTPS endpoint
-          <Input
-            aria-label="MCP endpoint"
-            placeholder="https://example.com/mcp"
-            value={draft.endpoint}
-            onChange={function change(event) {
-              update('endpoint', event.target.value)
-            }}
-          />
-        </label>
-        <label className="block text-sm text-primary-700">
-          Authentication
-          <select
-            aria-label="MCP authentication"
-            className="ml-2 rounded border border-primary-200 bg-surface p-2"
-            value={draft.authMode}
-            onChange={function change(event) {
-              setDraft(function next(previous) {
-                return {
-                  ...previous,
-                  authMode: event.target.value as 'none' | 'bearer',
-                  token: '',
+              {feedback}
+            </p>
+          ) : null}
+          <div className="flex max-w-2xl flex-col gap-4">
+            {!draft.id && (
+              <Field label="Preset">
+                <select
+                  aria-label="MCP preset"
+                  className={SELECT_CLASS}
+                  value={
+                    draft.endpoint ===
+                    'https://api.githubcopilot.com/mcp/readonly'
+                      ? 'github-readonly'
+                      : draft.endpoint === 'https://api.githubcopilot.com/mcp/'
+                        ? 'github'
+                        : 'custom'
+                  }
+                  onChange={function choose(event) {
+                    preset(event.target.value)
+                  }}
+                >
+                  <option value="custom">Custom server</option>
+                  <option value="github-readonly">GitHub — read-only</option>
+                  <option value="github">GitHub — all available tools</option>
+                </select>
+              </Field>
+            )}
+            <Field label="Name">
+              <Input
+                aria-label="MCP server name"
+                value={draft.name}
+                onChange={function change(event) {
+                  update('name', event.target.value)
+                }}
+              />
+            </Field>
+            <Field label="HTTPS endpoint">
+              <Input
+                aria-label="MCP endpoint"
+                placeholder="https://example.com/mcp"
+                value={draft.endpoint}
+                onChange={function change(event) {
+                  update('endpoint', event.target.value)
+                }}
+              />
+            </Field>
+            <Field label="Authentication">
+              <select
+                aria-label="MCP authentication"
+                className={SELECT_CLASS}
+                value={draft.authMode}
+                onChange={function change(event) {
+                  setDraft(function next(previous) {
+                    return {
+                      ...previous,
+                      authMode: event.target.value as 'none' | 'bearer',
+                      token: '',
+                    }
+                  })
+                }}
+              >
+                <option value="none">Anonymous</option>
+                <option value="bearer">Bearer token</option>
+              </select>
+            </Field>
+            {draft.authMode === 'bearer' && (
+              <Field label="Token">
+                <Input
+                  aria-label="MCP token"
+                  type="password"
+                  autoComplete="new-password"
+                  value={draft.token}
+                  placeholder={
+                    draft.id
+                      ? 'Leave blank to keep the stored token'
+                      : 'Personal access token or API key'
+                  }
+                  onChange={function change(event) {
+                    update('token', event.target.value)
+                  }}
+                />
+              </Field>
+            )}
+            <p className="text-pretty text-xs text-primary-500">
+              For GitHub, create a{' '}
+              <a
+                className="underline underline-offset-2 hover:text-primary-800"
+                href="https://github.com/settings/personal-access-tokens"
+                target="_blank"
+                rel="noreferrer"
+              >
+                fine-grained personal access token
+              </a>{' '}
+              limited to the repositories and permissions you need. Read-only
+              contents access is enough for browsing. Your organization may also
+              require approval or SSO authorization. Grant write access only for
+              actions you plan to approve.
+            </p>
+            <div className="flex gap-2">
+              <Button
+                onClick={save}
+                disabled={
+                  mutation.isPending ||
+                  !draft.name.trim() ||
+                  !draft.endpoint.trim()
                 }
-              })
-            }}
-          >
-            <option value="none">Anonymous</option>
-            <option value="bearer">Bearer token</option>
-          </select>
-        </label>
-        {draft.authMode === 'bearer' && (
-          <label className="block text-sm text-primary-700">
-            Token
-            <Input
-              aria-label="MCP token"
-              type="password"
-              autoComplete="new-password"
-              value={draft.token}
-              placeholder={
-                draft.id
-                  ? 'Leave blank to keep the stored token'
-                  : 'Personal access token or API key'
-              }
-              onChange={function change(event) {
-                update('token', event.target.value)
-              }}
-            />
-          </label>
-        )}
-        <p className="text-pretty text-xs text-primary-600">
-          For GitHub, create a{' '}
-          <a
-            className="underline"
-            href="https://github.com/settings/personal-access-tokens"
-            target="_blank"
-            rel="noreferrer"
-          >
-            fine-grained personal access token
-          </a>{' '}
-          restricted to the repositories and permissions you need. Read-only
-          contents access is sufficient for browsing. Organization approval or
-          SSO authorization may also be required. Grant write permissions only
-          for actions you intend to approve.
-        </p>
-        <div className="flex gap-2">
-          <Button
-            onClick={save}
-            disabled={
-              mutation.isPending || !draft.name.trim() || !draft.endpoint.trim()
-            }
-          >
-            {mutation.isPending
-              ? 'Saving and testing…'
-              : draft.id
-                ? 'Save changes'
-                : 'Add server'}
-          </Button>
-          {draft.id && (
-            <Button
-              variant="ghost"
-              onClick={function cancel() {
-                setDraft(emptyDraft)
-              }}
-            >
-              Cancel edit
-            </Button>
-          )}
-        </div>
+              >
+                {mutation.isPending
+                  ? 'Saving and testing…'
+                  : draft.id
+                    ? 'Save changes'
+                    : 'Add server'}
+              </Button>
+              {draft.id && (
+                <Button
+                  variant="ghost"
+                  onClick={function cancel() {
+                    setDraft(emptyDraft)
+                  }}
+                >
+                  Cancel edit
+                </Button>
+              )}
+            </div>
+          </div>
+        </section>
       </div>
-      {servers.isLoading && <p role="status">Loading MCP servers…</p>}
-      {servers.data?.map(function card(server) {
-        return (
-          <MCPServerCard
-            key={server.id}
-            server={server}
-            pending={mutation.isPending}
-            onEdit={edit}
-            onChange={function change(path, method, body) {
-              mutation.mutate({ path, method, body })
-            }}
-          />
-        )
-      })}
-    </div>
+    </main>
+  )
+}
+
+const SELECT_CLASS =
+  'h-9 rounded-md border border-primary-200 bg-surface px-3 text-sm text-primary-900'
+
+function Field({
+  label,
+  children,
+}: {
+  label: string
+  children: React.ReactNode
+}) {
+  return (
+    <label className="flex flex-col gap-1.5 text-sm text-primary-900">
+      {label}
+      {children}
+    </label>
   )
 }
 
@@ -300,10 +342,27 @@ function MCPServerCard({
     },
   })
   const [filter, setFilter] = useState('')
+  const health =
+    server.health === 'connected'
+      ? 'Connected'
+      : server.health === 'error'
+        ? 'Connection error'
+        : 'Not tested'
   return (
-    <section className="space-y-3 rounded-xl border border-primary-200 bg-surface p-4">
-      <div className="flex items-center justify-between gap-3">
-        <h3 className="truncate font-medium text-primary-900">{server.name}</h3>
+    <section className="rounded-lg border border-primary-200 bg-primary-50/60 p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h3 className="truncate text-sm font-medium text-primary-900">
+            {server.name}
+          </h3>
+          <p className="truncate text-xs text-primary-500">
+            {health} ·{' '}
+            {server.authMode === 'bearer' ? 'Bearer token stored' : 'Anonymous'}
+          </p>
+          <p className="break-all font-mono text-xs text-primary-500">
+            {server.endpoint}
+          </p>
+        </div>
         <Switch
           aria-label={`Enable server ${server.name}`}
           checked={server.enabled}
@@ -318,23 +377,18 @@ function MCPServerCard({
           }}
         />
       </div>
-      <p className="break-all text-xs text-primary-600">{server.endpoint}</p>
-      <p className="text-xs text-primary-600">
-        {server.health === 'connected'
-          ? 'Connected'
-          : server.health === 'error'
-            ? 'Connection error'
-            : 'Not tested'}{' '}
-        · {server.authMode === 'bearer' ? 'Bearer token stored' : 'Anonymous'}
-      </p>
       {server.lastError && (
-        <p role="alert" className="text-pretty text-sm text-primary-700">
+        <p
+          role="alert"
+          className="mt-3 rounded-md bg-surface px-3 py-2 text-pretty text-sm text-primary-800 ring-1 ring-primary-200"
+        >
           {server.lastError}
         </p>
       )}
-      <div className="flex flex-wrap gap-2">
+      <div className="mt-3 flex flex-wrap gap-2">
         <Button
           size="sm"
+          variant="outline"
           disabled={pending || !server.enabled}
           onClick={function test() {
             onChange(`servers/${server.id}/test`, 'POST', {})
@@ -372,9 +426,22 @@ function MCPServerCard({
           Delete
         </Button>
       </div>
-      {tools.error && <p role="alert">{tools.error.message}</p>}
+      {tools.error && (
+        <p role="alert" className="mt-3 text-sm text-primary-800">
+          {tools.error.message}
+        </p>
+      )}
       {tools.data && tools.data.length > 0 ? (
-        <>
+        <div className="mt-4 border-t border-primary-200 pt-4">
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <h4 className="text-xs text-primary-500">
+              Tools ·{' '}
+              <span className="tabular-nums">
+                {tools.data.filter((tool) => tool.enabled).length} of{' '}
+                {tools.data.length} on
+              </span>
+            </h4>
+          </div>
           <Input
             aria-label={`Filter ${server.name} tools`}
             placeholder="Filter tools"
@@ -383,11 +450,7 @@ function MCPServerCard({
               setFilter(event.target.value)
             }}
           />
-          <p className="text-xs text-primary-600">
-            Disable tools you don’t want available. Enabled tools ask for
-            approval unless you explicitly allow them for a chat or permanently.
-          </p>
-          <div className="max-h-96 space-y-3 overflow-y-auto">
+          <ul className="mt-2 max-h-96 divide-y divide-primary-200 overflow-y-auto">
             {tools.data
               .filter(function match(tool) {
                 return `${tool.name} ${tool.description}`
@@ -396,15 +459,23 @@ function MCPServerCard({
               })
               .map(function toolRow(tool) {
                 return (
-                  <div
-                    key={tool.id}
-                    className="border-t border-primary-200 pt-3"
-                  >
-                    <label className="flex items-center justify-between gap-3 text-sm text-primary-800">
-                      <span className="truncate">
-                        {tool.name}
-                        {!tool.available ? ' (unavailable)' : ''}
-                      </span>
+                  <li key={tool.id} className="py-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="truncate font-mono text-sm text-primary-900">
+                          {tool.name}
+                          {!tool.available ? (
+                            <span className="ml-2 font-sans text-xs text-primary-500">
+                              Unavailable
+                            </span>
+                          ) : null}
+                        </div>
+                        {tool.description ? (
+                          <p className="mt-0.5 line-clamp-2 text-pretty text-xs text-primary-500">
+                            {tool.description}
+                          </p>
+                        ) : null}
+                      </div>
                       <Switch
                         aria-label={`Enable tool ${server.name} / ${tool.name}`}
                         checked={tool.enabled}
@@ -417,15 +488,11 @@ function MCPServerCard({
                           )
                         }}
                       />
-                    </label>
-                    <p className="text-pretty text-xs text-primary-600">
-                      {tool.description}
-                    </p>
-                    <label className="mt-2 block text-xs text-primary-700">
-                      Approval
+                    </div>
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
                       <select
                         aria-label={`Approval for ${server.name} / ${tool.name}`}
-                        className="ml-2 rounded border border-primary-200 bg-surface p-1"
+                        className="h-8 rounded-md border border-primary-200 bg-surface px-2 text-xs text-primary-900"
                         value={tool.approvalPolicy}
                         disabled={pending || !tool.enabled || !tool.available}
                         onChange={function policy(event) {
@@ -442,40 +509,45 @@ function MCPServerCard({
                         <option value="always">Ask for each call</option>
                         <option value="allow">Always approve this tool</option>
                       </select>
-                    </label>
-                    {(tool.approvalPolicy === 'allow' ||
-                      (tool.chatApprovalCount ?? 0) > 0) && (
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        disabled={pending}
-                        onClick={function resetApprovals() {
-                          onChange(
-                            `servers/${server.id}/tools/${tool.id}`,
-                            'PATCH',
-                            { enabled: tool.enabled, approvalPolicy: 'always' },
-                          )
-                        }}
-                      >
-                        Reset approvals
-                        {tool.chatApprovalCount
-                          ? ` (${tool.chatApprovalCount} chats)`
-                          : ''}
-                      </Button>
-                    )}
-                    <details className="mt-1 text-xs text-primary-600">
-                      <summary>Input schema</summary>
-                      <pre className="overflow-x-auto whitespace-pre-wrap">
-                        {JSON.stringify(tool.schema, null, 2)}
-                      </pre>
-                    </details>
-                  </div>
+                      {(tool.approvalPolicy === 'allow' ||
+                        (tool.chatApprovalCount ?? 0) > 0) && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          disabled={pending}
+                          onClick={function resetApprovals() {
+                            onChange(
+                              `servers/${server.id}/tools/${tool.id}`,
+                              'PATCH',
+                              {
+                                enabled: tool.enabled,
+                                approvalPolicy: 'always',
+                              },
+                            )
+                          }}
+                        >
+                          Reset approvals
+                          {tool.chatApprovalCount
+                            ? ` (${tool.chatApprovalCount} chats)`
+                            : ''}
+                        </Button>
+                      )}
+                      <details className="w-full text-xs text-primary-500">
+                        <summary className="cursor-pointer hover:text-primary-800">
+                          Input schema
+                        </summary>
+                        <pre className="mt-1 overflow-x-auto whitespace-pre-wrap rounded-md bg-surface p-2 font-mono text-primary-800 ring-1 ring-primary-200">
+                          {JSON.stringify(tool.schema, null, 2)}
+                        </pre>
+                      </details>
+                    </div>
+                  </li>
                 )
               })}
-          </div>
-        </>
+          </ul>
+        </div>
       ) : (
-        <p className="text-pretty text-sm text-primary-600">
+        <p className="mt-3 text-pretty text-sm text-primary-500">
           Test the connection to discover tools.
         </p>
       )}

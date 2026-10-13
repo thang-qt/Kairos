@@ -79,8 +79,7 @@ function ChatSidebarComponent({
   } as const
 
   const asideProps = {
-    className:
-      'border-r border-primary-200 h-full overflow-hidden bg-primary-100 flex flex-col',
+    className: 'h-full overflow-hidden bg-primary-100 flex flex-col',
   }
 
   return (

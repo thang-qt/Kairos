@@ -41,11 +41,38 @@ import {
 } from './conversation-settings'
 import { RightSidebar } from './components/right-sidebar'
 import type { RightSidebarTab } from './components/right-sidebar'
+import { ActivitySidebar } from './components/activity-sidebar'
+import { isAssistantStreaming } from './components/message-item-utils'
+import { useMcpApprovals, useMcpToolLabels } from './hooks/use-mcp'
 import { AppShell } from '@/components/app-shell'
 import { useConversationExport } from '@/features/chat/export/use-conversation-export'
 import { useChatSettings } from '@/app/preferences/app-preferences'
 import { useChatSettingsPreferencesQuery, useModelsQuery } from '@/lib/app-api'
 import { providerModelKey } from '@/lib/model-utils'
+import type { MCPApproval } from '@/lib/mcp-api'
+import type { ConversationTurn } from './types'
+
+// The settings and activity panels share the right edge; only one is open.
+// The activity panel shows the turn whose chip opened it, and only within
+// the conversation it was opened from.
+type RightPanel =
+  | { kind: 'settings' }
+  | { kind: 'activity'; key: string; conversationId: string }
+
+const EMPTY_APPROVALS: Array<MCPApproval> = []
+
+// The run to poll for remote tool approvals: the newest assistant turn while
+// it is still running and has called a remote MCP tool.
+function mcpApprovalRunId(messages: Array<ConversationTurn>): string | null {
+  const message = messages.findLast((turn) => turn.role === 'assistant')
+  if (!message?.runId || !isAssistantStreaming(message)) return null
+  const content = Array.isArray(message.content) ? message.content : []
+  return content.some(
+    (part) => part.type === 'toolCall' && part.name?.startsWith('mcp_'),
+  )
+    ? message.runId
+    : null
+}
 
 type ChatScreenProps = {
   activeFriendlyId: string
@@ -68,7 +95,14 @@ export function ChatScreen({
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const [isRedirecting, setIsRedirecting] = useState(false)
-  const [rightSidebarOpen, setRightSidebarOpen] = useState(false)
+  const [rightPanel, setRightPanel] = useState<RightPanel | null>(null)
+  const rightSidebarOpen = rightPanel?.kind === 'settings'
+  const activeActivityKey =
+    rightPanel?.kind === 'activity' &&
+    rightPanel.conversationId === activeFriendlyId
+      ? rightPanel.key
+      : null
+  const activityOpen = activeActivityKey !== null
   const [throwawayMode, setThrowawayMode] = useState(false)
   const [rightSidebarTab, setRightSidebarTab] =
     useState<RightSidebarTab>('options')
@@ -154,6 +188,18 @@ export function ChatScreen({
     sessionsReady: sessionsQuery.isSuccess,
     queryClient,
   })
+  const mcpToolLabels = useMcpToolLabels()
+  const approvalRunId = mcpApprovalRunId(displayMessages)
+  const approvalsQuery = useMcpApprovals(approvalRunId)
+  const pendingApprovals = useMemo(
+    () =>
+      approvalRunId
+        ? (approvalsQuery.data ?? []).filter(
+            (approval) => approval.state === 'pending',
+          )
+        : EMPTY_APPROVALS,
+    [approvalRunId, approvalsQuery.data],
+  )
   const usedTokens =
     typeof activeSession?.totalTokens === 'number' &&
     activeSession.totalTokens > 0
@@ -318,6 +364,33 @@ export function ChatScreen({
       return { ...state, isSidebarCollapsed: true }
     })
   }, [isMobile, queryClient])
+
+  const handleToggleRightSidebar = useCallback(() => {
+    setRightPanel((current) =>
+      current?.kind === 'settings' ? null : { kind: 'settings' },
+    )
+  }, [])
+
+  const handleOpenActivity = useCallback(
+    function handleOpenActivity(activityKey: string) {
+      setRightPanel((current) =>
+        current?.kind === 'activity' &&
+        current.key === activityKey &&
+        current.conversationId === activeFriendlyId
+          ? null
+          : {
+              kind: 'activity',
+              key: activityKey,
+              conversationId: activeFriendlyId,
+            },
+      )
+    },
+    [activeFriendlyId],
+  )
+
+  const handleCloseRightPanel = useCallback(() => {
+    setRightPanel(null)
+  }, [])
 
   const handleOpenSidebar = useCallback(() => {
     setAppShellUiState(queryClient, function open(state) {
@@ -514,7 +587,7 @@ export function ChatScreen({
             activeSession?.contextTokens ??
             resolvedConversationModelDetails?.contextWindow
           }
-          onToggleRightSidebar={() => setRightSidebarOpen((prev) => !prev)}
+          onToggleRightSidebar={handleToggleRightSidebar}
           rightSidebarOpen={rightSidebarOpen}
           models={models}
           selectedModelId={resolvedConversationModel}
@@ -531,29 +604,39 @@ export function ChatScreen({
       }
       rightSidebar={
         hideUi ? null : (
-          <RightSidebar
-            isOpen={rightSidebarOpen}
-            isMobile={isMobile}
-            activeTab={rightSidebarTab}
-            onTabChange={setRightSidebarTab}
-            onClose={() => setRightSidebarOpen(false)}
-            onExport={exportConversation}
-            exportDisabled={
-              isNewChat || historyLoading || displayMessages.length === 0
-            }
-            sessions={sessions}
-            activeSessionKey={activeSessionKey || resolvedSessionKey}
-            models={models}
-            selectedModelId={resolvedConversationModel}
-            defaultModelId={defaultModelId}
-            modelsLoading={modelsQuery.isLoading}
-            canSelectModel={modelsQuery.data?.capabilities.canSelectModel}
-            defaultModelLocked={
-              modelsQuery.data?.capabilities.defaultModelLocked
-            }
-            modelSettings={conversationSettings}
-            onModelSettingsChange={updateConversationSettings}
-          />
+          <>
+            <ActivitySidebar
+              isOpen={activityOpen}
+              isMobile={isMobile}
+              messages={displayMessages}
+              selectedKey={activeActivityKey ?? undefined}
+              mcpToolLabels={mcpToolLabels}
+              onClose={handleCloseRightPanel}
+            />
+            <RightSidebar
+              isOpen={rightSidebarOpen}
+              isMobile={isMobile}
+              activeTab={rightSidebarTab}
+              onTabChange={setRightSidebarTab}
+              onClose={handleCloseRightPanel}
+              onExport={exportConversation}
+              exportDisabled={
+                isNewChat || historyLoading || displayMessages.length === 0
+              }
+              sessions={sessions}
+              activeSessionKey={activeSessionKey || resolvedSessionKey}
+              models={models}
+              selectedModelId={resolvedConversationModel}
+              defaultModelId={defaultModelId}
+              modelsLoading={modelsQuery.isLoading}
+              canSelectModel={modelsQuery.data?.capabilities.canSelectModel}
+              defaultModelLocked={
+                modelsQuery.data?.capabilities.defaultModelLocked
+              }
+              modelSettings={conversationSettings}
+              onModelSettingsChange={updateConversationSettings}
+            />
+          </>
         )
       }
     >
@@ -569,6 +652,7 @@ export function ChatScreen({
             activeRunIds={activeRunIds}
             sessionKey={activeCanonicalKey}
             modelLabelById={modelLabelById}
+            mcpToolLabels={mcpToolLabels}
             pinToTop={pinToTop}
             pinGroupMinHeight={pinGroupMinHeight}
             headerHeight={headerHeight}
@@ -588,8 +672,10 @@ export function ChatScreen({
             showConversationNavigator={
               settings.showConversationNavigator &&
               !isMobile &&
-              !rightSidebarOpen
+              rightPanel === null
             }
+            activeActivityKey={activeActivityKey}
+            onOpenActivity={handleOpenActivity}
           />
           <ChatComposer
             onSubmit={send}
@@ -600,6 +686,7 @@ export function ChatScreen({
             wrapperRef={composerRef}
             draft={composerDraft}
             autoFocus={isNewChat}
+            approvals={pendingApprovals}
           />
         </>
       )}

@@ -17,6 +17,7 @@ import { DateDivider } from './date-divider'
 import { MessageItem } from './message-item'
 import { ConversationNavigator } from './conversation-navigator'
 import { ShortcutsHelpDialog } from './shortcuts-help-dialog'
+import { activityKeyFromMessage } from './message-item-utils'
 import type { ConversationTurn } from '../types'
 import {
   ChatContainerContent,
@@ -45,6 +46,8 @@ type ChatMessageListProps = {
   activeRunIds?: ReadonlySet<string>
   sessionKey?: string
   modelLabelById: ReadonlyMap<string, string>
+  // Display names for remote MCP tool aliases.
+  mcpToolLabels?: ReadonlyMap<string, string>
   pinToTop: boolean
   pinGroupMinHeight: number
   headerHeight: number
@@ -61,6 +64,9 @@ type ChatMessageListProps = {
   targetMessageId?: string
   onRestoreScrollTopApplied?: () => void
   showConversationNavigator?: boolean
+  // Key of the turn shown in the activity panel; null when it is closed.
+  activeActivityKey?: string | null
+  onOpenActivity?: (activityKey: string) => void
 }
 
 export type CloneMessagePayload = {
@@ -80,6 +86,7 @@ function ChatMessageListComponent({
   activeRunIds = EMPTY_ACTIVE_RUN_IDS,
   sessionKey,
   modelLabelById,
+  mcpToolLabels,
   pinToTop,
   pinGroupMinHeight,
   headerHeight,
@@ -93,6 +100,8 @@ function ChatMessageListComponent({
   targetMessageId,
   onRestoreScrollTopApplied,
   showConversationNavigator = false,
+  activeActivityKey = null,
+  onOpenActivity,
 }: ChatMessageListProps) {
   const wideMode = useChatSettingsStore((state) => state.settings.wideMode)
   const anchorRef = useRef<HTMLDivElement | null>(null)
@@ -329,6 +338,10 @@ function ChatMessageListComponent({
     const wrapperScrollMarginTop = isUserMessage
       ? headerHeight + 12
       : options?.wrapperScrollMarginTop
+    const activitySelected =
+      chatMessage.role === 'assistant' &&
+      activeActivityKey !== null &&
+      activityKeyFromMessage(chatMessage) === activeActivityKey
     const previousMessage = findPreviousClonePoint(slicedMessages, index)
     const previousMessageId = previousMessage
       ? (getTurnId(previousMessage) ?? undefined)
@@ -346,6 +359,7 @@ function ChatMessageListComponent({
           showAssistantModel
           showAssistantActions
           modelLabelById={modelLabelById}
+          mcpToolLabels={mcpToolLabels}
           wrapperRef={wrapperRef}
           wrapperClassName={options?.wrapperClassName}
           wrapperScrollMarginTop={wrapperScrollMarginTop}
@@ -354,6 +368,8 @@ function ChatMessageListComponent({
           previousMessageId={previousMessageId}
           onEdit={onEditUserTurn}
           onDelete={onDeleteUserTurn}
+          activitySelected={activitySelected}
+          onOpenActivity={onOpenActivity}
         />
       </div>
     )
@@ -404,11 +420,14 @@ function ChatMessageListComponent({
     slicedLastUserIndex,
     slicedResponseAfterLastUserIndex,
     modelLabelById,
+    mcpToolLabels,
     onClone,
     onDeleteUserTurn,
     onEditUserTurn,
     toolResultsByCallId,
     highlightedMessageId,
+    activeActivityKey,
+    onOpenActivity,
   ])
 
   const pinnedEndNotice =
@@ -419,7 +438,7 @@ function ChatMessageListComponent({
   return (
     <>
       <ChatContainerRoot
-        className="flex-1 min-h-0 -mb-4"
+        className="flex-1 min-h-0"
         data-scroll-restoration-id="chat-scroll"
         overlay={
           shouldShowConversationNavigator ? (
@@ -456,7 +475,7 @@ function ChatMessageListComponent({
               <div
                 className="flex flex-col gap-6"
                 style={{
-                  minHeight: `${Math.max(0, pinGroupMinHeight - 24)}px`,
+                  minHeight: `${Math.max(0, pinGroupMinHeight - 16)}px`,
                 }}
               >
                 {renderedMessages.group}
@@ -512,6 +531,7 @@ export function areChatMessageListEqual(
     prev.activeRunIds === next.activeRunIds &&
     prev.sessionKey === next.sessionKey &&
     prev.modelLabelById === next.modelLabelById &&
+    prev.mcpToolLabels === next.mcpToolLabels &&
     prev.pinToTop === next.pinToTop &&
     prev.pinGroupMinHeight === next.pinGroupMinHeight &&
     prev.headerHeight === next.headerHeight &&
@@ -524,7 +544,9 @@ export function areChatMessageListEqual(
     prev.restoreKey === next.restoreKey &&
     prev.targetMessageId === next.targetMessageId &&
     prev.onRestoreScrollTopApplied === next.onRestoreScrollTopApplied &&
-    prev.showConversationNavigator === next.showConversationNavigator
+    prev.showConversationNavigator === next.showConversationNavigator &&
+    prev.activeActivityKey === next.activeActivityKey &&
+    prev.onOpenActivity === next.onOpenActivity
   )
 }
 

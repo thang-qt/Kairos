@@ -82,7 +82,7 @@ export function SettingsSidebar({
       initial={false}
       animate={{ width: isCollapsed ? 0 : 300 }}
       transition={transition}
-      className="flex h-full flex-col overflow-hidden border-r border-primary-200 bg-primary-100"
+      className="flex h-full flex-col overflow-hidden bg-primary-100"
       style={{ overflow: 'hidden' }}
     >
       <motion.div

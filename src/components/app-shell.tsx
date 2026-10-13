@@ -24,20 +24,20 @@ export function AppShell({
   mainRef,
   hideChrome = false,
 }: AppShellProps) {
-  const hasRightSidebar = rightSidebar != null
   const showMobileSidebar = !hideChrome && isMobile && !isSidebarCollapsed
+  // On desktop the main column floats as a rounded card inside the
+  // sidebar-colored frame, so the sidebars read as surrounding it.
+  const insetMain = !isMobile && !hideChrome
 
   return (
-    <div className="h-screen bg-surface text-primary-900">
+    <div
+      className={cn(
+        'h-screen text-primary-900',
+        insetMain ? 'bg-primary-100' : 'bg-surface',
+      )}
+    >
       <div
-        className={cn(
-          'h-full overflow-hidden',
-          isMobile
-            ? 'relative'
-            : hasRightSidebar
-              ? 'grid grid-cols-[auto_1fr_auto]'
-              : 'grid grid-cols-[auto_1fr]',
-        )}
+        className={cn('h-full overflow-hidden', isMobile ? 'relative' : 'flex')}
       >
         {hideChrome ? null : isMobile ? (
           <>
@@ -65,20 +65,34 @@ export function AppShell({
           sidebar
         )}
 
-        <main className="relative flex h-full min-h-0 flex-col" ref={mainRef}>
-          <div
-            className="pointer-events-none absolute left-0 right-0 top-0 z-10"
-            style={{
-              height: 80,
-              background:
-                'linear-gradient(to bottom, var(--color-surface), transparent)',
-            }}
+        <div
+          className={cn(
+            'flex h-full min-w-0 flex-1',
+            insetMain && 'py-2 pr-2 transition-[padding] duration-150',
+            insetMain && isSidebarCollapsed && 'pl-2',
+          )}
+        >
+          <main
+            className={cn(
+              'relative flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-surface',
+              insetMain && 'rounded-xl border border-primary-200 shadow-xs/5',
+            )}
+            ref={mainRef}
           >
-            <div className="pointer-events-auto">{header}</div>
-          </div>
+            <div
+              className="pointer-events-none absolute left-0 right-0 top-0 z-10"
+              style={{
+                height: 80,
+                background:
+                  'linear-gradient(to bottom, var(--color-surface), transparent)',
+              }}
+            >
+              <div className="pointer-events-auto">{header}</div>
+            </div>
 
-          {children}
-        </main>
+            {children}
+          </main>
+        </div>
 
         {hideChrome ? null : rightSidebar}
       </div>

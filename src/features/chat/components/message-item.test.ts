@@ -12,6 +12,7 @@ import {
   splitAssistantActivity,
   mapToolCallToToolPart,
 } from './message-item-utils'
+import { ActivitySidebar } from './activity-sidebar'
 import type { ConversationTurn } from '../types'
 
 const modelLabelById = new Map([
@@ -163,7 +164,7 @@ describe('modelFromMessage', function () {
 })
 
 describe('MessageItem', function () {
-  it('renders streaming tool work inline without a collapse summary', function () {
+  it('moves active tool work into the activity sidebar', function () {
     const message: ConversationTurn = {
       role: 'assistant',
       model: 'gpt-4.1',
@@ -205,20 +206,28 @@ describe('MessageItem', function () {
       ],
     ])
 
+    const runningMessage = { ...message, status: 'running' }
     const html = renderToStaticMarkup(
       React.createElement(MessageItem, {
-        message: { ...message, status: 'running' },
+        message: runningMessage,
         toolResultsByCallId,
         modelLabelById,
       }),
     )
 
     expect(html).toContain('GPT-4.1')
-    expect(html).toContain('Calculating: 2 + 2')
-    expect(html).toContain('Calculating: 3 + 3')
-    expect(html).not.toContain('Worked for')
-    expect(html).not.toContain('Used 2 tools')
-    expect(html).not.toContain('Working…')
+    expect(html).toContain('Working…')
+    expect(html).not.toContain('Calculating: 2 + 2')
+
+    const activityHtml = renderToStaticMarkup(
+      React.createElement(ActivitySidebar, {
+        isOpen: true,
+        messages: [runningMessage],
+        onClose() {},
+      }),
+    )
+    expect(activityHtml).toContain('Calculating: 2 + 2')
+    expect(activityHtml).toContain('Calculating: 3 + 3')
   })
 
   it('preserves user message line breaks in the rendered bubble', function () {
@@ -355,28 +364,36 @@ describe('canonical lifecycle render boundary', function () {
   })
 })
 
+function routed(message: ConversationTurn) {
+  const split = splitAssistantActivity(message, true, true)
+  return {
+    activity: split.activityIndexes,
+    answer: [...split.answerIndexes].sort(),
+  }
+}
+
 describe('assistant message phases', function () {
   it('routes explicit phases immediately and holds only unknown streaming text', function () {
     const message: ConversationTurn = {
       role: 'assistant',
       content: [
         { type: 'text', text: 'Searching', phase: 'commentary' },
+        { type: 'toolCall', id: 'search', name: 'web_search' },
         { type: 'text', text: 'Yes', phase: 'final_answer' },
         { type: 'text', text: 'Let me check' },
       ],
     }
-    expect(splitAssistantActivity(message, true)).toEqual({
-      activity: [message.content![0], message.content![2]],
-      answer: [message.content![1]],
+    expect(routed({ ...message, status: 'running' })).toEqual({
+      activity: [0, 1, 3],
+      answer: [2],
     })
-    expect(splitAssistantActivity(message, false)).toEqual({
-      activity: [message.content![0]],
-      answer: [message.content![1], message.content![2]],
-    })
+    expect(routed(message)).toEqual({ activity: [0, 1], answer: [2, 3] })
   })
+
   it('keeps completed commentary in work while the next round streams', function () {
     const message: ConversationTurn = {
       role: 'assistant',
+      status: 'running',
       content: [
         {
           type: 'text',
@@ -393,10 +410,9 @@ describe('assistant message phases', function () {
         },
       ],
     }
-    expect(splitAssistantActivity(message, true).answer).toEqual([
-      message.content![2],
-    ])
+    expect(routed(message)).toEqual({ activity: [0, 1], answer: [2] })
   })
+
   it('preserves legacy history and unknown streaming fallbacks', function () {
     const message: ConversationTurn = {
       role: 'assistant',
@@ -406,16 +422,12 @@ describe('assistant message phases', function () {
         { type: 'text', text: 'Answer' },
       ],
     }
-    expect(splitAssistantActivity(message, false).answer).toEqual([
-      message.content![2],
-    ])
-    expect(splitAssistantActivity(message, true).answer).toEqual([])
+    expect(routed(message).answer).toEqual([2])
+    expect(routed({ ...message, status: 'running' }).answer).toEqual([])
     message.content![2] = {
       type: 'text',
       text: 'A sufficiently clear\nmultiline answer',
     }
-    expect(splitAssistantActivity(message, true).answer).toEqual([
-      message.content![2],
-    ])
+    expect(routed({ ...message, status: 'running' }).answer).toEqual([2])
   })
 })
