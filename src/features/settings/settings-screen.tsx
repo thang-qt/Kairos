@@ -1,9 +1,9 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { HugeiconsIcon } from '@hugeicons/react'
-import { Settings01Icon, SidebarLeft01Icon } from '@hugeicons/core-free-icons'
-import { ModelsProvidersPanel } from './components/models-providers-panel'
+import { SidebarLeft01Icon } from '@hugeicons/core-free-icons'
+import { ModelsSettingsPanel } from './components/models-settings-panel'
+import { ProvidersSettingsPanel } from './components/providers-settings-panel'
 import { AppearanceSettingsPanel } from './components/appearance-settings-panel'
-import { DisplaySettingsPanel } from './components/display-settings-panel'
 import { AccountSettingsPanel } from './components/account-settings-panel'
 import { WebToolsSettingsPanel } from './components/web-tools-settings-panel'
 import { MCPServersPanel } from './components/mcp-servers-panel'
@@ -23,36 +23,42 @@ import {
 
 export type SettingsTab =
   | 'account'
+  | 'appearance'
+  | 'providers'
   | 'models'
   | 'chat'
   | 'web-tools'
   | 'mcp'
-  | 'appearance'
-  | 'display'
 
 type SettingsScreenProps = {
   activeTab: SettingsTab
   onTabChange: (tab: SettingsTab) => void
 }
 
-function renderTabPanel(activeTab: SettingsTab) {
-  if (activeTab === 'account') {
-    return <AccountSettingsPanel />
+function renderTabPanel(
+  activeTab: SettingsTab,
+  onTabChange: (tab: SettingsTab) => void,
+) {
+  switch (activeTab) {
+    case 'appearance':
+      return <AppearanceSettingsPanel />
+    case 'providers':
+      return (
+        <ProvidersSettingsPanel onOpenModels={() => onTabChange('models')} />
+      )
+    case 'models':
+      return (
+        <ModelsSettingsPanel onOpenProviders={() => onTabChange('providers')} />
+      )
+    case 'chat':
+      return <ChatSettingsPanel />
+    case 'web-tools':
+      return <WebToolsSettingsPanel />
+    case 'mcp':
+      return <MCPServersPanel />
+    default:
+      return <AccountSettingsPanel />
   }
-  if (activeTab === 'models') {
-    return <ModelsProvidersPanel />
-  }
-  if (activeTab === 'chat') {
-    return <ChatSettingsPanel />
-  }
-  if (activeTab === 'mcp') return <MCPServersPanel />
-  if (activeTab === 'web-tools') {
-    return <WebToolsSettingsPanel />
-  }
-  if (activeTab === 'appearance') {
-    return <AppearanceSettingsPanel />
-  }
-  return <DisplaySettingsPanel />
 }
 
 type SettingsHeaderProps = {
@@ -80,16 +86,12 @@ function SettingsHeader({
         </Button>
       ) : null}
 
-      <div className="flex min-w-0 flex-1 items-center gap-2">
-        <HugeiconsIcon
-          icon={Settings01Icon}
-          size={20}
-          strokeWidth={1.5}
-          className="shrink-0 text-primary-700"
-        />
-        <h1 className="min-w-0 flex-1 truncate text-balance text-base text-primary-950">
-          {title}
-        </h1>
+      <div className="flex min-w-0 flex-1 items-center gap-1.5 text-sm">
+        <span className="text-primary-500">Settings</span>
+        <span aria-hidden className="text-primary-300">
+          /
+        </span>
+        <span className="truncate text-primary-900">{title}</span>
       </div>
     </div>
   )
@@ -152,9 +154,9 @@ export function SettingsScreen({
         />
       }
     >
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4 pt-20 sm:px-6 sm:pb-6">
-        <div className="mx-auto w-full max-w-5xl">
-          {renderTabPanel(activeTab)}
+      <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-16 pt-16 sm:px-8">
+        <div className="mx-auto w-full max-w-3xl">
+          {renderTabPanel(activeTab, onTabChange)}
         </div>
       </div>
     </AppShell>

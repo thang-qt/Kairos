@@ -1,8 +1,15 @@
 import { HugeiconsIcon } from '@hugeicons/react'
+import type { IconSvgElement } from '@hugeicons/react'
 import {
+  AiBrain01Icon,
   ArrowLeft01Icon,
-  Settings01Icon,
+  BubbleChatIcon,
+  CloudServerIcon,
+  Globe02Icon,
+  PaintBoardIcon,
+  PlugSocketIcon,
   SidebarLeft01Icon,
+  UserCircleIcon,
 } from '@hugeicons/core-free-icons'
 import { AnimatePresence, motion } from 'motion/react'
 import { Link, useNavigate } from '@tanstack/react-router'
@@ -18,42 +25,44 @@ type SettingsSidebarProps = {
   onToggleCollapse: () => void
 }
 
-const SETTINGS_TABS: Array<{
+type SettingsNavItem = {
   id: SettingsTab
   label: string
-}> = [
-  {
-    id: 'account',
-    label: 'Account',
-  },
-  {
-    id: 'models',
-    label: 'Models & Providers',
-  },
-  {
-    id: 'chat',
-    label: 'Chat',
-  },
-  {
-    id: 'web-tools',
-    label: 'Web Tools',
-  },
-  { id: 'mcp', label: 'MCP Servers' },
-  {
-    id: 'appearance',
-    label: 'Appearance',
-  },
-  {
-    id: 'display',
-    label: 'Display',
-  },
-]
+  icon: IconSvgElement
+}
+
+const SETTINGS_GROUPS: Array<{ label: string; items: Array<SettingsNavItem> }> =
+  [
+    {
+      label: 'General',
+      items: [
+        { id: 'account', label: 'Account', icon: UserCircleIcon },
+        { id: 'appearance', label: 'Appearance', icon: PaintBoardIcon },
+      ],
+    },
+    {
+      label: 'AI',
+      items: [
+        { id: 'providers', label: 'Providers', icon: CloudServerIcon },
+        { id: 'models', label: 'Models', icon: AiBrain01Icon },
+        { id: 'chat', label: 'Chat defaults', icon: BubbleChatIcon },
+      ],
+    },
+    {
+      label: 'Tools',
+      items: [
+        { id: 'web-tools', label: 'Web search', icon: Globe02Icon },
+        { id: 'mcp', label: 'MCP servers', icon: PlugSocketIcon },
+      ],
+    },
+  ]
+
+const SETTINGS_ITEMS = SETTINGS_GROUPS.flatMap((group) => group.items)
 
 export function getSettingsTabLabel(activeTab: SettingsTab) {
   return (
-    SETTINGS_TABS.find(function matchTab(tab) {
-      return tab.id === activeTab
-    })?.label ?? SETTINGS_TABS[0].label
+    SETTINGS_ITEMS.find((item) => item.id === activeTab)?.label ??
+    SETTINGS_ITEMS[0].label
   )
 }
 
@@ -112,7 +121,12 @@ export function SettingsSidebar({
           ) : null}
         </AnimatePresence>
 
-        <Button size="icon-sm" variant="ghost" onClick={onToggleCollapse}>
+        <Button
+          size="icon-sm"
+          variant="ghost"
+          onClick={onToggleCollapse}
+          aria-label="Collapse sidebar"
+        >
           <HugeiconsIcon icon={SidebarLeft01Icon} size={20} strokeWidth={1.5} />
         </Button>
       </motion.div>
@@ -126,41 +140,7 @@ export function SettingsSidebar({
             transition={transition}
             className="flex min-h-0 flex-1 flex-col"
           >
-            <div className="border-b border-primary-200 px-3 pb-4 pt-2">
-              <div className="flex items-center gap-2 px-1">
-                <HugeiconsIcon
-                  icon={Settings01Icon}
-                  size={20}
-                  strokeWidth={1.5}
-                  className="text-primary-700"
-                />
-                <h1 className="text-sm text-primary-900">Settings</h1>
-              </div>
-            </div>
-
-            <nav className="flex-1 space-y-1 overflow-y-auto px-2 py-3">
-              {SETTINGS_TABS.map(function renderTab(tab) {
-                return (
-                  <button
-                    key={tab.id}
-                    type="button"
-                    onClick={function handleSelectTab() {
-                      onTabChange(tab.id)
-                    }}
-                    className={cn(
-                      'flex w-full rounded-lg px-3 py-2 text-left text-sm transition-colors hover:bg-primary-50',
-                      activeTab === tab.id && 'bg-primary-50 text-primary-950',
-                    )}
-                  >
-                    <span className="truncate text-primary-900">
-                      {tab.label}
-                    </span>
-                  </button>
-                )
-              })}
-            </nav>
-
-            <div className="border-t border-primary-200 bg-primary-100 px-2 py-3">
+            <div className="px-2 pb-2">
               <Button
                 variant="ghost"
                 size="sm"
@@ -176,6 +156,42 @@ export function SettingsSidebar({
                 Back to chat
               </Button>
             </div>
+
+            <nav
+              aria-label="Settings"
+              className="flex-1 space-y-5 overflow-y-auto px-2 py-2"
+            >
+              {SETTINGS_GROUPS.map((group) => (
+                <div key={group.label} className="flex flex-col gap-px">
+                  <div className="px-1.5 pb-1 text-xs text-primary-500">
+                    {group.label}
+                  </div>
+                  {group.items.map((item) => {
+                    const active = activeTab === item.id
+                    return (
+                      <button
+                        key={item.id}
+                        type="button"
+                        aria-current={active ? 'page' : undefined}
+                        onClick={() => onTabChange(item.id)}
+                        className={cn(
+                          'flex h-8 w-full items-center gap-2 rounded-lg pl-1.5 pr-2 text-left text-sm font-[450] text-primary-950 transition-colors duration-0 hover:bg-primary-200',
+                          active && 'bg-primary-200',
+                        )}
+                      >
+                        <HugeiconsIcon
+                          icon={item.icon}
+                          size={20}
+                          strokeWidth={1.5}
+                          className="min-w-5 text-primary-700"
+                        />
+                        <span className="truncate">{item.label}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+              ))}
+            </nav>
           </motion.div>
         ) : null}
       </AnimatePresence>

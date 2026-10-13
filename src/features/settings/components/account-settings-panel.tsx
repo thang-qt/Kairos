@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import type { ChangeEvent, FormEvent, ReactNode } from 'react'
+import type { ChangeEvent, FormEvent } from 'react'
 import {
   ApiError,
   appQueryKeys,
@@ -10,13 +10,13 @@ import {
 } from '@/lib/app-api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { cn } from '@/lib/utils'
-
-type SettingsCardProps = {
-  title: string
-  description?: string
-  children: ReactNode
-}
+import {
+  SettingsField,
+  SettingsNotice,
+  SettingsPage,
+  SettingsRow,
+  SettingsSection,
+} from './settings-layout'
 
 type MessageTone = 'success' | 'error'
 
@@ -33,47 +33,6 @@ function getErrorMessage(error: unknown, fallback: string) {
     return error.message
   }
   return fallback
-}
-
-function SettingsCard({ title, description, children }: SettingsCardProps) {
-  return (
-    <section className="rounded-xl border border-primary-200 bg-surface p-5">
-      <div className="mb-4 max-w-2xl">
-        <h2 className="text-balance text-base font-medium text-primary-950">
-          {title}
-        </h2>
-        {description ? (
-          <p className="mt-1 text-pretty text-sm text-primary-500">
-            {description}
-          </p>
-        ) : null}
-      </div>
-      {children}
-    </section>
-  )
-}
-
-function FieldLabel({ htmlFor, label }: { htmlFor: string; label: string }) {
-  return (
-    <label htmlFor={htmlFor} className="text-sm text-primary-900">
-      {label}
-    </label>
-  )
-}
-
-function InlineMessage({ tone, message }: InlineMessageProps) {
-  return (
-    <div
-      className={cn(
-        'rounded-lg px-3 py-2 text-sm',
-        tone === 'success'
-          ? 'border border-primary-200 bg-primary-50 text-primary-800'
-          : 'border border-red-200 bg-red-50 text-red-700',
-      )}
-    >
-      {message}
-    </div>
-  )
 }
 
 function readInputValue(value: unknown) {
@@ -160,25 +119,21 @@ export function AccountSettingsPanel() {
   const currentEmail = currentUserQuery.data?.email ?? ''
 
   return (
-    <div className="space-y-4">
-      <SettingsCard
-        title="Account"
-        description="Your account credentials and sign-in details."
-      >
-        <div className="rounded-lg border border-primary-200 bg-primary-50/60 px-4 py-3">
-          <div className="text-xs text-primary-500">Current email</div>
-          <div className="mt-1 truncate text-sm text-primary-900 tabular-nums">
-            {currentEmail || 'Loading...'}
-          </div>
-        </div>
-      </SettingsCard>
+    <SettingsPage
+      title="Account"
+      description="Your sign-in details. Changing your password signs out your other sessions."
+    >
+      <SettingsSection title="Profile">
+        <SettingsRow label="Email" description="Used to sign in.">
+          <span className="truncate text-sm tabular-nums text-primary-700">
+            {currentEmail || 'Loading…'}
+          </span>
+        </SettingsRow>
+      </SettingsSection>
 
-      <SettingsCard
-        title="Change email"
-        description="Update your account email address."
-      >
+      <SettingsSection title="Change email">
         <form
-          className="space-y-3"
+          className="flex flex-col gap-4 p-4"
           onSubmit={function handleSubmit(event: FormEvent<HTMLFormElement>) {
             event.preventDefault()
             setEmailMessage(null)
@@ -205,9 +160,8 @@ export function AccountSettingsPanel() {
             })
           }}
         >
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div className="space-y-1.5">
-              <FieldLabel htmlFor="next-email" label="New email" />
+          <div className="grid gap-4 sm:grid-cols-2">
+            <SettingsField label="New email" htmlFor="next-email">
               <Input
                 id="next-email"
                 nativeInput
@@ -221,12 +175,11 @@ export function AccountSettingsPanel() {
                   setNextEmail(readInputValue(event))
                 }}
               />
-            </div>
-            <div className="space-y-1.5">
-              <FieldLabel
-                htmlFor="confirm-email-password"
-                label="Current password"
-              />
+            </SettingsField>
+            <SettingsField
+              label="Current password"
+              htmlFor="confirm-email-password"
+            >
               <Input
                 id="confirm-email-password"
                 nativeInput
@@ -239,25 +192,26 @@ export function AccountSettingsPanel() {
                   setEmailPassword(readInputValue(event))
                 }}
               />
-            </div>
+            </SettingsField>
           </div>
 
-          {emailMessage ? <InlineMessage {...emailMessage} /> : null}
+          {emailMessage ? (
+            <SettingsNotice tone={emailMessage.tone}>
+              {emailMessage.message}
+            </SettingsNotice>
+          ) : null}
 
           <div className="flex justify-end">
-            <Button type="submit" disabled={emailMutation.isPending}>
-              {emailMutation.isPending ? 'Updating...' : 'Update email'}
+            <Button type="submit" size="sm" disabled={emailMutation.isPending}>
+              {emailMutation.isPending ? 'Updating…' : 'Update email'}
             </Button>
           </div>
         </form>
-      </SettingsCard>
+      </SettingsSection>
 
-      <SettingsCard
-        title="Change password"
-        description="Update your password to keep your account secure."
-      >
+      <SettingsSection title="Change password">
         <form
-          className="space-y-3"
+          className="flex flex-col gap-4 p-4"
           onSubmit={function handleSubmit(event: FormEvent<HTMLFormElement>) {
             event.preventDefault()
             setPasswordMessage(null)
@@ -292,24 +246,22 @@ export function AccountSettingsPanel() {
             })
           }}
         >
-          <div className="grid gap-3 sm:grid-cols-3">
-            <div className="space-y-1.5">
-              <FieldLabel htmlFor="current-password" label="Current password" />
-              <Input
-                id="current-password"
-                nativeInput
-                type="password"
-                autoComplete="current-password"
-                value={currentPassword}
-                onChange={function handleChange(
-                  event: ChangeEvent<HTMLInputElement>,
-                ) {
-                  setCurrentPassword(readInputValue(event))
-                }}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <FieldLabel htmlFor="new-password" label="New password" />
+          <SettingsField label="Current password" htmlFor="current-password">
+            <Input
+              id="current-password"
+              nativeInput
+              type="password"
+              autoComplete="current-password"
+              value={currentPassword}
+              onChange={function handleChange(
+                event: ChangeEvent<HTMLInputElement>,
+              ) {
+                setCurrentPassword(readInputValue(event))
+              }}
+            />
+          </SettingsField>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <SettingsField label="New password" htmlFor="new-password">
               <Input
                 id="new-password"
                 nativeInput
@@ -322,12 +274,11 @@ export function AccountSettingsPanel() {
                   setNewPassword(readInputValue(event))
                 }}
               />
-            </div>
-            <div className="space-y-1.5">
-              <FieldLabel
-                htmlFor="confirm-new-password"
-                label="Confirm new password"
-              />
+            </SettingsField>
+            <SettingsField
+              label="Confirm new password"
+              htmlFor="confirm-new-password"
+            >
               <Input
                 id="confirm-new-password"
                 nativeInput
@@ -340,18 +291,26 @@ export function AccountSettingsPanel() {
                   setConfirmPassword(readInputValue(event))
                 }}
               />
-            </div>
+            </SettingsField>
           </div>
 
-          {passwordMessage ? <InlineMessage {...passwordMessage} /> : null}
+          {passwordMessage ? (
+            <SettingsNotice tone={passwordMessage.tone}>
+              {passwordMessage.message}
+            </SettingsNotice>
+          ) : null}
 
           <div className="flex justify-end">
-            <Button type="submit" disabled={passwordMutation.isPending}>
-              {passwordMutation.isPending ? 'Updating...' : 'Update password'}
+            <Button
+              type="submit"
+              size="sm"
+              disabled={passwordMutation.isPending}
+            >
+              {passwordMutation.isPending ? 'Updating…' : 'Update password'}
             </Button>
           </div>
         </form>
-      </SettingsCard>
-    </div>
+      </SettingsSection>
+    </SettingsPage>
   )
 }

@@ -2,6 +2,7 @@ import type { ProviderModel } from '@/lib/app-api'
 import type { ConversationAdvancedSettings } from '../conversation-settings'
 import type { ReasoningEffort } from '../types'
 import { Input } from '@/components/ui/input'
+import { Select } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import {
   formatContextWindow,
@@ -303,34 +304,26 @@ export function ModelSettingsPanel({
               })
             }}
           >
-            <label className="grid grid-cols-[minmax(0,1fr)_8rem] items-center gap-3 text-sm text-primary-800">
+            <div className="grid grid-cols-[minmax(0,1fr)_10rem] items-center gap-3 text-sm text-primary-800">
               <span className="truncate">Effort</span>
-              <select
-                value={effort ?? ''}
-                onChange={function handleEffortChange(event) {
-                  onChange({
-                    advanced: {
-                      ...advanced,
-                      reasoningEffort: event.target.value as ReasoningEffort,
-                    },
-                  })
-                }}
-                className="h-8 rounded-lg border border-primary-200 bg-surface px-2 text-sm text-primary-900 outline-none focus:border-primary-500"
-                aria-label="Reasoning effort"
-              >
-                {effortOptions.map(function option(value) {
-                  return (
-                    <option key={value} value={value}>
-                      {value === 'none'
-                        ? 'None (disable thinking)'
-                        : value === 'xhigh'
-                          ? 'Extra high'
-                          : value[0].toUpperCase() + value.slice(1)}
-                    </option>
-                  )
-                })}
-              </select>
-            </label>
+              <Select<ReasoningEffort>
+                label="Reasoning effort"
+                className="h-8"
+                value={effort ?? effortOptions[0]}
+                options={effortOptions.map((option) => ({
+                  value: option,
+                  label:
+                    option === 'none'
+                      ? 'None (disable thinking)'
+                      : option === 'xhigh'
+                        ? 'Extra high'
+                        : option[0].toUpperCase() + option.slice(1),
+                }))}
+                onValueChange={(reasoningEffort) =>
+                  onChange({ advanced: { ...advanced, reasoningEffort } })
+                }
+              />
+            </div>
           </SettingCard>
 
           <SettingCard

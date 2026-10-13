@@ -5,6 +5,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, expect, it, vi } from 'vitest'
@@ -89,12 +90,18 @@ it('automatically discovers and enables new tools, supports policy changes, disa
       <MCPServersPanel />
     </QueryClientProvider>,
   )
-  fireEvent.change(screen.getByLabelText('MCP preset'), {
-    target: { value: 'github-readonly' },
+  fireEvent.click(await screen.findByRole('combobox', { name: 'MCP preset' }))
+  const readOnlyPreset = await screen.findByRole('option', {
+    name: 'GitHub — read-only',
   })
-  expect(
-    (screen.getByLabelText('MCP endpoint') as HTMLInputElement).value,
-  ).toBe('https://api.githubcopilot.com/mcp/readonly')
+  // Base UI commits the highlighted item, so hover it before clicking.
+  fireEvent.mouseMove(readOnlyPreset)
+  fireEvent.click(readOnlyPreset)
+  await waitFor(function presetApplied() {
+    expect(
+      (screen.getByLabelText('MCP endpoint') as HTMLInputElement).value,
+    ).toBe('https://api.githubcopilot.com/mcp/readonly')
+  })
   fireEvent.change(screen.getByLabelText('MCP token'), {
     target: { value: 'fixture-pat' },
   })
@@ -106,14 +113,21 @@ it('automatically discovers and enables new tools, supports policy changes, disa
     name: 'Enable tool GitHub / get_file',
   })
   expect(toggle.getAttribute('aria-checked')).toBe('true')
-  fireEvent.change(screen.getByLabelText('Approval for GitHub / get_file'), {
-    target: { value: 'allow' },
+  const approval = screen.getByRole('radiogroup', {
+    name: 'Approval for GitHub / get_file',
   })
+  fireEvent.click(within(approval).getByRole('radio', { name: 'Always allow' }))
   await waitFor(function allowed() {
     expect(tool.approvalPolicy).toBe('allow')
   })
-  await screen.findByRole('button', { name: 'Reset approvals' })
-  fireEvent.click(screen.getByRole('button', { name: 'Reset approvals' }))
+  await waitFor(function updated() {
+    expect(
+      within(approval)
+        .getByRole('radio', { name: 'Always allow' })
+        .getAttribute('aria-checked'),
+    ).toBe('true')
+  })
+  fireEvent.click(within(approval).getByRole('radio', { name: 'Ask first' }))
   await waitFor(function reset() {
     expect(tool.approvalPolicy).toBe('always')
   })
@@ -137,7 +151,7 @@ it('automatically discovers and enables new tools, supports policy changes, disa
     target: { value: 'replacement-pat' },
   })
   fireEvent.click(screen.getByRole('button', { name: 'Save changes' }))
-  await screen.findByRole('heading', { name: 'My GitHub' })
+  await screen.findByText('My GitHub')
   expect(
     writes.some(function replaced(write) {
       return write.method === 'PATCH' && write.body.token === 'replacement-pat'
@@ -145,6 +159,7 @@ it('automatically discovers and enables new tools, supports policy changes, disa
   ).toBe(true)
   expect(screen.queryByDisplayValue('replacement-pat')).toBeNull()
   fireEvent.click(screen.getByRole('button', { name: 'Delete' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Delete server' }))
   await waitFor(function removed() {
     expect(screen.queryByRole('button', { name: 'Test connection' })).toBeNull()
   })
@@ -168,10 +183,10 @@ it('supports anonymous custom servers and displays safe connection errors', asyn
       <MCPServersPanel />
     </QueryClientProvider>,
   )
-  expect(screen.queryByLabelText('MCP token')).toBeNull()
-  fireEvent.change(screen.getByLabelText('MCP server name'), {
+  fireEvent.change(await screen.findByLabelText('MCP server name'), {
     target: { value: 'Public' },
   })
+  expect(screen.queryByLabelText('MCP token')).toBeNull()
   fireEvent.change(screen.getByLabelText('MCP endpoint'), {
     target: { value: 'https://example.com/mcp' },
   })
