@@ -63,7 +63,7 @@ function ChatContainerShell({
       />
       {overlay}
       <div className="relative mx-auto w-full max-w-full px-5 sm:max-w-[768px] sm:min-w-[400px] ">
-        <div className="pointer-events-none absolute bottom-10 right-10 z-50">
+        <div className="pointer-events-none absolute bottom-[calc(var(--chat-composer-height,0px)+1rem)] right-10 z-50">
           <ScrollButton scrollRef={scrollRef} />
         </div>
       </div>

@@ -132,99 +132,107 @@ function ChatComposerComponent({
 
   return (
     <div
-      className="mx-auto w-full max-w-full px-5 sm:max-w-[768px] sm:min-w-[400px] relative pb-3"
+      className="pointer-events-none absolute inset-x-0 bottom-0 z-10"
       ref={wrapperRef}
     >
-      <TooltipProvider>
-        <PromptInput
-          valueRef={valueRef}
-          setValueRef={setValueRef}
-          onSubmit={handleSubmit}
-          isLoading={isLoading}
-          disabled={disabled}
-          className="flex-col gap-0 py-0"
-        >
-          {attachments.length > 0 && (
-            <AttachmentPreviewList
-              attachments={attachments}
-              onRemove={handleRemoveAttachment}
-            />
-          )}
-          <div className="flex items-end gap-1 px-2 py-[9px]">
-            <PromptInputAction
-              tooltip="Attach image"
-              render={(triggerProps) => (
-                <AttachmentButton
-                  onFileSelect={handleFileSelect}
-                  disabled={disabled}
-                  buttonProps={{
-                    ...triggerProps,
-                    className: cn(
-                      'rounded-full shrink-0',
-                      triggerProps.className,
-                    ),
-                  }}
-                />
-              )}
-            />
-            <PromptInputTextarea
-              placeholder="Type a message…"
-              inputRef={promptRef}
-              className="pl-2 pr-1 flex-1"
-            />
-            {canStop && onStop ? (
-              <PromptInputAction
-                tooltip="Stop response"
-                render={(triggerProps) => (
-                  <Button
-                    {...triggerProps}
-                    onClick={(event) => {
-                      triggerProps.onClick?.(event)
-                      onStop()
-                    }}
-                    size="sm"
-                    variant="outline"
-                    className={cn(
-                      'rounded-full shrink-0 px-3',
-                      triggerProps.className,
-                    )}
-                    aria-label="Stop response"
-                  >
-                    Stop
-                  </Button>
-                )}
-              />
-            ) : (
-              <PromptInputAction
-                tooltip="Send message"
-                render={(triggerProps) => (
-                  <Button
-                    {...triggerProps}
-                    onClick={(event) => {
-                      triggerProps.onClick?.(event)
-                      handleSubmit()
-                    }}
-                    disabled={submitDisabled || triggerProps.disabled}
-                    size="icon-sm"
-                    variant="default"
-                    className={cn(
-                      'rounded-full shrink-0',
-                      triggerProps.className,
-                    )}
-                    aria-label="Send message"
-                  >
-                    <HugeiconsIcon
-                      icon={ArrowUp02Icon}
-                      size={20}
-                      strokeWidth={1.5}
-                    />
-                  </Button>
-                )}
+      {/* Messages fade out behind the lower half of the composer so nothing
+          reads crisply in the gap beneath it. */}
+      <div
+        aria-hidden
+        className="absolute inset-x-0 bottom-0 top-1/3 bg-linear-to-t from-surface from-50% to-transparent"
+      />
+      <div className="relative mx-auto w-full max-w-full px-5 pb-3 sm:max-w-[768px] sm:min-w-[400px]">
+        <TooltipProvider>
+          <PromptInput
+            valueRef={valueRef}
+            setValueRef={setValueRef}
+            onSubmit={handleSubmit}
+            isLoading={isLoading}
+            disabled={disabled}
+            className="pointer-events-auto flex-col gap-0 bg-surface/70 py-0 backdrop-blur-xl backdrop-saturate-150"
+          >
+            {attachments.length > 0 && (
+              <AttachmentPreviewList
+                attachments={attachments}
+                onRemove={handleRemoveAttachment}
               />
             )}
-          </div>
-        </PromptInput>
-      </TooltipProvider>
+            <div className="flex items-end gap-1 px-2 py-[9px]">
+              <PromptInputAction
+                tooltip="Attach image"
+                render={(triggerProps) => (
+                  <AttachmentButton
+                    onFileSelect={handleFileSelect}
+                    disabled={disabled}
+                    buttonProps={{
+                      ...triggerProps,
+                      className: cn(
+                        'rounded-full shrink-0',
+                        triggerProps.className,
+                      ),
+                    }}
+                  />
+                )}
+              />
+              <PromptInputTextarea
+                placeholder="Type a message…"
+                inputRef={promptRef}
+                className="pl-2 pr-1 flex-1"
+              />
+              {canStop && onStop ? (
+                <PromptInputAction
+                  tooltip="Stop response"
+                  render={(triggerProps) => (
+                    <Button
+                      {...triggerProps}
+                      onClick={(event) => {
+                        triggerProps.onClick?.(event)
+                        onStop()
+                      }}
+                      size="sm"
+                      variant="outline"
+                      className={cn(
+                        'rounded-full shrink-0 px-3',
+                        triggerProps.className,
+                      )}
+                      aria-label="Stop response"
+                    >
+                      Stop
+                    </Button>
+                  )}
+                />
+              ) : (
+                <PromptInputAction
+                  tooltip="Send message"
+                  render={(triggerProps) => (
+                    <Button
+                      {...triggerProps}
+                      onClick={(event) => {
+                        triggerProps.onClick?.(event)
+                        handleSubmit()
+                      }}
+                      disabled={submitDisabled || triggerProps.disabled}
+                      size="icon-sm"
+                      variant="default"
+                      className={cn(
+                        'rounded-full shrink-0',
+                        triggerProps.className,
+                      )}
+                      aria-label="Send message"
+                    >
+                      <HugeiconsIcon
+                        icon={ArrowUp02Icon}
+                        size={20}
+                        strokeWidth={1.5}
+                      />
+                    </Button>
+                  )}
+                />
+              )}
+            </div>
+          </PromptInput>
+        </TooltipProvider>
+      </div>
     </div>
   )
 }

@@ -6,21 +6,19 @@ import {
   textFromMessage,
 } from '../utils'
 import { MessageActionsBar } from './message-actions-bar'
-import { AssistantWork } from './assistant-work'
-import type {
-  ConversationTurn,
-  MessageContent as MessageContentPart,
-} from '../types'
+import { ActivityChip } from './activity-chip'
+import { latestActivityLabel } from './activity-part'
+import type { ConversationTurn } from '../types'
 import { Message, MessageContent } from '@/components/prompt-kit/message'
-import { Thinking } from '@/components/prompt-kit/thinking'
 import { Tool } from '@/components/prompt-kit/tool'
 import { useChatSettingsStore } from '@/app/preferences/app-preferences'
 import { cn } from '@/lib/utils'
 import { MessageItemEditor } from './message-item-editor'
-import { ToolStepItem, type ToolStep } from './tool-step-item'
 import {
+  activityKeyFromMessage,
+  isAssistantStreaming,
+  splitAssistantActivity,
   mapStandaloneToolResultToToolPart,
-  mapToolCallToToolPart,
   assistantPartRenderOrder,
   imagesFromMessage,
   modelFromMessage,
@@ -30,7 +28,6 @@ import {
   toolResultSignature,
   runtimeToolDetailsSignature,
 } from './message-item-utils'
-import { toolResultLookupKey } from './chat-message-list-utils'
 
 export {
   mapStandaloneToolResultToToolPart,
@@ -57,27 +54,8 @@ type MessageItemProps = {
   previousMessageId?: string
   onEdit?: (messageId: string, currentText: string) => void | Promise<void>
   onDelete?: (messageId: string, currentText: string) => void
-}
-
-type ReasoningBlockProps = {
-  content: string
-  isThinking: boolean
-}
-
-function ReasoningBlock({ content, isThinking }: ReasoningBlockProps) {
-  const reasoningCollapseMode = useChatSettingsStore(
-    (state) => state.settings.reasoningCollapseMode,
-  )
-
-  return (
-    <div className="w-full max-w-[900px]">
-      <Thinking
-        content={content}
-        isThinking={isThinking}
-        reasoningCollapseMode={reasoningCollapseMode}
-      />
-    </div>
-  )
+  activitySelected?: boolean
+  onOpenActivity?: (activityKey: string) => void
 }
 
 function MessageItemComponent({
@@ -95,6 +73,8 @@ function MessageItemComponent({
   previousMessageId,
   onEdit,
   onDelete,
+  activitySelected = false,
+  onOpenActivity,
 }: MessageItemProps) {
   const showReasoningBlocks = useChatSettingsStore(
     (state) => state.settings.showReasoningBlocks,
@@ -119,9 +99,7 @@ function MessageItemComponent({
     : null
 
   const assistantParts = Array.isArray(message.content) ? message.content : []
-  const assistantIsStreaming =
-    ['queued', 'preparing', 'running'].includes(message.status ?? '') ||
-    Boolean(message.__streamRunId)
+  const assistantIsStreaming = isAssistantStreaming(message)
   function handleStartEdit() {
     setEditDraft(text)
     setEditing(true)
@@ -148,81 +126,10 @@ function MessageItemComponent({
     }
   }
 
-  const toolCount = assistantParts.filter(function tool(part) {
-    return part.type === 'toolCall'
-  }).length
-  const finalTextIndex = assistantParts.findLastIndex(function text(part) {
-    return part.type === 'text'
-  })
-  const lastToolIndex = assistantParts.findLastIndex(function tool(part) {
-    return part.type === 'toolCall'
-  })
-  const answerIndex =
-    finalTextIndex > lastToolIndex ? finalTextIndex : assistantParts.length
-  const durationMs = (message.steps ?? []).reduce(function sum(total, step) {
-    const duration = step.role === 'toolResult' ? step.details?.durationMs : 0
-    return (
-      total +
-      (typeof duration === 'number' && Number.isFinite(duration) ? duration : 0)
-    )
-  }, 0)
-
-  function renderAssistantPart(part: MessageContentPart, index: number) {
-    if (part.type === 'thinking') {
-      const thinking = String(part.thinking ?? '')
-      if (!thinking || !showReasoningBlocks) return null
-      const isThinking = assistantIsStreaming
-      return (
-        <ReasoningBlock
-          key={`thinking-${index}`}
-          content={thinking}
-          isThinking={isThinking}
-        />
-      )
-    }
-
-    if (part.type === 'text') {
-      const chunk = String(part.text ?? '')
-      if (!chunk.trim()) return null
-      return (
-        <Message key={`text-${index}`}>
-          <MessageContent
-            markdown
-            className="text-primary-900 bg-transparent w-full"
-          >
-            {chunk}
-          </MessageContent>
-        </Message>
-      )
-    }
-
-    if (part.type !== 'toolCall') return null
-    if (!showToolMessages) return null
-
-    const resultMessage = part.id
-      ? (toolResultsByCallId?.get(toolResultLookupKey(message, part.id)) ??
-        toolResultsByCallId?.get(part.id))
-      : undefined
-    const step: ToolStep =
-      (part.name === 'web_search' || part.name === 'web_fetch') &&
-      part.status === undefined
-        ? {
-            kind: 'web',
-            key: `web-tool-${part.id || index}`,
-            message: resultMessage ?? message,
-            toolCallIds: part.id ? [part.id] : undefined,
-          }
-        : {
-            kind: 'tool',
-            key: `tool-${part.id || index}`,
-            toolPart: mapToolCallToToolPart(part, resultMessage, message),
-          }
-    return (
-      <div key={step.key} className="w-full max-w-[900px] mt-1">
-        <ToolStepItem step={step} />
-      </div>
-    )
-  }
+  const activity = isAssistant
+    ? splitAssistantActivity(message, showReasoningBlocks, showToolMessages)
+    : null
+  const activityKey = activityKeyFromMessage(message)
 
   return (
     <div
@@ -295,26 +202,48 @@ function MessageItemComponent({
         </div>
       ) : null}
 
-      {isAssistant &&
-        (toolCount > 0 && showToolMessages ? (
-          <>
-            <AssistantWork
-              key={`${message.runId ?? ''}:${message.revision ?? 0}`}
-              streaming={assistantIsStreaming}
-              durationMs={durationMs}
-              toolCount={toolCount}
-            >
-              {assistantParts.slice(0, answerIndex).map(renderAssistantPart)}
-            </AssistantWork>
-            {assistantParts
-              .slice(answerIndex)
-              .map(function answer(part, index) {
-                return renderAssistantPart(part, answerIndex + index)
-              })}
-          </>
-        ) : (
-          assistantParts.map(renderAssistantPart)
-        ))}
+      {activity && activity.activityIndexes.length > 0 ? (
+        <ActivityChip
+          streaming={assistantIsStreaming}
+          durationMs={activity.durationMs}
+          toolCount={activity.toolCount}
+          hasThinking={activity.hasThinking}
+          startedAt={message.timestamp}
+          latest={
+            assistantIsStreaming
+              ? latestActivityLabel(
+                  message,
+                  activity.activityIndexes,
+                  toolResultsByCallId,
+                )
+              : undefined
+          }
+          selected={activitySelected}
+          onOpen={
+            onOpenActivity && activityKey
+              ? () => onOpenActivity(activityKey)
+              : undefined
+          }
+        />
+      ) : null}
+
+      {activity
+        ? assistantParts.map(function renderAnswerPart(part, index) {
+            if (part.type !== 'text' || !activity.answerIndexes.has(index)) {
+              return null
+            }
+            return (
+              <Message key={`text-${index}`}>
+                <MessageContent
+                  markdown
+                  className="text-primary-900 bg-transparent w-full"
+                >
+                  {String(part.text ?? '')}
+                </MessageContent>
+              </Message>
+            )
+          })
+        : null}
 
       {isAssistant &&
       ['aborted', 'error', 'interrupted'].includes(message.status ?? '') ? (
@@ -389,6 +318,8 @@ export function areMessagesEqual(
   if (prevProps.previousMessageId !== nextProps.previousMessageId) return false
   if (prevProps.onEdit !== nextProps.onEdit) return false
   if (prevProps.onDelete !== nextProps.onDelete) return false
+  if (prevProps.activitySelected !== nextProps.activitySelected) return false
+  if (prevProps.onOpenActivity !== nextProps.onOpenActivity) return false
   if (
     (prevProps.message.role || 'assistant') !==
     (nextProps.message.role || 'assistant')

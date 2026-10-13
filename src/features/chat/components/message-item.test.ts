@@ -9,6 +9,7 @@ import {
   areMessagesEqual,
 } from './message-item'
 import { mapToolCallToToolPart } from './message-item-utils'
+import { ActivitySidebar } from './activity-sidebar'
 import type { ConversationTurn } from '../types'
 
 const modelLabelById = new Map([
@@ -160,7 +161,7 @@ describe('modelFromMessage', function () {
 })
 
 describe('MessageItem', function () {
-  it('renders active tool work in an expandable chain', function () {
+  it('moves active tool work into the activity sidebar', function () {
     const message: ConversationTurn = {
       role: 'assistant',
       model: 'gpt-4.1',
@@ -202,17 +203,28 @@ describe('MessageItem', function () {
       ],
     ])
 
+    const runningMessage = { ...message, status: 'running' }
     const html = renderToStaticMarkup(
       React.createElement(MessageItem, {
-        message: { ...message, status: 'running' },
+        message: runningMessage,
         toolResultsByCallId,
         modelLabelById,
       }),
     )
 
     expect(html).toContain('GPT-4.1')
-    expect(html).toContain('Calculating: 2 + 2')
-    expect(html).toContain('Calculating: 3 + 3')
+    expect(html).toContain('Working…')
+    expect(html).not.toContain('Calculating: 2 + 2')
+
+    const activityHtml = renderToStaticMarkup(
+      React.createElement(ActivitySidebar, {
+        isOpen: true,
+        messages: [runningMessage],
+        onClose() {},
+      }),
+    )
+    expect(activityHtml).toContain('Calculating: 2 + 2')
+    expect(activityHtml).toContain('Calculating: 3 + 3')
   })
 
   it('preserves user message line breaks in the rendered bubble', function () {
