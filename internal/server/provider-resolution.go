@@ -10,6 +10,34 @@ func (service *ProviderService) ResolveGenerationTarget(
 	userID string,
 	requestedModel string,
 ) (resolvedProvider, ProviderModel, UserPreferences, error) {
+	if requestedModel != "" {
+		visible, preferences, err := service.listVisibleResolvedProviders(ctx, userID)
+		if err != nil {
+			return resolvedProvider{}, ProviderModel{}, preferences, err
+		}
+		var chosen *resolvedProvider
+		for index := range visible {
+			if strings.HasPrefix(requestedModel, visible[index].Record.Ref+":") {
+				chosen = &visible[index]
+				break
+			}
+		}
+		if chosen == nil && len(visible) == 1 {
+			chosen = &visible[0]
+		}
+		if chosen != nil {
+			models, _, _, err := service.loadCachedModels(ctx, userID, visible)
+			if err != nil {
+				return resolvedProvider{}, ProviderModel{}, preferences, err
+			}
+			for _, model := range models {
+				if model.ProviderRef == chosen.Record.Ref && modelMatchesRequestedValue(model, requestedModel) {
+					return *chosen, service.enrichModel(ctx, userID, model), preferences, nil
+				}
+			}
+			return *chosen, service.enrichModel(ctx, userID, ProviderModel{ID: modelIDFromRequestedValue(requestedModel), Object: "model", ProviderRef: chosen.Record.Ref, ProviderLabel: chosen.Record.Label}), preferences, nil
+		}
+	}
 	models, preferences, err := service.ListModels(ctx, userID)
 	if err != nil {
 		return resolvedProvider{}, ProviderModel{}, UserPreferences{}, err
@@ -116,6 +144,7 @@ func (service *ProviderService) resolveProvider(
 				Ref:               "system:" + service.system.ID,
 				Owner:             "system",
 				Kind:              service.system.Kind,
+				UseResponsesAPI:   service.system.UseResponsesAPI,
 				Label:             service.system.Label,
 				BaseURL:           service.system.BaseURL,
 				Enabled:           service.system.Enabled,

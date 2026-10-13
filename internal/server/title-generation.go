@@ -18,14 +18,20 @@ func shouldAutoGenerateSessionTitle(session sessionRecord) bool {
 	return true
 }
 
-func (service *ChatRunService) maybeGenerateSessionTitle(
+func (service *AgentRuntime) maybeGenerateSessionTitle(
 	session sessionRecord,
-	input SendMessageInput,
+	input SubmitTurnInput,
 	userMessage map[string]any,
 	preferences UserPreferences,
+	revision int64,
 ) {
+	if service.workerContext == nil || service.workerContext.Err() != nil {
+		return
+	}
+	service.workerWG.Add(1)
 	go func() {
-		titleCtx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
+		defer service.workerWG.Done()
+		titleCtx, cancel := context.WithTimeout(service.workerContext, 12*time.Second)
 		defer cancel()
 
 		if err := service.generateSessionTitle(
@@ -34,14 +40,19 @@ func (service *ChatRunService) maybeGenerateSessionTitle(
 			input,
 			userMessage,
 			preferences,
+			revision,
 		); err != nil {
+			if service.workerContext.Err() != nil {
+				return
+			}
 			fallbackTitle := deriveTitleFromMessage(userMessage)
 			if fallbackTitle != "" {
-				summary, updated, fallbackErr := service.chat.UpdateSessionTitleIfEmpty(
+				_, fallbackErr := service.conversations.UpdateSessionTitleIfEmptyAtRevision(
 					context.Background(),
 					session.ID,
 					session.UserID,
 					fallbackTitle,
+					revision,
 				)
 				if fallbackErr != nil {
 					log.Printf(
@@ -50,8 +61,6 @@ func (service *ChatRunService) maybeGenerateSessionTitle(
 						session.FriendlyID,
 						fallbackErr,
 					)
-				} else if updated {
-					service.publishTitleUpdated(session.ID, summary)
 				}
 			}
 			log.Printf(
@@ -64,12 +73,13 @@ func (service *ChatRunService) maybeGenerateSessionTitle(
 	}()
 }
 
-func (service *ChatRunService) generateSessionTitle(
+func (service *AgentRuntime) generateSessionTitle(
 	ctx context.Context,
 	session sessionRecord,
-	input SendMessageInput,
+	input SubmitTurnInput,
 	userMessage map[string]any,
 	preferences UserPreferences,
+	revision int64,
 ) error {
 	if !preferences.AutoGenerateTitle {
 		return nil
@@ -131,34 +141,8 @@ func (service *ChatRunService) generateSessionTitle(
 		return nil
 	}
 
-	summary, updated, err := service.chat.UpdateSessionTitleIfEmpty(
-		ctx,
-		session.ID,
-		session.UserID,
-		title,
-	)
-	if err != nil {
-		return err
-	}
-	if updated {
-		service.publishTitleUpdated(session.ID, summary)
-	}
-	return nil
-}
-
-func (service *ChatRunService) publishTitleUpdated(
-	sessionID string,
-	session SessionSummary,
-) {
-	service.broker.Publish(
-		sessionID,
-		ChatEvent{
-			SessionKey: session.Key,
-			FriendlyID: session.FriendlyID,
-			State:      "title",
-			Session:    &session,
-		},
-	)
+	_, err = service.conversations.UpdateSessionTitleIfEmptyAtRevision(ctx, session.ID, session.UserID, title, revision)
+	return err
 }
 
 func buildTitleGenerationMessages(userMessage map[string]any) []ProviderMessage {

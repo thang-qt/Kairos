@@ -3,9 +3,9 @@
 import { act, renderHook } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { useChatScrollControl } from './use-chat-scroll-control'
-import type { GatewayMessage } from '../types'
+import type { ConversationTurn } from '../types'
 
-function createMessages(count: number): Array<GatewayMessage> {
+function createMessages(count: number): Array<ConversationTurn> {
   return Array.from({ length: count }, function createMessage(_, index) {
     return {
       id: `message-${index}`,

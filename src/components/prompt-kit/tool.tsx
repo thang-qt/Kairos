@@ -10,6 +10,7 @@ import {
 import { Button } from '@/components/ui/button'
 
 export type ToolPart = {
+  displayName?: string
   type: string
   state:
     | 'input-streaming'

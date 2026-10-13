@@ -407,7 +407,7 @@ func newTestApp(t *testing.T, override func(config *Config)) *testApp {
 		AllowUserCustomProviderURL: true,
 		AllowUserDisableSystem:     true,
 		AllowUserModelSync:         true,
-		SystemProviderKind:         openRouterProviderKind,
+		SystemProviderKind:         openAIProviderKind,
 		SystemProviderModelSync:    true,
 	}
 	if override != nil {
@@ -418,6 +418,7 @@ func newTestApp(t *testing.T, override func(config *Config)) *testApp {
 	if err != nil {
 		t.Fatalf("NewApp() error = %v", err)
 	}
+	app.providers.catalog.url = ""
 	t.Cleanup(func() {
 		if closeErr := app.Close(); closeErr != nil {
 			t.Fatalf("Close() error = %v", closeErr)

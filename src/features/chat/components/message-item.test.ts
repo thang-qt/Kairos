@@ -9,10 +9,11 @@ import {
   areMessagesEqual,
 } from './message-item'
 import {
+  splitAssistantActivity,
   mapToolCallToToolPart,
-  toolChainMessagesSignature,
 } from './message-item-utils'
-import type { GatewayMessage } from '../types'
+import { ActivitySidebar } from './activity-sidebar'
+import type { ConversationTurn } from '../types'
 
 const modelLabelById = new Map([
   ['kairos-code', 'Kairos Code'],
@@ -21,7 +22,7 @@ const modelLabelById = new Map([
 
 describe('assistantPartRenderOrder', function () {
   it('keeps assistant content order from message parts', function () {
-    const message: GatewayMessage = {
+    const message: ConversationTurn = {
       role: 'assistant',
       content: [
         { type: 'thinking', thinking: 'first' },
@@ -45,7 +46,7 @@ describe('assistantPartRenderOrder', function () {
   })
 
   it('ignores image content when classifying assistant render parts', function () {
-    const message: GatewayMessage = {
+    const message: ConversationTurn = {
       role: 'assistant',
       content: [
         { type: 'text', text: 'first' },
@@ -72,38 +73,13 @@ describe('assistantPartRenderOrder', function () {
   })
 })
 
-describe('toolChainMessagesSignature', function () {
-  it('changes when intermediate assistant prose changes', function () {
-    const first: GatewayMessage = {
-      id: 'round-1',
-      role: 'assistant',
-      runId: 'run-1',
-      content: [
-        { type: 'text', text: 'I will search first.' },
-        { type: 'toolCall', id: 'call-1', name: 'web_search' },
-      ],
-    }
-    const second: GatewayMessage = {
-      ...first,
-      content: [
-        { type: 'text', text: 'I will search a different thing.' },
-        { type: 'toolCall', id: 'call-1', name: 'web_search' },
-      ],
-    }
-
-    expect(toolChainMessagesSignature([first], undefined)).not.toBe(
-      toolChainMessagesSignature([second], undefined),
-    )
-  })
-})
-
-describe('Hermes tool progress', function () {
+describe('provider tool progress', function () {
   it('shows a running remote tool as processing', function () {
     expect(
       mapToolCallToToolPart(
         {
           type: 'toolCall',
-          id: 'call-hermes',
+          id: 'call-provider',
           name: 'terminal',
           arguments: { label: 'pwd' },
           emoji: '💻',
@@ -122,7 +98,7 @@ describe('Hermes tool progress', function () {
 
 describe('mapStandaloneToolResultToToolPart', function () {
   it('maps text-only toolResult content to visible output', function () {
-    const message: GatewayMessage = {
+    const message: ConversationTurn = {
       role: 'toolResult',
       toolCallId: 'functions.read:9',
       toolName: 'read',
@@ -143,7 +119,7 @@ describe('mapStandaloneToolResultToToolPart', function () {
 
 describe('modelFromMessage', function () {
   it('prefers the explicit model name when present', function () {
-    const message: GatewayMessage = {
+    const message: ConversationTurn = {
       role: 'assistant',
       model: 'kairos-balanced',
       modelName: 'Kairos Balanced',
@@ -153,7 +129,7 @@ describe('modelFromMessage', function () {
   })
 
   it('falls back to the current model label when modelName is only the raw id', function () {
-    const message: GatewayMessage = {
+    const message: ConversationTurn = {
       role: 'assistant',
       model: 'kairos-code',
       modelName: 'kairos-code',
@@ -163,7 +139,7 @@ describe('modelFromMessage', function () {
   })
 
   it('uses nested model metadata before falling back to the id', function () {
-    const message: GatewayMessage = {
+    const message: ConversationTurn = {
       role: 'assistant',
       model: 'gpt-4.1',
       details: {
@@ -178,7 +154,7 @@ describe('modelFromMessage', function () {
   })
 
   it('uses server-loaded model labels before falling back to the id', function () {
-    const message: GatewayMessage = {
+    const message: ConversationTurn = {
       role: 'assistant',
       model: 'kairos-code',
     }
@@ -188,8 +164,8 @@ describe('modelFromMessage', function () {
 })
 
 describe('MessageItem', function () {
-  it('renders an ungrouped tool turn naturally', function () {
-    const message: GatewayMessage = {
+  it('moves active tool work into the activity sidebar', function () {
+    const message: ConversationTurn = {
       role: 'assistant',
       model: 'gpt-4.1',
       content: [
@@ -209,7 +185,7 @@ describe('MessageItem', function () {
         },
       ],
     }
-    const toolResultsByCallId = new Map<string, GatewayMessage>([
+    const toolResultsByCallId = new Map<string, ConversationTurn>([
       [
         'call-1',
         {
@@ -230,21 +206,32 @@ describe('MessageItem', function () {
       ],
     ])
 
+    const runningMessage = { ...message, status: 'running' }
     const html = renderToStaticMarkup(
       React.createElement(MessageItem, {
-        message,
+        message: runningMessage,
         toolResultsByCallId,
         modelLabelById,
       }),
     )
 
     expect(html).toContain('GPT-4.1')
-    expect(html).toContain('Calculating: 2 + 2')
-    expect(html).toContain('Calculating: 3 + 3')
+    expect(html).toContain('Working…')
+    expect(html).not.toContain('Calculating: 2 + 2')
+
+    const activityHtml = renderToStaticMarkup(
+      React.createElement(ActivitySidebar, {
+        isOpen: true,
+        messages: [runningMessage],
+        onClose() {},
+      }),
+    )
+    expect(activityHtml).toContain('Calculating: 2 + 2')
+    expect(activityHtml).toContain('Calculating: 3 + 3')
   })
 
   it('preserves user message line breaks in the rendered bubble', function () {
-    const message: GatewayMessage = {
+    const message: ConversationTurn = {
       role: 'user',
       content: [{ type: 'text', text: 'first line\nsecond line' }],
     }
@@ -261,7 +248,7 @@ describe('MessageItem', function () {
   })
 
   it('keeps assistant actions hidden while its response is streaming', function () {
-    const message: GatewayMessage = {
+    const message: ConversationTurn = {
       id: 'assistant-1',
       role: 'assistant',
       __streamRunId: 'run-1',
@@ -283,7 +270,7 @@ describe('MessageItem', function () {
 
 describe('areMessagesEqual render boundary', function () {
   it('considers identical messages with identical props as equal', function () {
-    const message: GatewayMessage = {
+    const message: ConversationTurn = {
       id: 'm1',
       role: 'user',
       content: [{ type: 'text', text: 'hello' }],
@@ -295,7 +282,7 @@ describe('areMessagesEqual render boundary', function () {
   })
 
   it('considers a changed target highlight as not equal', function () {
-    const message: GatewayMessage = {
+    const message: ConversationTurn = {
       id: 'm1',
       role: 'user',
       content: [{ type: 'text', text: 'hello' }],
@@ -311,12 +298,12 @@ describe('areMessagesEqual render boundary', function () {
   })
 
   it('considers messages with different text content as not equal', function () {
-    const prevMsg: GatewayMessage = {
+    const prevMsg: ConversationTurn = {
       id: 'm1',
       role: 'user',
       content: [{ type: 'text', text: 'hello' }],
     }
-    const nextMsg: GatewayMessage = {
+    const nextMsg: ConversationTurn = {
       id: 'm1',
       role: 'user',
       content: [{ type: 'text', text: 'world' }],
@@ -328,13 +315,13 @@ describe('areMessagesEqual render boundary', function () {
   })
 
   it('rerenders when an assistant message finishes streaming', function () {
-    const streamingMessage: GatewayMessage = {
+    const streamingMessage: ConversationTurn = {
       id: 'assistant-1',
       role: 'assistant',
       __streamRunId: 'run-1',
       content: [{ type: 'text', text: 'Complete response' }],
     }
-    const completedMessage: GatewayMessage = {
+    const completedMessage: ConversationTurn = {
       ...streamingMessage,
       __streamRunId: null,
     }
@@ -346,5 +333,101 @@ describe('areMessagesEqual render boundary', function () {
         { message: completedMessage, modelLabelById },
       ),
     ).toBe(false)
+  })
+})
+
+describe('canonical lifecycle render boundary', function () {
+  it('renders cancellation even when content has not changed', function () {
+    const message: ConversationTurn = {
+      id: 'turn',
+      role: 'assistant',
+      status: 'running',
+      content: [],
+    }
+    expect(
+      areMessagesEqual(
+        { message, modelLabelById: new Map() },
+        {
+          message: { ...message, status: 'aborted' },
+          modelLabelById: new Map(),
+        },
+      ),
+    ).toBe(false)
+  })
+  it('shows a stopped tool without claiming it has a result', function () {
+    const tool = mapToolCallToToolPart(
+      { type: 'toolCall', id: 'call', name: 'fake', status: 'aborted' },
+      undefined,
+    )
+    expect(tool.state).toBe('output-error')
+    expect(tool.errorText).toBe('No result was saved for this call.')
+  })
+})
+
+function routed(message: ConversationTurn) {
+  const split = splitAssistantActivity(message, true, true)
+  return {
+    activity: split.activityIndexes,
+    answer: [...split.answerIndexes].sort(),
+  }
+}
+
+describe('assistant message phases', function () {
+  it('routes explicit phases immediately and holds only unknown streaming text', function () {
+    const message: ConversationTurn = {
+      role: 'assistant',
+      content: [
+        { type: 'text', text: 'Searching', phase: 'commentary' },
+        { type: 'toolCall', id: 'search', name: 'web_search' },
+        { type: 'text', text: 'Yes', phase: 'final_answer' },
+        { type: 'text', text: 'Let me check' },
+      ],
+    }
+    expect(routed({ ...message, status: 'running' })).toEqual({
+      activity: [0, 1, 3],
+      answer: [2],
+    })
+    expect(routed(message)).toEqual({ activity: [0, 1], answer: [2, 3] })
+  })
+
+  it('keeps completed commentary in work while the next round streams', function () {
+    const message: ConversationTurn = {
+      role: 'assistant',
+      status: 'running',
+      content: [
+        {
+          type: 'text',
+          text: 'Searching',
+          phase: 'commentary',
+          phaseSource: 'derived',
+        },
+        { type: 'toolCall', id: 'search', name: 'web_search' },
+        {
+          type: 'text',
+          text: 'A short answer',
+          phase: 'final_answer',
+          phaseSource: 'provider',
+        },
+      ],
+    }
+    expect(routed(message)).toEqual({ activity: [0, 1], answer: [2] })
+  })
+
+  it('preserves legacy history and unknown streaming fallbacks', function () {
+    const message: ConversationTurn = {
+      role: 'assistant',
+      content: [
+        { type: 'text', text: 'Searching' },
+        { type: 'toolCall', id: 'old', name: 'web_search' },
+        { type: 'text', text: 'Answer' },
+      ],
+    }
+    expect(routed(message).answer).toEqual([2])
+    expect(routed({ ...message, status: 'running' }).answer).toEqual([])
+    message.content![2] = {
+      type: 'text',
+      text: 'A sufficiently clear\nmultiline answer',
+    }
+    expect(routed({ ...message, status: 'running' }).answer).toEqual([2])
   })
 })

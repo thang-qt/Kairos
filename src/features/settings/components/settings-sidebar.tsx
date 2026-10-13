@@ -1,10 +1,16 @@
 import { HugeiconsIcon } from '@hugeicons/react'
+import type { IconSvgElement } from '@hugeicons/react'
 import {
   ArrowLeft01Icon,
-  Settings01Icon,
+  BubbleChatIcon,
+  CloudServerIcon,
+  CpuIcon,
+  Globe02Icon,
+  PaintBoardIcon,
+  PlugSocketIcon,
   SidebarLeft01Icon,
+  UserCircleIcon,
 } from '@hugeicons/core-free-icons'
-import { AnimatePresence, motion } from 'motion/react'
 import { Link, useNavigate } from '@tanstack/react-router'
 import type { SettingsTab } from '../settings-screen'
 import { Button, buttonVariants } from '@/components/ui/button'
@@ -14,60 +20,56 @@ import { cn } from '@/lib/utils'
 type SettingsSidebarProps = {
   activeTab: SettingsTab
   onTabChange: (tab: SettingsTab) => void
-  isCollapsed: boolean
   onToggleCollapse: () => void
 }
 
-const SETTINGS_TABS: Array<{
+type SettingsNavItem = {
   id: SettingsTab
   label: string
-}> = [
-  {
-    id: 'account',
-    label: 'Account',
-  },
-  {
-    id: 'models',
-    label: 'Models & Providers',
-  },
-  {
-    id: 'chat',
-    label: 'Chat',
-  },
-  {
-    id: 'web-tools',
-    label: 'Web Tools',
-  },
-  {
-    id: 'appearance',
-    label: 'Appearance',
-  },
-  {
-    id: 'display',
-    label: 'Display',
-  },
-]
+  icon: IconSvgElement
+}
+
+const SETTINGS_GROUPS: Array<{ label: string; items: Array<SettingsNavItem> }> =
+  [
+    {
+      label: 'General',
+      items: [
+        { id: 'account', label: 'Account', icon: UserCircleIcon },
+        { id: 'appearance', label: 'Appearance', icon: PaintBoardIcon },
+      ],
+    },
+    {
+      label: 'AI',
+      items: [
+        { id: 'providers', label: 'Providers', icon: CloudServerIcon },
+        { id: 'models', label: 'Models', icon: CpuIcon },
+        { id: 'chat', label: 'Chat defaults', icon: BubbleChatIcon },
+      ],
+    },
+    {
+      label: 'Tools',
+      items: [
+        { id: 'web-tools', label: 'Web search', icon: Globe02Icon },
+        { id: 'mcp', label: 'MCP servers', icon: PlugSocketIcon },
+      ],
+    },
+  ]
+
+const SETTINGS_ITEMS = SETTINGS_GROUPS.flatMap((group) => group.items)
 
 export function getSettingsTabLabel(activeTab: SettingsTab) {
   return (
-    SETTINGS_TABS.find(function matchTab(tab) {
-      return tab.id === activeTab
-    })?.label ?? SETTINGS_TABS[0].label
+    SETTINGS_ITEMS.find((item) => item.id === activeTab)?.label ??
+    SETTINGS_ITEMS[0].label
   )
 }
 
 export function SettingsSidebar({
   activeTab,
   onTabChange,
-  isCollapsed,
   onToggleCollapse,
 }: SettingsSidebarProps) {
   const navigate = useNavigate()
-  const transition = {
-    duration: 0.15,
-    ease: isCollapsed ? 'easeIn' : 'easeOut',
-  } as const
-
   function handleBackToChat() {
     if (typeof window !== 'undefined' && window.history.length > 1) {
       window.history.back()
@@ -77,107 +79,83 @@ export function SettingsSidebar({
   }
 
   return (
-    <motion.aside
-      initial={false}
-      animate={{ width: isCollapsed ? 0 : 300 }}
-      transition={transition}
-      className="flex h-full flex-col overflow-hidden border-r border-primary-200 bg-primary-100"
-      style={{ overflow: 'hidden' }}
-    >
-      <motion.div
-        layout
-        transition={{ layout: transition }}
-        className="flex h-12 items-center justify-between px-2"
-      >
-        <AnimatePresence initial={false}>
-          {!isCollapsed ? (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={transition}
-            >
-              <Link
-                to="/new"
-                className={cn(
-                  buttonVariants({ variant: 'ghost', size: 'sm' }),
-                  'w-full justify-start pl-1.5',
-                )}
-              >
-                <KairosIconBig className="size-5 rounded-sm" />
-                Kairos
-              </Link>
-            </motion.div>
-          ) : null}
-        </AnimatePresence>
+    <aside className="flex h-full w-full flex-col overflow-hidden bg-primary-100">
+      <div className="flex h-12 items-center justify-between px-2">
+        <Link
+          to="/new"
+          className={cn(
+            buttonVariants({ variant: 'ghost', size: 'sm' }),
+            'justify-start pl-1.5',
+          )}
+        >
+          <KairosIconBig className="size-5 rounded-sm" />
+          Kairos
+        </Link>
 
-        <Button size="icon-sm" variant="ghost" onClick={onToggleCollapse}>
+        <Button
+          size="icon-sm"
+          variant="ghost"
+          onClick={onToggleCollapse}
+          aria-label="Collapse sidebar"
+        >
           <HugeiconsIcon icon={SidebarLeft01Icon} size={20} strokeWidth={1.5} />
         </Button>
-      </motion.div>
+      </div>
 
-      <AnimatePresence initial={false}>
-        {!isCollapsed ? (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={transition}
-            className="flex min-h-0 flex-1 flex-col"
+      <div className="flex min-h-0 flex-1 flex-col">
+        <div className="px-2 pb-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleBackToChat}
+            className="w-full justify-start pl-1.5"
           >
-            <div className="border-b border-primary-200 px-3 pb-4 pt-2">
-              <div className="flex items-center gap-2 px-1">
-                <HugeiconsIcon
-                  icon={Settings01Icon}
-                  size={20}
-                  strokeWidth={1.5}
-                  className="text-primary-700"
-                />
-                <h1 className="text-sm text-primary-900">Settings</h1>
-              </div>
-            </div>
+            <HugeiconsIcon
+              icon={ArrowLeft01Icon}
+              size={20}
+              strokeWidth={1.5}
+              className="min-w-5"
+            />
+            Back to chat
+          </Button>
+        </div>
 
-            <nav className="flex-1 space-y-1 overflow-y-auto px-2 py-3">
-              {SETTINGS_TABS.map(function renderTab(tab) {
+        <nav
+          aria-label="Settings"
+          className="flex-1 space-y-5 overflow-y-auto px-2 py-2"
+        >
+          {SETTINGS_GROUPS.map((group) => (
+            <div key={group.label} className="flex flex-col gap-px">
+              <div className="px-1.5 pb-1 text-xs text-primary-500">
+                {group.label}
+              </div>
+              {group.items.map((item) => {
+                const active = activeTab === item.id
                 return (
                   <button
-                    key={tab.id}
+                    key={item.id}
                     type="button"
-                    onClick={function handleSelectTab() {
-                      onTabChange(tab.id)
-                    }}
+                    aria-current={active ? 'page' : undefined}
+                    onClick={() => onTabChange(item.id)}
                     className={cn(
-                      'flex w-full rounded-lg px-3 py-2 text-left text-sm transition-colors hover:bg-primary-50',
-                      activeTab === tab.id && 'bg-primary-50 text-primary-950',
+                      'flex h-8 w-full items-center gap-2 rounded-lg pl-1.5 pr-2 text-left text-sm font-[450] text-primary-950 transition-colors duration-0 hover:bg-primary-200',
+                      active && 'bg-primary-200',
                     )}
                   >
-                    <span className="truncate text-primary-900">
-                      {tab.label}
-                    </span>
+                    <HugeiconsIcon
+                      icon={item.icon}
+                      size={20}
+                      strokeWidth={1.5}
+                      className="min-w-5 text-primary-700"
+                    />
+                    <span className="truncate">{item.label}</span>
                   </button>
                 )
               })}
-            </nav>
-
-            <div className="border-t border-primary-200 bg-primary-100 px-2 py-3">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={handleBackToChat}
-                className="w-full justify-start pl-1.5"
-              >
-                <HugeiconsIcon
-                  icon={ArrowLeft01Icon}
-                  size={20}
-                  strokeWidth={1.5}
-                  className="min-w-5"
-                />
-                Back to chat
-              </Button>
             </div>
-          </motion.div>
-        ) : null}
-      </AnimatePresence>
-    </motion.aside>
+          ))}
+        </nav>
+      </div>
+    </aside>
   )
 }

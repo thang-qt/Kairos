@@ -1,18 +1,18 @@
 import { useCallback, useEffect, useEffectEvent, useRef } from 'react'
 
 import {
+  chatQueryKeys,
   updateHistoryMessages,
   updateSessionLastMessage,
   upsertSessionSummary,
 } from '../chat-queries'
 import {
-  findStreamMessageIndex,
-  messageFromChatEvent,
-  reduceChatEventMessages,
-} from '../chat-event-reducer'
+  turnFromConversationEvent,
+  applyConversationEvent,
+} from '../conversation-event-reducer'
 import type { QueryClient } from '@tanstack/react-query'
-import type { GatewayMessage } from '../types'
-import type { ChatEvent } from '@/lib/chat-backend'
+import type { ConversationTurn, HistoryResponse } from '../types'
+import type { ConversationEvent } from '@/lib/chat-backend'
 import { getChatBackend } from '@/lib/chat-backend'
 
 type UseChatStreamInput = {
@@ -29,7 +29,7 @@ type UseChatStreamInput = {
     state?: string
     error?: string
     activeRunIds?: Array<string>
-    message?: GatewayMessage
+    message?: ConversationTurn
   }) => void
 }
 
@@ -47,8 +47,47 @@ export function useChatStream({
   const refreshHistoryRef = useRef(refreshHistory)
   refreshHistoryRef.current = refreshHistory
   const handleChatEvent = useEffectEvent(function handleChatEvent(
-    payload: ChatEvent,
+    payload: ConversationEvent,
   ) {
+    if (payload.state === 'heartbeat') return
+    const key = chatQueryKeys.history(activeFriendlyId, sessionKeyForHistory)
+    const cached = queryClient.getQueryData<HistoryResponse>(key)
+    if (payload.snapshot) {
+      if (
+        (payload.snapshot.revision ?? 0) >= (cached?.revision ?? -1) &&
+        (payload.snapshot.cursor ?? 0) >= (cached?.cursor ?? 0)
+      ) {
+        queryClient.setQueryData(key, payload.snapshot)
+        onChatEvent?.(payload)
+      }
+      return
+    }
+    if (
+      payload.revision !== undefined &&
+      payload.revision < (cached?.revision ?? -1)
+    )
+      return
+    if (payload.cursor && payload.cursor <= (cached?.cursor ?? 0)) return
+    if (
+      payload.revision !== undefined &&
+      payload.revision > (cached?.revision ?? -1)
+    ) {
+      queryClient.setQueryData<HistoryResponse>(
+        key,
+        function setRevision(previous) {
+          return {
+            ...previous,
+            sessionKey: previous?.sessionKey ?? sessionKeyForHistory,
+            messages:
+              payload.state === 'reconcile' && previous?.revision !== undefined
+                ? []
+                : (previous?.messages ?? []),
+            revision: payload.revision,
+          }
+        },
+      )
+      refreshHistoryRef.current()
+    }
     onChatEvent?.(payload)
 
     const payloadState = typeof payload.state === 'string' ? payload.state : ''
@@ -63,7 +102,10 @@ export function useChatStream({
 
     const payloadSessionKey =
       typeof payload.sessionKey === 'string' ? payload.sessionKey : ''
-    if (!payload.message || typeof payload.message !== 'object') {
+    if (
+      (!payload.message || typeof payload.message !== 'object') &&
+      !payload.turnPatch?.length
+    ) {
       if (
         payloadState === 'reconcile' ||
         payloadState === 'final' ||
@@ -75,7 +117,7 @@ export function useChatStream({
           activeFriendlyId,
           sessionKeyForHistory,
           function reduceTerminalEvent(messages) {
-            return reduceChatEventMessages(messages, payload)
+            return applyConversationEvent(messages, payload)
           },
         )
         if (payloadSessionKey && payloadSessionKey !== sessionKeyForHistory) {
@@ -84,7 +126,7 @@ export function useChatStream({
             activeFriendlyId,
             payloadSessionKey,
             function reduceMirroredTerminalEvent(messages) {
-              return reduceChatEventMessages(messages, payload)
+              return applyConversationEvent(messages, payload)
             },
           )
         }
@@ -102,15 +144,22 @@ export function useChatStream({
       return
     }
 
-    const nextMessage = messageFromChatEvent(payload)
-    if (!nextMessage) return
+    if (
+      !payload.message &&
+      !cached?.messages.some(function target(turn) {
+        return turn.id === payload.turnId
+      })
+    ) {
+      refreshHistoryRef.current()
+      return
+    }
 
     updateHistoryMessages(
       queryClient,
       activeFriendlyId,
       sessionKeyForHistory,
       function reduceEvent(messages) {
-        return reduceChatEventMessages(messages, payload)
+        return applyConversationEvent(messages, payload)
       },
     )
 
@@ -120,11 +169,19 @@ export function useChatStream({
         activeFriendlyId,
         payloadSessionKey,
         function reduceMirroredEvent(messages) {
-          return reduceChatEventMessages(messages, payload)
+          return applyConversationEvent(messages, payload)
         },
       )
     }
 
+    const nextMessage = payload.message
+      ? turnFromConversationEvent(payload)
+      : queryClient
+          .getQueryData<HistoryResponse>(key)
+          ?.messages.find(function target(turn) {
+            return turn.id === payload.turnId
+          })
+    if (!nextMessage) return
     if (payloadSessionKey && !authoritativeSession) {
       updateSessionLastMessage(
         queryClient,
@@ -134,6 +191,17 @@ export function useChatStream({
       )
     }
 
+    queryClient.setQueryData<HistoryResponse>(
+      key,
+      function advanceCursor(previous) {
+        if (!previous) return previous
+        return {
+          ...previous,
+          revision: payload.revision ?? previous.revision,
+          cursor: payload.cursor ?? previous.cursor,
+        }
+      },
+    )
     if (isTerminalState(payloadState)) {
       refreshHistoryRef.current()
     }
@@ -181,5 +249,3 @@ export function useChatStream({
 function isTerminalState(state: string): boolean {
   return state === 'final' || state === 'error' || state === 'aborted'
 }
-
-export { findStreamMessageIndex }

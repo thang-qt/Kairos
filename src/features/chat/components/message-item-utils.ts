@@ -1,6 +1,10 @@
-import { getToolCallsFromMessage, textFromMessage } from '../utils'
+import {
+  getToolCallsFromMessage,
+  getTurnId,
+  normalizeMessageTimestamp,
+} from '../utils'
 import type {
-  GatewayMessage,
+  ConversationTurn,
   ImageContent,
   MessageContent as MessageContentPart,
   ToolCallContent,
@@ -18,8 +22,8 @@ type MessageModelMetadata = {
 
 export function mapToolCallToToolPart(
   toolCall: ToolCallContent,
-  resultMessage: GatewayMessage | undefined,
-  assistantMessage?: GatewayMessage,
+  resultMessage: ConversationTurn | undefined,
+  assistantMessage?: ConversationTurn,
 ): ToolPart {
   const resultText = toolResultText(resultMessage)
   const output = toolCallOutput(
@@ -30,10 +34,15 @@ export function mapToolCallToToolPart(
   )
   const outputError = normalizedString(output?.error)
   const hasResult = resultMessage !== undefined || output !== undefined
-  const isError = resultMessage?.isError ?? Boolean(outputError)
+  const stopped =
+    ['aborted', 'interrupted', 'error'].includes(toolCall.status ?? '') &&
+    !hasResult
+  const isError = stopped || (resultMessage?.isError ?? Boolean(outputError))
 
   let state: ToolPart['state']
-  if (toolCall.status === 'running') {
+  if (stopped) {
+    state = 'output-error'
+  } else if (toolCall.status === 'running') {
     state = 'input-streaming'
   } else if (toolCall.status === 'completed') {
     state = 'output-available'
@@ -48,10 +57,16 @@ export function mapToolCallToToolPart(
   // Extract error text from result message content
   let errorText: string | undefined
   if (isError) {
-    errorText = resultText || outputError || 'Unknown error'
+    errorText = stopped
+      ? 'No result was saved for this call.'
+      : resultText || outputError || 'Unknown error'
   }
 
   return {
+    displayName:
+      resultMessage?.details?.mcpServer && resultMessage?.details?.mcpTool
+        ? `${resultMessage.details.mcpServer} · ${resultMessage.details.mcpTool}`
+        : undefined,
     type: toolCall.name || 'unknown',
     state,
     input: toolCall.arguments,
@@ -65,9 +80,9 @@ export function mapToolCallToToolPart(
 
 function toolCallOutput(
   toolCall: ToolCallContent,
-  resultMessage: GatewayMessage | undefined,
+  resultMessage: ConversationTurn | undefined,
   resultText: string,
-  assistantMessage?: GatewayMessage,
+  assistantMessage?: ConversationTurn,
 ): Record<string, unknown> | undefined {
   const details = detailsRecord(resultMessage?.details)
   const persistedResult = persistedToolResult(
@@ -83,8 +98,8 @@ function toolCallOutput(
 
 function persistedToolResult(
   toolCall: ToolCallContent,
-  resultMessage: GatewayMessage | undefined,
-  assistantMessage: GatewayMessage | undefined,
+  resultMessage: ConversationTurn | undefined,
+  assistantMessage: ConversationTurn | undefined,
 ): Record<string, unknown> | undefined {
   const callId = normalizedString(toolCall.id)
   if (!callId || resultMessage) return undefined
@@ -116,54 +131,20 @@ function parseToolResultText(
   } catch {
     // fall through to plain text output
   }
-  return { text }
+  return {
+    text,
+  }
 }
 
-export function runtimeToolDetailsSignature(message: GatewayMessage): string {
+export function runtimeToolDetailsSignature(message: ConversationTurn): string {
   const details = detailsRecord(message.details)
   if (!details) return ''
   const tools = Array.isArray(details.tools) ? details.tools : []
-  const hermesToolProgress = Array.isArray(details.hermesToolProgress)
-    ? details.hermesToolProgress
-    : []
-  return tools.length > 0 || hermesToolProgress.length > 0
-    ? JSON.stringify({ tools, hermesToolProgress })
-    : ''
-}
-
-export function hermesToolPartsFromMessage(
-  message: GatewayMessage,
-): Array<ToolPart> {
-  const details = detailsRecord(message.details)
-  const progress = Array.isArray(details?.hermesToolProgress)
-    ? details.hermesToolProgress
-    : []
-
-  return progress.flatMap(function toToolPart(value) {
-    const item = detailsRecord(value)
-    const toolCallId = normalizedString(item?.toolCallId)
-    const type = normalizedString(item?.tool)
-    if (!toolCallId || !type) return []
-
-    const label = normalizedString(item?.label)
-    const status = normalizedString(item?.status)
-    const durationMs = normalizedNumber(item?.durationMs)
-    return [
-      {
-        type,
-        state: status === 'completed' ? 'output-available' : 'input-available',
-        input: label ? { label } : undefined,
-        toolCallId,
-        emoji: normalizedString(item?.emoji) ?? undefined,
-        durationMs,
-        compact: true,
-      },
-    ]
-  })
+  return tools.length > 0 ? JSON.stringify(tools) : ''
 }
 
 export function toolResultText(
-  resultMessage: GatewayMessage | undefined,
+  resultMessage: ConversationTurn | undefined,
 ): string {
   if (!resultMessage) return ''
   const content = Array.isArray(resultMessage.content)
@@ -176,7 +157,7 @@ export function toolResultText(
 }
 
 export function mapStandaloneToolResultToToolPart(
-  message: GatewayMessage,
+  message: ConversationTurn,
 ): ToolPart {
   const isError = Boolean(message.isError)
   const text = toolResultText(message)
@@ -200,8 +181,176 @@ export function mapStandaloneToolResultToToolPart(
   }
 }
 
+export function activityKeyFromMessage(message: ConversationTurn): string {
+  return (
+    getTurnId(message) ||
+    message.__optimisticId ||
+    (typeof message.runId === 'string' ? message.runId : '')
+  )
+}
+
+export function isAssistantStreaming(message: ConversationTurn): boolean {
+  return (
+    ['queued', 'preparing', 'running'].includes(message.status ?? '') ||
+    Boolean(message.__streamRunId)
+  )
+}
+
+export type AssistantActivitySplit = {
+  // Parts that stay in the main column (the answer text).
+  answerIndexes: Set<number>
+  // Parts that move to the activity sidebar (thinking, tools, interim text).
+  activityIndexes: Array<number>
+  toolCount: number
+  thinkingCount: number
+  hasThinking: boolean
+  durationMs: number
+}
+
+export function splitAssistantActivity(
+  message: ConversationTurn,
+  showReasoningBlocks: boolean,
+  showToolMessages: boolean,
+): AssistantActivitySplit {
+  const parts = Array.isArray(message.content) ? message.content : []
+  const toolCount = showToolMessages
+    ? parts.filter((part) => part.type === 'toolCall').length
+    : 0
+  const finalTextIndex = parts.findLastIndex((part) => part.type === 'text')
+  const lastToolIndex = toolCount
+    ? parts.findLastIndex((part) => part.type === 'toolCall')
+    : -1
+  const answerStart =
+    toolCount === 0
+      ? 0
+      : finalTextIndex > lastToolIndex
+        ? finalTextIndex
+        : parts.length
+  const answerIndexes = new Set<number>()
+  const unphasedAnswerIndexes = new Set<number>()
+  const activityIndexes: Array<number> = []
+  let thinkingCount = 0
+  parts.forEach(function classify(part, index) {
+    if (part.type === 'thinking') {
+      if (!showReasoningBlocks || !String(part.thinking ?? '').trim()) return
+      thinkingCount += 1
+      activityIndexes.push(index)
+      return
+    }
+    if (part.type === 'toolCall') {
+      if (showToolMessages) activityIndexes.push(index)
+      return
+    }
+    if (part.type !== 'text' || !String(part.text ?? '').trim()) return
+    // The backend labels completed rounds (and the provider may label the
+    // streaming one), so phased text routes exactly.
+    if (part.phase === 'final_answer') {
+      answerIndexes.add(index)
+    } else if (part.phase === 'commentary') {
+      activityIndexes.push(index)
+    } else if (index >= answerStart) {
+      unphasedAnswerIndexes.add(index)
+    } else {
+      activityIndexes.push(index)
+    }
+  })
+  // While streaming, short unphased trailing text may still turn out to be
+  // narration before the next tool call. Keep it in the activity panel until
+  // it is clearly an answer so it never flashes in the chat and jumps away.
+  if (
+    unphasedAnswerIndexes.size > 0 &&
+    activityIndexes.length > 0 &&
+    isAssistantStreaming(message) &&
+    !looksLikeAnswer(parts, unphasedAnswerIndexes)
+  ) {
+    for (const index of unphasedAnswerIndexes) activityIndexes.push(index)
+    activityIndexes.sort((left, right) => left - right)
+  } else {
+    for (const index of unphasedAnswerIndexes) answerIndexes.add(index)
+  }
+  const durationMs = workingDurationMs(message)
+  return {
+    answerIndexes,
+    activityIndexes,
+    toolCount,
+    thinkingCount,
+    hasThinking: thinkingCount > 0,
+    durationMs,
+  }
+}
+
+const ANSWER_HOLD_MAX_CHARS = 160
+
+function looksLikeAnswer(
+  parts: Array<MessageContentPart>,
+  answerIndexes: Set<number>,
+) {
+  let text = ''
+  for (const index of answerIndexes) {
+    const part = parts[index]
+    if (part.type === 'text') text += String(part.text ?? '')
+  }
+  const trimmed = text.trim()
+  return trimmed.length > ANSWER_HOLD_MAX_CHARS || trimmed.includes('\n')
+}
+
+// Wall-clock time from the start of the turn to its last recorded step,
+// falling back to summed tool durations when step timestamps are missing.
+export function workingDurationMs(message: ConversationTurn): number {
+  const steps = message.steps ?? []
+  const startedAt = normalizeMessageTimestamp(message.timestamp)
+  let endedAt: number | null = null
+  for (const step of steps) {
+    const timestamp = normalizeMessageTimestamp(step.timestamp)
+    if (timestamp !== null && (endedAt === null || timestamp > endedAt)) {
+      endedAt = timestamp
+    }
+  }
+  if (startedAt !== null && endedAt !== null && endedAt > startedAt) {
+    return endedAt - startedAt
+  }
+  return steps.reduce(function sum(total, step) {
+    const duration = step.role === 'toolResult' ? step.details?.durationMs : 0
+    return (
+      total +
+      (typeof duration === 'number' && Number.isFinite(duration) ? duration : 0)
+    )
+  }, 0)
+}
+
+export function formatActivityDuration(durationMs: number): string {
+  if (durationMs < 1000) return `${Math.max(1, Math.round(durationMs))}ms`
+  if (durationMs < 60_000) return `${(durationMs / 1000).toFixed(1)}s`
+  const totalSeconds = Math.round(durationMs / 1000)
+  return `${Math.floor(totalSeconds / 60)}m ${totalSeconds % 60}s`
+}
+
+export function activityLabel({
+  streaming,
+  toolCount,
+  hasThinking,
+  durationMs,
+}: {
+  streaming: boolean
+  toolCount: number
+  hasThinking: boolean
+  durationMs: number
+}): string {
+  if (streaming) return toolCount > 0 ? 'Working…' : 'Thinking…'
+  if (toolCount > 0 && durationMs > 0) {
+    return `Worked for ${formatActivityDuration(durationMs)}`
+  }
+  if (toolCount > 0) {
+    return `Used ${toolCount} ${toolCount === 1 ? 'tool' : 'tools'}`
+  }
+  if (hasThinking && durationMs > 0) {
+    return `Thought for ${formatActivityDuration(durationMs)}`
+  }
+  return hasThinking ? 'Thought' : 'Activity'
+}
+
 export function assistantPartRenderOrder(
-  message: GatewayMessage,
+  message: ConversationTurn,
   showReasoningBlocks: boolean,
   showToolMessages: boolean,
 ): Array<'thinking' | 'text' | 'toolCall'> {
@@ -229,7 +378,7 @@ export function assistantPartRenderOrder(
   return order
 }
 
-export function toolCallsSignature(message: GatewayMessage): string {
+export function toolCallsSignature(message: ConversationTurn): string {
   const toolCalls = getToolCallsFromMessage(message)
   return toolCalls
     .map((toolCall) => {
@@ -245,7 +394,7 @@ export function toolCallsSignature(message: GatewayMessage): string {
 }
 
 export function toolResultSignature(
-  result: GatewayMessage | undefined,
+  result: ConversationTurn | undefined,
 ): string {
   if (!result) return 'missing'
   const content = Array.isArray(result.content) ? result.content : []
@@ -258,8 +407,8 @@ export function toolResultSignature(
 }
 
 export function toolResultsSignature(
-  message: GatewayMessage,
-  toolResultsByCallId: Map<string, GatewayMessage> | undefined,
+  message: ConversationTurn,
+  toolResultsByCallId: Map<string, ConversationTurn> | undefined,
 ): string {
   if (!toolResultsByCallId) return ''
   const toolCalls = getToolCallsFromMessage(message)
@@ -276,20 +425,7 @@ export function toolResultsSignature(
     .join('||')
 }
 
-export function toolChainMessagesSignature(
-  messages: Array<GatewayMessage> | undefined,
-  toolResultsByCallId: Map<string, GatewayMessage> | undefined,
-): string {
-  if (!messages?.length) return ''
-  return messages
-    .map(
-      (message) =>
-        `${message.id ?? ''}:${textFromMessage(message)}:${thinkingFromMessage(message) ?? ''}:${toolCallsSignature(message)}:${toolResultsSignature(message, toolResultsByCallId)}`,
-    )
-    .join('##')
-}
-
-export function thinkingFromMessage(msg: GatewayMessage): string | null {
+export function thinkingFromMessage(msg: ConversationTurn): string | null {
   const parts = Array.isArray(msg.content) ? msg.content : []
   const thinkingPart = parts.find((part) => part.type === 'thinking')
   if (thinkingPart && 'thinking' in thinkingPart) {
@@ -310,7 +446,7 @@ export function isRenderableImagePart(
   )
 }
 
-export function imagesFromMessage(msg: GatewayMessage): Array<ImageContent> {
+export function imagesFromMessage(msg: ConversationTurn): Array<ImageContent> {
   const parts = Array.isArray(msg.content) ? msg.content : []
   return parts.filter(isRenderableImagePart)
 }
@@ -327,14 +463,14 @@ function normalizedNumber(value: unknown): number | undefined {
 }
 
 export function detailsRecord(
-  value: GatewayMessage['details'] | unknown,
+  value: ConversationTurn['details'] | unknown,
 ): Record<string, unknown> | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null
   return value as Record<string, unknown>
 }
 
 export function modelFromMessage(
-  message: GatewayMessage,
+  message: ConversationTurn,
   modelLabelById: ReadonlyMap<string, string>,
 ): string | null {
   const directMetadata = messageModelMetadata(message)
@@ -346,7 +482,7 @@ export function modelFromMessage(
 }
 
 export function messageModelMetadata(
-  message: GatewayMessage,
+  message: ConversationTurn,
 ): MessageModelMetadata {
   return {
     id: normalizedString(message.model),
@@ -355,7 +491,7 @@ export function messageModelMetadata(
 }
 
 export function detailsModelMetadata(
-  message: GatewayMessage,
+  message: ConversationTurn,
 ): MessageModelMetadata {
   const details = detailsRecord(message.details)
   const detailsModel = detailsRecord(details?.model)

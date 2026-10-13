@@ -266,7 +266,7 @@ func TestSessionSearchMigrationBackfillsPre0016Database(t *testing.T) {
 		t.Fatalf("backfilled search documents = %d, want 3", documentCount)
 	}
 
-	results, err := NewChatService(db).SearchSessions(t.Context(), "user-1", "aurora")
+	results, err := NewConversationService(db).SearchSessions(t.Context(), "user-1", "aurora")
 	if err != nil {
 		t.Fatalf("search backfilled message: %v", err)
 	}
@@ -348,7 +348,7 @@ func TestSessionSearchMigrationPurgesPreviouslyIndexedToolCallMessages(t *testin
 	`); err != nil {
 		t.Fatalf("update to text-only assistant: %v", err)
 	}
-	results, err := NewChatService(db).SearchSessions(t.Context(), "user-1", "text-only")
+	results, err := NewConversationService(db).SearchSessions(t.Context(), "user-1", "text-only")
 	if err != nil {
 		t.Fatalf("search text-only assistant: %v", err)
 	}
@@ -363,7 +363,7 @@ func TestSessionSearchMigrationPurgesPreviouslyIndexedToolCallMessages(t *testin
 	`); err != nil {
 		t.Fatalf("update to tool-call assistant: %v", err)
 	}
-	results, err = NewChatService(db).SearchSessions(t.Context(), "user-1", "tool-call")
+	results, err = NewConversationService(db).SearchSessions(t.Context(), "user-1", "tool-call")
 	if err != nil {
 		t.Fatalf("search updated tool-call assistant: %v", err)
 	}

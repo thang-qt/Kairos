@@ -30,14 +30,15 @@ var frontendFiles = func() fs.FS {
 }()
 
 type App struct {
-	config     Config
-	db         *sql.DB
-	auth       *AuthService
-	chat       *ChatService
-	runs       *ChatRunService
-	providers  *ProviderService
-	webTools   *WebToolSettingsService
-	capability CapabilitySet
+	mcp           *MCPService
+	config        Config
+	db            *sql.DB
+	auth          *AuthService
+	conversations *ConversationService
+	runtime       *AgentRuntime
+	providers     *ProviderService
+	webTools      *WebToolSettingsService
+	capability    CapabilitySet
 }
 
 func NewApp(config Config) (*App, error) {
@@ -79,20 +80,22 @@ func NewApp(config Config) (*App, error) {
 		db.Close()
 		return nil, err
 	}
-	chat := NewChatService(db)
+	conversations := NewConversationService(db)
 	providers := NewProviderService(db, config)
 	webTools := NewWebToolSettingsService(db, config)
-	runBroker := NewRunBroker()
-	runs := NewChatRunService(db, chat, providers, webTools, runBroker)
+	mcp := NewMCPService(db, config)
+	runtime := NewAgentRuntime(db, conversations, providers, webTools)
+	runtime.mcp = mcp
 
 	app := &App{
-		config:    config,
-		db:        db,
-		auth:      auth,
-		chat:      chat,
-		runs:      runs,
-		providers: providers,
-		webTools:  webTools,
+		mcp:           mcp,
+		config:        config,
+		db:            db,
+		auth:          auth,
+		conversations: conversations,
+		runtime:       runtime,
+		providers:     providers,
+		webTools:      webTools,
 		capability: CapabilitySet{
 			Auth: AuthCapabilities{
 				Enabled:       config.AuthEnabled,
@@ -112,15 +115,28 @@ func NewApp(config Config) (*App, error) {
 		},
 	}
 
+	runtime.StartWorkers()
 	return app, nil
 }
 
+func (app *App) Stop() { app.runtime.Close(); app.mcp.Close() }
+
 func (app *App) Close() error {
+	app.runtime.Close()
+	app.mcp.Close()
 	return app.db.Close()
 }
 
 func (app *App) Handler() http.Handler {
 	mux := http.NewServeMux()
+	for _, route := range []string{
+		"GET /api/mcp/servers", "POST /api/mcp/servers", "GET /api/mcp/servers/{id}", "PATCH /api/mcp/servers/{id}", "DELETE /api/mcp/servers/{id}",
+		"GET /api/mcp/servers/{id}/{action}", "POST /api/mcp/servers/{id}/{action}", "PATCH /api/mcp/servers/{id}/tools/{toolId}",
+		"GET /api/mcp/approvals", "POST /api/mcp/approvals/{approvalId}",
+	} {
+		mux.HandleFunc(route, app.handleMCP)
+	}
+
 	mux.HandleFunc("GET /api/health", app.handleHealth)
 	mux.HandleFunc("GET /api/app/capabilities", app.handleCapabilities)
 	mux.HandleFunc("POST /api/auth/signup", app.handleSignup)
@@ -157,6 +173,7 @@ func (app *App) Handler() http.Handler {
 	mux.HandleFunc("POST /api/sessions/{friendlyId}/clone", app.handleCloneSession)
 	mux.HandleFunc("POST /api/sessions/{friendlyId}/messages/{messageId}/edit", app.handleEditUserMessage)
 	mux.HandleFunc("DELETE /api/sessions/{friendlyId}/messages/{messageId}", app.handleDeleteUserMessage)
+	mux.HandleFunc("POST /api/sessions/{friendlyId}/runs/{runId}/retry", app.handleRetryRun)
 	mux.HandleFunc("POST /api/sessions/{friendlyId}/stop", app.handleStopSessionRuns)
 	mux.HandleFunc("GET /api/sessions/{friendlyId}/events", app.handleSessionEvents)
 	mux.Handle("/", app.frontendHandler())

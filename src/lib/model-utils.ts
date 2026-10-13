@@ -13,16 +13,6 @@ export function providerModelKey(model: ProviderModel) {
   return model.modelRef?.trim() || model.id
 }
 
-export function providerModelMetaLine(model: ProviderModel) {
-  if (model.providerLabel && model.providerLabel !== model.id) {
-    return `${model.providerLabel} · ${model.id}`
-  }
-  if (model.owned_by && model.owned_by !== model.id) {
-    return `${model.owned_by} · ${model.id}`
-  }
-  return model.id
-}
-
 export function providerModelSearchText(model: ProviderModel) {
   return [
     model.modelRef,

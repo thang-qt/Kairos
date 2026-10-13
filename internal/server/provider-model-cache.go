@@ -192,7 +192,11 @@ func (service *ProviderService) refreshVisibleProviderModels(
 	if len(snapshots) == 0 {
 		return nil
 	}
-	return service.saveProviderModelSnapshots(ctx, userID, snapshots)
+	if err := service.saveProviderModelSnapshots(ctx, userID, snapshots); err != nil {
+		return err
+	}
+	service.catalog.refresh(ctx, service.db)
+	return nil
 }
 
 func (service *ProviderService) fetchProviderModelSnapshots(

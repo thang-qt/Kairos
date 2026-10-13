@@ -35,6 +35,11 @@ func TestOpenAICompatibleDriverUsesOfficialSDKForModelsAndStreaming(t *testing.T
 			if stream, _ := body["stream"].(bool); !stream {
 				t.Errorf("stream = %v, want true", body["stream"])
 			}
+			for _, message := range body["messages"].([]any) {
+				if _, ok := message.(map[string]any)["phase"]; ok {
+					t.Fatal("phase leaked to Chat Completions")
+				}
+			}
 			streamOptions, _ := body["stream_options"].(map[string]any)
 			if includeUsage, _ := streamOptions["include_usage"].(bool); !includeUsage {
 				t.Errorf("stream_options.include_usage = %v, want true", streamOptions["include_usage"])
@@ -45,11 +50,10 @@ func TestOpenAICompatibleDriverUsesOfficialSDKForModelsAndStreaming(t *testing.T
 
 			writer.Header().Set("Content-Type", "text/event-stream")
 			fmt.Fprint(writer, "data: {\"id\":\"completion-1\",\"object\":\"chat.completion.chunk\",\"created\":123,\"model\":\"gpt-test\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"Hello \"}}]}\n\n")
-			fmt.Fprint(writer, "event: hermes.tool.progress\ndata: {\"tool\":\"terminal\",\"emoji\":\"💻\",\"label\":\"pwd\",\"toolCallId\":\"call-hermes\",\"status\":\"running\"}\n\n")
-			fmt.Fprint(writer, "event: hermes.tool.progress\ndata: {\"tool\":\"terminal\",\"toolCallId\":\"call-hermes\",\"status\":\"completed\"}\n\n")
 			fmt.Fprint(writer, "data: {\"id\":\"completion-1\",\"object\":\"chat.completion.chunk\",\"created\":123,\"model\":\"gpt-test\",\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call-1\",\"type\":\"function\",\"function\":{\"name\":\"lookup\",\"arguments\":\"{\\\"query\\\":\\\"kai\"}}]}}]}\n\n")
 			fmt.Fprint(writer, "data: {\"id\":\"completion-1\",\"object\":\"chat.completion.chunk\",\"created\":123,\"model\":\"gpt-test\",\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"ros\\\"}\"}}]}}]}\n\n")
 			fmt.Fprint(writer, "data: {\"id\":\"completion-1\",\"object\":\"chat.completion.chunk\",\"created\":123,\"model\":\"gpt-test\",\"choices\":[],\"usage\":{\"prompt_tokens\":3,\"completion_tokens\":5,\"total_tokens\":8}}\n\n")
+			fmt.Fprint(writer, `data: {"id":"completion-1","object":"chat.completion.chunk","created":123,"model":"gpt-test","choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]}`+"\n\n")
 			fmt.Fprint(writer, "data: [DONE]\n\n")
 		default:
 			t.Errorf("unexpected path %s", request.URL.Path)
@@ -81,7 +85,7 @@ func TestOpenAICompatibleDriverUsesOfficialSDKForModelsAndStreaming(t *testing.T
 			Model: "gpt-test",
 			Messages: []ProviderMessage{{
 				Role:  "user",
-				Parts: []ProviderMessagePart{{Type: "text", Text: "Search Kairos"}},
+				Parts: []ProviderMessagePart{{Type: "text", Text: "Search Kairos", Phase: "final_answer", PhaseSource: "provider"}},
 			}},
 			Tools: []ProviderTool{{
 				Name:       "lookup",
@@ -106,9 +110,7 @@ func TestOpenAICompatibleDriverUsesOfficialSDKForModelsAndStreaming(t *testing.T
 	if len(deltas) < 3 || !containsOpenAITextDelta(deltas, "Hello ") || !containsOpenAIToolCallDelta(deltas, "kairos") {
 		t.Fatalf("deltas = %#v, want text and incremental tool-call deltas", deltas)
 	}
-	if progress := lastHermesToolProgress(deltas); progress.ID != "call-hermes" || progress.Name != "terminal" || progress.Label != "pwd" || progress.Status != "completed" {
-		t.Fatalf("Hermes tool progress = %#v, want completed terminal pwd", progress)
-	}
+
 }
 
 func containsOpenAITextDelta(deltas []ChatGenerationDelta, text string) bool {
@@ -131,13 +133,16 @@ func containsOpenAIToolCallDelta(deltas []ChatGenerationDelta, arguments string)
 	return false
 }
 
-func lastHermesToolProgress(deltas []ChatGenerationDelta) ProviderToolProgress {
-	var progress []ProviderToolProgress
-	for _, delta := range deltas {
-		progress = mergeProviderToolProgress(progress, delta.ToolProgress)
+func TestChatCompletionsStreamWithoutFinishFails(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		writer.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprint(writer, `data: {"id":"partial","object":"chat.completion.chunk","model":"test-model","choices":[{"index":0,"delta":{"content":"partial"}}]}`+"\n\n")
+	}))
+	defer server.Close()
+	driver := &OpenAICompatibleDriver{httpClient: server.Client()}
+	observed := ""
+	_, err := driver.GenerateChatStream(context.Background(), resolvedProvider{BaseURL: server.URL}, ChatGenerationRequest{Model: "test-model"}, func(delta ChatGenerationDelta) error { observed += delta.Text; return nil })
+	if err == nil || observed != "partial" {
+		t.Fatalf("truncated stream: output=%q error=%v", observed, err)
 	}
-	if len(progress) == 0 {
-		return ProviderToolProgress{}
-	}
-	return progress[len(progress)-1]
 }

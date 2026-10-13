@@ -1,7 +1,7 @@
 export type { SessionSearchResult } from './contracts'
 
 import type {
-  GatewayMessage,
+  ConversationTurn,
   HistoryResponse,
   SessionMeta,
   SessionSearchResult,
@@ -27,6 +27,7 @@ export type ChatHistoryInput = {
 }
 
 export type ChatSendMessageInput = {
+  expectedRevision?: number
   sessionKey: string
   friendlyId: string
   message: string
@@ -46,7 +47,7 @@ export type ChatSendEphemeralMessageInput = Omit<
   ChatSendMessageInput,
   'sessionKey' | 'friendlyId' | 'idempotencyKey'
 > & {
-  history: Array<GatewayMessage>
+  history: Array<ConversationTurn>
   signal?: AbortSignal
 }
 
@@ -90,6 +91,7 @@ export type ChatPinConversationInput = {
 }
 
 export type ChatStopConversationInput = {
+  runId: string
   sessionKey: string
   friendlyId?: string
 }
@@ -101,6 +103,8 @@ export type ChatCloneConversationInput = {
 }
 
 export type ChatEditUserMessageInput = {
+  idempotencyKey?: string
+  expectedRevision?: number
   sourceSessionKey: string
   sourceFriendlyId: string
   messageId: string
@@ -116,53 +120,86 @@ export type ChatEditUserMessageInput = {
 }
 
 export type ChatDeleteUserMessageInput = {
+  expectedRevision?: number
   sourceSessionKey: string
   sourceFriendlyId: string
   messageId: string
 }
 
-export type ChatSendMessageResult = {
+export type ConversationCommandAck = {
+  revision?: number
+  userTurn?: ConversationTurn
+  invalidatedRunIds?: Array<string>
+  removedTurnIds?: Array<string>
+}
+
+export type ChatSendMessageResult = ConversationCommandAck & {
   runId: string
   sessionKey: string
-  userMessageId?: string
-  assistantMessageId?: string
+  userTurnId?: string
+  assistantTurnId?: string
   clientId?: string
 }
 
-export type ChatConversationResult = SessionMeta & {
-  sessionKey: string
-  friendlyId: string
-  runId?: string
-  userMessageId?: string
-  assistantMessageId?: string
-  clientId?: string
-}
+export type ChatConversationResult = SessionMeta &
+  ConversationCommandAck & {
+    sessionKey: string
+    friendlyId: string
+    runId?: string
+    userTurnId?: string
+    assistantTurnId?: string
+    clientId?: string
+  }
 
 export type ChatConversationRunResult = ChatConversationResult & {
   runId: string
 }
 
-export type ChatEvent = {
+export type TurnPatchOperation = {
+  op: 'set' | 'append' | 'remove'
+  path: Array<string>
+  value?: unknown
+}
+
+export type ConversationEvent = {
+  turnPatch?: Array<TurnPatchOperation>
+  snapshot?: HistoryResponse
+  revision?: number
+  turnId?: string
   cursor?: number
   runId?: string
   sessionKey?: string
   friendlyId?: string
-  state?: 'delta' | 'final' | 'error' | 'aborted' | 'title' | 'reconcile'
+  state?:
+    | 'delta'
+    | 'final'
+    | 'error'
+    | 'aborted'
+    | 'title'
+    | 'reconcile'
+    | 'heartbeat'
+    | 'user'
   error?: string
   activeRunIds?: Array<string>
-  message?: GatewayMessage
+  message?: ConversationTurn
   session?: SessionMeta
 }
 
 export type ChatSubscription = {
   sessionKey?: string
   friendlyId?: string
-  onEvent: (event: ChatEvent) => void
+  onEvent: (event: ConversationEvent) => void
   onReconnect?: () => void
-  onReconcile?: (event: ChatEvent) => void
+  onReconcile?: (event: ConversationEvent) => void
 }
 
 export type ChatBackend = {
+  retryRun: (input: {
+    friendlyId: string
+    runId: string
+    idempotencyKey: string
+    expectedRevision?: number
+  }) => Promise<ChatSendMessageResult>
   getStatus: () => Promise<ChatStatus>
   listConversations: () => Promise<Array<SessionMeta>>
   searchConversations: (
@@ -185,7 +222,7 @@ export type ChatBackend = {
   sendMessage: (input: ChatSendMessageInput) => Promise<ChatSendMessageResult>
   streamEphemeralMessage: (
     input: ChatSendEphemeralMessageInput,
-    onEvent: (event: ChatEvent) => void,
+    onEvent: (event: ConversationEvent) => void,
   ) => Promise<void>
   cloneConversation: (
     input: ChatCloneConversationInput,

@@ -2,7 +2,7 @@ import type {
   ChatBackend,
   ChatCreateConversationInput,
   ChatDeleteConversationInput,
-  ChatEvent,
+  ConversationEvent,
   ChatHistoryInput,
   ChatRenameConversationInput,
   ChatStatus,
@@ -50,14 +50,14 @@ type SessionMutationPayload = {
   contextTokens?: number
   settings?: SessionMeta['settings']
   runId?: string
-  userMessageId?: string
-  assistantMessageId?: string
+  userTurnId?: string
+  assistantTurnId?: string
   clientId?: string
 }
 
 export async function consumeSSEChatEvents(
   response: Response,
-  onEvent: (event: ChatEvent) => void,
+  onEvent: (event: ConversationEvent) => void,
 ) {
   if (!response.body) {
     throw new Error('Streaming response unavailable')
@@ -75,7 +75,7 @@ export async function consumeSSEChatEvents(
       .map((line) => line.slice(5).trimStart())
       .join('\n')
     if (!data) return
-    const event = JSON.parse(data) as ChatEvent
+    const event = JSON.parse(data) as ConversationEvent
     if (
       event.state === 'final' ||
       event.state === 'error' ||
@@ -256,9 +256,26 @@ export function createHTTPChatBackend(): ChatBackend {
         {
           method: 'POST',
           credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ runId: input.runId }),
         },
       )
       await parseJSON(response)
+    },
+    async retryRun(input) {
+      const response = await fetch(
+        `/api/sessions/${encodeURIComponent(input.friendlyId)}/runs/${encodeURIComponent(input.runId)}/retry`,
+        {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            idempotencyKey: input.idempotencyKey,
+            expectedRevision: input.expectedRevision,
+          }),
+        },
+      )
+      return parseJSON(response)
     },
     async sendMessage(input) {
       const runtimeContext = getClientRuntimeContext()
@@ -271,6 +288,7 @@ export function createHTTPChatBackend(): ChatBackend {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
+            expectedRevision: input.expectedRevision,
             message: input.message,
             model: input.model,
             systemPrompt: input.systemPrompt,
@@ -347,12 +365,14 @@ export function createHTTPChatBackend(): ChatBackend {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
+            expectedRevision: input.expectedRevision,
             message: input.message,
             model: input.model,
             systemPrompt: input.systemPrompt,
             webSearch: input.webSearch,
             mathTools: input.mathTools,
             advanced: input.advanced,
+            idempotencyKey: input.idempotencyKey,
             clientId: input.clientId,
             clientTime: input.clientTime || runtimeContext.clientTime,
             clientTimeZone:
@@ -364,7 +384,7 @@ export function createHTTPChatBackend(): ChatBackend {
     },
     async deleteUserMessage(input) {
       const response = await fetch(
-        `/api/sessions/${encodeURIComponent(input.sourceFriendlyId)}/messages/${encodeURIComponent(input.messageId)}`,
+        `/api/sessions/${encodeURIComponent(input.sourceFriendlyId)}/messages/${encodeURIComponent(input.messageId)}${input.expectedRevision === undefined ? '' : `?revision=${input.expectedRevision}`}`,
         {
           method: 'DELETE',
           credentials: 'include',

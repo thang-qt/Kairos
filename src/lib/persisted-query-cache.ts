@@ -68,6 +68,9 @@ export function subscribeToPersistedQueryCache(
     write: async function persistLatestCache() {
       const clientState = dehydrate(queryClient, {
         shouldDehydrateQuery: shouldPersistQuery,
+        shouldDehydrateMutation: function nonSensitiveMutation(mutation) {
+          return mutation.state.isPaused && mutation.meta?.persist !== false
+        },
       })
       await persister.persistClient({
         timestamp: Date.now(),

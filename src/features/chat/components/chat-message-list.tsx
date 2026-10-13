@@ -8,7 +8,7 @@ import {
   useState,
 } from 'react'
 import {
-  getGatewayMessageId,
+  getTurnId,
   getMessageTimestamp,
   getToolCallsFromMessage,
   textFromMessage,
@@ -17,7 +17,8 @@ import { DateDivider } from './date-divider'
 import { MessageItem } from './message-item'
 import { ConversationNavigator } from './conversation-navigator'
 import { ShortcutsHelpDialog } from './shortcuts-help-dialog'
-import type { GatewayMessage } from '../types'
+import { activityKeyFromMessage } from './message-item-utils'
+import type { ConversationTurn } from '../types'
 import {
   ChatContainerContent,
   ChatContainerRoot,
@@ -27,17 +28,15 @@ import { TypingIndicator } from '@/components/prompt-kit/typing-indicator'
 import { useChatSettingsStore } from '@/app/preferences/app-preferences'
 import { useChatScrollControl } from '../hooks/use-chat-scroll-control'
 import { useMessageNavigation } from '../hooks/use-message-navigation'
-import { cn } from '@/lib/utils'
 import {
-  activeAssistantRunBounds,
   findPreviousClonePoint,
-  projectChatMessages,
+  projectConversationTurns,
 } from './chat-message-list-utils'
 
 const EMPTY_ACTIVE_RUN_IDS = new Set<string>()
 
 type ChatMessageListProps = {
-  messages: Array<GatewayMessage>
+  messages: Array<ConversationTurn>
   loading: boolean
   empty: boolean
   emptyState?: React.ReactNode
@@ -47,6 +46,8 @@ type ChatMessageListProps = {
   activeRunIds?: ReadonlySet<string>
   sessionKey?: string
   modelLabelById: ReadonlyMap<string, string>
+  // Display names for remote MCP tool aliases.
+  mcpToolLabels?: ReadonlyMap<string, string>
   pinToTop: boolean
   pinGroupMinHeight: number
   headerHeight: number
@@ -63,10 +64,13 @@ type ChatMessageListProps = {
   targetMessageId?: string
   onRestoreScrollTopApplied?: () => void
   showConversationNavigator?: boolean
+  // Key of the turn shown in the activity panel; null when it is closed.
+  activeActivityKey?: string | null
+  onOpenActivity?: (activityKey: string) => void
 }
 
 export type CloneMessagePayload = {
-  message: GatewayMessage
+  message: ConversationTurn
   currentText: string
   previousMessageId?: string
 }
@@ -82,6 +86,7 @@ function ChatMessageListComponent({
   activeRunIds = EMPTY_ACTIVE_RUN_IDS,
   sessionKey,
   modelLabelById,
+  mcpToolLabels,
   pinToTop,
   pinGroupMinHeight,
   headerHeight,
@@ -95,6 +100,8 @@ function ChatMessageListComponent({
   targetMessageId,
   onRestoreScrollTopApplied,
   showConversationNavigator = false,
+  activeActivityKey = null,
+  onOpenActivity,
 }: ChatMessageListProps) {
   const wideMode = useChatSettingsStore((state) => state.settings.wideMode)
   const anchorRef = useRef<HTMLDivElement | null>(null)
@@ -106,10 +113,8 @@ function ChatMessageListComponent({
     new Map<string, React.RefObject<HTMLDivElement | null>>(),
   )
 
-  function getMessageKey(message: GatewayMessage, index: number): string {
-    return (
-      message.__optimisticId || getGatewayMessageId(message) || String(index)
-    )
+  function getMessageKey(message: ConversationTurn, index: number): string {
+    return message.__optimisticId || getTurnId(message) || String(index)
   }
 
   function getOrCreateUserTurnRef(messageId: string) {
@@ -120,24 +125,23 @@ function ChatMessageListComponent({
     return nextRef
   }
 
-  const { displayMessages, toolChainsByFinalMessageID, toolResultsByCallId } =
-    useMemo(() => {
-      const projection = projectChatMessages(messages, activeRunIds)
-      const activeIds = new Set<string>()
-      projection.displayMessages.forEach(
-        function collectUserRefs(message, index) {
-          if (message.role !== 'user') return
-          const messageId = getMessageKey(message, index)
-          activeIds.add(messageId)
-          getOrCreateUserTurnRef(messageId)
-        },
-      )
-      for (const existingId of userTurnRefsRef.current.keys()) {
-        if (activeIds.has(existingId)) continue
-        userTurnRefsRef.current.delete(existingId)
-      }
-      return projection
-    }, [messages, activeRunIds])
+  const { displayMessages, toolResultsByCallId } = useMemo(() => {
+    const projection = projectConversationTurns(messages)
+    const activeIds = new Set<string>()
+    projection.displayMessages.forEach(
+      function collectUserRefs(message, index) {
+        if (message.role !== 'user') return
+        const messageId = getMessageKey(message, index)
+        activeIds.add(messageId)
+        getOrCreateUserTurnRef(messageId)
+      },
+    )
+    for (const existingId of userTurnRefsRef.current.keys()) {
+      if (activeIds.has(existingId)) continue
+      userTurnRefsRef.current.delete(existingId)
+    }
+    return projection
+  }, [messages, activeRunIds])
 
   const latestUserIndex = useMemo(() => {
     for (let index = displayMessages.length - 1; index >= 0; index -= 1) {
@@ -247,13 +251,6 @@ function ChatMessageListComponent({
     }
   }, [slicedMessages, showConversationNavigator])
 
-  const activeAssistantResponses = useMemo(
-    function getActiveAssistantResponses() {
-      return activeAssistantRunBounds(slicedMessages, activeRunIds)
-    },
-    [activeRunIds, slicedMessages],
-  )
-
   const showTypingIndicator =
     waitingForResponse &&
     (typeof slicedLastUserIndex !== 'number' ||
@@ -296,7 +293,7 @@ function ChatMessageListComponent({
 
   const handleClone = useCallback(
     function handleClone(
-      message: GatewayMessage,
+      message: ConversationTurn,
       currentText: string,
       previousMessageId?: string,
     ) {
@@ -315,7 +312,7 @@ function ChatMessageListComponent({
   }
 
   function renderMessage(
-    chatMessage: GatewayMessage,
+    chatMessage: ConversationTurn,
     index: number,
     options?: {
       wrapperRef?: React.RefObject<HTMLDivElement | null>
@@ -324,30 +321,13 @@ function ChatMessageListComponent({
     },
   ) {
     const messageKey = getMessageKey(chatMessage, index)
-    const messageId = getGatewayMessageId(chatMessage) ?? ''
-    const messageRunId =
-      typeof (chatMessage.runId ?? chatMessage.__streamRunId) === 'string'
-        ? String(chatMessage.runId ?? chatMessage.__streamRunId).trim()
-        : ''
-    const activeAssistantResponse = messageRunId
-      ? activeAssistantResponses.get(messageRunId)
-      : undefined
-    const isActiveAssistantRound =
-      chatMessage.role === 'assistant' && activeAssistantResponse !== undefined
-    const isAssistantContinuation =
-      isActiveAssistantRound && index > activeAssistantResponse.firstIndex
-    const hasFollowingAssistantRound =
-      isActiveAssistantRound && index < activeAssistantResponse.lastIndex
+    const messageId = getTurnId(chatMessage) ?? ''
     const forceActionsVisible =
       typeof slicedLastAssistantIndex === 'number' &&
       index === slicedLastAssistantIndex
-    const toolChainMessages = toolChainsByFinalMessageID.get(
-      getGatewayMessageId(chatMessage) ?? '',
-    )
     const hasToolCalls =
-      (chatMessage.role === 'assistant' &&
-        getToolCallsFromMessage(chatMessage).length > 0) ||
-      Boolean(toolChainMessages?.length)
+      chatMessage.role === 'assistant' &&
+      getToolCallsFromMessage(chatMessage).length > 0
     const isUserMessage = chatMessage.role === 'user'
     const isResponseAfterLastUser = index === slicedResponseAfterLastUserIndex
     const wrapperRef = isUserMessage
@@ -358,35 +338,38 @@ function ChatMessageListComponent({
     const wrapperScrollMarginTop = isUserMessage
       ? headerHeight + 12
       : options?.wrapperScrollMarginTop
+    const activitySelected =
+      chatMessage.role === 'assistant' &&
+      activeActivityKey !== null &&
+      activityKeyFromMessage(chatMessage) === activeActivityKey
     const previousMessage = findPreviousClonePoint(slicedMessages, index)
     const previousMessageId = previousMessage
-      ? (getGatewayMessageId(previousMessage) ?? undefined)
+      ? (getTurnId(previousMessage) ?? undefined)
       : undefined
 
     return (
       <div key={messageKey} className="contents">
-        {shouldShowDateDivider(index) && !isAssistantContinuation ? (
+        {shouldShowDateDivider(index) ? (
           <DateDivider timestamp={getMessageTimestamp(chatMessage)} />
         ) : null}
         <MessageItem
           message={chatMessage}
-          toolChainMessages={toolChainMessages}
           toolResultsByCallId={hasToolCalls ? toolResultsByCallId : undefined}
           forceActionsVisible={forceActionsVisible}
-          showAssistantModel={!isAssistantContinuation}
-          showAssistantActions={!hasFollowingAssistantRound}
+          showAssistantModel
+          showAssistantActions
           modelLabelById={modelLabelById}
+          mcpToolLabels={mcpToolLabels}
           wrapperRef={wrapperRef}
-          wrapperClassName={cn(
-            options?.wrapperClassName,
-            isAssistantContinuation && '-mt-5',
-          )}
+          wrapperClassName={options?.wrapperClassName}
           wrapperScrollMarginTop={wrapperScrollMarginTop}
           isHighlighted={messageId === highlightedMessageId}
           onClone={onClone ? handleClone : undefined}
           previousMessageId={previousMessageId}
           onEdit={onEditUserTurn}
           onDelete={onDeleteUserTurn}
+          activitySelected={activitySelected}
+          onOpenActivity={onOpenActivity}
         />
       </div>
     )
@@ -430,7 +413,6 @@ function ChatMessageListComponent({
     }
   }, [
     slicedMessages,
-    activeAssistantResponses,
     groupStartIndex,
     hasGroup,
     headerHeight,
@@ -438,12 +420,14 @@ function ChatMessageListComponent({
     slicedLastUserIndex,
     slicedResponseAfterLastUserIndex,
     modelLabelById,
+    mcpToolLabels,
     onClone,
     onDeleteUserTurn,
     onEditUserTurn,
-    toolChainsByFinalMessageID,
     toolResultsByCallId,
     highlightedMessageId,
+    activeActivityKey,
+    onOpenActivity,
   ])
 
   const pinnedEndNotice =
@@ -454,7 +438,7 @@ function ChatMessageListComponent({
   return (
     <>
       <ChatContainerRoot
-        className="flex-1 min-h-0 -mb-4"
+        className="flex-1 min-h-0"
         data-scroll-restoration-id="chat-scroll"
         overlay={
           shouldShowConversationNavigator ? (
@@ -491,7 +475,7 @@ function ChatMessageListComponent({
               <div
                 className="flex flex-col gap-6"
                 style={{
-                  minHeight: `${Math.max(0, pinGroupMinHeight - 24)}px`,
+                  minHeight: `${Math.max(0, pinGroupMinHeight - 16)}px`,
                 }}
               >
                 {renderedMessages.group}
@@ -547,6 +531,7 @@ export function areChatMessageListEqual(
     prev.activeRunIds === next.activeRunIds &&
     prev.sessionKey === next.sessionKey &&
     prev.modelLabelById === next.modelLabelById &&
+    prev.mcpToolLabels === next.mcpToolLabels &&
     prev.pinToTop === next.pinToTop &&
     prev.pinGroupMinHeight === next.pinGroupMinHeight &&
     prev.headerHeight === next.headerHeight &&
@@ -559,16 +544,13 @@ export function areChatMessageListEqual(
     prev.restoreKey === next.restoreKey &&
     prev.targetMessageId === next.targetMessageId &&
     prev.onRestoreScrollTopApplied === next.onRestoreScrollTopApplied &&
-    prev.showConversationNavigator === next.showConversationNavigator
+    prev.showConversationNavigator === next.showConversationNavigator &&
+    prev.activeActivityKey === next.activeActivityKey &&
+    prev.onOpenActivity === next.onOpenActivity
   )
 }
 
-export {
-  activeAssistantRunBounds,
-  collectLinkedToolCallIds,
-  isLinkedToolResultMessage,
-  projectChatMessages,
-} from './chat-message-list-utils'
+export { projectConversationTurns } from './chat-message-list-utils'
 
 const MemoizedChatMessageList = memo(
   ChatMessageListComponent,

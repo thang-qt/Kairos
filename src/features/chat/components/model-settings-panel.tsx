@@ -2,13 +2,15 @@ import type { ProviderModel } from '@/lib/app-api'
 import type { ConversationAdvancedSettings } from '../conversation-settings'
 import type { ReasoningEffort } from '../types'
 import { Input } from '@/components/ui/input'
+import { Select } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
-import {
-  formatContextWindow,
-  providerModelDisplayName,
-  providerModelKey,
-} from '@/lib/model-utils'
+import { ModelDetails } from '@/components/model-details'
+import { providerModelDisplayName, providerModelKey } from '@/lib/model-utils'
 import { cn } from '@/lib/utils'
+import {
+  modelReasoningEfforts,
+  resolveReasoningEffort,
+} from '../reasoning-options'
 
 type ModelSettingsValue = {
   model: string
@@ -69,25 +71,18 @@ function FieldBlock({
   )
 }
 
-function ModelInfoRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="grid grid-cols-[5.5rem_minmax(0,1fr)] gap-3 text-xs">
-      <div className="text-primary-500">{label}</div>
-      <div className="min-w-0 break-words text-primary-800">{value}</div>
-    </div>
-  )
-}
-
 function SettingCard({
   label,
   description,
   checked,
   onCheckedChange,
+  disabled = false,
   children,
 }: {
   label: string
   description?: string
   checked: boolean
+  disabled?: boolean
   onCheckedChange: (checked: boolean) => void
   children?: React.ReactNode
 }) {
@@ -104,7 +99,11 @@ function SettingCard({
             </div>
           ) : null}
         </div>
-        <Switch checked={checked} onCheckedChange={onCheckedChange} />
+        <Switch
+          checked={checked}
+          disabled={disabled}
+          onCheckedChange={onCheckedChange}
+        />
       </div>
       {checked && children ? (
         <div className="space-y-3 border-t border-primary-200 pt-3">
@@ -179,51 +178,19 @@ export function ModelSettingsPanel({
         selectedModel,
         selectedModelId || 'No model selected',
       )
-  const modelDescription = selectedModel?.description?.trim()
   const advanced = value.advanced
+  const effortOptions = modelReasoningEfforts(selectedModel)
+  const effort = resolveReasoningEffort(advanced.reasoningEffort, selectedModel)
 
   return (
     <div className="pb-4">
       {showModelInfo ? (
         <PanelSection title="Model">
-          <FieldBlock label="Current model">
-            <div className="rounded-xl border border-primary-200 bg-primary-50/60 p-3">
-              <div className="text-pretty text-sm font-medium text-primary-950">
-                {modelName}
-              </div>
-
-              {modelDescription ? (
-                <details className="group mt-3">
-                  <summary className="cursor-pointer list-none text-sm leading-relaxed text-primary-700 outline-none">
-                    <span className="line-clamp-3 group-open:line-clamp-none">
-                      {modelDescription}
-                    </span>
-                    <span className="mt-1 inline-block text-xs font-medium text-primary-500 group-open:hidden">
-                      Read full description
-                    </span>
-                    <span className="mt-1 hidden text-xs font-medium text-primary-500 group-open:inline-block">
-                      Show less
-                    </span>
-                  </summary>
-                </details>
-              ) : null}
-
-              <div className="mt-4 space-y-2 rounded-lg border border-primary-200 bg-surface/70 p-3">
-                <ModelInfoRow
-                  label="Context"
-                  value={formatContextWindow(selectedModel?.contextWindow)}
-                />
-                {selectedModel?.created ? (
-                  <ModelInfoRow
-                    label="Created"
-                    value={new Date(
-                      selectedModel.created * 1000,
-                    ).toLocaleDateString()}
-                  />
-                ) : null}
-              </div>
-            </div>
-          </FieldBlock>
+          {selectedModel ? (
+            <ModelDetails model={selectedModel} />
+          ) : (
+            <div className="text-sm text-primary-500">{modelName}</div>
+          )}
         </PanelSection>
       ) : null}
 
@@ -271,33 +238,46 @@ export function ModelSettingsPanel({
       <PanelSection title="Advanced">
         <div className="space-y-3">
           <SettingCard
-            label="Reasoning"
-            description="Control thinking depth for reasoning models."
-            checked={advanced.reasoning}
+            label="Override reasoning effort"
+            disabled={effortOptions.length === 0}
+            description={
+              effortOptions.length === 0
+                ? 'This model does not advertise effort control.'
+                : selectedModel?.catalogMetadata
+                  ? 'Off uses the provider default. Choose a supported effort to override it.'
+                  : 'Off uses the provider default. Supported levels are unknown for this model.'
+            }
+            checked={advanced.reasoning && effortOptions.length > 0}
             onCheckedChange={function handleReasoningChange(checked) {
-              onChange({ advanced: { ...advanced, reasoning: checked } })
+              onChange({
+                advanced: {
+                  ...advanced,
+                  reasoning: checked,
+                  reasoningEffort: effort ?? advanced.reasoningEffort,
+                },
+              })
             }}
           >
-            <label className="grid grid-cols-[minmax(0,1fr)_8rem] items-center gap-3 text-sm text-primary-800">
+            <div className="grid grid-cols-[minmax(0,1fr)_10rem] items-center gap-3 text-sm text-primary-800">
               <span className="truncate">Effort</span>
-              <select
-                value={advanced.reasoningEffort}
-                onChange={function handleEffortChange(event) {
-                  onChange({
-                    advanced: {
-                      ...advanced,
-                      reasoningEffort: event.target.value as ReasoningEffort,
-                    },
-                  })
-                }}
-                className="h-8 rounded-lg border border-primary-200 bg-surface px-2 text-sm text-primary-900 outline-none focus:border-primary-500"
-                aria-label="Reasoning effort"
-              >
-                <option value="low">Low</option>
-                <option value="medium">Medium</option>
-                <option value="high">High</option>
-              </select>
-            </label>
+              <Select<ReasoningEffort>
+                label="Reasoning effort"
+                className="h-8"
+                value={effort ?? effortOptions[0]}
+                options={effortOptions.map((option) => ({
+                  value: option,
+                  label:
+                    option === 'none'
+                      ? 'None (disable thinking)'
+                      : option === 'xhigh'
+                        ? 'Extra high'
+                        : option[0].toUpperCase() + option.slice(1),
+                }))}
+                onValueChange={(reasoningEffort) =>
+                  onChange({ advanced: { ...advanced, reasoningEffort } })
+                }
+              />
+            </div>
           </SettingCard>
 
           <SettingCard

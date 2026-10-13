@@ -25,6 +25,7 @@ func (service *ProviderService) ListProviders(
 			Ref:               "system:" + service.system.ID,
 			Owner:             "system",
 			Kind:              service.system.Kind,
+			UseResponsesAPI:   service.system.UseResponsesAPI,
 			Label:             service.system.Label,
 			BaseURL:           service.system.BaseURL,
 			Enabled:           service.system.Enabled && preferences.UseSystemProviders,
@@ -38,6 +39,7 @@ func (service *ProviderService) ListProviders(
 			id,
 			user_id,
 			kind,
+ use_responses_api,
 			label,
 			base_url,
 			api_key_encrypted,
@@ -77,6 +79,10 @@ func (service *ProviderService) CreateProvider(
 		return ProviderRecord{}, errProvidersDisabled
 	}
 	kind := strings.ToLower(strings.TrimSpace(input.Kind))
+	if kind == openAIResponsesProviderKind {
+		kind = openAIProviderKind
+		input.UseResponsesAPI = true
+	}
 	if kind == "" {
 		kind = defaultProviderKind
 	}
@@ -99,6 +105,7 @@ func (service *ProviderService) CreateProvider(
 		ID:                newID(),
 		UserID:            userID,
 		Kind:              kind,
+		UseResponsesAPI:   input.UseResponsesAPI,
 		Label:             normalizedProviderLabel(input.Label),
 		BaseURL:           baseURL,
 		EncryptedAPIKey:   service.encryptSecret(apiKey),
@@ -119,6 +126,7 @@ func (service *ProviderService) CreateProvider(
 			id,
 			user_id,
 			kind,
+ use_responses_api,
 			label,
 			base_url,
 			api_key_encrypted,
@@ -127,8 +135,8 @@ func (service *ProviderService) CreateProvider(
 			created_at,
 			updated_at
 		)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, row.ID, row.UserID, row.Kind, row.Label, row.BaseURL, row.EncryptedAPIKey, boolAsInt(row.IsEnabled), boolAsInt(row.SupportsModelSync), row.CreatedAt, row.UpdatedAt); err != nil {
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, row.ID, row.UserID, row.Kind, boolAsInt(row.UseResponsesAPI), row.Label, row.BaseURL, row.EncryptedAPIKey, boolAsInt(row.IsEnabled), boolAsInt(row.SupportsModelSync), row.CreatedAt, row.UpdatedAt); err != nil {
 		return ProviderRecord{}, fmt.Errorf("create user provider: %w", err)
 	}
 
@@ -154,6 +162,10 @@ func (service *ProviderService) UpdateProvider(
 		return ProviderRecord{}, err
 	}
 
+	invalidateModels := input.APIKey != nil || (input.BaseURL != nil && strings.TrimSpace(*input.BaseURL) != row.BaseURL) || (input.SupportsModelSync != nil && *input.SupportsModelSync != row.SupportsModelSync)
+	if input.UseResponsesAPI != nil {
+		row.UseResponsesAPI = *input.UseResponsesAPI
+	}
 	if input.Label != nil {
 		row.Label = normalizedProviderLabel(*input.Label)
 	}
@@ -180,14 +192,16 @@ func (service *ProviderService) UpdateProvider(
 
 	if _, err := service.db.ExecContext(ctx, `
 		UPDATE user_providers
-		SET label = ?, base_url = ?, api_key_encrypted = ?, is_enabled = ?, supports_model_sync = ?, updated_at = ?
+		SET label = ?, base_url = ?, api_key_encrypted = ?, is_enabled = ?, supports_model_sync = ?, use_responses_api = ?, updated_at = ?
 		WHERE id = ? AND user_id = ?
-	`, row.Label, row.BaseURL, row.EncryptedAPIKey, boolAsInt(row.IsEnabled), boolAsInt(row.SupportsModelSync), row.UpdatedAt, row.ID, userID); err != nil {
+	`, row.Label, row.BaseURL, row.EncryptedAPIKey, boolAsInt(row.IsEnabled), boolAsInt(row.SupportsModelSync), boolAsInt(row.UseResponsesAPI), row.UpdatedAt, row.ID, userID); err != nil {
 		return ProviderRecord{}, fmt.Errorf("update user provider: %w", err)
 	}
 
-	if err := service.invalidateProviderModelCache(ctx, userID, "user:"+row.ID); err != nil {
-		return ProviderRecord{}, err
+	if invalidateModels {
+		if err := service.invalidateProviderModelCache(ctx, userID, "user:"+row.ID); err != nil {
+			return ProviderRecord{}, err
+		}
 	}
 
 	return providerRowToRecord(row), nil
@@ -234,6 +248,7 @@ func (service *ProviderService) findUserProvider(
 			id,
 			user_id,
 			kind,
+ use_responses_api,
 			label,
 			base_url,
 			api_key_encrypted,
@@ -247,6 +262,7 @@ func (service *ProviderService) findUserProvider(
 		&row.ID,
 		&row.UserID,
 		&row.Kind,
+		&row.UseResponsesAPI,
 		&row.Label,
 		&row.BaseURL,
 		&row.EncryptedAPIKey,
@@ -272,6 +288,7 @@ func scanProviderRow(scanner interface {
 		&row.ID,
 		&row.UserID,
 		&row.Kind,
+		&row.UseResponsesAPI,
 		&row.Label,
 		&row.BaseURL,
 		&row.EncryptedAPIKey,
@@ -291,6 +308,7 @@ func providerRowToRecord(row providerRow) ProviderRecord {
 		Ref:               "user:" + row.ID,
 		Owner:             "user",
 		Kind:              row.Kind,
+		UseResponsesAPI:   row.UseResponsesAPI,
 		Label:             row.Label,
 		BaseURL:           row.BaseURL,
 		Enabled:           row.IsEnabled,

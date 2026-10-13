@@ -5,11 +5,11 @@ import {
   useRef,
   useState,
 } from 'react'
-import { getGatewayMessageId } from '../utils'
-import type { GatewayMessage } from '../types'
+import { getTurnId } from '../utils'
+import type { ConversationTurn } from '../types'
 
 type UseChatScrollControlInput = {
-  displayMessages: Array<GatewayMessage>
+  displayMessages: Array<ConversationTurn>
   loading: boolean
   pinToTop: boolean
   sessionKey?: string
@@ -22,11 +22,11 @@ type UseChatScrollControlInput = {
 }
 
 export function targetVisibleCount(
-  displayMessages: Array<GatewayMessage>,
+  displayMessages: Array<ConversationTurn>,
   targetMessageId: string,
 ): number | undefined {
   const targetIndex = displayMessages.findIndex(function findTarget(message) {
-    return getGatewayMessageId(message) === targetMessageId
+    return getTurnId(message) === targetMessageId
   })
   return targetIndex < 0 ? undefined : displayMessages.length - targetIndex
 }

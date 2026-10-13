@@ -1,20 +1,16 @@
 package server
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"slices"
 	"strings"
-	"sync"
 
 	openai "github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/option"
 	"github.com/openai/openai-go/v3/packages/param"
-	"github.com/openai/openai-go/v3/packages/ssestream"
 	"github.com/openai/openai-go/v3/shared"
 )
 
@@ -70,26 +66,16 @@ func (driver *OpenAICompatibleDriver) GenerateChatStream(
 	request ChatGenerationRequest,
 	onDelta func(delta ChatGenerationDelta) error,
 ) (ChatGenerationResult, error) {
-	progressObserver := newHermesToolProgressObserver()
-	stream := driver.streamingClient(provider, progressObserver).Chat.Completions.NewStreaming(ctx, buildOpenAIChatRequest(request))
-	defer stream.Close()
-
-	processProgress := func() error {
-		for _, progress := range progressObserver.drain() {
-			if err := onDelta(ChatGenerationDelta{ToolProgress: []ProviderToolProgress{progress}}); err != nil {
-				return err
-			}
-		}
-		return nil
+	if provider.Record.UseResponsesAPI || provider.Record.Kind == openAIResponsesProviderKind {
+		return driver.generateResponses(ctx, provider, request, onDelta)
 	}
+	stream := driver.client(provider).Chat.Completions.NewStreaming(ctx, buildOpenAIChatRequest(request))
+	defer stream.Close()
 
 	accumulator := openAIStreamAccumulator{}
 	for stream.Next() {
-		if err := processProgress(); err != nil {
-			return ChatGenerationResult{}, err
-		}
 		delta := accumulator.addChunk(stream.Current())
-		if delta.Text == "" && len(delta.ToolCalls) == 0 {
+		if delta.Text == "" && delta.Thinking == "" && len(delta.ToolCalls) == 0 {
 			continue
 		}
 		if err := onDelta(delta); err != nil {
@@ -97,11 +83,10 @@ func (driver *OpenAICompatibleDriver) GenerateChatStream(
 		}
 	}
 	if err := stream.Err(); err != nil {
-		return ChatGenerationResult{}, fmt.Errorf("stream OpenAI-compatible chat completion: %w", err)
+		return ChatGenerationResult{}, fmt.Errorf("stream OpenAI-compatible chat completion: %w", normalizeProviderHTTPError(err))
 	}
-	<-progressObserver.done
-	if err := processProgress(); err != nil {
-		return ChatGenerationResult{}, err
+	if !accumulator.finished {
+		return ChatGenerationResult{}, fmt.Errorf("Chat Completions stream ended before completion")
 	}
 	return accumulator.result(provider.Record.Label, request.Model), nil
 }
@@ -110,27 +95,12 @@ func (driver *OpenAICompatibleDriver) client(provider resolvedProvider) *openai.
 	return driver.clientWithHTTPClient(provider, driver.httpClient)
 }
 
-func (driver *OpenAICompatibleDriver) streamingClient(
-	provider resolvedProvider,
-	progressObserver *hermesToolProgressObserver,
-) *openai.Client {
-	httpClient := http.DefaultClient
-	if driver.httpClient != nil {
-		clientCopy := *driver.httpClient
-		httpClient = &clientCopy
-	}
-	httpClient.Transport = &hermesToolProgressTransport{
-		base:     httpClient.Transport,
-		observer: progressObserver,
-	}
-	return driver.clientWithHTTPClient(provider, httpClient)
-}
-
 func (driver *OpenAICompatibleDriver) clientWithHTTPClient(
 	provider resolvedProvider,
 	httpClient *http.Client,
 ) *openai.Client {
 	client := openai.NewClient(
+		option.WithMaxRetries(0),
 		option.WithAPIKey(strings.TrimSpace(provider.APIKey)),
 		option.WithBaseURL(normalizeOpenAIBaseURL(provider.BaseURL)),
 		option.WithHTTPClient(httpClient),
@@ -144,126 +114,6 @@ func normalizeOpenAIBaseURL(value string) string {
 		return defaultOpenAIBaseURL
 	}
 	return normalized
-}
-
-const hermesToolProgressEvent = "hermes.tool.progress"
-
-// hermesToolProgressObserver duplicates an SSE response before the OpenAI SDK
-// decodes it. The SDK ignores Hermes's named progress events, while its normal
-// Chat Completions chunks continue through the SDK unchanged.
-type hermesToolProgressObserver struct {
-	events chan ProviderToolProgress
-	done   chan struct{}
-	once   sync.Once
-}
-
-func newHermesToolProgressObserver() *hermesToolProgressObserver {
-	return &hermesToolProgressObserver{
-		events: make(chan ProviderToolProgress, 128),
-		done:   make(chan struct{}),
-	}
-}
-
-func (observer *hermesToolProgressObserver) observe(event ssestream.Event) {
-	if event.Type != hermesToolProgressEvent {
-		return
-	}
-	var progress ProviderToolProgress
-	if err := json.Unmarshal(bytes.TrimSpace(event.Data), &progress); err != nil {
-		return
-	}
-	progress.ID = strings.TrimSpace(progress.ID)
-	progress.Name = strings.TrimSpace(progress.Name)
-	progress.Label = strings.TrimSpace(progress.Label)
-	progress.Emoji = strings.TrimSpace(progress.Emoji)
-	progress.Status = strings.TrimSpace(progress.Status)
-	if progress.ID == "" || progress.Name == "" || progress.Status == "" {
-		return
-	}
-	observer.events <- progress
-}
-
-func (observer *hermesToolProgressObserver) drain() []ProviderToolProgress {
-	result := make([]ProviderToolProgress, 0)
-	for {
-		select {
-		case progress := <-observer.events:
-			result = append(result, progress)
-		default:
-			return result
-		}
-	}
-}
-
-func (observer *hermesToolProgressObserver) finish() {
-	observer.once.Do(func() {
-		close(observer.done)
-	})
-}
-
-type hermesToolProgressTransport struct {
-	base     http.RoundTripper
-	observer *hermesToolProgressObserver
-}
-
-func (transport *hermesToolProgressTransport) RoundTrip(request *http.Request) (*http.Response, error) {
-	base := transport.base
-	if base == nil {
-		base = http.DefaultTransport
-	}
-	response, err := base.RoundTrip(request)
-	if err != nil || response == nil || response.Body == nil || !strings.HasPrefix(strings.ToLower(response.Header.Get("Content-Type")), "text/event-stream") {
-		transport.observer.finish()
-		return response, err
-	}
-
-	reader, writer := io.Pipe()
-	response.Body = &hermesObservedResponseBody{
-		source: response.Body,
-		writer: writer,
-	}
-	go func() {
-		defer transport.observer.finish()
-		defer reader.Close()
-		decoder := ssestream.NewDecoder(&http.Response{
-			Header: response.Header,
-			Body:   reader,
-		})
-		for decoder.Next() {
-			transport.observer.observe(decoder.Event())
-		}
-	}()
-	return response, nil
-}
-
-type hermesObservedResponseBody struct {
-	source    io.ReadCloser
-	writer    *io.PipeWriter
-	closeOnce sync.Once
-}
-
-func (body *hermesObservedResponseBody) Read(buffer []byte) (int, error) {
-	count, err := body.source.Read(buffer)
-	if count > 0 {
-		if _, writeErr := body.writer.Write(buffer[:count]); writeErr != nil {
-			return count, writeErr
-		}
-	}
-	if err != nil {
-		body.closeWriter()
-	}
-	return count, err
-}
-
-func (body *hermesObservedResponseBody) Close() error {
-	body.closeWriter()
-	return body.source.Close()
-}
-
-func (body *hermesObservedResponseBody) closeWriter() {
-	body.closeOnce.Do(func() {
-		_ = body.writer.Close()
-	})
 }
 
 func buildOpenAIChatRequest(request ChatGenerationRequest) openai.ChatCompletionNewParams {
@@ -417,8 +267,10 @@ func openAIFunctionParameters(value any) shared.FunctionParameters {
 }
 
 type openAIStreamAccumulator struct {
+	finished         bool
 	model            string
 	text             strings.Builder
+	thinking         strings.Builder
 	promptTokens     int64
 	completionTokens int64
 	totalTokens      int64
@@ -437,6 +289,19 @@ func (accumulator *openAIStreamAccumulator) addChunk(chunk openai.ChatCompletion
 	}
 	var delta ChatGenerationDelta
 	for _, choice := range chunk.Choices {
+		if choice.FinishReason != "" {
+			accumulator.finished = true
+		}
+		for _, key := range []string{"reasoning_content", "reasoning"} {
+			if field, ok := choice.Delta.JSON.ExtraFields[key]; ok {
+				var thinking string
+				if json.Unmarshal([]byte(field.Raw()), &thinking) == nil {
+					accumulator.thinking.WriteString(thinking)
+					delta.Thinking += thinking
+					break
+				}
+			}
+		}
 		if choice.Delta.Content != "" {
 			accumulator.text.WriteString(choice.Delta.Content)
 			delta.Text += choice.Delta.Content

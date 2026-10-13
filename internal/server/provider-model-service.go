@@ -317,6 +317,7 @@ func (service *ProviderService) enrichModels(
 		return models
 	}
 
+	models = service.enrichFromCatalog(ctx, userID, models)
 	overrides := service.loadModelMetadataOverrides(ctx, userID, models)
 
 	enriched := make([]ProviderModel, 0, len(models))

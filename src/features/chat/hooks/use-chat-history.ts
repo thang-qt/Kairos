@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 
 import { chatQueryKeys, fetchHistory } from '../chat-queries'
 import type { QueryClient } from '@tanstack/react-query'
-import type { GatewayMessage, HistoryResponse } from '../types'
+import type { ConversationTurn, HistoryResponse } from '../types'
 
 type UseChatHistoryInput = {
   activeFriendlyId: string
@@ -43,18 +43,19 @@ export function useChatHistory({
       const optimisticMessages = cachedMessages.filter((message) => {
         if (message.status === 'sending') return true
         if (message.__optimisticId) return true
-        return Boolean(message.clientId)
+        return false
       })
-      const streamingMessages = cachedMessages.filter((message) => {
-        const runId = (message as { __streamRunId?: unknown }).__streamRunId
-        return typeof runId === 'string' && runId.trim().length > 0
-      })
-
       const serverData = await fetchHistory({
         sessionKey: sessionKeyForHistory,
         friendlyId: activeFriendlyId,
       })
-      if (!optimisticMessages.length && !streamingMessages.length) {
+      const latest = queryClient.getQueryData<HistoryResponse>(historyKey)
+      if (latest && (latest.cursor ?? 0) > (serverData.cursor ?? 0))
+        return latest
+      if (
+        !optimisticMessages.length ||
+        serverData.revision !== cached?.revision
+      ) {
         return serverData
       }
 
@@ -62,14 +63,10 @@ export function useChatHistory({
         serverData.messages,
         optimisticMessages,
       )
-      const merged = mergeStreamingHistoryMessages(
-        mergedWithOptimistic,
-        streamingMessages,
-      )
 
       return {
         ...serverData,
-        messages: merged,
+        messages: mergedWithOptimistic,
       }
     },
     enabled:
@@ -113,58 +110,10 @@ export function useChatHistory({
   }
 }
 
-function mergeStreamingHistoryMessages(
-  serverMessages: Array<GatewayMessage>,
-  streamingMessages: Array<GatewayMessage>,
-): Array<GatewayMessage> {
-  if (!streamingMessages.length) return serverMessages
-
-  const merged = [...serverMessages]
-  for (const streamingMessage of streamingMessages) {
-    const hasMatch = merged.some(
-      function hasMatchingServerMessage(serverMessage) {
-        return sameMessageIdentity(serverMessage, streamingMessage)
-      },
-    )
-
-    if (!hasMatch) {
-      merged.push(streamingMessage)
-    }
-  }
-
-  return merged
-}
-
-function sameMessageIdentity(
-  leftMessage: GatewayMessage,
-  rightMessage: GatewayMessage,
-): boolean {
-  const leftID = normalizeString((leftMessage as { id?: unknown }).id)
-  const rightID = normalizeString((rightMessage as { id?: unknown }).id)
-  if (leftID && rightID) {
-    return leftID === rightID
-  }
-
-  const leftRunID = normalizeString(
-    (leftMessage as { __streamRunId?: unknown }).__streamRunId,
-  )
-  const rightRunID = normalizeString(
-    (rightMessage as { __streamRunId?: unknown }).__streamRunId,
-  )
-  if (leftRunID && rightRunID) {
-    return (
-      leftRunID === rightRunID &&
-      normalizeString(leftMessage.role) === normalizeString(rightMessage.role)
-    )
-  }
-
-  return false
-}
-
 function mergeOptimisticHistoryMessages(
-  serverMessages: Array<GatewayMessage>,
-  optimisticMessages: Array<GatewayMessage>,
-): Array<GatewayMessage> {
+  serverMessages: Array<ConversationTurn>,
+  optimisticMessages: Array<ConversationTurn>,
+): Array<ConversationTurn> {
   if (!optimisticMessages.length) return serverMessages
 
   const merged = [...serverMessages]
@@ -186,8 +135,4 @@ function mergeOptimisticHistoryMessages(
   }
 
   return merged
-}
-
-function normalizeString(value: unknown): string {
-  return typeof value === 'string' ? value.trim() : ''
 }

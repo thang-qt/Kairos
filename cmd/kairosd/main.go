@@ -45,6 +45,7 @@ func main() {
 	defer stop()
 	<-ctx.Done()
 
+	app.Stop()
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 

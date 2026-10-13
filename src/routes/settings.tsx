@@ -5,11 +5,12 @@ import { SettingsScreen } from '@/features/settings/settings-screen'
 
 const SETTINGS_TABS = new Set<SettingsTab>([
   'account',
+  'appearance',
+  'providers',
   'models',
   'chat',
   'web-tools',
-  'appearance',
-  'display',
+  'mcp',
 ])
 
 export const Route = createFileRoute('/settings')({
@@ -18,8 +19,9 @@ export const Route = createFileRoute('/settings')({
   },
   validateSearch: function validateSearch(search: Record<string, unknown>) {
     const tabInput = search.tab
-    if (tabInput === 'providers') {
-      return { tab: 'models' as SettingsTab }
+    // Display options now live on the Appearance page.
+    if (tabInput === 'display') {
+      return { tab: 'appearance' as SettingsTab }
     }
     const tab =
       typeof tabInput === 'string' && SETTINGS_TABS.has(tabInput as SettingsTab)

@@ -42,6 +42,7 @@ type UserPreferences struct {
 }
 
 type ProviderRecord struct {
+	UseResponsesAPI   bool   `json:"useResponsesApi"`
 	ID                string `json:"id"`
 	Ref               string `json:"ref"`
 	Owner             string `json:"owner"`
@@ -54,20 +55,22 @@ type ProviderRecord struct {
 }
 
 type ProviderModel struct {
-	ID            string `json:"id"`
-	ModelRef      string `json:"modelRef,omitempty"`
-	Object        string `json:"object"`
-	Created       int64  `json:"created"`
-	OwnedBy       string `json:"owned_by"`
-	Name          string `json:"name,omitempty"`
-	Description   string `json:"description,omitempty"`
-	ContextWindow int64  `json:"contextWindow,omitempty"`
-	ProviderRef   string `json:"providerRef,omitempty"`
-	ProviderLabel string `json:"providerLabel,omitempty"`
-	IsCustom      bool   `json:"isCustom"`
+	CatalogMetadata *ModelCatalogMetadata `json:"catalogMetadata,omitempty"`
+	ID              string                `json:"id"`
+	ModelRef        string                `json:"modelRef,omitempty"`
+	Object          string                `json:"object"`
+	Created         int64                 `json:"created"`
+	OwnedBy         string                `json:"owned_by"`
+	Name            string                `json:"name,omitempty"`
+	Description     string                `json:"description,omitempty"`
+	ContextWindow   int64                 `json:"contextWindow,omitempty"`
+	ProviderRef     string                `json:"providerRef,omitempty"`
+	ProviderLabel   string                `json:"providerLabel,omitempty"`
+	IsCustom        bool                  `json:"isCustom"`
 }
 
 type CreateProviderInput struct {
+	UseResponsesAPI   bool   `json:"useResponsesApi"`
 	Kind              string `json:"kind"`
 	Label             string `json:"label"`
 	BaseURL           string `json:"baseUrl"`
@@ -77,6 +80,7 @@ type CreateProviderInput struct {
 }
 
 type UpdateProviderInput struct {
+	UseResponsesAPI   *bool   `json:"useResponsesApi"`
 	Label             *string `json:"label"`
 	BaseURL           *string `json:"baseUrl"`
 	APIKey            *string `json:"apiKey"`
@@ -100,6 +104,7 @@ type UpdateModelMetadataInput struct {
 }
 
 type providerRow struct {
+	UseResponsesAPI   bool
 	ID                string
 	UserID            string
 	Kind              string
@@ -113,6 +118,7 @@ type providerRow struct {
 }
 
 type systemProvider struct {
+	UseResponsesAPI   bool
 	ID                string
 	Kind              string
 	Label             string
@@ -168,16 +174,22 @@ type ChatGenerationRequest struct {
 	Messages     []ProviderMessage
 	Tools        []ProviderTool
 	ToolChoice   any
-	WebSearch    *ProviderWebSearchOptions
-	Plugins      []ProviderPlugin
 	Advanced     *ChatAdvancedOptions
 }
 
+type ProviderTextSegment struct {
+	Text        string
+	Phase       string
+	PhaseSource string
+	ItemID      string
+}
+
 type ChatGenerationDelta struct {
+	Phase        string
+	TextSegments []ProviderTextSegment
 	Text         string
 	Thinking     string
 	ToolCalls    []ProviderToolCall
-	ToolProgress []ProviderToolProgress
 }
 
 type ChatGenerationResult struct {
@@ -185,6 +197,7 @@ type ChatGenerationResult struct {
 	ModelName        string
 	ModelDescription string
 	OutputText       string
+	TextSegments     []ProviderTextSegment
 	ThinkingText     string
 	PromptTokens     int64
 	CompletionTokens int64
@@ -200,14 +213,16 @@ type ProviderMessage struct {
 }
 
 type ProviderMessagePart struct {
-	Type     string
-	Text     string
-	MimeType string
-	Content  string
-	ID       string
-	Name     string
-	ArgsJSON string
-	Args     map[string]any
+	Phase       string
+	PhaseSource string
+	Type        string
+	Text        string
+	MimeType    string
+	Content     string
+	ID          string
+	Name        string
+	ArgsJSON    string
+	Args        map[string]any
 }
 
 type ProviderTool struct {
@@ -225,26 +240,6 @@ type ProviderToolCall struct {
 	Args     map[string]any
 }
 
-// ProviderToolProgress is an informational, provider-executed tool update. It
-// must not be added to ProviderToolCall: unlike those calls, Kairos does not
-// execute it or send a tool result back to the provider.
-type ProviderToolProgress struct {
-	ID         string `json:"toolCallId"`
-	Name       string `json:"tool"`
-	Label      string `json:"label"`
-	Emoji      string `json:"emoji"`
-	Status     string `json:"status"`
-	DurationMS int64  `json:"durationMs,omitempty"`
-}
-
-type ProviderWebSearchOptions struct{}
-
-type ProviderPlugin struct {
-	ID         string
-	PDFEngine  string
-	MaxResults *int
-}
-
 type ProviderDriver interface {
 	Kind() string
 	ListModels(ctx context.Context, provider resolvedProvider) ([]ProviderModel, error)
@@ -257,6 +252,7 @@ type ProviderDriver interface {
 }
 
 type ProviderService struct {
+	catalog              *modelsDevCache
 	db                   *sql.DB
 	config               Config
 	encryptionKey        [32]byte
@@ -268,7 +264,18 @@ type ProviderService struct {
 }
 
 func NewProviderService(db *sql.DB, config Config) *ProviderService {
+	if config.SystemProviderKind == openAIResponsesProviderKind {
+		config.SystemProviderKind = openAIProviderKind
+		config.SystemProviderUseResponsesAPI = true
+	}
+	if config.SystemProviderKind == "openrouter" {
+		config.SystemProviderKind = openAIProviderKind
+		if config.SystemProviderBaseURL == "" {
+			config.SystemProviderBaseURL = "https://openrouter.ai/api/v1"
+		}
+	}
 	service := &ProviderService{
+		catalog:              newModelsDevCache(),
 		db:                   db,
 		config:               config,
 		encryptionKey:        config.ProviderEncryptionKey(),
@@ -280,6 +287,7 @@ func NewProviderService(db *sql.DB, config Config) *ProviderService {
 		service.system = &systemProvider{
 			ID:                config.SystemProviderID,
 			Kind:              config.SystemProviderKind,
+			UseResponsesAPI:   config.SystemProviderUseResponsesAPI,
 			Label:             config.SystemProviderLabel,
 			BaseURL:           config.SystemProviderBaseURL,
 			APIKey:            config.SystemProviderAPIKey,

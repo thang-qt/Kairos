@@ -39,7 +39,7 @@
               ALLOW_USER_MODEL_SYNC = boolString cfg.settings.allowUserModelSync;
               LOCK_CHAT_MODEL = boolString cfg.settings.lockChatModel;
               SYSTEM_PROVIDER_1_ID = cfg.settings.systemProvider.id;
-              SYSTEM_PROVIDER_1_KIND = "openrouter";
+              SYSTEM_PROVIDER_1_KIND = "openai";
               SYSTEM_PROVIDER_1_LABEL = cfg.settings.systemProvider.label;
               SYSTEM_PROVIDER_1_ENABLED = boolString cfg.settings.systemProvider.enabled;
               SYSTEM_PROVIDER_1_ALLOW_DISABLE = boolString cfg.settings.systemProvider.allowDisable;
@@ -343,7 +343,7 @@
           pname = "kairos";
           inherit version src;
 
-          vendorHash = "sha256-zeLW8wiSPLkBHjuzTLr7GnH2bfOw5gmYMTK2pcIEK4c=";
+          vendorHash = "sha256-B//2WMj8J8MFooEs9jssZxHwGZm9LfNLUd2QZuXkAeQ=";
           subPackages = [ "./cmd/kairosd" ];
 
           preBuild = ''

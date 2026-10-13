@@ -11,8 +11,10 @@ func toolChoiceForTools(tools []ProviderTool) any {
 
 func providerPartsFromResult(result ChatGenerationResult) []ProviderMessagePart {
 	parts := make([]ProviderMessagePart, 0, 2+len(result.ToolCalls))
-	if text := strings.TrimSpace(result.OutputText); text != "" {
-		parts = append(parts, ProviderMessagePart{Type: "text", Text: text})
+	for _, segment := range resultTextSegments(result) {
+		if text := strings.TrimSpace(segment.Text); text != "" {
+			parts = append(parts, ProviderMessagePart{Type: "text", Text: text, Phase: segment.Phase, PhaseSource: segment.PhaseSource})
+		}
 	}
 	for _, call := range result.ToolCalls {
 		parts = append(parts, ProviderMessagePart{

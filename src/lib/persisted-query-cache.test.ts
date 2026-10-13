@@ -380,3 +380,42 @@ describe('persisted query cache', function persistedQueryCacheSuite() {
     upgradedDatabase.close()
   })
 })
+
+it('does not persist paused sensitive MCP credential mutations', async function () {
+  vi.useFakeTimers()
+  const client = new QueryClient()
+  client.setQueryData(appQueryKeys.me, { id: 'owner' })
+  const mutation = client.getMutationCache().build(client, {
+    meta: { persist: false },
+    mutationFn: async function save(_variables: { token: string }) {
+      return { ok: true }
+    },
+  })
+  mutation.state = {
+    ...mutation.state,
+    status: 'pending',
+    isPaused: true,
+    variables: { token: 'fixture-secret' },
+  }
+  const saved: Array<PersistedClient> = []
+  const unsubscribe = subscribeToPersistedQueryCache(client, {
+    persistClient: async function persist(value) {
+      saved.push(value)
+    },
+    restoreClient: async function restore() {
+      return undefined
+    },
+    removeClient: async function remove() {},
+  })
+  try {
+    client.setQueryData(appQueryKeys.models, { models: [] })
+    await vi.advanceTimersByTimeAsync(1100)
+    expect(saved.length).toBeGreaterThan(0)
+    expect(JSON.stringify(saved)).not.toContain('fixture-secret')
+    expect(saved[0].clientState.mutations).toEqual([])
+  } finally {
+    unsubscribe()
+    client.clear()
+    vi.useRealTimers()
+  }
+})

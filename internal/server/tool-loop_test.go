@@ -9,9 +9,10 @@ import (
 
 type scriptedToolLoopDriver struct {
 	requests []ChatGenerationRequest
+	phase    string
 }
 
-func (driver *scriptedToolLoopDriver) Kind() string { return openRouterProviderKind }
+func (driver *scriptedToolLoopDriver) Kind() string { return openAIProviderKind }
 
 func (driver *scriptedToolLoopDriver) ListModels(_ context.Context, _ resolvedProvider) ([]ProviderModel, error) {
 	return []ProviderModel{{ID: "test-model", Object: "model", OwnedBy: "test"}}, nil
@@ -26,10 +27,14 @@ func (driver *scriptedToolLoopDriver) GenerateChatStream(
 	driver.requests = append(driver.requests, request)
 	if len(driver.requests) == 1 {
 		call := ProviderToolCall{ID: "call-1", Name: "missing_tool", ArgsJSON: `{"value":1}`, Args: map[string]any{"value": 1}}
-		if err := onDelta(ChatGenerationDelta{Text: "I will check that.", ToolCalls: []ProviderToolCall{call}}); err != nil {
+		if err := onDelta(ChatGenerationDelta{Text: "I will check that.", Phase: driver.phase, ToolCalls: []ProviderToolCall{call}}); err != nil {
 			return ChatGenerationResult{}, err
 		}
-		return ChatGenerationResult{Model: "test-model", OutputText: "I will check that.", ToolCalls: []ProviderToolCall{call}}, nil
+		result := ChatGenerationResult{Model: "test-model", OutputText: "I will check that.", ToolCalls: []ProviderToolCall{call}}
+		if driver.phase != "" {
+			result.TextSegments = []ProviderTextSegment{{Text: result.OutputText, Phase: driver.phase, PhaseSource: "provider"}}
+		}
+		return result, nil
 	}
 	if err := onDelta(ChatGenerationDelta{Text: "The tool failed, so I cannot complete that check."}); err != nil {
 		return ChatGenerationResult{}, err
@@ -38,13 +43,19 @@ func (driver *scriptedToolLoopDriver) GenerateChatStream(
 }
 
 func TestToolLoopPersistsConventionalAssistantToolResultTurns(t *testing.T) {
+	for _, phase := range []string{"", "commentary"} {
+		t.Run("phase="+phase, func(t *testing.T) { testToolLoopPersistence(t, phase) })
+	}
+}
+
+func testToolLoopPersistence(t *testing.T, phase string) {
 	testServer := newTestApp(t, func(config *Config) {
 		config.SystemProviderEnabled = true
 		config.SystemProviderLabel = "Test provider"
 		config.SystemProviderStaticModels = []string{"test-model"}
 	})
-	driver := &scriptedToolLoopDriver{}
-	testServer.app.providers.drivers[openRouterProviderKind] = driver
+	driver := &scriptedToolLoopDriver{phase: phase}
+	testServer.app.providers.drivers[openAIProviderKind] = driver
 	cookie := signupAndRequireCookie(t, testServer, "tool-loop@example.com")
 
 	createResponse := performJSONRequest(t, testServer.handler, http.MethodPost, "/api/sessions", createSessionRequest{}, []*http.Cookie{cookie})
@@ -58,7 +69,7 @@ func TestToolLoopPersistsConventionalAssistantToolResultTurns(t *testing.T) {
 		MathTools: true,
 	}, []*http.Cookie{cookie})
 	assertStatusCode(t, sendResponse, http.StatusOK)
-	var sent SendMessageResult
+	var sent SubmitTurnResult
 	decodeResponseJSON(t, sendResponse, &sent)
 	waitForRunStatus(t, testServer, sent.RunID, "completed")
 
@@ -66,6 +77,9 @@ func TestToolLoopPersistsConventionalAssistantToolResultTurns(t *testing.T) {
 		t.Fatalf("provider requests = %d, want 2", len(driver.requests))
 	}
 	secondRequest := driver.requests[1]
+	if got := secondRequest.Messages[2].Parts[0]; got.Phase != "commentary" || (phase != "" && got.PhaseSource != "provider") {
+		t.Fatalf("follow-up phase=%#v", got)
+	}
 	if len(secondRequest.Messages) != 4 || secondRequest.Messages[2].Role != "assistant" || secondRequest.Messages[3].Role != "tool" {
 		t.Fatalf("second provider messages = %#v, want system, user, assistant, tool", secondRequest.Messages)
 	}
@@ -80,25 +94,46 @@ func TestToolLoopPersistsConventionalAssistantToolResultTurns(t *testing.T) {
 	assertStatusCode(t, historyResponse, http.StatusOK)
 	var history HistoryPayload
 	decodeResponseJSON(t, historyResponse, &history)
-	if len(history.Messages) != 4 {
-		t.Fatalf("history messages = %d, want user, assistant, tool result, assistant", len(history.Messages))
+	if len(history.Messages) != 2 {
+		t.Fatalf("history has %d turns, want 2", len(history.Messages))
 	}
-	if history.Messages[1]["role"] != "assistant" || history.Messages[2]["role"] != "toolResult" || history.Messages[3]["role"] != "assistant" {
-		t.Fatalf("history roles = %#v, want conventional tool loop", []any{history.Messages[1]["role"], history.Messages[2]["role"], history.Messages[3]["role"]})
+	turn := history.Messages[1]
+	if turn["id"] != sent.AssistantTurnID || turn["status"] != "completed" {
+		t.Fatalf("canonical turn: %#v", turn)
 	}
-	firstAssistantContent, ok := history.Messages[1]["content"].([]any)
-	if !ok || len(firstAssistantContent) != 2 || firstAssistantContent[0].(map[string]any)["type"] != "text" || firstAssistantContent[1].(map[string]any)["type"] != "toolCall" {
-		t.Fatalf("first assistant content = %#v, want text before tool call", history.Messages[1]["content"])
+	steps := turn["steps"].([]any)
+	if len(steps) != 3 {
+		t.Fatalf("steps=%#v", steps)
 	}
-	if history.Messages[1]["runId"] != sent.RunID || history.Messages[1]["roundIndex"] != float64(0) || history.Messages[1]["messageIndex"] != float64(0) {
-		t.Fatalf("assistant lineage = %#v, want run/round/message metadata", history.Messages[1])
+	for index, role := range []string{"assistant", "toolResult", "assistant"} {
+		if steps[index].(map[string]any)["role"] != role {
+			t.Fatalf("step order: %#v", steps)
+		}
 	}
-	if history.Messages[2]["toolCallId"] != "call-1" || history.Messages[2]["toolName"] != "missing_tool" || history.Messages[2]["isError"] != true {
-		t.Fatalf("tool result = %#v, want linked failed tool result", history.Messages[2])
+	for _, expected := range []struct {
+		index int
+		phase string
+	}{{0, "commentary"}, {2, "final_answer"}} {
+		part := steps[expected.index].(map[string]any)["content"].([]any)[0].(map[string]any)
+		source := "derived"
+		if expected.index == 0 && phase != "" {
+			source = "provider"
+		}
+		if part["phase"] != expected.phase || part["phaseSource"] != source {
+			t.Fatalf("persisted phase=%#v", part)
+		}
+		replay := extractProviderMessageParts(steps[expected.index].(map[string]any)["content"])
+		if replay[0].Phase != expected.phase || replay[0].PhaseSource != source {
+			t.Fatalf("history phase=%#v", replay)
+		}
 	}
-	if history.Messages[2]["runId"] != sent.RunID || history.Messages[2]["roundIndex"] != float64(0) || history.Messages[2]["messageIndex"] != float64(1) {
-		t.Fatalf("tool result lineage = %#v, want run/round/message metadata", history.Messages[2])
+	if steps[1].(map[string]any)["toolCallId"] != "call-1" {
+		t.Fatal("tool result unlinked")
 	}
+	if len(turn["content"].([]any)) != 3 {
+		t.Fatalf("turn content=%#v", turn["content"])
+	}
+
 }
 
 func TestEphemeralToolLoopSharesOneRunLineage(t *testing.T) {
@@ -108,7 +143,7 @@ func TestEphemeralToolLoopSharesOneRunLineage(t *testing.T) {
 		config.SystemProviderStaticModels = []string{"test-model"}
 	})
 	driver := &scriptedToolLoopDriver{}
-	testServer.app.providers.drivers[openRouterProviderKind] = driver
+	testServer.app.providers.drivers[openAIProviderKind] = driver
 	cookie := signupAndRequireCookie(t, testServer, "ephemeral-tool-loop@example.com")
 
 	response := performJSONRequest(
@@ -138,8 +173,12 @@ func TestEphemeralToolLoopSharesOneRunLineage(t *testing.T) {
 		if event.RunID != runID {
 			t.Fatalf("ephemeral event %d runId = %q, want %q", index, event.RunID, runID)
 		}
-		if event.Message["role"] == "toolResult" {
-			foundToolResult = true
+		if steps, ok := event.Message["steps"].([]any); ok {
+			for _, step := range steps {
+				if step.(map[string]any)["role"] == "toolResult" {
+					foundToolResult = true
+				}
+			}
 		}
 		if messageRunID := stringValueFromMap(event.Message, "runId"); len(event.Message) > 0 && messageRunID != runID {
 			t.Fatalf("ephemeral message %d runId = %q, want %q", index, messageRunID, runID)
@@ -158,7 +197,7 @@ type twoToolCallDriver struct {
 	requests int
 }
 
-func (driver *twoToolCallDriver) Kind() string { return openRouterProviderKind }
+func (driver *twoToolCallDriver) Kind() string { return openAIProviderKind }
 
 func (driver *twoToolCallDriver) ListModels(_ context.Context, _ resolvedProvider) ([]ProviderModel, error) {
 	return []ProviderModel{{ID: "test-model", Object: "model", OwnedBy: "test"}}, nil
@@ -195,22 +234,23 @@ func TestFinalCompletionDoesNotPersistAfterAbortClaim(t *testing.T) {
 	var created sessionMutationResponse
 	decodeResponseJSON(t, createResponse, &created)
 
-	session, err := testServer.app.chat.findSessionByFriendlyID(context.Background(), userID, created.FriendlyID)
+	session, err := testServer.app.conversations.findSessionByFriendlyID(context.Background(), userID, created.FriendlyID)
 	if err != nil {
 		t.Fatalf("find session: %v", err)
 	}
-	record := runRecord{
-		ID:                 newID(),
-		UserID:             userID,
-		SessionID:          session.ID,
-		Status:             "running",
-		Model:              "test-model",
-		AssistantMessageID: newID(),
+	record := executionRecord{
+		ID:              newID(),
+		UserID:          userID,
+		SessionID:       session.ID,
+		Status:          "running",
+		LeaseToken:      newID(),
+		Model:           "test-model",
+		AssistantTurnID: newID(),
 	}
-	if err := testServer.app.runs.insertRun(context.Background(), record, SendMessageInput{FriendlyID: created.FriendlyID, Message: "race", Model: "test-model"}, time.Now().UnixMilli()); err != nil {
+	if err := testServer.app.runtime.insertRun(context.Background(), record, SubmitTurnInput{FriendlyID: created.FriendlyID, Message: "race", Model: "test-model"}, time.Now().UnixMilli()); err != nil {
 		t.Fatalf("insert run: %v", err)
 	}
-	claimed, err := testServer.app.runs.claimRunAborted(context.Background(), record.ID)
+	claimed, err := testServer.app.runtime.CancelSessionRuns(context.Background(), userID, created.FriendlyID)
 	if err != nil {
 		t.Fatalf("claim abort: %v", err)
 	}
@@ -219,21 +259,21 @@ func TestFinalCompletionDoesNotPersistAfterAbortClaim(t *testing.T) {
 	}
 
 	finalMessage := buildAssistantMessageWithLineage(
-		record.AssistantMessageID,
+		record.AssistantTurnID,
 		assistantModelDisplay{ID: "test-model", Name: "Test Model", Description: "Test provider"},
 		time.Now().UnixMilli(),
 		buildAssistantContent("", "final answer", nil),
 		record.ID,
 		0,
 	)
-	_, completed, err := testServer.app.runs.completeRunWithFinalMessage(context.Background(), record, session, finalMessage, int64Value(finalMessage["timestamp"]), 0)
+	_, completed, err := testServer.app.runtime.completeRunWithFinalMessage(context.Background(), record, session, finalMessage, int64Value(finalMessage["timestamp"]), 0)
 	if err != nil {
 		t.Fatalf("complete run: %v", err)
 	}
 	if completed {
 		t.Fatal("complete after abort = true, want false")
 	}
-	status, err := testServer.app.runs.runStatus(context.Background(), record.ID)
+	status, err := testServer.app.runtime.runStatus(context.Background(), record.ID)
 	if err != nil {
 		t.Fatalf("load status: %v", err)
 	}
@@ -245,7 +285,7 @@ func TestFinalCompletionDoesNotPersistAfterAbortClaim(t *testing.T) {
 	assertStatusCode(t, historyResponse, http.StatusOK)
 	var history HistoryPayload
 	decodeResponseJSON(t, historyResponse, &history)
-	if len(history.Messages) != 0 {
+	if len(history.Messages) != 1 || len(contentPartsFromAny(history.Messages[0]["content"])) != 0 {
 		t.Fatalf("history messages = %d, want no final assistant persisted", len(history.Messages))
 	}
 }
@@ -264,22 +304,23 @@ func TestStagedToolRoundDoesNotPersistAfterAbortClaim(t *testing.T) {
 	var created sessionMutationResponse
 	decodeResponseJSON(t, createResponse, &created)
 
-	session, err := testServer.app.chat.findSessionByFriendlyID(context.Background(), userID, created.FriendlyID)
+	session, err := testServer.app.conversations.findSessionByFriendlyID(context.Background(), userID, created.FriendlyID)
 	if err != nil {
 		t.Fatalf("find session: %v", err)
 	}
-	record := runRecord{
-		ID:                 newID(),
-		UserID:             userID,
-		SessionID:          session.ID,
-		Status:             "running",
-		Model:              "test-model",
-		AssistantMessageID: newID(),
+	record := executionRecord{
+		ID:              newID(),
+		UserID:          userID,
+		SessionID:       session.ID,
+		Status:          "running",
+		LeaseToken:      newID(),
+		Model:           "test-model",
+		AssistantTurnID: newID(),
 	}
-	if err := testServer.app.runs.insertRun(context.Background(), record, SendMessageInput{FriendlyID: created.FriendlyID, Message: "race", Model: "test-model"}, time.Now().UnixMilli()); err != nil {
+	if err := testServer.app.runtime.insertRun(context.Background(), record, SubmitTurnInput{FriendlyID: created.FriendlyID, Message: "race", Model: "test-model"}, time.Now().UnixMilli()); err != nil {
 		t.Fatalf("insert run: %v", err)
 	}
-	claimed, err := testServer.app.runs.claimRunAborted(context.Background(), record.ID)
+	claimed, err := testServer.app.runtime.CancelSessionRuns(context.Background(), userID, created.FriendlyID)
 	if err != nil {
 		t.Fatalf("claim abort: %v", err)
 	}
@@ -289,7 +330,7 @@ func TestStagedToolRoundDoesNotPersistAfterAbortClaim(t *testing.T) {
 
 	call := ProviderToolCall{ID: "call-1", Name: "missing_tool", Args: map[string]any{"value": 1}}
 	assistantMessage := buildAssistantMessageWithLineage(
-		record.AssistantMessageID,
+		record.AssistantTurnID,
 		assistantModelDisplay{ID: "test-model", Name: "Test Model", Description: "Test provider"},
 		time.Now().UnixMilli(),
 		buildAssistantContent("", "Need a tool", []ProviderToolCall{call}),
@@ -297,7 +338,7 @@ func TestStagedToolRoundDoesNotPersistAfterAbortClaim(t *testing.T) {
 		0,
 	)
 	toolMessage := buildToolResultMessageWithLineage(newID(), call, WebToolResult{Content: "result"}, nil, time.Now().UnixMilli()+1, 1, record.ID, 0, 1)
-	_, committed, err := testServer.app.runs.appendStagedRunMessagesIfRunning(
+	_, committed, err := testServer.app.runtime.appendStagedRunMessagesIfRunning(
 		context.Background(),
 		record,
 		session,
@@ -315,7 +356,7 @@ func TestStagedToolRoundDoesNotPersistAfterAbortClaim(t *testing.T) {
 	assertStatusCode(t, historyResponse, http.StatusOK)
 	var history HistoryPayload
 	decodeResponseJSON(t, historyResponse, &history)
-	if len(history.Messages) != 0 {
+	if len(history.Messages) != 1 || len(contentPartsFromAny(history.Messages[0]["content"])) != 0 {
 		t.Fatalf("history messages = %d, want no staged assistant/tool messages", len(history.Messages))
 	}
 }
@@ -334,30 +375,34 @@ func TestCompleteRunWithFinalMessageStoresFinalTokensAtomically(t *testing.T) {
 	var created sessionMutationResponse
 	decodeResponseJSON(t, createResponse, &created)
 
-	session, err := testServer.app.chat.findSessionByFriendlyID(context.Background(), userID, created.FriendlyID)
+	session, err := testServer.app.conversations.findSessionByFriendlyID(context.Background(), userID, created.FriendlyID)
 	if err != nil {
 		t.Fatalf("find session: %v", err)
 	}
-	record := runRecord{
-		ID:                 newID(),
-		UserID:             userID,
-		SessionID:          session.ID,
-		Status:             "running",
-		Model:              "test-model",
-		AssistantMessageID: newID(),
+	record := executionRecord{
+		ID:              newID(),
+		UserID:          userID,
+		SessionID:       session.ID,
+		Status:          "running",
+		LeaseToken:      newID(),
+		Model:           "test-model",
+		AssistantTurnID: newID(),
 	}
-	if err := testServer.app.runs.insertRun(context.Background(), record, SendMessageInput{FriendlyID: created.FriendlyID, Message: "final", Model: "test-model"}, time.Now().UnixMilli()); err != nil {
+	if err := testServer.app.runtime.insertRun(context.Background(), record, SubmitTurnInput{FriendlyID: created.FriendlyID, Message: "final", Model: "test-model"}, time.Now().UnixMilli()); err != nil {
 		t.Fatalf("insert run: %v", err)
 	}
+	if _, err := testServer.app.db.Exec(`UPDATE chat_runs SET lease_token=?,lease_until=? WHERE id=?`, record.LeaseToken, time.Now().Add(time.Minute).UnixMilli(), record.ID); err != nil {
+		t.Fatal(err)
+	}
 	finalMessage := buildAssistantMessageWithLineage(
-		record.AssistantMessageID,
+		record.AssistantTurnID,
 		assistantModelDisplay{ID: "test-model", Name: "Test Model", Description: "Test provider"},
 		time.Now().UnixMilli(),
 		buildAssistantContent("", "final answer", nil),
 		record.ID,
 		0,
 	)
-	summary, completed, err := testServer.app.runs.completeRunWithFinalMessage(context.Background(), record, session, finalMessage, int64Value(finalMessage["timestamp"]), 42)
+	summary, completed, err := testServer.app.runtime.completeRunWithFinalMessage(context.Background(), record, session, finalMessage, int64Value(finalMessage["timestamp"]), 42)
 	if err != nil {
 		t.Fatalf("complete run: %v", err)
 	}
@@ -367,7 +412,7 @@ func TestCompleteRunWithFinalMessageStoresFinalTokensAtomically(t *testing.T) {
 	if summary.TotalTokens != 42 {
 		t.Fatalf("summary total tokens = %d, want 42", summary.TotalTokens)
 	}
-	updatedSession, err := testServer.app.chat.findSessionByFriendlyID(context.Background(), userID, created.FriendlyID)
+	updatedSession, err := testServer.app.conversations.findSessionByFriendlyID(context.Background(), userID, created.FriendlyID)
 	if err != nil {
 		t.Fatalf("reload session: %v", err)
 	}
@@ -384,7 +429,7 @@ func TestToolLoopEnforcesTotalToolCallLimitAndLinksRejectedCalls(t *testing.T) {
 		config.MaxToolCalls = 1
 	})
 	driver := &twoToolCallDriver{}
-	testServer.app.providers.drivers[openRouterProviderKind] = driver
+	testServer.app.providers.drivers[openAIProviderKind] = driver
 	cookie := signupAndRequireCookie(t, testServer, "tool-limit@example.com")
 
 	createResponse := performJSONRequest(t, testServer.handler, http.MethodPost, "/api/sessions", createSessionRequest{}, []*http.Cookie{cookie})
@@ -398,7 +443,7 @@ func TestToolLoopEnforcesTotalToolCallLimitAndLinksRejectedCalls(t *testing.T) {
 		MathTools: true,
 	}, []*http.Cookie{cookie})
 	assertStatusCode(t, sendResponse, http.StatusOK)
-	var sent SendMessageResult
+	var sent SubmitTurnResult
 	decodeResponseJSON(t, sendResponse, &sent)
 	waitForRunStatus(t, testServer, sent.RunID, "error")
 
@@ -410,13 +455,15 @@ func TestToolLoopEnforcesTotalToolCallLimitAndLinksRejectedCalls(t *testing.T) {
 	assertStatusCode(t, historyResponse, http.StatusOK)
 	var history HistoryPayload
 	decodeResponseJSON(t, historyResponse, &history)
-	if len(history.Messages) != 4 {
-		t.Fatalf("history messages = %d, want user, assistant, two tool results", len(history.Messages))
+	if len(history.Messages) != 2 {
+		t.Fatalf("turns=%d", len(history.Messages))
 	}
-	if history.Messages[2]["toolCallId"] != "call-1" || history.Messages[3]["toolCallId"] != "call-2" {
-		t.Fatalf("tool result call IDs = %#v/%#v", history.Messages[2], history.Messages[3])
+	steps := history.Messages[1]["steps"].([]any)
+	if len(steps) != 3 {
+		t.Fatalf("steps=%#v", steps)
 	}
-	if history.Messages[3]["isError"] != true {
-		t.Fatalf("rejected tool result = %#v, want synthetic error", history.Messages[3])
+	if steps[1].(map[string]any)["toolCallId"] != "call-1" || steps[2].(map[string]any)["toolCallId"] != "call-2" || steps[2].(map[string]any)["isError"] != true {
+		t.Fatalf("tool results=%#v", steps)
 	}
+
 }

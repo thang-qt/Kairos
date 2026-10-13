@@ -1,5 +1,5 @@
 import type { ToolPart } from '@/components/prompt-kit/tool'
-import type { GatewayMessage } from '../types'
+import type { ConversationTurn } from '../types'
 
 export type SearchSourceCard = {
   title: string
@@ -18,7 +18,7 @@ export type WebToolEventCard = {
 }
 
 export function webToolEventCardsFromMessage(
-  message: GatewayMessage,
+  message: ConversationTurn,
   toolCallIds?: ReadonlyArray<string>,
 ): Array<WebToolEventCard> {
   const events: Array<WebToolEventCard> = []
@@ -77,7 +77,7 @@ export function webToolEventCardsFromMessage(
 }
 
 export function searchSourceCardsFromMessage(
-  message: GatewayMessage,
+  message: ConversationTurn,
   toolCallIds?: ReadonlyArray<string>,
 ): Array<SearchSourceCard> {
   const details = detailsRecord(message.details)
@@ -147,7 +147,7 @@ export function searchSourceCardsFromMessage(
 }
 
 export function webToolRequestCount(
-  message: GatewayMessage,
+  message: ConversationTurn,
   toolCallIds?: ReadonlyArray<string>,
 ): number | null {
   const details = detailsRecord(message.details)
@@ -178,7 +178,7 @@ export function hostnameFromURL(value: string): string | null {
 }
 
 export function mapSearchDetailsToToolPart(
-  message: GatewayMessage,
+  message: ConversationTurn,
 ): ToolPart | null {
   const details = detailsRecord(message.details)
   if (!details) return null
@@ -219,7 +219,7 @@ export function mapSearchDetailsToToolPart(
   }
 }
 
-export function searchDetailsSignature(message: GatewayMessage): string {
+export function searchDetailsSignature(message: ConversationTurn): string {
   const toolPart = mapSearchDetailsToToolPart(message)
   return toolPart ? JSON.stringify(toolPart.output ?? {}) : ''
 }

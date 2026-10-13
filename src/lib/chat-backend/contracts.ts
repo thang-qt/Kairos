@@ -18,6 +18,8 @@ export type ToolResultContent = {
 }
 
 export type TextContent = {
+  phase?: 'commentary' | 'final_answer'
+  phaseSource?: 'provider' | 'derived'
   type: 'text'
   text?: string
   textSignature?: string
@@ -44,7 +46,12 @@ export type MessageContent =
   | ThinkingContent
   | ImageContent
 
-export type GatewayMessage = {
+export type ConversationTurn = {
+  canRetry?: boolean
+  steps?: Array<ConversationTurn>
+  status?: string
+  revision?: number
+  error?: string
   id?: string
   role?: string
   model?: string
@@ -87,13 +94,14 @@ export type ConversationSettings = {
 }
 
 export type SessionSummary = {
+  revision?: number
   key?: string
   label?: string
   title?: string
   derivedTitle?: string
   isPinned?: boolean
   updatedAt?: number
-  lastMessage?: GatewayMessage | null
+  lastMessage?: ConversationTurn | null
   friendlyId?: string
   totalTokens?: number
   contextTokens?: number
@@ -105,12 +113,16 @@ export type SessionListResponse = {
 }
 
 export type HistoryResponse = {
+  revision?: number
+  cursor?: number
+  activeRunIds?: Array<string>
   sessionKey: string
   sessionId?: string
-  messages: Array<GatewayMessage>
+  messages: Array<ConversationTurn>
 }
 
 export type SessionMeta = {
+  revision?: number
   key: string
   friendlyId: string
   title?: string
@@ -118,7 +130,7 @@ export type SessionMeta = {
   label?: string
   isPinned?: boolean
   updatedAt?: number
-  lastMessage?: GatewayMessage | null
+  lastMessage?: ConversationTurn | null
   totalTokens?: number
   contextTokens?: number
   settings?: ConversationSettings
@@ -132,7 +144,14 @@ export type SessionSearchResult = Pick<
   snippet?: string
 }
 
-export type ReasoningEffort = 'low' | 'medium' | 'high'
+export type ReasoningEffort =
+  | 'none'
+  | 'minimal'
+  | 'low'
+  | 'medium'
+  | 'high'
+  | 'xhigh'
+  | 'max'
 
 export type ChatRequestAdvancedSettings = {
   reasoning?: {
