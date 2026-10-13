@@ -100,3 +100,46 @@ it('allows denial and reports expired or revoked approvals', async function () {
   )
   client.clear()
 })
+
+for (const choice of [
+  { label: 'Approve for this chat', scope: 'chat' },
+  { label: 'Always approve this tool', scope: 'tool' },
+]) {
+  it(`sends explicit ${choice.scope} authorization from the matching button`, async function () {
+    const writes: Array<unknown> = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async function request(_path: string, init?: RequestInit) {
+        if (init?.method === 'POST') {
+          writes.push(JSON.parse(String(init.body)))
+          return Response.json({ ok: true })
+        }
+        return Response.json({
+          approvals: [
+            {
+              id: 'approval',
+              runId: 'run',
+              serverName: 'GitHub',
+              toolName: 'write',
+              arguments: { title: 'Exact' },
+              state: 'pending',
+              progress: {},
+            },
+          ],
+        })
+      }),
+    )
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    })
+    render(
+      <QueryClientProvider client={client}>
+        <MCPApprovalPanel runId="run" active />
+      </QueryClientProvider>,
+    )
+    fireEvent.click(await screen.findByRole('button', { name: choice.label }))
+    await screen.findByText(/future calls to this tool/)
+    expect(writes).toEqual([{ decision: 'approved', scope: choice.scope }])
+    client.clear()
+  })
+}

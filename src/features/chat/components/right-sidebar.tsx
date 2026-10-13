@@ -10,6 +10,7 @@ import {
 import { AnimatePresence, motion } from 'motion/react'
 import { usePinSession } from '../hooks/use-pin-session'
 import { useRenameSession } from '../hooks/use-rename-session'
+import { MCPServersPanel } from '@/features/settings/components/mcp-servers-panel'
 import { ModelSettingsPanel } from './model-settings-panel'
 import { SessionRenameDialog } from './sidebar/session-rename-dialog'
 import type { SessionMeta } from '../types'
@@ -28,7 +29,7 @@ import {
 
 type ExportFormat = 'markdown' | 'json' | 'text'
 
-export type RightSidebarTab = 'options' | 'model'
+export type RightSidebarTab = 'options' | 'model' | 'mcp'
 export type RightSidebarModelSettings = Pick<
   ConversationSettings,
   'model' | 'systemPrompt' | 'webSearch' | 'mathTools' | 'advanced'
@@ -55,6 +56,7 @@ type RightSidebarProps = {
 }
 
 const TABS = [
+  { id: 'mcp' as const, label: 'MCP', icon: Settings02Icon },
   {
     id: 'options' as const,
     label: 'Options',
@@ -263,6 +265,7 @@ function SidebarBody({
           exportDisabled={exportDisabled}
         />
       ) : null}
+      {activeTab === 'mcp' ? <MCPServersPanel /> : null}
       {activeTab === 'model' ? (
         <ModelSettingsPanel
           models={models}

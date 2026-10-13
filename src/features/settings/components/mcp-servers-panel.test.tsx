@@ -16,7 +16,7 @@ afterEach(function reset() {
   vi.unstubAllGlobals()
 })
 
-it('adds GitHub with a token, tests discovery, toggles tools, replaces credentials and deletes', async function () {
+it('automatically discovers and enables new tools, supports policy changes, disabling, credential replacement and deletion', async function () {
   let servers: Array<MCPServer> = []
   const tool: MCPTool = {
     id: 'tool',
@@ -25,7 +25,7 @@ it('adds GitHub with a token, tests discovery, toggles tools, replaces credentia
     alias: 'mcp_alias',
     description: 'Read a file',
     schema: { type: 'object' },
-    enabled: false,
+    enabled: true,
     available: true,
     approvalPolicy: 'always',
   }
@@ -50,7 +50,7 @@ it('adds GitHub with a token, tests discovery, toggles tools, replaces credentia
             enabled: true,
             hasToken: true,
             revision: 1,
-            health: 'untested',
+            health: 'connected',
             lastError: '',
             discoveredAt: 0,
           },
@@ -63,6 +63,7 @@ it('adds GitHub with a token, tests discovery, toggles tools, replaces credentia
       }
       if (path === '/api/mcp/servers/server/tools/tool') {
         tool.enabled = body.enabled
+        tool.approvalPolicy = body.approvalPolicy
         return Response.json({ ok: true })
       }
       if (path === '/api/mcp/servers/server' && method === 'PATCH') {
@@ -101,13 +102,24 @@ it('adds GitHub with a token, tests discovery, toggles tools, replaces credentia
   await screen.findByRole('button', { name: 'Test connection' })
   expect(writes[0].body.token).toBe('fixture-pat')
   expect(screen.queryByDisplayValue('fixture-pat')).toBeNull()
-  fireEvent.click(screen.getByRole('button', { name: 'Test connection' }))
   const toggle = await screen.findByRole('switch', {
     name: 'Enable tool GitHub / get_file',
   })
+  expect(toggle.getAttribute('aria-checked')).toBe('true')
+  fireEvent.change(screen.getByLabelText('Approval for GitHub / get_file'), {
+    target: { value: 'allow' },
+  })
+  await waitFor(function allowed() {
+    expect(tool.approvalPolicy).toBe('allow')
+  })
+  await screen.findByRole('button', { name: 'Reset approvals' })
+  fireEvent.click(screen.getByRole('button', { name: 'Reset approvals' }))
+  await waitFor(function reset() {
+    expect(tool.approvalPolicy).toBe('always')
+  })
   fireEvent.click(toggle)
-  await waitFor(function enabled() {
-    expect(toggle.getAttribute('aria-checked')).toBe('true')
+  await waitFor(function disabled() {
+    expect(toggle.getAttribute('aria-checked')).toBe('false')
   })
   expect(
     writes.some(function approvedPolicy(write) {

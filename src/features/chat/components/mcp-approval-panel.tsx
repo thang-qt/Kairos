@@ -28,13 +28,15 @@ export function MCPApprovalPanel({
     mutationFn: function decide(input: {
       id: string
       decision: 'approved' | 'denied'
+      scope?: 'once' | 'chat' | 'tool'
     }) {
       return mcpRequest(`approvals/${input.id}`, 'POST', {
         decision: input.decision,
+        ...(input.scope ? { scope: input.scope } : {}),
       })
     },
     onSuccess: async function refresh() {
-      await client.invalidateQueries({ queryKey: key })
+      await client.invalidateQueries({ queryKey: ['mcp'] })
     },
   })
   if (!active) return null
@@ -65,12 +67,14 @@ export function MCPApprovalPanel({
                 <p className="text-pretty text-xs text-primary-700">
                   Approve this exact call? It may change external data.
                   Canceling a call may not undo its effects. Approval requests
-                  expire after three minutes without a decision.
+                  expire after three minutes without a decision. Chat and
+                  permanent approvals allow future calls to this tool with
+                  different arguments; you can reset them in MCP settings.
                 </p>
                 <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words text-xs text-primary-800">
                   {JSON.stringify(approval.arguments, null, 2)}
                 </pre>
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2">
                   <Button
                     size="sm"
                     disabled={decision.isPending}
@@ -79,6 +83,34 @@ export function MCPApprovalPanel({
                     }}
                   >
                     Approve call
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={decision.isPending}
+                    onClick={function approveChat() {
+                      decision.mutate({
+                        id: approval.id,
+                        decision: 'approved',
+                        scope: 'chat',
+                      })
+                    }}
+                  >
+                    Approve for this chat
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={decision.isPending}
+                    onClick={function approveTool() {
+                      decision.mutate({
+                        id: approval.id,
+                        decision: 'approved',
+                        scope: 'tool',
+                      })
+                    }}
+                  >
+                    Always approve this tool
                   </Button>
                   <Button
                     size="sm"

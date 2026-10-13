@@ -19,7 +19,8 @@ export type MCPTool = {
   schema: Record<string, unknown>
   enabled: boolean
   available: boolean
-  approvalPolicy: 'always'
+  approvalPolicy: 'always' | 'allow'
+  chatApprovalCount?: number
 }
 export type MCPApproval = {
   id: string

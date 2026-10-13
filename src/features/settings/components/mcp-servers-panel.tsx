@@ -42,10 +42,16 @@ export function MCPServersPanel() {
       method: string
       body?: unknown
     }) {
-      return mcpRequest(input.path, input.method, input.body)
+      return mcpRequest<{ discoveryError?: string }>(
+        input.path,
+        input.method,
+        input.body,
+      )
     },
-    onSuccess: async function refresh() {
-      setFeedback('')
+    onSuccess: async function refresh(result) {
+      setFeedback(
+        result.discoveryError ? `Server saved. ${result.discoveryError}` : '',
+      )
       await client.invalidateQueries({ queryKey: ['mcp'] })
     },
     onError: function failed(error) {
@@ -116,8 +122,9 @@ export function MCPServersPanel() {
           MCP Servers
         </h2>
         <p className="text-pretty text-sm text-primary-600">
-          Connect remote tools to your chats. Each call requires your approval
-          of its exact arguments.
+          New connections are tested automatically and their discovered tools
+          are enabled. Choose whether to approve each call, a tool for one chat,
+          or a tool across all chats. These settings apply to all your chats.
         </p>
       </div>
       {feedback && (
@@ -235,7 +242,11 @@ export function MCPServersPanel() {
               mutation.isPending || !draft.name.trim() || !draft.endpoint.trim()
             }
           >
-            {draft.id ? 'Save changes' : 'Add server'}
+            {mutation.isPending
+              ? 'Saving and testing…'
+              : draft.id
+                ? 'Save changes'
+                : 'Add server'}
           </Button>
           {draft.id && (
             <Button
@@ -373,8 +384,8 @@ function MCPServerCard({
             }}
           />
           <p className="text-xs text-primary-600">
-            Tools start disabled. Enabled tools still require approval for every
-            call.
+            Disable tools you don’t want available. Enabled tools ask for
+            approval unless you explicitly allow them for a chat or permanently.
           </p>
           <div className="max-h-96 space-y-3 overflow-y-auto">
             {tools.data
@@ -402,7 +413,7 @@ function MCPServerCard({
                           onChange(
                             `servers/${server.id}/tools/${tool.id}`,
                             'PATCH',
-                            { enabled, approvalPolicy: 'always' },
+                            { enabled, approvalPolicy: tool.approvalPolicy },
                           )
                         }}
                       />
@@ -410,6 +421,48 @@ function MCPServerCard({
                     <p className="text-pretty text-xs text-primary-600">
                       {tool.description}
                     </p>
+                    <label className="mt-2 block text-xs text-primary-700">
+                      Approval
+                      <select
+                        aria-label={`Approval for ${server.name} / ${tool.name}`}
+                        className="ml-2 rounded border border-primary-200 bg-surface p-1"
+                        value={tool.approvalPolicy}
+                        disabled={pending || !tool.enabled || !tool.available}
+                        onChange={function policy(event) {
+                          onChange(
+                            `servers/${server.id}/tools/${tool.id}`,
+                            'PATCH',
+                            {
+                              enabled: tool.enabled,
+                              approvalPolicy: event.target.value,
+                            },
+                          )
+                        }}
+                      >
+                        <option value="always">Ask for each call</option>
+                        <option value="allow">Always approve this tool</option>
+                      </select>
+                    </label>
+                    {(tool.approvalPolicy === 'allow' ||
+                      (tool.chatApprovalCount ?? 0) > 0) && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        disabled={pending}
+                        onClick={function resetApprovals() {
+                          onChange(
+                            `servers/${server.id}/tools/${tool.id}`,
+                            'PATCH',
+                            { enabled: tool.enabled, approvalPolicy: 'always' },
+                          )
+                        }}
+                      >
+                        Reset approvals
+                        {tool.chatApprovalCount
+                          ? ` (${tool.chatApprovalCount} chats)`
+                          : ''}
+                      </Button>
+                    )}
                     <details className="mt-1 text-xs text-primary-600">
                       <summary>Input schema</summary>
                       <pre className="overflow-x-auto whitespace-pre-wrap">
