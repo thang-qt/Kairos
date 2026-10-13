@@ -6,6 +6,7 @@ import { AppearanceSettingsPanel } from './components/appearance-settings-panel'
 import { DisplaySettingsPanel } from './components/display-settings-panel'
 import { AccountSettingsPanel } from './components/account-settings-panel'
 import { WebToolsSettingsPanel } from './components/web-tools-settings-panel'
+import { MCPServersPanel } from './components/mcp-servers-panel'
 import { ChatSettingsPanel } from './components/chat-settings-panel'
 import {
   SettingsSidebar,
@@ -25,6 +26,7 @@ export type SettingsTab =
   | 'models'
   | 'chat'
   | 'web-tools'
+  | 'mcp'
   | 'appearance'
   | 'display'
 
@@ -43,6 +45,7 @@ function renderTabPanel(activeTab: SettingsTab) {
   if (activeTab === 'chat') {
     return <ChatSettingsPanel />
   }
+  if (activeTab === 'mcp') return <MCPServersPanel />
   if (activeTab === 'web-tools') {
     return <WebToolsSettingsPanel />
   }

@@ -38,6 +38,7 @@ const SETTINGS_TABS: Array<{
     id: 'web-tools',
     label: 'Web Tools',
   },
+  { id: 'mcp', label: 'MCP Servers' },
   {
     id: 'appearance',
     label: 'Appearance',

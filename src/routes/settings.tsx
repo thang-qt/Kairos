@@ -8,6 +8,7 @@ const SETTINGS_TABS = new Set<SettingsTab>([
   'models',
   'chat',
   'web-tools',
+  'mcp',
   'appearance',
   'display',
 ])

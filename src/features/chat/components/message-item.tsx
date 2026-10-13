@@ -7,6 +7,7 @@ import {
 } from '../utils'
 import { MessageActionsBar } from './message-actions-bar'
 import { AssistantWork } from './assistant-work'
+import { MCPApprovalPanel } from './mcp-approval-panel'
 import type {
   ConversationTurn,
   MessageContent as MessageContentPart,
@@ -295,6 +296,17 @@ function MessageItemComponent({
         </div>
       ) : null}
 
+      {isAssistant &&
+        message.runId &&
+        assistantIsStreaming &&
+        assistantParts.some(function remote(part) {
+          return part.type === 'toolCall' && part.name?.startsWith('mcp_')
+        }) && (
+          <MCPApprovalPanel
+            runId={message.runId}
+            active={message.status === 'running'}
+          />
+        )}
       {isAssistant &&
         (toolCount > 0 && showToolMessages && !assistantIsStreaming ? (
           <>

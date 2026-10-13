@@ -59,6 +59,10 @@ export function mapToolCallToToolPart(
   }
 
   return {
+    displayName:
+      resultMessage?.details?.mcpServer && resultMessage?.details?.mcpTool
+        ? `${resultMessage.details.mcpServer} / ${resultMessage.details.mcpTool}`
+        : undefined,
     type: toolCall.name || 'unknown',
     state,
     input: toolCall.arguments,
@@ -123,7 +127,9 @@ function parseToolResultText(
   } catch {
     // fall through to plain text output
   }
-  return { text }
+  return {
+    text,
+  }
 }
 
 export function runtimeToolDetailsSignature(message: ConversationTurn): string {

@@ -272,6 +272,8 @@ function stepTitle(step: ToolStep) {
 }
 
 function friendlyToolAction(toolPart: ToolPart) {
+  if (toolPart.displayName) return toolPart.displayName
+  if (toolPart.type.startsWith('mcp_')) return 'Remote MCP tool'
   const completed = toolPart.state === 'output-available'
   switch (toolPart.type) {
     case 'terminal':
