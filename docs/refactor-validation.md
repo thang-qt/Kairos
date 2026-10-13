@@ -50,3 +50,15 @@ All eight model/protocol combinations passed idempotent first-conversation creat
 Thinking is present in the canonical turn's `content` as `{type: "thinking", thinking: "..."}`, and is preserved in snapshots. All four models supplied it in the basic arithmetic scenario over both protocols. GLM supplied no thinking in its tool scenario, despite completing both tool rounds successfully; availability depends on what the provider emits. Chat Completions normalizes `reasoning_content` or `reasoning`; Responses normalizes reasoning-summary deltas. This exposes provider-supplied reasoning text, not reasoning the provider does not send.
 
 The frontend renders these parts through the existing Thinking component when `showReasoningBlocks` is enabled (the default). Its default collapse mode is `expanded-while-thinking`: open during streaming, collapsed afterward, with manual expansion available. This was confirmed by inspecting the component and preference defaults; this hosted validation did not run an interactive browser.
+
+Additional lifecycle checks with `deepseek-v4.1-flash` passed through both protocols:
+
+- A live SSE `delta` carried nonempty thinking while the run was still in progress, before its final event.
+- Disconnecting the SSE subscriber left generation running. Reconnecting with `Last-Event-ID` delivered the current snapshot and ordered, unique journal events after that cursor, through the run's final event.
+- Editing a user message after the old run emitted content invalidated that run, removed its assistant turn, and completed the replacement without resurrecting the removed turn.
+- Canceling after observed streamed content produced an aborted turn. Explicit retry completed successfully under the same run ID and assistant turn ID, without duplicating the turn.
+- Graceful service restart retained canonical conversation messages in SQLite.
+
+An unknown-model probe revealed a hosted protocol difference: Hyper Responses accepted `nonexistent-model` and completed with reported model `deepseek-v4.1-flash`; Hyper Chat Completions rejected the same ID with HTTP 404 (`model not found`). Kairos persisted the latter failure as an error turn. Kairos intentionally permits uncatalogued model IDs when a single provider is configured and resolves them in its worker, so callers must inspect the returned model rather than assume the Responses endpoint validates the requested ID. The initial test expected a synchronous rejection; that expectation was corrected after inspecting the runtime's asynchronous resolution and observing the actual terminal outcomes.
+
+The matrix and lifecycle checks used isolated temporary SQLite databases and authenticated application API requests against the built binary. No runtime source changes were required, and the temporary key file was removed afterward.
