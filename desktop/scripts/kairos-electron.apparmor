@@ -1,0 +1,16 @@
+# Ubuntu 24.04+ blocks unprivileged user namespaces unless an AppArmor profile
+# allows them, which makes Chromium's sandbox abort at startup. This profile
+# allows them only for this checkout's Electron binary, keeping the sandbox on.
+#
+# Install (replace the path if your checkout lives elsewhere):
+#   sudo cp desktop/scripts/kairos-electron.apparmor /etc/apparmor.d/kairos-electron
+#   sudo apparmor_parser -r /etc/apparmor.d/kairos-electron
+
+abi <abi/4.0>,
+include <tunables/global>
+
+profile kairos-electron /home/thang/Dev/Kairos/desktop/node_modules/.pnpm/electron@*/node_modules/electron/dist/electron flags=(unconfined) {
+  userns,
+
+  include if exists <local/kairos-electron>
+}

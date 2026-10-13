@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import { KairosIconBig } from '@/components/icons/kairos-icon-big'
+import { DesktopCloseButton } from '@/components/desktop-close-button'
 
 type AuthShellProps = {
   children: ReactNode
@@ -30,13 +31,14 @@ export function AuthShell({ children }: AuthShellProps) {
       />
 
       {/* Top nav bar */}
-      <header className="relative z-10 flex items-center px-6 py-4 sm:px-10">
+      <header className="app-drag relative z-10 flex items-center justify-between px-6 py-4 sm:px-10">
         <div className="flex items-center gap-2 select-none">
           <KairosIconBig className="size-6 rounded-sm" />
           <span className="font-serif text-lg font-medium text-primary-950">
             Kairos
           </span>
         </div>
+        <DesktopCloseButton />
       </header>
 
       {/* Main centered content */}

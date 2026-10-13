@@ -85,7 +85,7 @@ export function SettingsSidebar({
 
   return (
     <aside className="flex h-full w-full flex-col overflow-hidden bg-primary-100">
-      <div className="flex h-12 items-center justify-between px-2">
+      <div className="app-drag flex h-12 items-center justify-between px-2">
         <Link
           to="/new"
           className={cn(

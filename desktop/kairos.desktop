@@ -1,0 +1,14 @@
+[Desktop Entry]
+Type=Application
+Name=Kairos
+Comment=Chat with Kairos
+Exec=@LAUNCHER@
+Icon=@ICON@
+Terminal=false
+StartupWMClass=org.kairos.Kairos
+Categories=Network;Chat;
+Actions=quick-chat;
+
+[Desktop Action quick-chat]
+Name=Quick chat
+Exec=@LAUNCHER@ --toggle

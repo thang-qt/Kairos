@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'self'; base-uri 'none'; form-action 'none'"
+    />
+    <title>Kairos · Connection unavailable</title>
+    <link rel="stylesheet" href="offline.css" />
+    <script type="module" src="dist/offline.js"></script>
+  </head>
+  <body>
+    <div class="offline-drag" aria-hidden="true"></div>
+    <main class="offline-shell">
+      <section>
+        <h1>Let’s reconnect</h1>
+        <p>
+          Kairos couldn’t reach your server. Check your connection, then try
+          again.
+        </p>
+        <button id="retry" type="button">Retry</button>
+      </section>
+    </main>
+  </body>
+</html>

@@ -1,4 +1,5 @@
 import { createFileRoute, redirect } from '@tanstack/react-router'
+import { DesktopWindowBar } from '@/components/desktop-window-bar'
 
 export const Route = createFileRoute('/')({
   beforeLoad: () => {
@@ -13,6 +14,7 @@ export const Route = createFileRoute('/')({
 function IndexRoute() {
   return (
     <div className="h-screen flex items-center justify-center text-primary-600">
+      <DesktopWindowBar />
       Loading…
     </div>
   )

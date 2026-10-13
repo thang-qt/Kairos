@@ -11,6 +11,7 @@ import { ContextMeter } from './context-meter'
 import { ChatModelSelector } from './chat-model-selector'
 import type { ProviderModel } from '@/lib/app-api'
 import { Button } from '@/components/ui/button'
+import { DesktopCloseButton } from '@/components/desktop-close-button'
 import { cn } from '@/lib/utils'
 import {
   TooltipContent,
@@ -74,7 +75,10 @@ function ChatHeaderComponent({
     canSelectModel && !modelsLoading && models.length > 0,
   )
   return (
-    <div ref={wrapperRef} className="px-4 h-12 flex items-center gap-2">
+    <div
+      ref={wrapperRef}
+      className="app-drag px-4 h-12 flex items-center gap-2"
+    >
       {isSidebarCollapsed ? (
         <Button
           size="icon-sm"
@@ -169,6 +173,7 @@ function ChatHeaderComponent({
             />
           </Button>
         ) : null}
+        <DesktopCloseButton />
       </div>
     </div>
   )

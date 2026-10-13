@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 
 import { cn } from '@/lib/utils'
+import { DesktopWindowBar } from '@/components/desktop-window-bar'
 
 type FullScreenMessageProps = {
   title: string
@@ -17,6 +18,7 @@ export function FullScreenMessage({
 }: FullScreenMessageProps) {
   return (
     <div className="flex min-h-screen items-center justify-center bg-surface px-6 py-10 text-primary-900">
+      <DesktopWindowBar />
       <div
         className={cn(
           'w-full max-w-md rounded-3xl border border-primary-200 bg-primary-50/70 p-8 shadow-sm backdrop-blur-sm',

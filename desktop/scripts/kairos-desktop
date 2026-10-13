@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+set -euo pipefail
+desktop_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$desktop_dir"
+if [[ ! -f dist/main.js ]]; then
+  pnpm build
+fi
+exec "$desktop_dir/node_modules/.bin/electron" "$desktop_dir" "$@"

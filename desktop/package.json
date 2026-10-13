@@ -1,0 +1,18 @@
+{
+  "name": "kairos-desktop",
+  "private": true,
+  "type": "module",
+  "main": "dist/main.js",
+  "desktopName": "org.kairos.Kairos.desktop",
+  "scripts": {
+    "build": "tsc",
+    "dev": "pnpm build && electron .",
+    "start": "electron .",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "electron": "44.7.0",
+    "typescript": "^5.7.2",
+    "@types/node": "^22.10.2"
+  }
+}

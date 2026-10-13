@@ -82,7 +82,7 @@ function ChatSidebarComponent({
 
   return (
     <aside className="flex h-full w-full flex-col overflow-hidden bg-primary-100">
-      <div className="flex items-center h-12 px-2 justify-between">
+      <div className="app-drag flex items-center h-12 px-2 justify-between">
         <Link
           to="/new"
           onClick={beginFreshNewChat}

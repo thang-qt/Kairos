@@ -15,6 +15,7 @@ import {
 } from './components/settings-sidebar'
 import { AppShell } from '@/components/app-shell'
 import { GlobalShortcuts } from '@/components/global-shortcuts'
+import { DesktopCloseButton } from '@/components/desktop-close-button'
 import { Button } from '@/components/ui/button'
 import { useAppMobile } from '@/app/layout/use-app-mobile'
 import {
@@ -78,7 +79,7 @@ function SettingsHeader({
   onOpenSidebar,
 }: SettingsHeaderProps) {
   return (
-    <div className="flex h-12 items-center gap-2 px-4">
+    <div className="app-drag flex h-12 items-center gap-2 px-4">
       {isSidebarCollapsed ? (
         <Button
           size="icon-sm"
@@ -98,6 +99,7 @@ function SettingsHeader({
         </span>
         <span className="truncate text-primary-900">{title}</span>
       </div>
+      <DesktopCloseButton />
     </div>
   )
 }
