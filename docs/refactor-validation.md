@@ -33,3 +33,20 @@ The live check passed:
 - After stopping and restarting the real service with the same SQLite database, history and its cursor were unchanged, and a new SSE connection returned the persisted snapshot.
 
 These checks exercise the runtime and provider integration through the built application, rather than merely sending a direct provider request. They do not add hosted coverage for every provider, force a process crash, or replace the deterministic fencing and crash-recovery tests above.
+
+## Multi-model and Chat Completions validation
+
+A subsequent authenticated runtime matrix used the same hosted Hyper base URL, with four models listed by its `/models` endpoint. Every model was exercised with both `openai-responses` (Responses) and `openai` (Chat Completions), using explicit low reasoning effort and bounded output sizes.
+
+| Model | Responses | Chat Completions | Thinking in basic turn |
+| --- | --- | --- | --- |
+| `deepseek-v4.1-flash` | Pass | Pass | Both protocols |
+| `qwen3.8-flash` | Pass | Pass | Both protocols |
+| `glm-5.3-flash` | Pass | Pass | Both protocols |
+| `gpt-oss-120b` | Pass | Pass | Both protocols |
+
+All eight model/protocol combinations passed idempotent first-conversation creation, basic arithmetic, SSE snapshot/history agreement, context recall in a subsequent turn, two sequential `math_eval` tool rounds, editing the initial user message to truncate later turns, and HTTP 409 rejection for a stale conversation revision. Each two-tool scenario retained five ordered steps (three model calls and two tool results) inside a single assistant turn, and returned 3,349,087 for `2468*1357 + 11`.
+
+Thinking is present in the canonical turn's `content` as `{type: "thinking", thinking: "..."}`, and is preserved in snapshots. All four models supplied it in the basic arithmetic scenario over both protocols. GLM supplied no thinking in its tool scenario, despite completing both tool rounds successfully; availability depends on what the provider emits. Chat Completions normalizes `reasoning_content` or `reasoning`; Responses normalizes reasoning-summary deltas. This exposes provider-supplied reasoning text, not reasoning the provider does not send.
+
+The frontend renders these parts through the existing Thinking component when `showReasoningBlocks` is enabled (the default). Its default collapse mode is `expanded-while-thinking`: open during streaming, collapsed afterward, with manual expansion available. This was confirmed by inspecting the component and preference defaults; this hosted validation did not run an interactive browser.
