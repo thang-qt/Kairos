@@ -38,12 +38,12 @@ These checks exercise the runtime and provider integration through the built app
 
 A subsequent authenticated runtime matrix used the same hosted Hyper base URL, with four models listed by its `/models` endpoint. Every model was exercised with both `openai-responses` (Responses) and `openai` (Chat Completions), using explicit low reasoning effort and bounded output sizes.
 
-| Model | Responses | Chat Completions | Thinking in basic turn |
-| --- | --- | --- | --- |
-| `deepseek-v4.1-flash` | Pass | Pass | Both protocols |
-| `qwen3.8-flash` | Pass | Pass | Both protocols |
-| `glm-5.3-flash` | Pass | Pass | Both protocols |
-| `gpt-oss-120b` | Pass | Pass | Both protocols |
+| Model                 | Responses | Chat Completions | Thinking in basic turn |
+| --------------------- | --------- | ---------------- | ---------------------- |
+| `deepseek-v4.1-flash` | Pass      | Pass             | Both protocols         |
+| `qwen3.8-flash`       | Pass      | Pass             | Both protocols         |
+| `glm-5.3-flash`       | Pass      | Pass             | Both protocols         |
+| `gpt-oss-120b`        | Pass      | Pass             | Both protocols         |
 
 All eight model/protocol combinations passed idempotent first-conversation creation, basic arithmetic, SSE snapshot/history agreement, context recall in a subsequent turn, two sequential `math_eval` tool rounds, editing the initial user message to truncate later turns, and HTTP 409 rejection for a stale conversation revision. Each two-tool scenario retained five ordered steps (three model calls and two tool results) inside a single assistant turn, and returned 3,349,087 for `2468*1357 + 11`.
 

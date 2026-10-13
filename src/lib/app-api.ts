@@ -64,7 +64,32 @@ export type ProviderRecord = {
   systemManaged: boolean
 }
 
+export type ModelCatalogMetadata = {
+  source: string
+  provider: string
+  match: 'provider' | 'exact' | 'canonical'
+  model: {
+    id: string
+    name?: string
+    description?: string
+    canonical_model_id?: string
+    family?: string
+    attachment?: boolean
+    reasoning?: boolean
+    tool_call?: boolean
+    structured_output?: boolean
+    temperature?: boolean
+    open_weights?: boolean
+    modalities?: { input: Array<string>; output: Array<string> }
+    limit?: { context?: number; input?: number; output?: number }
+    cost?: Record<string, unknown>
+    reasoning_options?: Array<{ type: string; values?: Array<string> }>
+    [key: string]: unknown
+  }
+}
+
 export type ProviderModel = {
+  catalogMetadata?: ModelCatalogMetadata
   id: string
   modelRef?: string
   object: 'model'

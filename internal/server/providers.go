@@ -54,17 +54,18 @@ type ProviderRecord struct {
 }
 
 type ProviderModel struct {
-	ID            string `json:"id"`
-	ModelRef      string `json:"modelRef,omitempty"`
-	Object        string `json:"object"`
-	Created       int64  `json:"created"`
-	OwnedBy       string `json:"owned_by"`
-	Name          string `json:"name,omitempty"`
-	Description   string `json:"description,omitempty"`
-	ContextWindow int64  `json:"contextWindow,omitempty"`
-	ProviderRef   string `json:"providerRef,omitempty"`
-	ProviderLabel string `json:"providerLabel,omitempty"`
-	IsCustom      bool   `json:"isCustom"`
+	CatalogMetadata *ModelCatalogMetadata `json:"catalogMetadata,omitempty"`
+	ID              string                `json:"id"`
+	ModelRef        string                `json:"modelRef,omitempty"`
+	Object          string                `json:"object"`
+	Created         int64                 `json:"created"`
+	OwnedBy         string                `json:"owned_by"`
+	Name            string                `json:"name,omitempty"`
+	Description     string                `json:"description,omitempty"`
+	ContextWindow   int64                 `json:"contextWindow,omitempty"`
+	ProviderRef     string                `json:"providerRef,omitempty"`
+	ProviderLabel   string                `json:"providerLabel,omitempty"`
+	IsCustom        bool                  `json:"isCustom"`
 }
 
 type CreateProviderInput struct {
@@ -234,6 +235,7 @@ type ProviderDriver interface {
 }
 
 type ProviderService struct {
+	catalog              *modelsDevCache
 	db                   *sql.DB
 	config               Config
 	encryptionKey        [32]byte
@@ -252,6 +254,7 @@ func NewProviderService(db *sql.DB, config Config) *ProviderService {
 		}
 	}
 	service := &ProviderService{
+		catalog:              newModelsDevCache(),
 		db:                   db,
 		config:               config,
 		encryptionKey:        config.ProviderEncryptionKey(),
