@@ -21,16 +21,18 @@ type chatMessage struct {
 }
 
 type chatMessageContentPart struct {
-	Type     string
-	Text     string
-	Thinking string
-	Source   *chatMessageContentSource
-	ID       string
-	Name     string
-	Args     map[string]any
-	ArgsJSON string
-	Status   string
-	Emoji    string
+	Phase       string
+	PhaseSource string
+	Type        string
+	Text        string
+	Thinking    string
+	Source      *chatMessageContentSource
+	ID          string
+	Name        string
+	Args        map[string]any
+	ArgsJSON    string
+	Status      string
+	Emoji       string
 }
 
 type chatMessageContentSource struct {
@@ -128,10 +130,12 @@ func contentPartsToMaps(parts []chatMessageContentPart) []map[string]any {
 			if text == "" {
 				continue
 			}
-			values = append(values, map[string]any{
-				"type": "text",
-				"text": text,
-			})
+			value := map[string]any{"type": "text", "text": text}
+			if part.Phase != "" {
+				value["phase"] = part.Phase
+				value["phaseSource"] = part.PhaseSource
+			}
+			values = append(values, value)
 		case "thinking":
 			thinking := strings.TrimSpace(part.Thinking)
 			if thinking == "" {
@@ -212,7 +216,10 @@ func contentPartsFromMaps(items []map[string]any) []chatMessageContentPart {
 		case "text":
 			text := strings.TrimSpace(stringValueFromMap(item, "text"))
 			if text != "" {
-				parts = append(parts, newTextContentPart(text))
+				part := newTextContentPart(text)
+				part.Phase = normalizeMessagePhase(stringValueFromMap(item, "phase"))
+				part.PhaseSource = stringValueFromMap(item, "phaseSource")
+				parts = append(parts, part)
 			}
 		case "thinking":
 			thinking := strings.TrimSpace(stringValueFromMap(item, "thinking"))

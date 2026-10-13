@@ -9,6 +9,7 @@ import (
 
 type scriptedToolLoopDriver struct {
 	requests []ChatGenerationRequest
+	phase    string
 }
 
 func (driver *scriptedToolLoopDriver) Kind() string { return openAIProviderKind }
@@ -26,10 +27,14 @@ func (driver *scriptedToolLoopDriver) GenerateChatStream(
 	driver.requests = append(driver.requests, request)
 	if len(driver.requests) == 1 {
 		call := ProviderToolCall{ID: "call-1", Name: "missing_tool", ArgsJSON: `{"value":1}`, Args: map[string]any{"value": 1}}
-		if err := onDelta(ChatGenerationDelta{Text: "I will check that.", ToolCalls: []ProviderToolCall{call}}); err != nil {
+		if err := onDelta(ChatGenerationDelta{Text: "I will check that.", Phase: driver.phase, ToolCalls: []ProviderToolCall{call}}); err != nil {
 			return ChatGenerationResult{}, err
 		}
-		return ChatGenerationResult{Model: "test-model", OutputText: "I will check that.", ToolCalls: []ProviderToolCall{call}}, nil
+		result := ChatGenerationResult{Model: "test-model", OutputText: "I will check that.", ToolCalls: []ProviderToolCall{call}}
+		if driver.phase != "" {
+			result.TextSegments = []ProviderTextSegment{{Text: result.OutputText, Phase: driver.phase, PhaseSource: "provider"}}
+		}
+		return result, nil
 	}
 	if err := onDelta(ChatGenerationDelta{Text: "The tool failed, so I cannot complete that check."}); err != nil {
 		return ChatGenerationResult{}, err
@@ -38,12 +43,18 @@ func (driver *scriptedToolLoopDriver) GenerateChatStream(
 }
 
 func TestToolLoopPersistsConventionalAssistantToolResultTurns(t *testing.T) {
+	for _, phase := range []string{"", "commentary"} {
+		t.Run("phase="+phase, func(t *testing.T) { testToolLoopPersistence(t, phase) })
+	}
+}
+
+func testToolLoopPersistence(t *testing.T, phase string) {
 	testServer := newTestApp(t, func(config *Config) {
 		config.SystemProviderEnabled = true
 		config.SystemProviderLabel = "Test provider"
 		config.SystemProviderStaticModels = []string{"test-model"}
 	})
-	driver := &scriptedToolLoopDriver{}
+	driver := &scriptedToolLoopDriver{phase: phase}
 	testServer.app.providers.drivers[openAIProviderKind] = driver
 	cookie := signupAndRequireCookie(t, testServer, "tool-loop@example.com")
 
@@ -66,6 +77,9 @@ func TestToolLoopPersistsConventionalAssistantToolResultTurns(t *testing.T) {
 		t.Fatalf("provider requests = %d, want 2", len(driver.requests))
 	}
 	secondRequest := driver.requests[1]
+	if got := secondRequest.Messages[2].Parts[0]; got.Phase != "commentary" || (phase != "" && got.PhaseSource != "provider") {
+		t.Fatalf("follow-up phase=%#v", got)
+	}
 	if len(secondRequest.Messages) != 4 || secondRequest.Messages[2].Role != "assistant" || secondRequest.Messages[3].Role != "tool" {
 		t.Fatalf("second provider messages = %#v, want system, user, assistant, tool", secondRequest.Messages)
 	}
@@ -94,6 +108,23 @@ func TestToolLoopPersistsConventionalAssistantToolResultTurns(t *testing.T) {
 	for index, role := range []string{"assistant", "toolResult", "assistant"} {
 		if steps[index].(map[string]any)["role"] != role {
 			t.Fatalf("step order: %#v", steps)
+		}
+	}
+	for _, expected := range []struct {
+		index int
+		phase string
+	}{{0, "commentary"}, {2, "final_answer"}} {
+		part := steps[expected.index].(map[string]any)["content"].([]any)[0].(map[string]any)
+		source := "derived"
+		if expected.index == 0 && phase != "" {
+			source = "provider"
+		}
+		if part["phase"] != expected.phase || part["phaseSource"] != source {
+			t.Fatalf("persisted phase=%#v", part)
+		}
+		replay := extractProviderMessageParts(steps[expected.index].(map[string]any)["content"])
+		if replay[0].Phase != expected.phase || replay[0].PhaseSource != source {
+			t.Fatalf("history phase=%#v", replay)
 		}
 	}
 	if steps[1].(map[string]any)["toolCallId"] != "call-1" {

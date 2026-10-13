@@ -50,13 +50,23 @@ func buildAssistantContent(
 	thinking string,
 	text string,
 	toolCalls []ProviderToolCall,
+	segments ...ProviderTextSegment,
 ) []chatMessageContentPart {
 	content := make([]chatMessageContentPart, 0, 2+len(toolCalls))
 	if normalizedThinking := strings.TrimSpace(thinking); normalizedThinking != "" {
 		content = append(content, newThinkingContentPart(normalizedThinking))
 	}
-	if normalizedText := strings.TrimSpace(text); normalizedText != "" {
-		content = append(content, newTextContentPart(normalizedText))
+	if len(segments) == 0 && strings.TrimSpace(text) != "" {
+		segments = []ProviderTextSegment{{Text: text}}
+	}
+	for _, segment := range segments {
+		if strings.TrimSpace(segment.Text) == "" {
+			continue
+		}
+		part := newTextContentPart(segment.Text)
+		part.Phase = segment.Phase
+		part.PhaseSource = segment.PhaseSource
+		content = append(content, part)
 	}
 	for _, toolCall := range toolCalls {
 		if strings.TrimSpace(toolCall.ID) == "" &&

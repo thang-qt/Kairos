@@ -33,9 +33,29 @@ func (driver *OpenAICompatibleDriver) generateResponses(ctx context.Context, pro
 			continue
 		}
 		content := []any{}
+		currentPhase := ""
+		flushContent := func() {
+			if len(content) == 0 {
+				return
+			}
+			item := map[string]any{"type": "message", "role": message.Role, "content": content}
+			if message.Role == "assistant" && currentPhase != "" {
+				item["phase"] = currentPhase
+			}
+			input = append(input, item)
+			content = []any{}
+		}
 		for _, part := range message.Parts {
 			switch part.Type {
 			case "text":
+				phase := ""
+				if message.Role == "assistant" && part.PhaseSource == "provider" {
+					phase = normalizeMessagePhase(part.Phase)
+				}
+				if phase != currentPhase {
+					flushContent()
+					currentPhase = phase
+				}
 				kind := "input_text"
 				if message.Role == "assistant" {
 					kind = "output_text"
@@ -45,9 +65,7 @@ func (driver *OpenAICompatibleDriver) generateResponses(ctx context.Context, pro
 				content = append(content, map[string]any{"type": "input_image", "image_url": "data:" + part.MimeType + ";base64," + part.Content})
 			}
 		}
-		if len(content) > 0 {
-			input = append(input, map[string]any{"type": "message", "role": message.Role, "content": content})
-		}
+		flushContent()
 		for _, part := range message.Parts {
 			if part.Type == "toolCall" {
 				input = append(input, map[string]any{"type": "function_call", "call_id": part.ID, "name": part.Name, "arguments": providerToolCallArguments(part)})
@@ -104,6 +122,7 @@ func (driver *OpenAICompatibleDriver) generateResponses(ctx context.Context, pro
 	}
 	result := ChatGenerationResult{Model: request.Model}
 	calls := map[string]int{}
+	phases := map[string]string{}
 	completed := false
 	scanner := bufio.NewScanner(response.Body)
 	scanner.Buffer(make([]byte, 4096), 8<<20)
@@ -122,6 +141,7 @@ func (driver *OpenAICompatibleDriver) generateResponses(ctx context.Context, pro
 			ItemID string `json:"item_id"`
 			Item   struct {
 				ID        string `json:"id"`
+				Phase     string `json:"phase"`
 				Type      string `json:"type"`
 				CallID    string `json:"call_id"`
 				Name      string `json:"name"`
@@ -146,10 +166,16 @@ func (driver *OpenAICompatibleDriver) generateResponses(ctx context.Context, pro
 		case "response.output_text.delta":
 			result.OutputText += event.Delta
 			delta.Text = event.Delta
+			delta.Phase = phases[event.ItemID]
+			result.TextSegments = appendTextSegment(result.TextSegments, event.Delta, delta.Phase, event.ItemID)
+			delta.TextSegments = result.TextSegments
 		case "response.reasoning_summary_text.delta":
 			result.ThinkingText += event.Delta
 			delta.Thinking = event.Delta
 		case "response.output_item.added":
+			if event.Item.Type == "message" {
+				phases[event.Item.ID] = normalizeMessagePhase(event.Item.Phase)
+			}
 			if event.Item.Type == "function_call" {
 				calls[event.Item.ID] = len(result.ToolCalls)
 				call := ProviderToolCall{ID: event.Item.CallID, Name: event.Item.Name, ArgsJSON: event.Item.Arguments}
@@ -164,6 +190,20 @@ func (driver *OpenAICompatibleDriver) generateResponses(ctx context.Context, pro
 				delta.ToolCalls = []ProviderToolCall{*call}
 			}
 		case "response.output_item.done":
+			if event.Item.Type == "message" {
+				phase := normalizeMessagePhase(event.Item.Phase)
+				if phase != "" {
+					phases[event.Item.ID] = phase
+					for i := range result.TextSegments {
+						segment := &result.TextSegments[i]
+						if segment.ItemID == event.Item.ID {
+							segment.Phase = phase
+							segment.PhaseSource = "provider"
+						}
+					}
+					delta.TextSegments = result.TextSegments
+				}
+			}
 			if index, ok := calls[event.Item.ID]; ok {
 				call := &result.ToolCalls[index]
 				call.ArgsJSON = event.Item.Arguments
@@ -179,7 +219,7 @@ func (driver *OpenAICompatibleDriver) generateResponses(ctx context.Context, pro
 		case "error", "response.failed", "response.incomplete":
 			return result, fmt.Errorf("Responses API %s: %v %v", event.Type, event.Error, event.Response.Error)
 		}
-		if delta.Text != "" || delta.Thinking != "" || len(delta.ToolCalls) > 0 {
+		if delta.Text != "" || delta.Thinking != "" || len(delta.ToolCalls) > 0 || delta.TextSegments != nil {
 			if err := onDelta(delta); err != nil {
 				return result, err
 			}

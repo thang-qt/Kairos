@@ -177,10 +177,19 @@ type ChatGenerationRequest struct {
 	Advanced     *ChatAdvancedOptions
 }
 
+type ProviderTextSegment struct {
+	Text        string
+	Phase       string
+	PhaseSource string
+	ItemID      string
+}
+
 type ChatGenerationDelta struct {
-	Text      string
-	Thinking  string
-	ToolCalls []ProviderToolCall
+	Phase        string
+	TextSegments []ProviderTextSegment
+	Text         string
+	Thinking     string
+	ToolCalls    []ProviderToolCall
 }
 
 type ChatGenerationResult struct {
@@ -188,6 +197,7 @@ type ChatGenerationResult struct {
 	ModelName        string
 	ModelDescription string
 	OutputText       string
+	TextSegments     []ProviderTextSegment
 	ThinkingText     string
 	PromptTokens     int64
 	CompletionTokens int64
@@ -203,14 +213,16 @@ type ProviderMessage struct {
 }
 
 type ProviderMessagePart struct {
-	Type     string
-	Text     string
-	MimeType string
-	Content  string
-	ID       string
-	Name     string
-	ArgsJSON string
-	Args     map[string]any
+	Phase       string
+	PhaseSource string
+	Type        string
+	Text        string
+	MimeType    string
+	Content     string
+	ID          string
+	Name        string
+	ArgsJSON    string
+	Args        map[string]any
 }
 
 type ProviderTool struct {

@@ -135,6 +135,7 @@ func (service *AgentRuntime) executeGeneration(
 		}
 		assistantTimestamp := nextMessageTimestamp()
 		accumulatedText := ""
+		accumulatedSegments := []ProviderTextSegment{}
 		accumulatedThinking := ""
 		accumulatedToolCalls := []ProviderToolCall{}
 		if err := sink.ModelStarted(); err != nil {
@@ -171,11 +172,16 @@ func (service *AgentRuntime) executeGeneration(
 				}
 				accumulatedThinking += delta.Thinking
 				accumulatedText += delta.Text
+				if delta.TextSegments != nil {
+					accumulatedSegments = append([]ProviderTextSegment(nil), delta.TextSegments...)
+				} else if delta.Text != "" {
+					accumulatedSegments = appendTextSegment(accumulatedSegments, delta.Text, delta.Phase, "")
+				}
 				accumulatedToolCalls = mergeProviderToolCalls(
 					accumulatedToolCalls,
 					delta.ToolCalls,
 				)
-				content := buildAssistantContent(accumulatedThinking, accumulatedText, accumulatedToolCalls)
+				content := buildAssistantContent(accumulatedThinking, accumulatedText, accumulatedToolCalls, accumulatedSegments...)
 				if len(content) == 0 {
 					return nil
 				}
@@ -197,6 +203,7 @@ func (service *AgentRuntime) executeGeneration(
 			return ctx.Err()
 		}
 
+		deriveResultPhases(&result)
 		displayModel = displayModel.withProviderResult(result)
 		accumulatedThinking = firstNonEmpty(
 			result.ThinkingText,
@@ -214,6 +221,7 @@ func (service *AgentRuntime) executeGeneration(
 				accumulatedThinking,
 				result.OutputText,
 				accumulatedToolCalls,
+				result.TextSegments...,
 			),
 			input.RunID,
 			roundIndex,

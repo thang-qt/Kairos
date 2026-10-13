@@ -84,8 +84,10 @@ func extractProviderMessageParts(value any) []ProviderMessagePart {
 		case "text":
 			if text := strings.TrimSpace(item.Text); text != "" {
 				parts = append(parts, ProviderMessagePart{
-					Type: "text",
-					Text: text,
+					Type:        "text",
+					Text:        text,
+					Phase:       item.Phase,
+					PhaseSource: item.PhaseSource,
 				})
 			}
 		case "image":
