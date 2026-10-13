@@ -39,9 +39,12 @@ import {
   resolveConversationModelID,
   useConversationSettings,
 } from './conversation-settings'
-import { RightSidebar } from './components/right-sidebar'
+import { RIGHT_SIDEBAR_WIDTH, RightSidebar } from './components/right-sidebar'
 import type { RightSidebarTab } from './components/right-sidebar'
-import { ActivitySidebar } from './components/activity-sidebar'
+import {
+  ACTIVITY_SIDEBAR_WIDTH,
+  ActivitySidebar,
+} from './components/activity-sidebar'
 import { isAssistantStreaming } from './components/message-item-utils'
 import { useMcpApprovals, useMcpToolLabels } from './hooks/use-mcp'
 import { AppShell } from '@/components/app-shell'
@@ -554,7 +557,6 @@ export function ChatScreen({
       activeFriendlyId={activeFriendlyId}
       creatingSession={creatingSession}
       onCreateSession={startNewChat}
-      isCollapsed={isMobile ? false : isSidebarCollapsed}
       onToggleCollapse={handleToggleSidebarCollapse}
       onSelectSession={handleSelectSession}
       onActiveSessionDelete={handleActiveSessionDelete}
@@ -569,6 +571,13 @@ export function ChatScreen({
       sidebar={sidebar}
       mainRef={mainRef}
       hideChrome={hideUi}
+      rightPanelWidth={
+        rightSidebarOpen
+          ? RIGHT_SIDEBAR_WIDTH
+          : activityOpen
+            ? ACTIVITY_SIDEBAR_WIDTH
+            : 0
+      }
       header={
         <ChatHeader
           activeTitle={

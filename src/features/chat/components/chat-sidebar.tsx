@@ -6,7 +6,6 @@ import {
   Settings01Icon,
   SidebarLeft01Icon,
 } from '@hugeicons/core-free-icons'
-import { AnimatePresence, motion } from 'motion/react'
 import { memo } from 'react'
 import { Link, useNavigate } from '@tanstack/react-router'
 import { beginFreshNewChat } from '../conversation-settings'
@@ -31,7 +30,6 @@ type ChatSidebarProps = {
   activeFriendlyId: string
   creatingSession: boolean
   onCreateSession: () => void
-  isCollapsed: boolean
   onToggleCollapse: () => void
   onSelectSession?: () => void
   onActiveSessionDelete?: () => void
@@ -42,7 +40,6 @@ function ChatSidebarComponent({
   activeFriendlyId,
   creatingSession,
   onCreateSession,
-  isCollapsed,
   onToggleCollapse,
   onSelectSession,
   onActiveSessionDelete,
@@ -73,50 +70,20 @@ function ChatSidebarComponent({
     onActiveSessionDelete,
   })
 
-  const transition = {
-    duration: 0.15,
-    ease: isCollapsed ? 'easeIn' : 'easeOut',
-  } as const
-
-  const asideProps = {
-    className: 'h-full overflow-hidden bg-primary-100 flex flex-col',
-  }
-
   return (
-    <motion.aside
-      initial={false}
-      animate={{ width: isCollapsed ? 0 : 300 }}
-      transition={transition}
-      className={asideProps.className}
-      style={{ overflow: 'hidden' }}
-    >
-      <motion.div
-        layout
-        transition={{ layout: transition }}
-        className="flex items-center h-12 px-2 justify-between"
-      >
-        <AnimatePresence initial={false}>
-          {!isCollapsed ? (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={transition}
-            >
-              <Link
-                to="/new"
-                onClick={beginFreshNewChat}
-                className={cn(
-                  buttonVariants({ variant: 'ghost', size: 'sm' }),
-                  'w-full pl-1.5 justify-start',
-                )}
-              >
-                <KairosIconBig className="size-5 rounded-sm" />
-                Kairos
-              </Link>
-            </motion.div>
-          ) : null}
-        </AnimatePresence>
+    <aside className="flex h-full w-full flex-col overflow-hidden bg-primary-100">
+      <div className="flex items-center h-12 px-2 justify-between">
+        <Link
+          to="/new"
+          onClick={beginFreshNewChat}
+          className={cn(
+            buttonVariants({ variant: 'ghost', size: 'sm' }),
+            'pl-1.5 justify-start',
+          )}
+        >
+          <KairosIconBig className="size-5 rounded-sm" />
+          Kairos
+        </Link>
         <TooltipProvider>
           <TooltipRoot>
             <TooltipTrigger
@@ -131,95 +98,55 @@ function ChatSidebarComponent({
                 </Button>
               }
             />
-            <TooltipContent side="right">
-              {isCollapsed ? 'Open Sidebar' : 'Close Sidebar'}
-            </TooltipContent>
+            <TooltipContent side="right">Close Sidebar</TooltipContent>
           </TooltipRoot>
         </TooltipProvider>
-      </motion.div>
+      </div>
 
       <div className="px-2 mb-4 gap-px flex flex-col">
-        <motion.div
-          layout
-          transition={{ layout: transition }}
-          className="w-full"
+        <Button
+          disabled={creatingSession}
+          variant="ghost"
+          size="sm"
+          onClick={onCreateSession}
+          onMouseUp={onSelectSession}
+          className="group w-full pl-1.5 justify-start transition-colors duration-0"
         >
-          <Button
-            disabled={creatingSession}
-            variant="ghost"
-            size="sm"
-            onClick={onCreateSession}
-            onMouseUp={onSelectSession}
-            className="group w-full pl-1.5 justify-start transition-colors duration-0"
-          >
-            <HugeiconsIcon
-              icon={PencilEdit02Icon}
-              size={20}
-              strokeWidth={1.5}
-              className="min-w-5"
-            />
-            <AnimatePresence initial={false} mode="wait">
-              {!isCollapsed && (
-                <motion.span
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  transition={transition}
-                  className="overflow-hidden whitespace-nowrap"
-                >
-                  New Session
-                </motion.span>
-              )}
-            </AnimatePresence>
-            {!isCollapsed ? (
-              <span className="ms-auto inline-flex items-center gap-1 text-[14px] text-primary-600 opacity-0 transition-none group-hover:opacity-100">
-                <kbd className="font-sans">⇧</kbd>
-                <kbd className="font-sans">⌘</kbd>
-                <kbd className="font-sans">O</kbd>
-              </span>
-            ) : null}
-          </Button>
-        </motion.div>
-        <motion.div
-          layout
-          transition={{ layout: transition }}
-          className="w-full"
+          <HugeiconsIcon
+            icon={PencilEdit02Icon}
+            size={20}
+            strokeWidth={1.5}
+            className="min-w-5"
+          />
+          <span className="overflow-hidden whitespace-nowrap">New Session</span>
+          <span className="ms-auto inline-flex items-center gap-1 text-[14px] text-primary-600 opacity-0 transition-none group-hover:opacity-100">
+            <kbd className="font-sans">⇧</kbd>
+            <kbd className="font-sans">⌘</kbd>
+            <kbd className="font-sans">O</kbd>
+          </span>
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={function handleOpenSearch() {
+            setSearchDialogOpen(true)
+          }}
+          className="group w-full pl-1.5 justify-start transition-colors duration-0"
         >
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={function handleOpenSearch() {
-              setSearchDialogOpen(true)
-            }}
-            className="group w-full pl-1.5 justify-start transition-colors duration-0"
-          >
-            <HugeiconsIcon
-              icon={Search01Icon}
-              size={20}
-              strokeWidth={1.5}
-              className="min-w-5"
-            />
-            <AnimatePresence initial={false} mode="wait">
-              {!isCollapsed && (
-                <motion.span
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  transition={transition}
-                  className="overflow-hidden whitespace-nowrap"
-                >
-                  Search sessions
-                </motion.span>
-              )}
-            </AnimatePresence>
-            {!isCollapsed ? (
-              <span className="ms-auto inline-flex items-center gap-1 text-[14px] text-primary-600 opacity-0 transition-none group-hover:opacity-100">
-                <kbd className="font-sans">⌘</kbd>
-                <kbd className="font-sans">K</kbd>
-              </span>
-            ) : null}
-          </Button>
-        </motion.div>
+          <HugeiconsIcon
+            icon={Search01Icon}
+            size={20}
+            strokeWidth={1.5}
+            className="min-w-5"
+          />
+          <span className="overflow-hidden whitespace-nowrap">
+            Search sessions
+          </span>
+          <span className="ms-auto inline-flex items-center gap-1 text-[14px] text-primary-600 opacity-0 transition-none group-hover:opacity-100">
+            <kbd className="font-sans">⌘</kbd>
+            <kbd className="font-sans">K</kbd>
+          </span>
+        </Button>
       </div>
 
       <CommandSessionDialog
@@ -230,46 +157,24 @@ function ChatSidebarComponent({
       />
 
       <div className="flex-1 min-h-0 overflow-hidden">
-        <motion.div
-          key="content"
-          initial={false}
-          animate={{
-            opacity: isCollapsed ? 0 : 1,
-            visibility: isCollapsed ? 'hidden' : 'visible',
-          }}
-          transition={transition}
-          aria-hidden={isCollapsed}
-          className={cn(
-            'pt-0 flex flex-col w-full min-h-0 h-full',
-            isCollapsed && 'pointer-events-none',
-          )}
-        >
-          <div className="flex-1 min-h-0">
-            <SidebarSessions
-              sessions={sessions}
-              activeFriendlyId={activeFriendlyId}
-              onSelect={onSelectSession}
-              onRename={handleOpenRename}
-              onDelete={handleOpenDelete}
-            />
-          </div>
-        </motion.div>
+        <SidebarSessions
+          sessions={sessions}
+          activeFriendlyId={activeFriendlyId}
+          onSelect={onSelectSession}
+          onRename={handleOpenRename}
+          onDelete={handleOpenDelete}
+        />
       </div>
 
       <div className="px-2 py-3 border-t border-primary-200 bg-primary-100">
         <TooltipProvider>
-          <motion.div
-            layout
-            transition={{ layout: transition }}
-            className="flex w-full items-center gap-1"
-          >
+          <div className="flex w-full items-center gap-1">
             <Button
               variant="ghost"
               size="sm"
               onClick={function handleOpenSettings() {
                 void navigate({ to: '/settings' })
               }}
-              title={isCollapsed ? 'Settings' : undefined}
               className="min-w-0 flex-1 justify-start pl-1.5"
             >
               <HugeiconsIcon
@@ -278,19 +183,9 @@ function ChatSidebarComponent({
                 strokeWidth={1.5}
                 className="min-w-5"
               />
-              <AnimatePresence initial={false} mode="wait">
-                {!isCollapsed && (
-                  <motion.span
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    exit={{ opacity: 0 }}
-                    transition={transition}
-                    className="overflow-hidden whitespace-nowrap"
-                  >
-                    Settings
-                  </motion.span>
-                )}
-              </AnimatePresence>
+              <span className="overflow-hidden whitespace-nowrap">
+                Settings
+              </span>
             </Button>
 
             <TooltipRoot>
@@ -316,7 +211,7 @@ function ChatSidebarComponent({
                 {isLoggingOut ? 'Signing out...' : 'Log out'}
               </TooltipContent>
             </TooltipRoot>
-          </motion.div>
+          </div>
         </TooltipProvider>
       </div>
 
@@ -339,7 +234,7 @@ function ChatSidebarComponent({
           setDeleteDialogOpen(false)
         }}
       />
-    </motion.aside>
+    </aside>
   )
 }
 
@@ -368,7 +263,6 @@ function areSidebarPropsEqual(
 ): boolean {
   if (prevProps.activeFriendlyId !== nextProps.activeFriendlyId) return false
   if (prevProps.creatingSession !== nextProps.creatingSession) return false
-  if (prevProps.isCollapsed !== nextProps.isCollapsed) return false
   if (!areSessionsEqual(prevProps.sessions, nextProps.sessions)) return false
   return true
 }

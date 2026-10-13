@@ -142,7 +142,6 @@ export function SettingsScreen({
               handleToggleSidebarCollapse()
             }
           }}
-          isCollapsed={isSidebarCollapsed}
           onToggleCollapse={handleToggleSidebarCollapse}
         />
       }

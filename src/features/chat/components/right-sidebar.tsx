@@ -377,11 +377,11 @@ function RightSidebarComponent({
     <AnimatePresence initial={false}>
       {isOpen ? (
         <motion.aside
-          initial={{ width: 0, opacity: 0 }}
-          animate={{ width: 280, opacity: 1 }}
-          exit={{ width: 0, opacity: 0 }}
-          transition={{ duration: 0.2, ease: 'easeInOut' }}
-          className="relative z-30 flex h-full shrink-0 flex-col overflow-hidden bg-primary-100"
+          initial={{ x: '100%' }}
+          animate={{ x: 0 }}
+          exit={{ x: '100%' }}
+          transition={{ duration: 0.2, ease: 'easeOut' }}
+          className="absolute inset-y-0 right-0 z-20 flex w-[280px] flex-col overflow-hidden bg-primary-100"
         >
           <div className="flex h-12 shrink-0 items-center justify-between border-b border-primary-200 px-2">
             <SidebarTabs activeTab={activeTab} onTabChange={onTabChange} />
@@ -415,5 +415,8 @@ function RightSidebarComponent({
     </AnimatePresence>
   )
 }
+
+// Matches the desktop panel width above; AppShell reserves this space.
+export const RIGHT_SIDEBAR_WIDTH = 280
 
 export const RightSidebar = memo(RightSidebarComponent)

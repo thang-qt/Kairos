@@ -76,13 +76,13 @@ function ActivitySidebarComponent({
     <AnimatePresence initial={false}>
       {isOpen ? (
         <motion.aside
-          initial={{ width: 0, opacity: 0 }}
-          animate={{ width: 360, opacity: 1 }}
-          exit={{ width: 0, opacity: 0 }}
-          transition={{ duration: 0.2, ease: 'easeInOut' }}
-          className="relative z-30 flex h-full shrink-0 flex-col overflow-hidden bg-primary-100"
+          initial={{ x: '100%' }}
+          animate={{ x: 0 }}
+          exit={{ x: '100%' }}
+          transition={{ duration: 0.2, ease: 'easeOut' }}
+          className="absolute inset-y-0 right-0 z-20 flex w-[360px] flex-col overflow-hidden bg-primary-100"
         >
-          <div className="flex h-full w-[360px] flex-col">{panel}</div>
+          {panel}
         </motion.aside>
       ) : null}
     </AnimatePresence>
@@ -209,5 +209,8 @@ function findActivityTarget(
   }
   return undefined
 }
+
+// Matches the desktop panel width above; AppShell reserves this space.
+export const ACTIVITY_SIDEBAR_WIDTH = 360
 
 export const ActivitySidebar = memo(ActivitySidebarComponent)
