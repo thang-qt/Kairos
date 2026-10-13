@@ -1,6 +1,6 @@
 # Conversation and agent runtime
 
-Kairos remains one Go process, one SQLite database and an embedded React frontend. There are no additional services. Provider protocol selection uses the optional Responses toggle described below.
+Kairos is one Go process, one SQLite database and an embedded React frontend, with no additional services. A small transactional queue in SQLite (stable run IDs, expiring ownership tokens, one active run per conversation) replaces a separate queue service such as River, and reuses the existing modernc driver rather than adding a second persistence stack.
 
 ## Domain and storage
 
@@ -43,16 +43,16 @@ SSE flushes immediately, disables proxy buffering and sends heartbeats every 15 
 
 `openai` is the default provider kind and uses Chat Completions. Compatible endpoints use a configurable base URL. The provider's `useResponsesApi` toggle explicitly selects Responses; it is never inferred from a URL. System providers use `SYSTEM_PROVIDER_1_USE_RESPONSES_API=true`. Existing `openai-responses` configurations remain compatible, and stored user providers migrate to the toggle. Responses normalizes text, function calls/results, available reasoning summaries, usage and errors into the same agent contracts. No provider SDK types cross into conversation/HTTP contracts.
 
-Migration 0020 adds revisions, leases, jobs, checkpoints and the event journal without deleting existing conversations. Pre-refactor active runs become interrupted. Migration 0022 adds creation-command idempotency. Migration 0021 converts saved OpenRouter providers to `openai` while preserving base URLs, encrypted credentials and provider IDs. Legacy system `openrouter` configuration is normalized to its original endpoint. New environment and Nix defaults use `openai`. The Go vendor hash is updated after dependency removal; its NAR calculation was validated by reproducing the previous locked vendor hash. The dedicated OpenRouter SDK/adapter, Hermes observer and in-memory replay broker are removed.
+Migration 0020 adds revisions, leases, jobs, checkpoints and the event journal without deleting existing conversations. Pre-refactor active runs become interrupted. Migration 0022 adds creation-command idempotency. Migration 0021 converts saved OpenRouter providers to `openai` while preserving base URLs, encrypted credentials and provider IDs. Legacy system `openrouter` configuration is normalized to its original endpoint. New environment and Nix defaults use `openai`.
 
 Build the frontend with `pnpm build` before building Go; Go embeds `internal/server/static`. Back up the SQLite database using SQLite's backup facilities before upgrading. Startup applies migrations automatically. An older binary cannot understand the new runtime or changed turn response fields, so deploy backend and bundled frontend together.
 
 Timing logs identify acceptance, worker claim/queue delay, model resolution, provider request, first provider event, first text from acceptance, tool duration and completion. Inspect queue delay separately from provider latency. Explicit model resolution uses cached/configured metadata instead of synchronously listing models on every generation.
 
-## Validation and practical limits
+## Testing and limits
 
-Tests use deterministic providers/tools, local HTTP protocol servers, expired persisted leases and real child processes terminated without graceful shutdown. Coverage includes atomic edits/deletes, cancelled tool arguments and tool execution, stale ownership, idempotency, explicit and bounded retries, snapshot/replay, stopped-turn clones, delayed reasoning, legacy migration, and queued/model/tool crash boundaries. Run `pnpm check`, `pnpm backend:check`, `pnpm build`, and `go test -race ./internal/server`.
+Tests use deterministic providers and tools, local HTTP protocol servers, expired persisted leases and real child processes killed without graceful shutdown, so no hosted provider account is needed. Run `pnpm check`, `pnpm backend:check`, `pnpm build`, and `go test -race ./internal/server`.
 
-The event journal currently has no automatic retention policy and can grow during long conversations. Snapshots stay complete, while compact journal updates avoid quadratic growth from repeatedly storing accumulated output. Operators should monitor database size; no unrequested history deletion occurs. Current tools do not offer external transactional idempotency; explicit retries can repeat prior side effects. Live hosted provider accounts are not required by the deterministic test suite. A complete Nix build was unavailable in the implementation environment; the vendor hash and single-binary Go build were validated independently.
+The event journal currently has no automatic retention policy and can grow during long conversations. Snapshots stay complete, while compact journal updates avoid quadratic growth from repeatedly storing accumulated output. Operators should monitor database size; no unrequested history deletion occurs. Current tools do not offer external transactional idempotency; explicit retries can repeat prior side effects.
 
 Optional AI title generation remains a best-effort task. Title writes are revision-fenced and commit their metadata event atomically; losing only that optional title request on process termination does not affect the durable assistant run.

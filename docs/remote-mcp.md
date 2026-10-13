@@ -18,30 +18,10 @@ Tool progress and normalized results appear in the existing assistant turn. Canc
 
 ## Security and deployment
 
-Migration `0025_remote_mcp.sql` adds user-owned connections, encrypted bearer credentials, cached tools/permissions, and durable approval records. The deployment remains one Go binary and SQLite. The official `github.com/modelcontextprotocol/go-sdk` v1.8.0 requires Go 1.25; the existing Nix Go 1.25 builder is retained and its dependency hash updated.
+Migration `0025_remote_mcp.sql` adds user-owned connections, encrypted bearer credentials, cached tools/permissions, and durable approval records. The deployment remains one Go binary and SQLite. The official `github.com/modelcontextprotocol/go-sdk` v1.8.0 requires Go 1.25.
 
 Only HTTPS endpoints are accepted. URL credentials, queries, fragments, local hostnames, private/loopback/link-local/metadata addresses, and non-public DNS answers are rejected. Every request resolves and validates DNS again, pins the selected public IP, and verifies TLS against the original hostname. The environment proxy remains in use. Redirects and cross-origin requests are rejected; bearer credentials are attached only to the configured endpoint. Remote errors are replaced with safe messages, and known credential forms are scrubbed from remote metadata, progress, and results. Kairos does not start remote servers. It reuses initialized MCP sessions and HTTPS connections across discovery and successful calls to reduce repeated negotiation, DNS/TLS, and proxy overhead. Every HTTP request still revalidates DNS and pins a public IP. Sessions are isolated by connection/configuration revision, calls per session are serialized with cancellable waits, and idle sessions close after two minutes. The cache holds at most 64 sessions; excess connections are short-lived. Cancellation, failures, connection changes, disabling, deletion, and shutdown close sessions. A subsequent request may establish a fresh session, but tool calls are never retried automatically.
 
 Limits include 16 servers per user, 256 discovered tools per server, 16 discovery pages, 512 enabled remote tools per user, 64 KiB tool schemas and call arguments, bounded schema depth with local references only, 2 MiB transport responses/events, 256 KiB normalized results, and 30-second discovery timeouts. Disabling a tool cancels active operations for its server. Cached discovery does not continuously monitor upstream authorization; each new call reconnects and rechecks local permissions, and upstream failures are reported.
 
 Remote descriptions and outputs remain untrusted model inputs. Approval controls authorization but cannot make an untrusted server's implementation honest. Use trusted servers and review arguments. There is no OAuth, stdio, executable installation, resource/prompt browsing, sampling, elicitation, or separate MCP agent runtime.
-
-## Validation
-
-- `pnpm check`: passed, 80 tests across 20 files, including settings CRUD/token submission/tool toggles, errors, approvals, and exclusion of sensitive mutations from persisted browser cache.
-- `pnpm backend:check`: passed.
-- `go test -race ./internal/server -run 'TestMCP' -count=1`: passed (28.973 seconds).
-- Deterministic SDK integration covers anonymous and bearer connections, paginated discovery, duplicate tool names across servers, both provider protocols and multiple tool rounds, exact single-use approvals, progress/cancellation, ownership, SSRF/redirect/DNS rebinding, secret redaction, and interrupted execution.
-- A subprocess crash test kills the executing runtime after a remote side effect and verifies that lease recovery preserves checkpoints, invalidates the old approval, and does not replay the call.
-
-- `pnpm build` and `go build -o /tmp/kairosd-mcp ./cmd/kairosd`: passed; frontend assets are embedded in the standalone executable.
-- Built-application HTTP smoke test: passed signup, MCP create/list/discover/enable/delete, bearer credential nonexposure, private-address rejection, embedded frontend, streamed Chat Completions, idempotent session creation, canonical history, and SSE reconciliation.
-- Live anonymous `https://mcp.deepwiki.com/mcp`: discovery and approved `read_wiki_structure` for `modelcontextprotocol/go-sdk` passed through production DNS pinning, TLS, and the inherited proxy. The built application persisted the exact approval, executed the tool, continued the provider request, and retained assistant/tool-result/assistant steps in one stable turn. The model side of this smoke test was a deterministic local provider.
-
-Authenticated live GitHub verification has not been performed; bearer authentication and GitHub configuration use deterministic MCP fixtures and frontend tests. Nix dependency hashing is updated, but a full Nix build is not available in this workspace.
-
-## Approval scopes and connection reuse validation
-
-Backend fixtures verify one-time/chat/persistent permissions, cross-user and cross-chat isolation, reset/disable/schema/configuration revocation, automatic discovery/enablement, and session reuse across discovery and repeated successful calls. Frontend tests cover the three approval choices, policy changes and resets, automatic-enabled tools, and individual tool controls. DNS rebinding, redirect, credential, cancellation, and crash tests remain in the suite.
-
-Final validation: `pnpm check` passed 80 tests, `pnpm backend:check` passed, the focused MCP race suite passed, and frontend plus standalone Go builds passed. The built application completed two live DeepWiki `read_wiki_structure` calls in one conversation: the first received an explicit chat-scoped approval, and the second completed without another pending approval. Automatic connection discovery/enablement, secret nonexposure, blocked private endpoints, CRUD, stable assistant turns, provider continuation, and SSE reconciliation also passed. The model side used a deterministic local Chat Completions provider; live GitHub remains unverified.
