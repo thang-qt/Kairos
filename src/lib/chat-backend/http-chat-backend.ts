@@ -14,8 +14,207 @@ import type {
 } from './contracts'
 import { parseJSON } from '@/lib/api-client'
 
+export type ConversationImportReport = {
+  conversations: number
+  messages: number
+  images: number
+  imageBytes: number
+  skippedImages: number
+  skippedAttachments: number
+  skippedMessages: number
+  alternateNodes: number
+  duplicates: number
+  imported: number
+  failed: boolean
+}
+
+export function isLocalChatImportHost(hostname: string): boolean {
+  return ['localhost', '127.0.0.1', '[::1]', '::1'].includes(hostname)
+}
+
+export type ConversationImportProgress =
+  | { stage: 'uploading'; loaded: number; total: number }
+  | { stage: 'validating' }
+  | { stage: 'importing'; imported: number; total: number }
+
+type ImportStreamEvent = {
+  stage: 'validating' | 'importing' | 'complete' | 'error'
+  imported: number
+  total: number
+  report?: ConversationImportReport
+  error?: string
+}
+
+// XMLHttpRequest exposes actual upload progress; the small streamed response
+// contains only aggregate import progress, never exported conversation content.
+export async function importConversationWithProgress(
+  source: string,
+  file: File,
+  signal: AbortSignal,
+  onProgress: (progress: ConversationImportProgress) => void,
+): Promise<ConversationImportReport> {
+  if (!isLocalChatImportHost(window.location.hostname)) {
+    throw new Error('Conversation import is available only on localhost.')
+  }
+  if (file.size > 512 * 1024 * 1024)
+    throw new Error('Archive exceeds the 512 MiB upload limit.')
+  return new Promise(function uploadArchive(resolve, reject) {
+    const request = new XMLHttpRequest()
+    let consumed = 0
+    let buffer = ''
+    let report: ConversationImportReport | undefined
+    let ended = false
+
+    function finish(error?: Error) {
+      if (ended) return
+      ended = true
+      signal.removeEventListener('abort', abort)
+      if (error) reject(error)
+      else if (report) resolve(report)
+      else
+        reject(
+          new Error(
+            'Import progress stream ended unexpectedly. Retry to resume safely.',
+          ),
+        )
+    }
+
+    function abort() {
+      request.abort()
+      finish(new DOMException('Import cancelled', 'AbortError'))
+    }
+
+    function consume() {
+      if (request.status !== 200) return
+      buffer += request.responseText.slice(consumed)
+      consumed = request.responseText.length
+      const frames = buffer.split(/\r?\n\r?\n/)
+      buffer = frames.pop() ?? ''
+      for (const frame of frames) {
+        const data = frame
+          .split(/\r?\n/)
+          .filter(function dataLine(line) {
+            return line.startsWith('data:')
+          })
+          .map(function payload(line) {
+            return line.slice(5).trimStart()
+          })
+          .join('\n')
+        if (!data) continue
+        const event = JSON.parse(data) as ImportStreamEvent
+        if (event.stage === 'error') {
+          finish(new Error(event.error || 'Import failed.'))
+          return
+        }
+        if (event.stage === 'complete') report = event.report
+        else if (event.stage === 'validating')
+          onProgress({ stage: 'validating' })
+        else if (event.stage === 'importing')
+          onProgress({
+            stage: 'importing',
+            imported: event.imported,
+            total: event.total,
+          })
+      }
+    }
+
+    request.open(
+      'POST',
+      `/api/imports/${encodeURIComponent(source)}?mode=import`,
+    )
+    request.setRequestHeader('Content-Type', 'application/zip')
+    request.setRequestHeader('Accept', 'text/event-stream')
+    request.upload.onprogress = function uploadProgress(event) {
+      onProgress({
+        stage: 'uploading',
+        loaded: Math.min(event.loaded, file.size),
+        total: file.size,
+      })
+    }
+    request.upload.onload = function uploaded() {
+      onProgress({ stage: 'validating' })
+    }
+    request.onprogress = function importProgress() {
+      try {
+        consume()
+      } catch {
+        finish(
+          new Error('Unable to read import progress. Retry to resume safely.'),
+        )
+        request.abort()
+      }
+    }
+    request.onload = function imported() {
+      if (request.status !== 200) {
+        let message = 'Import failed. Retry to resume safely.'
+        try {
+          message =
+            (JSON.parse(request.responseText) as { error?: string }).error ||
+            message
+        } catch {
+          /* Use a generic error for non-JSON responses. */
+        }
+        finish(new Error(message))
+        return
+      }
+      try {
+        consume()
+        finish()
+      } catch {
+        finish(
+          new Error('Unable to read import progress. Retry to resume safely.'),
+        )
+      }
+    }
+    request.onerror = function networkFailure() {
+      finish(
+        new Error(
+          'Import connection failed. Completed conversations are safe to retry.',
+        ),
+      )
+    }
+    request.onabort = function cancelled() {
+      finish(new DOMException('Import cancelled', 'AbortError'))
+    }
+    signal.addEventListener('abort', abort, { once: true })
+    if (signal.aborted) {
+      abort()
+      return
+    }
+    onProgress({ stage: 'uploading', loaded: 0, total: file.size })
+    request.send(file)
+  })
+}
+
+export async function importConversationArchive(
+  source: string,
+  file: File,
+  mode: 'preview' | 'import',
+  signal: AbortSignal,
+): Promise<ConversationImportReport> {
+  if (!isLocalChatImportHost(window.location.hostname)) {
+    throw new Error('Conversation import is available only on localhost.')
+  }
+  if (file.size > 512 * 1024 * 1024) {
+    throw new Error('Archive exceeds the 512 MiB upload limit.')
+  }
+  const response = await fetch(
+    `/api/imports/${encodeURIComponent(source)}?mode=${mode}`,
+    {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/zip' },
+      body: file,
+      signal,
+      redirect: 'error',
+    },
+  )
+  return parseJSON<ConversationImportReport>(response)
+}
+
 type SessionsPayload = {
   sessions: Array<SessionMeta>
+  nextCursor?: string
 }
 
 type SessionSearchPayload = {
@@ -145,6 +344,26 @@ export function createHTTPChatBackend(): ChatBackend {
       })
       const payload = await parseJSON<SessionsPayload>(response)
       return payload.sessions
+    },
+    async listConversationPage(cursor, signal) {
+      const query = new URLSearchParams({ limit: '50' })
+      if (cursor) query.set('cursor', cursor)
+      const response = await fetch(`/api/sessions?${query}`, {
+        credentials: 'include',
+        signal,
+      })
+      const payload = await parseJSON<SessionsPayload>(response)
+      return {
+        sessions: payload.sessions,
+        nextCursor: payload.nextCursor ?? null,
+      }
+    },
+    async getConversation(friendlyId, signal) {
+      const response = await fetch(
+        `/api/sessions/${encodeURIComponent(friendlyId)}`,
+        { credentials: 'include', signal },
+      )
+      return parseJSON<SessionMeta>(response)
     },
     async searchConversations(query: string, signal?: AbortSignal) {
       const parameters = new URLSearchParams({ q: query })

@@ -1,3 +1,4 @@
+import { mapSessionCache } from '../session-cache'
 import { useCallback, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import {
@@ -45,16 +46,15 @@ export function useRenameSession(): RenameSessionResult {
       queryClient.setQueryData(
         chatQueryKeys.sessions,
         function update(sessions: unknown) {
-          if (!Array.isArray(sessions)) return sessions
-          return (
-            sessions as Array<{ key: string; label?: string; title?: string }>
-          ).map((session) => {
-            if (session.key !== payload.sessionKey) return session
-            return {
-              ...session,
-              label: payload.newTitle,
-              title: payload.newTitle,
-            }
+          return mapSessionCache(sessions, function rename(rows) {
+            return rows.map(function mapSession(session) {
+              if (session.key !== payload.sessionKey) return session
+              return {
+                ...session,
+                label: payload.newTitle,
+                title: payload.newTitle,
+              }
+            })
           })
         },
       )

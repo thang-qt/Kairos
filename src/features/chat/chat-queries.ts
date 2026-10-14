@@ -5,9 +5,11 @@ import type { QueryClient } from '@tanstack/react-query'
 import type { ConversationTurn, HistoryResponse, SessionMeta } from './types'
 import type { ChatStatus, SessionSearchResult } from '@/lib/chat-backend'
 import { getChatBackend } from '@/lib/chat-backend'
+import { mapSessionCache } from './session-cache'
+import type { SessionPage } from '@/lib/chat-backend/contracts'
 
 export const chatQueryKeys = {
-  sessions: ['chat', 'sessions'] as const,
+  sessions: ['chat', 'sessions', 'paged'] as const,
   history: function history(friendlyId: string, sessionKey: string) {
     return ['chat', 'history', friendlyId, sessionKey] as const
   },
@@ -16,6 +18,35 @@ export const chatQueryKeys = {
     return ['chat', 'session-search', query] as const
   },
 } as const
+
+export function sessionListQueryOptions() {
+  return {
+    queryKey: chatQueryKeys.sessions,
+    initialPageParam: null as string | null,
+    queryFn: async function fetchSessionPage({
+      pageParam,
+      signal,
+    }: {
+      pageParam: string | null
+      signal: AbortSignal
+    }): Promise<SessionPage> {
+      const backend = getChatBackend()
+      if (!backend.listConversationPage)
+        return {
+          sessions: normalizeSessions(await backend.listConversations()),
+          nextCursor: null,
+        }
+      const page = await backend.listConversationPage(pageParam, signal)
+      return {
+        sessions: normalizeSessions(page.sessions),
+        nextCursor: page.nextCursor,
+      }
+    },
+    getNextPageParam: function nextCursor(page: SessionPage) {
+      return page.nextCursor ?? undefined
+    },
+  }
+}
 
 export async function fetchSessionSearch(
   query: string,
@@ -206,34 +237,32 @@ export function updateSessionLastMessage(
   queryClient.setQueryData(
     chatQueryKeys.sessions,
     function update(currentSessions: unknown) {
-      const sessions = Array.isArray(currentSessions)
-        ? (currentSessions as Array<SessionMeta>)
-        : []
+      return mapSessionCache(currentSessions, function transform(sessions) {
+        const matchedIndex = sessions.findIndex((session) => {
+          return session.key === sessionKey || session.friendlyId === friendlyId
+        })
+        const nextSessions = sessions.map((session, index) => {
+          if (index !== matchedIndex) {
+            return session
+          }
+          return mergeSessionMessage(session, message, messageUpdatedAt)
+        })
 
-      const matchedIndex = sessions.findIndex((session) => {
-        return session.key === sessionKey || session.friendlyId === friendlyId
-      })
-      const nextSessions = sessions.map((session, index) => {
-        if (index !== matchedIndex) {
-          return session
+        if (matchedIndex < 0) {
+          nextSessions.unshift(
+            mergeSessionMessage(
+              {
+                key: sessionKey,
+                friendlyId,
+              },
+              message,
+              messageUpdatedAt,
+            ),
+          )
         }
-        return mergeSessionMessage(session, message, messageUpdatedAt)
+
+        return sortSessionsByUpdatedAt(nextSessions)
       })
-
-      if (matchedIndex < 0) {
-        nextSessions.unshift(
-          mergeSessionMessage(
-            {
-              key: sessionKey,
-              friendlyId,
-            },
-            message,
-            messageUpdatedAt,
-          ),
-        )
-      }
-
-      return sortSessionsByUpdatedAt(nextSessions)
     },
   )
 }
@@ -245,25 +274,30 @@ export function upsertSessionSummary(
   queryClient.setQueryData(
     chatQueryKeys.sessions,
     function update(currentSessions: unknown) {
-      const sessions = Array.isArray(currentSessions)
-        ? (currentSessions as Array<SessionMeta>)
-        : []
-      const matchedIndex = sessions.findIndex((currentSession) => {
-        return (
-          currentSession.key === session.key ||
-          currentSession.friendlyId === session.friendlyId
-        )
-      })
-      if (matchedIndex < 0) {
-        return sortSessionsByUpdatedAt([session, ...sessions])
-      }
+      return mapSessionCache(currentSessions, function transform(sessions) {
+        const matchedIndex = sessions.findIndex((currentSession) => {
+          return (
+            currentSession.key === session.key ||
+            currentSession.friendlyId === session.friendlyId
+          )
+        })
+        if (matchedIndex < 0) {
+          return sortSessionsByUpdatedAt([session, ...sessions])
+        }
 
-      const nextSessions = [...sessions]
-      nextSessions[matchedIndex] = {
-        ...nextSessions[matchedIndex],
-        ...session,
-      }
-      return sortSessionsByUpdatedAt(nextSessions)
+        const nextSessions = [...sessions]
+        nextSessions[matchedIndex] = {
+          ...nextSessions[matchedIndex],
+          ...session,
+        }
+        return sortSessionsByUpdatedAt(nextSessions)
+      })
+    },
+  )
+  queryClient.setQueryData<SessionMeta>(
+    ['chat', 'session-summary', session.friendlyId],
+    function updateSummary(previous) {
+      return { ...previous, ...session }
     },
   )
 }
@@ -336,13 +370,18 @@ export function removeSessionFromCache(
   queryClient.setQueryData(
     chatQueryKeys.sessions,
     function update(messages: unknown) {
-      if (!Array.isArray(messages)) return messages
-      return (messages as Array<SessionMeta>).filter((session) => {
-        return session.key !== sessionKey && session.friendlyId !== friendlyId
+      return mapSessionCache(messages, function remove(sessions) {
+        return sessions.filter(function keep(session) {
+          return session.key !== sessionKey && session.friendlyId !== friendlyId
+        })
       })
     },
   )
 
+  queryClient.removeQueries({
+    queryKey: ['chat', 'session-summary', friendlyId],
+    exact: true,
+  })
   queryClient.removeQueries({
     queryKey: ['chat', 'history', friendlyId],
     exact: false,

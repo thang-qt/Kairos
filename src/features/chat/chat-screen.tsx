@@ -121,7 +121,7 @@ export function ChatScreen({
   const defaultModelId = modelsQuery.data?.preferences.defaultModelId
   const { isMobile } = useAppMobile(queryClient)
   const {
-    sessionsQuery,
+    sessionsReady,
     sessions,
     activeSession,
     activeExists,
@@ -129,6 +129,10 @@ export function ChatScreen({
     hasActiveTitle,
     activeTitle,
     sessionsError,
+    hasMoreSessions,
+    loadingMoreSessions,
+    sessionLoadError,
+    loadMoreSessions,
   } = useChatSessions({ activeFriendlyId, isNewChat, forcedSessionKey })
   const {
     settings: conversationSettings,
@@ -190,7 +194,7 @@ export function ChatScreen({
     isNewChat,
     isRedirecting,
     activeExists,
-    sessionsReady: sessionsQuery.isSuccess,
+    sessionsReady,
     queryClient,
   })
   const mcpToolLabels = useMcpToolLabels()
@@ -261,8 +265,8 @@ export function ChatScreen({
     !isNewChat &&
     !forcedSessionKey &&
     !isRecentSession(activeFriendlyId) &&
-    sessionsQuery.isSuccess &&
-    !sessions.some((session) => session.friendlyId === activeFriendlyId) &&
+    sessionsReady &&
+    !activeExists &&
     (missingSessionError ||
       (!historyQuery.isFetching && !historyQuery.isSuccess))
 
@@ -551,7 +555,7 @@ export function ChatScreen({
     isNewChat,
     isRedirecting,
     shouldRedirectToNew,
-    sessionsReady: sessionsQuery.isSuccess,
+    sessionsReady,
     sessionKeyForHistory,
     queryClient,
     setIsRedirecting,
@@ -560,6 +564,10 @@ export function ChatScreen({
   const sidebar = (
     <ChatSidebar
       sessions={sessions}
+      hasMoreSessions={hasMoreSessions}
+      loadingMoreSessions={loadingMoreSessions}
+      sessionLoadError={sessionLoadError}
+      onLoadMoreSessions={loadMoreSessions}
       activeFriendlyId={activeFriendlyId}
       creatingSession={creatingSession}
       onCreateSession={startNewChat}

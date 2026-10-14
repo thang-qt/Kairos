@@ -473,6 +473,12 @@ export function modelFromMessage(
   message: ConversationTurn,
   modelLabelById: ReadonlyMap<string, string>,
 ): string | null {
+  // Imported labels describe history and must not be renamed by today's catalog.
+  if (message.details?.importSource) {
+    return (
+      normalizedString(message.modelName) || normalizedString(message.model)
+    )
+  }
   const directMetadata = messageModelMetadata(message)
   const directLabel = displayLabelFromMetadata(directMetadata, modelLabelById)
   if (directLabel) return directLabel

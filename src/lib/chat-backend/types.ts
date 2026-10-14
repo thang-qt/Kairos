@@ -7,6 +7,7 @@ import type {
   SessionSearchResult,
   ChatRequestAdvancedSettings,
   ConversationSettings,
+  SessionPage,
 } from './contracts'
 
 export type ChatAttachmentPayload = {
@@ -202,6 +203,14 @@ export type ChatBackend = {
   }) => Promise<ChatSendMessageResult>
   getStatus: () => Promise<ChatStatus>
   listConversations: () => Promise<Array<SessionMeta>>
+  listConversationPage?: (
+    cursor: string | null,
+    signal?: AbortSignal,
+  ) => Promise<SessionPage>
+  getConversation?: (
+    friendlyId: string,
+    signal?: AbortSignal,
+  ) => Promise<SessionMeta>
   searchConversations: (
     query: string,
     signal?: AbortSignal,

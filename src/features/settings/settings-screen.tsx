@@ -8,6 +8,7 @@ import { AccountSettingsPanel } from './components/account-settings-panel'
 import { WebToolsSettingsPanel } from './components/web-tools-settings-panel'
 import { MCPServersPanel } from './components/mcp-servers-panel'
 import { ChatSettingsPanel } from './components/chat-settings-panel'
+import { ConversationImportPanel } from './components/conversation-import-panel'
 import {
   SettingsSidebar,
   getSettingsTabLabel,
@@ -30,6 +31,7 @@ export type SettingsTab =
   | 'chat'
   | 'web-tools'
   | 'mcp'
+  | 'import'
 
 type SettingsScreenProps = {
   activeTab: SettingsTab
@@ -53,6 +55,8 @@ function renderTabPanel(
       )
     case 'chat':
       return <ChatSettingsPanel />
+    case 'import':
+      return <ConversationImportPanel />
     case 'web-tools':
       return <WebToolsSettingsPanel />
     case 'mcp':

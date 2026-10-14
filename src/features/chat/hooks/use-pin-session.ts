@@ -1,3 +1,4 @@
+import { mapSessionCache } from '../session-cache'
 import { useCallback, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import {
@@ -5,7 +6,6 @@ import {
   invalidateChatSessionQueries,
   upsertSessionSummary,
 } from '../chat-queries'
-import type { SessionMeta } from '../types'
 import { getChatBackend } from '@/lib/chat-backend'
 
 export type PinSessionResult = {
@@ -40,9 +40,8 @@ export function usePinSession(): PinSessionResult {
       queryClient.setQueryData(
         chatQueryKeys.sessions,
         function update(sessions: unknown) {
-          if (!Array.isArray(sessions)) return sessions
-          return (sessions as Array<SessionMeta>).map(
-            function mapSession(session) {
+          return mapSessionCache(sessions, function pin(rows) {
+            return rows.map(function mapSession(session) {
               if (
                 session.key !== payload.sessionKey &&
                 session.friendlyId !== payload.friendlyId
@@ -53,8 +52,8 @@ export function usePinSession(): PinSessionResult {
                 ...session,
                 isPinned: payload.isPinned,
               }
-            },
-          )
+            })
+          })
         },
       )
 

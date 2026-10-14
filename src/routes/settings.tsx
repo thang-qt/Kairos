@@ -11,6 +11,7 @@ const SETTINGS_TABS = new Set<SettingsTab>([
   'chat',
   'web-tools',
   'mcp',
+  'import',
 ])
 
 export const Route = createFileRoute('/settings')({

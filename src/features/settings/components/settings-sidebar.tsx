@@ -10,6 +10,7 @@ import {
   PlugSocketIcon,
   SidebarLeft01Icon,
   UserCircleIcon,
+  Upload01Icon,
 } from '@hugeicons/core-free-icons'
 import { Link, useNavigate } from '@tanstack/react-router'
 import type { SettingsTab } from '../settings-screen'
@@ -45,6 +46,10 @@ const SETTINGS_GROUPS: Array<{ label: string; items: Array<SettingsNavItem> }> =
         { id: 'models', label: 'Models', icon: CpuIcon },
         { id: 'chat', label: 'Chat defaults', icon: BubbleChatIcon },
       ],
+    },
+    {
+      label: 'Data',
+      items: [{ id: 'import', label: 'Import', icon: Upload01Icon }],
     },
     {
       label: 'Tools',

@@ -11,6 +11,7 @@ export type MarkdownProps = {
   id?: string
   className?: string
   components?: Record<string, React.ComponentType<any>>
+  blockRemoteImages?: boolean
 }
 
 function extractLanguage(className?: string): string {
@@ -251,15 +252,26 @@ const STREAMDOWN_PLUGINS = {
   math: createMathPlugin({ singleDollarTextMath: true }),
 }
 
+function ImportedImage({ alt }: { alt?: string }) {
+  return (
+    <span className="text-pretty text-sm text-primary-500">
+      [External image blocked{alt ? `: ${alt}` : ''}]
+    </span>
+  )
+}
+
+const IMPORTED_COMPONENTS = { ...INITIAL_COMPONENTS, img: ImportedImage }
+
 function MarkdownComponent({
   children,
   className,
   components = INITIAL_COMPONENTS,
+  blockRemoteImages = false,
 }: MarkdownProps) {
   return (
     <Streamdown
       className={cn('flex flex-col gap-2', className)}
-      components={components}
+      components={blockRemoteImages ? IMPORTED_COMPONENTS : components}
       plugins={STREAMDOWN_PLUGINS}
     >
       {normalizeLatexMathDelimiters(children)}

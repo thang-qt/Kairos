@@ -926,9 +926,9 @@ func (service *ConversationService) findSessionExec(ctx context.Context, exec sq
 
 func scanSessionRecord(scanner interface {
 	Scan(dest ...any) error
-}) (sessionRecord, error) {
+}, extra ...any) (sessionRecord, error) {
 	var record sessionRecord
-	if err := scanner.Scan(
+	destinations := []any{
 		&record.ID,
 		&record.UserID,
 		&record.FriendlyID,
@@ -942,7 +942,8 @@ func scanSessionRecord(scanner interface {
 		&record.ContextTokens,
 		&record.ConversationSettingsJSON,
 		&record.Revision,
-	); err != nil {
+	}
+	if err := scanner.Scan(append(destinations, extra...)...); err != nil {
 		return sessionRecord{}, fmt.Errorf("scan session: %w", err)
 	}
 	return record, nil

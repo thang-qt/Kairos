@@ -9,7 +9,8 @@ import (
 )
 
 type sessionsResponse struct {
-	Sessions []SessionSummary `json:"sessions"`
+	Sessions   []SessionSummary `json:"sessions"`
+	NextCursor string           `json:"nextCursor,omitempty"`
 }
 
 type sessionSearchResponse struct {
@@ -96,13 +97,45 @@ func (app *App) handleListSessions(writer http.ResponseWriter, request *http.Req
 		return
 	}
 
-	sessions, err := app.conversations.ListSessions(request.Context(), user.ID)
+	limit := 50
+	if value := request.URL.Query().Get("limit"); value != "" {
+		parsed, err := strconv.Atoi(value)
+		if err != nil {
+			writeError(writer, http.StatusBadRequest, "Invalid session page size.")
+			return
+		}
+		limit = parsed
+	}
+	page, err := app.conversations.ListSessionPage(request.Context(), user.ID, limit, request.URL.Query().Get("cursor"))
 	if err != nil {
+		if errors.Is(err, errInvalidSessionPage) {
+			writeError(writer, http.StatusBadRequest, "Invalid session pagination.")
+			return
+		}
 		writeError(writer, http.StatusInternalServerError, "failed to list sessions")
 		return
 	}
 
-	writeJSON(writer, http.StatusOK, sessionsResponse{Sessions: sessions})
+	writeJSON(writer, http.StatusOK, page)
+}
+
+func (app *App) handleGetSession(writer http.ResponseWriter, request *http.Request) {
+	user, ok := app.requireAuthenticatedUser(writer, request)
+	if !ok {
+		return
+	}
+	summary, err := app.conversations.GetSessionSummary(request.Context(), user.ID, request.PathValue("friendlyId"))
+	if err != nil {
+		if errors.Is(err, errChatSessionNotFound) {
+			writeError(writer, http.StatusNotFound, "Session not found.")
+			return
+		}
+		writeError(writer, http.StatusInternalServerError, "Unable to load session.")
+		return
+	}
+	// Summary lookups should not transfer inline image data from the last message.
+	summary.LastMessage = nil
+	writeJSON(writer, http.StatusOK, summary)
 }
 
 func (app *App) handleSearchSessions(writer http.ResponseWriter, request *http.Request) {

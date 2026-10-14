@@ -2,19 +2,12 @@
 
 import { HugeiconsIcon } from '@hugeicons/react'
 import { ArrowRight01Icon } from '@hugeicons/core-free-icons'
-import {
-  memo,
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-} from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { usePinSession } from '../../hooks/use-pin-session'
 import { SessionItem } from './session-item'
 import type { SessionMeta } from '../../types'
 import { useChatSettingsStore } from '@/app/preferences/app-preferences'
+import { Button } from '@/components/ui/button'
 import {
   Collapsible,
   CollapsiblePanel,
@@ -28,6 +21,10 @@ import {
 } from '@/components/ui/scroll-area'
 
 type SidebarSessionsProps = {
+  hasMore?: boolean
+  loadingMore?: boolean
+  loadError?: string | null
+  onLoadMore?: () => void
   sessions: Array<SessionMeta>
   activeFriendlyId: string
   defaultOpen?: boolean
@@ -48,6 +45,10 @@ type GroupedSessions = {
 }
 
 export const SidebarSessions = memo(function SidebarSessions({
+  hasMore = false,
+  loadingMore = false,
+  loadError,
+  onLoadMore,
   sessions,
   activeFriendlyId,
   defaultOpen = true,
@@ -62,6 +63,7 @@ export const SidebarSessions = memo(function SidebarSessions({
 
   const [visibleCount, setVisibleCount] = useState(20)
   const viewportRef = useRef<HTMLDivElement | null>(null)
+  const contentRef = useRef<HTMLDivElement | null>(null)
 
   const activeIndex = useMemo(() => {
     return sessions.findIndex(
@@ -69,34 +71,62 @@ export const SidebarSessions = memo(function SidebarSessions({
     )
   }, [sessions, activeFriendlyId])
 
-  useLayoutEffect(() => {
-    if (activeIndex >= 0) {
-      setVisibleCount((prev) => Math.max(prev, activeIndex + 1))
-    }
-  }, [activeIndex])
+  const renderedCount = Math.min(
+    sessions.length,
+    Math.max(visibleCount, activeIndex + 1),
+  )
 
-  const handleScroll = useCallback(() => {
-    const viewport = viewportRef.current
-    if (!viewport) return
+  const handleScroll = useCallback(
+    function fillViewport() {
+      const viewport = viewportRef.current
+      if (!viewport || viewport.clientHeight <= 0) return
 
-    const threshold = 40
-    const remainingScroll =
-      viewport.scrollHeight - viewport.clientHeight - viewport.scrollTop
-    if (remainingScroll < threshold && visibleCount < sessions.length) {
-      setVisibleCount((prev) => Math.min(sessions.length, prev + 20))
-    }
-  }, [sessions.length, visibleCount])
+      const threshold = 40
+      const remainingScroll =
+        viewport.scrollHeight - viewport.clientHeight - viewport.scrollTop
+      if (remainingScroll < threshold && renderedCount < sessions.length) {
+        setVisibleCount(Math.min(sessions.length, renderedCount + 20))
+      } else if (
+        remainingScroll < threshold &&
+        hasMore &&
+        !loadingMore &&
+        !loadError
+      ) {
+        onLoadMore?.()
+      }
+    },
+    [
+      sessions.length,
+      renderedCount,
+      hasMore,
+      loadingMore,
+      loadError,
+      onLoadMore,
+    ],
+  )
 
-  useEffect(() => {
-    const viewport = viewportRef.current
-    if (!viewport) return
-    viewport.addEventListener('scroll', handleScroll, { passive: true })
-    return () => viewport.removeEventListener('scroll', handleScroll)
-  }, [handleScroll])
+  useEffect(
+    function observeScrollSpace() {
+      const viewport = viewportRef.current
+      if (!viewport) return
+      // A short first batch cannot produce a scroll event. Fill the viewport on
+      // mount, after each batch, and when panel sizes or the viewport change.
+      handleScroll()
+      const observer = new ResizeObserver(handleScroll)
+      observer.observe(viewport)
+      if (contentRef.current) observer.observe(contentRef.current)
+      viewport.addEventListener('scroll', handleScroll, { passive: true })
+      return function stopObserving() {
+        observer.disconnect()
+        viewport.removeEventListener('scroll', handleScroll)
+      }
+    },
+    [handleScroll, sessions],
+  )
 
   const slicedSessions = useMemo(() => {
-    return sessions.slice(0, visibleCount)
-  }, [sessions, visibleCount])
+    return sessions.slice(0, renderedCount)
+  }, [sessions, renderedCount])
 
   const groupedSessions = useMemo(
     function groupSessions() {
@@ -120,7 +150,7 @@ export const SidebarSessions = memo(function SidebarSessions({
     <div className="flex h-full flex-1 min-h-0 w-full flex-col">
       <ScrollAreaRoot className="flex-1 min-h-0">
         <ScrollAreaViewport className="min-h-0" ref={viewportRef}>
-          <div className="flex flex-col gap-2 px-2">
+          <div ref={contentRef} className="flex flex-col gap-2 px-2">
             {groupedSessions.pinned.length > 0 ? (
               <SessionSection
                 label="Pinned"
@@ -173,6 +203,39 @@ export const SidebarSessions = memo(function SidebarSessions({
                 </SessionSection>
               )
             })}
+            {renderedCount < sessions.length || hasMore ? (
+              <div className="flex flex-col gap-1 py-2">
+                <span className="text-center text-xs tabular-nums text-primary-500">
+                  Showing {renderedCount} conversations
+                </span>
+                {loadError ? (
+                  <p
+                    role="status"
+                    className="text-pretty text-xs text-primary-600"
+                  >
+                    {loadError}
+                  </p>
+                ) : null}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={loadingMore}
+                  onClick={function showMore() {
+                    if (renderedCount < sessions.length)
+                      setVisibleCount(
+                        Math.min(sessions.length, renderedCount + 20),
+                      )
+                    else onLoadMore?.()
+                  }}
+                >
+                  {loadingMore
+                    ? 'Loading conversations…'
+                    : loadError
+                      ? 'Retry loading conversations'
+                      : 'Show more conversations'}
+                </Button>
+              </div>
+            ) : null}
           </div>
         </ScrollAreaViewport>
         <ScrollAreaScrollbar orientation="vertical">
@@ -187,6 +250,10 @@ function areSidebarSessionsEqual(
   prev: SidebarSessionsProps,
   next: SidebarSessionsProps,
 ) {
+  if (prev.hasMore !== next.hasMore) return false
+  if (prev.loadingMore !== next.loadingMore) return false
+  if (prev.loadError !== next.loadError) return false
+  if (prev.onLoadMore !== next.onLoadMore) return false
   if (prev.activeFriendlyId !== next.activeFriendlyId) return false
   if (prev.defaultOpen !== next.defaultOpen) return false
   if (prev.onSelect !== next.onSelect) return false

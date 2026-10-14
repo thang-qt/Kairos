@@ -110,6 +110,12 @@ export type SessionSummary = {
 
 export type SessionListResponse = {
   sessions?: Array<SessionSummary>
+  nextCursor?: string | null
+}
+
+export type SessionPage = {
+  sessions: Array<SessionMeta>
+  nextCursor: string | null
 }
 
 export type HistoryResponse = {

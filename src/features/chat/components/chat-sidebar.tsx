@@ -28,6 +28,10 @@ import { Button, buttonVariants } from '@/components/ui/button'
 import { KairosIconBig } from '@/components/icons/kairos-icon-big'
 
 type ChatSidebarProps = {
+  hasMoreSessions?: boolean
+  loadingMoreSessions?: boolean
+  sessionLoadError?: string | null
+  onLoadMoreSessions?: () => void
   sessions: Array<SessionMeta>
   activeFriendlyId: string
   creatingSession: boolean
@@ -38,6 +42,10 @@ type ChatSidebarProps = {
 }
 
 function ChatSidebarComponent({
+  hasMoreSessions,
+  loadingMoreSessions,
+  sessionLoadError,
+  onLoadMoreSessions,
   sessions,
   activeFriendlyId,
   creatingSession,
@@ -162,6 +170,10 @@ function ChatSidebarComponent({
       <div className="flex-1 min-h-0 overflow-hidden">
         <SidebarSessions
           sessions={sessions}
+          hasMore={hasMoreSessions}
+          loadingMore={loadingMoreSessions}
+          loadError={sessionLoadError}
+          onLoadMore={onLoadMoreSessions}
           activeFriendlyId={activeFriendlyId}
           onSelect={onSelectSession}
           onRename={handleOpenRename}
@@ -264,6 +276,12 @@ function areSidebarPropsEqual(
   prevProps: ChatSidebarProps,
   nextProps: ChatSidebarProps,
 ): boolean {
+  if (prevProps.hasMoreSessions !== nextProps.hasMoreSessions) return false
+  if (prevProps.loadingMoreSessions !== nextProps.loadingMoreSessions)
+    return false
+  if (prevProps.sessionLoadError !== nextProps.sessionLoadError) return false
+  if (prevProps.onLoadMoreSessions !== nextProps.onLoadMoreSessions)
+    return false
   if (prevProps.activeFriendlyId !== nextProps.activeFriendlyId) return false
   if (prevProps.creatingSession !== nextProps.creatingSession) return false
   if (!areSessionsEqual(prevProps.sessions, nextProps.sessions)) return false

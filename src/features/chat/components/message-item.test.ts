@@ -118,6 +118,19 @@ describe('mapStandaloneToolResultToToolPart', function () {
 })
 
 describe('modelFromMessage', function () {
+  it('keeps imported model labels independent of configured model labels', function () {
+    expect(
+      modelFromMessage(
+        {
+          role: 'assistant',
+          model: 'kairos-code',
+          modelName: 'kairos-code',
+          details: { importSource: 'chatgpt' },
+        },
+        modelLabelById,
+      ),
+    ).toBe('kairos-code')
+  })
   it('prefers the explicit model name when present', function () {
     const message: ConversationTurn = {
       role: 'assistant',

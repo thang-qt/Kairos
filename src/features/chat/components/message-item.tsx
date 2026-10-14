@@ -156,8 +156,13 @@ function MessageItemComponent({
       )}
     >
       {/* Render images if present */}
-      {isUser && images.length > 0 && (
-        <div className={cn('flex flex-wrap gap-2 mb-2', 'justify-end')}>
+      {images.length > 0 && (
+        <div
+          className={cn(
+            'flex flex-wrap gap-2 mb-2',
+            isUser ? 'justify-end' : 'justify-start',
+          )}
+        >
           {images.map((img, idx) => (
             <img
               key={idx}
@@ -241,6 +246,7 @@ function MessageItemComponent({
               <Message key={`text-${index}`}>
                 <MessageContent
                   markdown
+                  blockRemoteImages={Boolean(message.details?.importSource)}
                   className="text-primary-900 bg-transparent w-full"
                 >
                   {String(part.text ?? '')}

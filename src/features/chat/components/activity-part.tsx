@@ -44,6 +44,7 @@ export function ActivityPart({
         <ThinkingStep
           content={String(part.thinking ?? '')}
           streaming={streaming}
+          blockRemoteImages={Boolean(message.details?.importSource)}
         />
       </TimelineStep>
     )
@@ -52,7 +53,10 @@ export function ActivityPart({
   if (part.type === 'text') {
     return (
       <TimelineStep isLast={isLast}>
-        <LazyMarkdown className="text-pretty text-sm leading-6 text-primary-700 [&_p]:text-primary-700">
+        <LazyMarkdown
+          blockRemoteImages={Boolean(message.details?.importSource)}
+          className="text-pretty text-sm leading-6 text-primary-700 [&_p]:text-primary-700"
+        >
           {String(part.text ?? '')}
         </LazyMarkdown>
       </TimelineStep>
@@ -124,9 +128,11 @@ function TimelineStep({
 function ThinkingStep({
   content,
   streaming,
+  blockRemoteImages,
 }: {
   content: string
   streaming: boolean
+  blockRemoteImages: boolean
 }) {
   const reasoningCollapseMode = useChatSettingsStore(
     (state) => state.settings.reasoningCollapseMode,
@@ -162,7 +168,10 @@ function ThinkingStep({
         />
       </button>
       {open ? (
-        <LazyMarkdown className="mt-1 text-pretty text-sm leading-6 text-primary-600 [&_li]:text-primary-600 [&_p]:text-primary-600 [&_strong]:text-primary-700">
+        <LazyMarkdown
+          blockRemoteImages={blockRemoteImages}
+          className="mt-1 text-pretty text-sm leading-6 text-primary-600 [&_li]:text-primary-600 [&_p]:text-primary-600 [&_strong]:text-primary-700"
+        >
           {content}
         </LazyMarkdown>
       ) : (
