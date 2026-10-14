@@ -50,7 +50,7 @@ export type MessageContentProps = {
   children: React.ReactNode
   markdown?: boolean
   className?: string
-} & React.ComponentProps<typeof LazyMarkdown> &
+} & Omit<React.ComponentProps<typeof LazyMarkdown>, 'children'> &
   React.HTMLProps<HTMLDivElement>
 
 function MessageContent({
