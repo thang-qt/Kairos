@@ -217,39 +217,39 @@ export function AppShell({
 
           {children}
         </main>
+        {desktopChrome && sidebarOpen ? (
+          <SidebarResizeHandle
+            side="left"
+            width={leftWidth}
+            maximum={leftMaximum}
+            onResizingChange={setResizing}
+            onChange={function resizeLeft(width) {
+              changeWidth('left', width)
+            }}
+            onCommit={persistWidths}
+            onReset={function resetLeft() {
+              resetWidth('left')
+            }}
+          />
+        ) : null}
+        {desktopChrome && rightInset > 0 ? (
+          <SidebarResizeHandle
+            side="right"
+            width={rightWidth}
+            maximum={rightMaximum}
+            onResizingChange={setResizing}
+            onChange={function resizeRight(width) {
+              changeWidth('right', width)
+            }}
+            onCommit={persistWidths}
+            onReset={function resetRight() {
+              resetWidth('right')
+            }}
+          />
+        ) : null}
       </div>
 
       {hideChrome ? null : rightSidebar}
-      {desktopChrome && sidebarOpen ? (
-        <SidebarResizeHandle
-          side="left"
-          width={leftWidth}
-          maximum={leftMaximum}
-          onResizingChange={setResizing}
-          onChange={function resizeLeft(width) {
-            changeWidth('left', width)
-          }}
-          onCommit={persistWidths}
-          onReset={function resetLeft() {
-            resetWidth('left')
-          }}
-        />
-      ) : null}
-      {desktopChrome && rightInset > 0 ? (
-        <SidebarResizeHandle
-          side="right"
-          width={rightWidth}
-          maximum={rightMaximum}
-          onResizingChange={setResizing}
-          onChange={function resizeRight(width) {
-            changeWidth('right', width)
-          }}
-          onCommit={persistWidths}
-          onReset={function resetRight() {
-            resetWidth('right')
-          }}
-        />
-      ) : null}
     </div>
   )
 }
