@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { HugeiconsIcon } from '@hugeicons/react'
 import {
   Copy01Icon,
@@ -44,12 +44,22 @@ export function MessageActionsBar({
   onDelete,
 }: MessageActionsBarProps) {
   const [copied, setCopied] = useState(false)
+  const copyTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+
+  useEffect(function cleanupCopyTimer() {
+    return function cancelCopyTimer() {
+      if (copyTimer.current) clearTimeout(copyTimer.current)
+    }
+  }, [])
 
   async function handleCopy() {
     try {
       await navigator.clipboard.writeText(text)
       setCopied(true)
-      window.setTimeout(() => setCopied(false), 1400)
+      if (copyTimer.current) clearTimeout(copyTimer.current)
+      copyTimer.current = setTimeout(function resetCopied() {
+        setCopied(false)
+      }, 1400)
     } catch {
       setCopied(false)
     }

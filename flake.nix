@@ -23,40 +23,39 @@
         let
           cfg = config.services.kairos;
           boolString = value: if value then "true" else "false";
-          renderedEnv =
-            {
-              APP_ENV = cfg.settings.appEnv;
-              HTTP_ADDR = "${cfg.listenAddress}:${toString cfg.port}";
-              KAIROS_DB_PATH = "${cfg.stateDir}/kairos.db";
-              SESSION_COOKIE_SECURE = boolString cfg.settings.cookieSecure;
-              SESSION_TTL_HOURS = toString cfg.settings.sessionTTLHours;
-              AUTH_ENABLED = boolString cfg.settings.authEnabled;
-              ALLOW_SIGNUP = boolString cfg.settings.allowSignup;
-              BOOTSTRAP_ADMIN = boolString cfg.settings.bootstrapAdmin;
-              ENABLE_USER_PROVIDERS = boolString cfg.settings.enableUserProviders;
-              ALLOW_USER_CUSTOM_BASE_URL = boolString cfg.settings.allowUserCustomBaseURL;
-              ALLOW_USER_DISABLE_SYSTEM_PROVIDER = boolString cfg.settings.allowUserDisableSystemProvider;
-              ALLOW_USER_MODEL_SYNC = boolString cfg.settings.allowUserModelSync;
-              LOCK_CHAT_MODEL = boolString cfg.settings.lockChatModel;
-              SYSTEM_PROVIDER_1_ID = cfg.settings.systemProvider.id;
-              SYSTEM_PROVIDER_1_KIND = "openai";
-              SYSTEM_PROVIDER_1_LABEL = cfg.settings.systemProvider.label;
-              SYSTEM_PROVIDER_1_ENABLED = boolString cfg.settings.systemProvider.enabled;
-              SYSTEM_PROVIDER_1_ALLOW_DISABLE = boolString cfg.settings.systemProvider.allowDisable;
-              SYSTEM_PROVIDER_1_MODEL_SYNC = boolString cfg.settings.systemProvider.modelSync;
-            }
-            // lib.optionalAttrs (cfg.settings.adminEmail != null) {
-              ADMIN_EMAIL = cfg.settings.adminEmail;
-            }
-            // lib.optionalAttrs (cfg.settings.defaultChatModel != null) {
-              DEFAULT_CHAT_MODEL = cfg.settings.defaultChatModel;
-            }
-            // lib.optionalAttrs (cfg.settings.systemProvider.baseURL != null) {
-              SYSTEM_PROVIDER_1_BASE_URL = cfg.settings.systemProvider.baseURL;
-            }
-            // lib.optionalAttrs (cfg.settings.systemProvider.models != [ ]) {
-              SYSTEM_PROVIDER_1_MODELS = lib.concatStringsSep "," cfg.settings.systemProvider.models;
-            };
+          renderedEnv = {
+            APP_ENV = cfg.settings.appEnv;
+            HTTP_ADDR = "${cfg.listenAddress}:${toString cfg.port}";
+            KAIROS_DB_PATH = "${cfg.stateDir}/kairos.db";
+            SESSION_COOKIE_SECURE = boolString cfg.settings.cookieSecure;
+            SESSION_TTL_HOURS = toString cfg.settings.sessionTTLHours;
+            AUTH_ENABLED = boolString cfg.settings.authEnabled;
+            ALLOW_SIGNUP = boolString cfg.settings.allowSignup;
+            BOOTSTRAP_ADMIN = boolString cfg.settings.bootstrapAdmin;
+            ENABLE_USER_PROVIDERS = boolString cfg.settings.enableUserProviders;
+            ALLOW_USER_CUSTOM_BASE_URL = boolString cfg.settings.allowUserCustomBaseURL;
+            ALLOW_USER_DISABLE_SYSTEM_PROVIDER = boolString cfg.settings.allowUserDisableSystemProvider;
+            ALLOW_USER_MODEL_SYNC = boolString cfg.settings.allowUserModelSync;
+            LOCK_CHAT_MODEL = boolString cfg.settings.lockChatModel;
+            SYSTEM_PROVIDER_1_ID = cfg.settings.systemProvider.id;
+            SYSTEM_PROVIDER_1_KIND = "openai";
+            SYSTEM_PROVIDER_1_LABEL = cfg.settings.systemProvider.label;
+            SYSTEM_PROVIDER_1_ENABLED = boolString cfg.settings.systemProvider.enabled;
+            SYSTEM_PROVIDER_1_ALLOW_DISABLE = boolString cfg.settings.systemProvider.allowDisable;
+            SYSTEM_PROVIDER_1_MODEL_SYNC = boolString cfg.settings.systemProvider.modelSync;
+          }
+          // lib.optionalAttrs (cfg.settings.adminEmail != null) {
+            ADMIN_EMAIL = cfg.settings.adminEmail;
+          }
+          // lib.optionalAttrs (cfg.settings.defaultChatModel != null) {
+            DEFAULT_CHAT_MODEL = cfg.settings.defaultChatModel;
+          }
+          // lib.optionalAttrs (cfg.settings.systemProvider.baseURL != null) {
+            SYSTEM_PROVIDER_1_BASE_URL = cfg.settings.systemProvider.baseURL;
+          }
+          // lib.optionalAttrs (cfg.settings.systemProvider.models != [ ]) {
+            SYSTEM_PROVIDER_1_MODELS = lib.concatStringsSep "," cfg.settings.systemProvider.models;
+          };
         in
         {
           options.services.kairos = {
@@ -354,13 +353,29 @@
         };
       in
       {
-        packages.default = app;
-        packages.kairos = app;
+        packages =
+          lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
+            kairos-desktop = import ./nix/desktop.nix { inherit pkgs frontend; };
+          }
+          // {
+            default = app;
+            kairos = app;
+            inherit frontend;
+          };
 
-        apps.default = {
-          type = "app";
-          program = "${app}/bin/kairosd";
-        };
+        apps =
+          lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
+            desktop = {
+              type = "app";
+              program = "${self.packages.${system}.kairos-desktop}/bin/kairos";
+            };
+          }
+          // {
+            default = {
+              type = "app";
+              program = "${app}/bin/kairosd";
+            };
+          };
 
         devShells.default = pkgs.mkShell {
           name = "kairos-dev-shell";

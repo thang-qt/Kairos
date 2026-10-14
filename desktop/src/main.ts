@@ -52,7 +52,9 @@ const permittedPermissions = new Set([
   'notifications',
 ])
 let config: Config
-const bundleDirectory = join(directory, 'app-dist')
+const bundleDirectory = app.isPackaged
+  ? join(process.resourcesPath, 'app-dist')
+  : join(directory, 'app-dist')
 let bundleAvailable = false
 let changingServer = false
 const retiringViews = new Set<WebContentsView>()
@@ -95,7 +97,7 @@ if (!app.requestSingleInstanceLock()) {
     .then(start)
     .catch(function startupFailed(error) {
       console.error('[Kairos] Startup failed:', error)
-      app.quit()
+      app.exit(1)
     })
 }
 
@@ -224,8 +226,12 @@ async function start(): Promise<void> {
 
   createMenu()
   createMainWindow()
-  createTray()
-  registerHotkey()
+  if (process.argv.includes('--smoke-test')) {
+    void smokeTest()
+  } else {
+    createTray()
+    registerHotkey()
+  }
 }
 
 function createMenu(): void {
@@ -499,7 +505,14 @@ function updateTrayMenu(): void {
         checked: isAutostartEnabled(),
         click: function changeAutostart(item) {
           try {
-            setAutostart(item.checked, directory)
+            setAutostart(
+              item.checked,
+              directory,
+              process.env.APPIMAGE ||
+                process.env.KAIROS_DESKTOP_LAUNCHER ||
+                (app.isPackaged ? process.execPath : undefined),
+              app.isPackaged ? 'kairos' : undefined,
+            )
           } catch (error) {
             console.error('[Kairos] Could not change autostart:', error)
           }
@@ -714,5 +727,33 @@ async function changeServer(
     return { ok: false, error: 'unreachable' }
   } finally {
     changingServer = false
+  }
+}
+
+// Runs the real packaged renderers without a server or a shortcut portal.
+async function smokeTest(): Promise<void> {
+  try {
+    if (!bundleAvailable || getCurrentServer() !== null)
+      throw new Error('Smoke tests require a bundled frontend and fresh config')
+    for (let attempt = 0; attempt < 100; attempt++) {
+      await new Promise(function wait(resolve) {
+        setTimeout(resolve, 200)
+      })
+      const titlebar = await mainWindow?.webContents.executeJavaScript(
+        'Boolean(window.kairosTitlebar && document.querySelector("button"))',
+      )
+      const content = await mainView?.webContents.executeJavaScript(
+        'Boolean(window.kairosDesktop?.isDesktop && document.querySelector("input"))',
+      )
+      if (titlebar && content) {
+        console.log('[Kairos] Packaged smoke test passed')
+        app.quit()
+        return
+      }
+    }
+    throw new Error('Packaged renderers did not become ready within 20 seconds')
+  } catch (error) {
+    console.error('[Kairos] Packaged smoke test failed:', error)
+    app.exit(1)
   }
 }

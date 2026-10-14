@@ -1,0 +1,53 @@
+appId: org.kairos.Kairos
+productName: Kairos
+executableName: kairos
+asar: true
+npmRebuild: false
+artifactName: kairos-${version}-linux-${arch}.${ext}
+directories:
+  output: release
+  buildResources: assets
+files:
+  - dist/**/*.js
+  - dist/**/*.cjs
+  - '!dist/*-check.js'
+  - assets/*.png
+  - titlebar.html
+  - titlebar.css
+  - offline.html
+  - offline.css
+  - kairos.desktop
+extraResources:
+  - from: app-dist
+    to: app-dist
+extraFiles:
+  - from: ../LICENSE
+    to: LICENSE.kairos
+linux:
+  target:
+    - deb
+    - AppImage
+    - tar.gz
+  icon: assets/kairos.png
+  category: Network
+  synopsis: Chat with your Kairos server
+  syncDesktopName: true
+  desktop:
+    entry:
+      Categories: Network;Chat;
+      Keywords: AI;Chat;Assistant;
+deb:
+  packageCategory: net
+  priority: optional
+  depends:
+    - libgtk-3-0
+    - libnss3
+    - libasound2
+    - libgbm1
+    - libxss1
+    - libxtst6
+    - xdg-utils
+    - libatspi2.0-0
+    - libsecret-1-0
+  recommends:
+    - libayatana-appindicator3-1

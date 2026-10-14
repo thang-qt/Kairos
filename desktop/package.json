@@ -7,14 +7,30 @@
   "scripts": {
     "build": "tsc",
     "build:web": "pnpm --dir .. build && node scripts/copy-web-build.mjs",
-    "test": "pnpm build && node --test dist/bundle-path-check.js dist/server-check.js",
+    "test": "pnpm build && node --test dist/bundle-path-check.js dist/server-check.js dist/desktop-entry-check.js",
     "dev": "pnpm build && electron .",
     "start": "electron .",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "package:linux": "pnpm build:web && pnpm build && electron-builder --linux --publish never",
+    "package:dir": "pnpm build:web && pnpm build && electron-builder --linux dir --publish never"
   },
   "devDependencies": {
+    "@types/node": "^22.10.2",
     "electron": "44.7.0",
-    "typescript": "^5.7.2",
-    "@types/node": "^22.10.2"
+    "electron-builder": "26.17.0",
+    "typescript": "^5.7.2"
+  },
+  "version": "0.1.0",
+  "productName": "Kairos",
+  "description": "Kairos desktop client for a hosted Kairos server",
+  "author": {
+    "name": "Tô Quang Thắng",
+    "email": "thang@thangqt.com"
+  },
+  "license": "MIT",
+  "homepage": "https://github.com/thang-qt/Kairos",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/thang-qt/Kairos.git"
   }
 }

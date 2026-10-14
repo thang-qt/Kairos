@@ -1,4 +1,7 @@
-# Kairos desktop prototype
+# Kairos desktop
+
+See [Linux packaging and releases](packaging.md) for `.deb`, AppImage, tarball,
+Nix, and GitHub Actions instructions.
 
 Linux Electron 44.7.0 shell with one main window and a compact local title bar.
 The React frontend can be bundled; the backend always remains hosted. The page

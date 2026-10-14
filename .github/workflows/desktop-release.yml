@@ -1,0 +1,125 @@
+name: Desktop Linux
+
+on:
+  push:
+    branches: [main, desktop-electron]
+    tags: ['desktop-v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+jobs:
+  check:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: |
+            pnpm-lock.yaml
+            desktop/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --dir desktop install --frozen-lockfile
+      - run: pnpm check
+      - run: pnpm --dir desktop typecheck
+      - run: pnpm --dir desktop test
+      - name: Validate release tag
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          version=$(node -p "JSON.parse(require('fs').readFileSync('desktop/package.json')).version")
+          test "$GITHUB_REF_NAME" = "desktop-v$version"
+
+  package:
+    needs: check
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-22.04
+            arch: x64
+          - runner: ubuntu-24.04-arm
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: |
+            pnpm-lock.yaml
+            desktop/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --dir desktop install --frozen-lockfile
+      - name: Build packages
+        run: pnpm --dir desktop package:linux --${{ matrix.arch }}
+      - name: Inspect and smoke-test installed Debian package
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb desktop-file-utils ./desktop/release/*.deb
+          desktop-file-validate /usr/share/applications/org.kairos.Kairos.desktop
+          dpkg-deb --info desktop/release/*.deb
+          smoke_config=$(mktemp -d)
+          XDG_CONFIG_HOME="$smoke_config" timeout 45s xvfb-run -a kairos --smoke-test
+          tar -tzf desktop/release/*.tar.gz | grep 'resources/app-dist/index.html'
+          chmod +x desktop/release/*.AppImage
+          (
+            cd desktop/release
+            images=(./*.AppImage)
+            "${images[0]}" --appimage-extract >/dev/null
+          )
+          test -f desktop/release/squashfs-root/resources/app-dist/index.html
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kairos-linux-${{ matrix.arch }}
+          if-no-files-found: error
+          path: |
+            desktop/release/*.deb
+            desktop/release/*.AppImage
+            desktop/release/*.tar.gz
+
+  nix:
+    needs: check
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v31
+      - run: nix build .#kairos-desktop --print-build-logs
+      - run: nix flake check --no-build
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/desktop-v')
+    needs: [package, nix]
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: kairos-linux-*
+          merge-multiple: true
+          path: release
+      - name: Checksums and draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          cd release
+          sha256sum ./*.deb ./*.AppImage ./*.tar.gz > SHA256SUMS
+          gh release create "$GITHUB_REF_NAME" --verify-tag --draft --generate-notes \
+            --title "Kairos ${GITHUB_REF_NAME#desktop-v}" \
+            ./*.deb ./*.AppImage ./*.tar.gz SHA256SUMS
