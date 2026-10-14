@@ -80,7 +80,7 @@ function ActivitySidebarComponent({
           animate={{ x: 0 }}
           exit={{ x: '100%' }}
           transition={{ duration: 0.2, ease: 'easeOut' }}
-          className="absolute inset-y-0 right-0 z-20 flex w-[360px] flex-col overflow-hidden bg-primary-100"
+          className="absolute inset-y-0 right-0 z-20 flex w-(--right-sidebar-width) flex-col overflow-hidden bg-primary-100"
         >
           {panel}
         </motion.aside>
