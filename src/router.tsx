@@ -2,9 +2,11 @@ import { createRouter } from '@tanstack/react-router'
 
 import { routeTree } from './routeTree.gen'
 import { appQueryClient } from '@/lib/query-client'
+import { ErrorScreen } from '@/components/error-screen'
 
 export const router = createRouter({
   routeTree,
+  defaultErrorComponent: ErrorScreen,
   context: {
     queryClient: appQueryClient,
   },

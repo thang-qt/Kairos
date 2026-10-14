@@ -2,6 +2,7 @@ import { Outlet, createRootRouteWithContext } from '@tanstack/react-router'
 
 import { appQueryClient } from '@/lib/query-client'
 import { AppQueryProvider } from '@/lib/app-query-provider'
+import { ErrorScreen } from '@/components/error-screen'
 
 type RouterContext = {
   queryClient: typeof appQueryClient
@@ -23,9 +24,5 @@ function RootLayout() {
 }
 
 function RootNotFound() {
-  return (
-    <div className="flex min-h-screen items-center justify-center bg-surface px-6">
-      <p className="text-pretty text-sm text-primary-700">Page not found.</p>
-    </div>
-  )
+  return <ErrorScreen notFound />
 }
