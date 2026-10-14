@@ -390,6 +390,46 @@
             pkgs.sqlite
           ];
         };
+
+        # Android prototype toolchain: `nix develop .#android`.
+        devShells.android =
+          let
+            androidPkgs = import nixpkgs {
+              inherit system;
+              config = {
+                allowUnfree = true;
+                android_sdk.accept_license = true;
+              };
+            };
+            androidComposition = androidPkgs.androidenv.composeAndroidPackages {
+              platformVersions = [ "35" ];
+              buildToolsVersions = [ "35.0.0" ];
+              includeEmulator = false;
+              includeSystemImages = false;
+              includeNDK = false;
+            };
+            sdkRoot = "${androidComposition.androidsdk}/libexec/android-sdk";
+          in
+          androidPkgs.mkShell {
+            name = "kairos-android-shell";
+
+            packages = [
+              androidComposition.androidsdk
+              androidPkgs.jdk17
+              androidPkgs.gradle_8
+              androidPkgs.nodejs
+              androidPkgs.pnpm_9
+            ];
+
+            ANDROID_HOME = sdkRoot;
+            ANDROID_SDK_ROOT = sdkRoot;
+            JAVA_HOME = androidPkgs.jdk17.home;
+
+            shellHook = ''
+              # Keep Gradle's caches inside the checkout so sandboxed builds can write them.
+              export GRADLE_USER_HOME="$PWD/android/.gradle-home"
+            '';
+          };
       }
     )
     // {
