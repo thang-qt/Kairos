@@ -25,3 +25,11 @@ desktop/app-dist/
 desktop/release/
 result
 result-*
+
+# Android prototype outputs and local SDK configuration
+android/.gradle-home/
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/app/src/main/assets/transcript/

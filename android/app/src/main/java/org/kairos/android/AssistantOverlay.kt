@@ -1,0 +1,193 @@
+@file:OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+
+package org.kairos.android
+
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Text
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.onPreInterceptKeyBeforeSoftKeyboard
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import org.kairos.android.ui.KIcon
+import org.kairos.android.ui.KairosMark
+import org.kairos.android.ui.icons.KairosIcons
+import org.kairos.android.ui.pressable
+import org.kairos.android.ui.theme.KairosTheme
+import org.kairos.android.ui.theme.LocalKairosColors
+
+/** Shared native UI. Only the replies have a card; the composer floats over the scrim. */
+@Composable
+fun AssistantOverlay(
+    app: KairosApplication,
+    conversation: OverlayConversation,
+    screenCapture: ScreenCaptureState,
+    onDismiss: () -> Unit,
+    onOpenApp: (List<ChatMessage>) -> Unit,
+) {
+    KairosTheme(app.theme.colors, app.theme.dark) {
+        val colors = LocalKairosColors.current
+        val context = LocalContext.current
+        val view = LocalView.current
+        val density = LocalDensity.current
+        val generation = conversation.generation
+        val imeVisible = WindowInsets.ime.getBottom(density) > 0
+        var debug by remember { mutableStateOf(false) }
+        LaunchedEffect(generation) {
+            withFrameNanos { }
+            view.post { conversation.firstFrame(generation) }
+        }
+        LaunchedEffect(imeVisible, generation) {
+            if (imeVisible) conversation.keyboardVisible(generation)
+        }
+        val scroll = rememberScrollState()
+        var follow by remember(generation) { mutableStateOf(true) }
+        LaunchedEffect(scroll, generation) {
+            snapshotFlow { scroll.isScrollInProgress }.collect { dragging ->
+                if (!dragging && scroll.maxValue - scroll.value <= with(density) { 48.dp.roundToPx() }) follow = true
+            }
+        }
+        val userScroll = remember(generation) {
+            object : NestedScrollConnection {
+                override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                    if (source == NestedScrollSource.UserInput && available.y != 0f) follow = false
+                    return Offset.Zero
+                }
+            }
+        }
+        LaunchedEffect(scroll.maxValue, generation, imeVisible) {
+            if (follow) scroll.scrollTo(scroll.maxValue)
+        }
+        BoxWithConstraints(
+            Modifier.fillMaxSize().onPreInterceptKeyBeforeSoftKeyboard {
+                if (it.key == Key.Back || it.key == Key.Escape) {
+                    if (it.type == KeyEventType.KeyUp) onDismiss()
+                    true
+                } else false
+            }.onPreviewKeyEvent {
+                if (it.key == Key.Escape && it.type == KeyEventType.KeyDown) { onDismiss(); true } else false
+            },
+        ) {
+            Box(Modifier.fillMaxSize().background(colors.p(950).copy(alpha = 0.20f)).clickable(onClick = onDismiss))
+            val maxCardHeight = maxHeight * 0.60f
+            // Same working inset chain moves replies and composer together, with no painted container.
+            Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().imePadding().navigationBarsPadding()
+                .padding(horizontal = 12.dp, vertical = 8.dp)) {
+                AnimatedVisibility(
+                    visible = conversation.messages.isNotEmpty(),
+                    modifier = Modifier.weight(1f, fill = false).fillMaxWidth().heightIn(max = maxCardHeight).padding(bottom = 8.dp),
+                    enter = fadeIn(tween(180)) + slideInVertically(tween(180)) { with(density) { 12.dp.roundToPx() } },
+                    exit = fadeOut(tween(100)), label = "reply-card",
+                ) {
+                    val shape = RoundedCornerShape(24.dp)
+                    Column(
+                        Modifier.fillMaxWidth().shadow(10.dp, shape).clip(shape).background(colors.surface)
+                            .clickable(interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, indication = null, onClick = {})
+                    ) {
+                        OverlayActions(conversation, onOpenApp, { debug = !debug }, Modifier.padding(horizontal = 8.dp, vertical = 4.dp))
+                        Column(Modifier.weight(1f, fill = false).fillMaxWidth()
+                            .nestedScroll(userScroll).verticalScroll(scroll).padding(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                            conversation.messages.forEach { message ->
+                                key(message.id) {
+                                    if (message.role == "user") Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
+                                        Column(Modifier.fillMaxWidth(0.85f), horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                            message.attachment?.let { attachment ->
+                                                ScreenThumbnail(attachment, Modifier.heightIn(max = 200.dp)
+                                                    .aspectRatio(attachment.width.toFloat() / attachment.height)
+                                                    .clip(RoundedCornerShape(8.dp)), crop = true)
+                                            }
+                                            if (message.text.isNotBlank()) Text(message.text, color = colors.p(900), fontSize = 15.sp, lineHeight = 22.sp,
+                                                modifier = Modifier.background(colors.p(100), RoundedCornerShape(12.dp)).padding(horizontal = 16.dp, vertical = 10.dp))
+                                        }
+                                    } else Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        message.model?.let { ModelLabel(it) }
+                                        OverlayMarkdown(message.text) { href -> openBrowser(context, href); onDismiss() }
+                                        if (message.streaming && message.text.isEmpty()) Text("Thinking…", color = colors.p(500), fontSize = 12.sp)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                if (debug) Column(Modifier.fillMaxWidth().padding(bottom = 6.dp)
+                    .background(colors.p(100), RoundedCornerShape(8.dp)).padding(8.dp)) {
+                    app.perf.numbers.filterKeys { "Assistant" in it || "Preview" in it }.forEach { (label, value) ->
+                        Text("$label: $value", fontFamily = FontFamily.Monospace, fontSize = 10.sp)
+                    }
+                }
+                if (conversation.messages.isEmpty()) {
+                    OverlayActions(conversation, onOpenApp, { debug = !debug }, Modifier.padding(bottom = 8.dp), floating = true)
+                }
+                key(generation) {
+                    NativeComposer(conversation.streaming,
+                        onSend = { text -> conversation.send(text, screenCapture.takeAttachment()) },
+                        onStop = conversation::stop, focusRequestKey = generation,
+                        screenCapture = screenCapture, floating = true, onScreenSettingsOpened = onDismiss,
+                        contentPadding = PaddingValues(top = if (conversation.messages.isEmpty()) 4.dp else 0.dp),
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun OverlayActions(
+    conversation: OverlayConversation,
+    onOpenApp: (List<ChatMessage>) -> Unit,
+    onDebugToggle: () -> Unit,
+    modifier: Modifier = Modifier,
+    floating: Boolean = false,
+) {
+    val colors = LocalKairosColors.current
+    // Before the first message these sit straight on the scrim, so they get their own surface.
+    val pill = RoundedCornerShape(16.dp)
+    val lift = if (floating) Modifier.shadow(6.dp, pill).background(colors.surface.copy(alpha = 0.96f), pill) else Modifier
+    Row(modifier.fillMaxWidth().height(40.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            lift.height(32.dp).pressable(pill, onLongClick = onDebugToggle) { onOpenApp(conversation.snapshot()) }.padding(start = 8.dp, end = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            KairosMark()
+            Text("Kairos", fontWeight = FontWeight.Medium, color = colors.p(900))
+        }
+        Spacer(Modifier.weight(1f))
+        Row(
+            lift.height(32.dp).pressable(pill) { onOpenApp(conversation.snapshot()) }.padding(start = 12.dp, end = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Text(if (conversation.messages.isEmpty()) "Open Kairos" else "Open in Kairos", color = colors.p(800), fontWeight = FontWeight.Medium)
+            KIcon(KairosIcons.ArrowUpRight01, colors.p(600), size = 16.dp)
+        }
+    }
+}

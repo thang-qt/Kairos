@@ -1,0 +1,14 @@
+/* Keep this island offline; the shared CSS's remote font import is blocked by CSP. */
+html,
+body {
+  min-height: 100%;
+  background: var(--theme-surface);
+  color: var(--theme-primary-950);
+}
+main {
+  overflow-anchor: none;
+}
+article table {
+  min-width: 640px;
+  font-variant-numeric: tabular-nums;
+}
