@@ -38,9 +38,5 @@ function RootLayout() {
 }
 
 function RootNotFound() {
-  return (
-    <>
-      <ErrorScreen notFound />
-    </>
-  )
+  return <ErrorScreen notFound />
 }

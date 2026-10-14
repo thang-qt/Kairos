@@ -99,7 +99,9 @@ function ChatSidebarComponent({
             </Button>
           }
         />
-        <TooltipContent side="right">Close Sidebar</TooltipContent>
+        <TooltipContent side="right">
+          {shortcutTooltip('Close Sidebar', 'sidebar')}
+        </TooltipContent>
       </TooltipRoot>
     </TooltipProvider>
   )
