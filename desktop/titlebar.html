@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self'; base-uri 'none'; form-action 'none'"
+    />
+    <title>Kairos</title>
+    <link rel="stylesheet" href="titlebar.css" />
+    <script type="module" src="dist/titlebar.js"></script>
+  </head>
+  <body>
+    <header class="titlebar">
+      <div class="identity">
+        <img
+          src="assets/kairos.png"
+          width="16"
+          height="16"
+          alt=""
+          draggable="false"
+        />
+        <span id="page-title">Kairos</span>
+      </div>
+      <nav aria-label="Window controls">
+        <button
+          id="minimize"
+          type="button"
+          aria-label="Minimize window"
+          title="Minimize window"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M5 17h14" />
+          </svg>
+        </button>
+        <button
+          id="maximize"
+          type="button"
+          aria-label="Maximize window"
+          title="Maximize window"
+        >
+          <svg id="maximize-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <rect x="5" y="5" width="14" height="14" rx="2" />
+          </svg>
+          <svg id="restore-icon" viewBox="0 0 24 24" aria-hidden="true" hidden>
+            <path
+              d="M9 5V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1h-1"
+            />
+            <rect x="3" y="8" width="13" height="13" rx="2" />
+          </svg>
+        </button>
+        <button
+          id="close"
+          type="button"
+          aria-label="Close window"
+          title="Close window"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="m6 6 12 12M18 6 6 18" />
+          </svg>
+        </button>
+      </nav>
+    </header>
+  </body>
+</html>

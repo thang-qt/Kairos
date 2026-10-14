@@ -6,29 +6,6 @@
   isolation: isolate;
 }
 
-html[data-desktop] .app-drag {
-  app-region: drag;
-  -webkit-app-region: drag;
-  user-select: none;
-}
-
-html[data-desktop]
-  .app-drag
-  :is(
-    button,
-    a,
-    input,
-    textarea,
-    select,
-    [role='button'],
-    [role='combobox'],
-    [role='menuitem'],
-    [contenteditable='true']
-  ) {
-  app-region: no-drag;
-  -webkit-app-region: no-drag;
-}
-
 @custom-variant dark (&:where(.dark, .dark *));
 
 @theme {

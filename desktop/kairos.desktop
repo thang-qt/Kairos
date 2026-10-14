@@ -7,8 +7,8 @@ Icon=@ICON@
 Terminal=false
 StartupWMClass=org.kairos.Kairos
 Categories=Network;Chat;
-Actions=quick-chat;
+Actions=toggle;
 
-[Desktop Action quick-chat]
-Name=Quick chat
+[Desktop Action toggle]
+Name=Show or hide Kairos
 Exec=@LAUNCHER@ --toggle

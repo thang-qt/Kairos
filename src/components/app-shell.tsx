@@ -43,6 +43,7 @@ export function AppShell({
 
   return (
     <div
+      data-shell-top={insetMain ? 'frame' : 'surface'}
       className={cn(
         'relative h-screen overflow-hidden text-primary-900',
         desktopChrome ? 'bg-primary-100' : 'bg-surface',

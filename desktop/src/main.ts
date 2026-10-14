@@ -5,20 +5,30 @@ import {
   ipcMain,
   Menu,
   nativeTheme,
-  screen,
   session,
   shell,
   Tray,
+  WebContentsView,
 } from 'electron'
-import type { IpcMainInvokeEvent, MenuItemConstructorOptions } from 'electron'
+import type {
+  IpcMainInvokeEvent,
+  IpcMainEvent,
+  MenuItemConstructorOptions,
+  WebContents,
+} from 'electron'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { desktopId, isAutostartEnabled, setAutostart } from './desktop-entry.js'
 import { readConfig, readWindowState, writeJson } from './settings.js'
 import type { Config } from './settings.js'
+import { fallbackTheme, validateTheme } from './titlebar-state.js'
+import type { Theme, TitlebarState } from './titlebar-state.js'
+import { installBundleProtocol } from './bundle-protocol.js'
 
 const directory = dirname(dirname(fileURLToPath(import.meta.url)))
 const offlineFile = join(directory, 'offline.html')
+const titlebarFile = join(directory, 'titlebar.html')
+const titlebarHeight = 32
 const permittedPermissions = new Set([
   'clipboard-sanitized-write',
   'clipboard-read',
@@ -27,13 +37,14 @@ const permittedPermissions = new Set([
 let config: Config
 let origin: string
 let mainWindow: BrowserWindow | undefined
-let popupWindow: BrowserWindow | undefined
+let mainView: WebContentsView | undefined
+let pageTitle = 'Kairos'
+let contentTheme: Theme | undefined
+let contentTop: 'frame' | 'surface' = 'frame'
 let tray: Tray | undefined
 let quitting = false
 let mainReady = false
-let popupReady = false
-let wantMain = !process.argv.includes('--toggle')
-let wantPopup = process.argv.includes('--toggle')
+let wantMain = true
 let saveTimer: ReturnType<typeof setTimeout> | undefined
 
 app.setName('Kairos')
@@ -44,7 +55,7 @@ if (!app.requestSingleInstanceLock()) {
   app.quit()
 } else {
   app.on('second-instance', function secondInstance(_event, argv) {
-    if (argv.includes('--toggle')) togglePopup()
+    if (argv.includes('--toggle')) toggleMain()
     else openMain()
   })
   app.on('activate', openMain)
@@ -57,7 +68,7 @@ if (!app.requestSingleInstanceLock()) {
     globalShortcut.unregisterAll()
     tray?.destroy()
   })
-  // Both windows intentionally live until Quit, including when hidden to the tray.
+  // The window lives until Quit, including when hidden to the tray.
   app.on('window-all-closed', function windowsClosed() {})
   void app
     .whenReady()
@@ -90,10 +101,8 @@ function openExternal(value: string): void {
   }
 }
 
-function validateSender(event: IpcMainInvokeEvent): void {
-  const owned =
-    event.sender === mainWindow?.webContents ||
-    event.sender === popupWindow?.webContents
+function validateSender(event: IpcMainInvokeEvent | IpcMainEvent): void {
+  const owned = event.sender === mainView?.webContents
   if (
     !owned ||
     !event.senderFrame ||
@@ -104,15 +113,18 @@ function validateSender(event: IpcMainInvokeEvent): void {
   }
 }
 
-function start(): void {
-  config = readConfig()
+async function start(): Promise<void> {
+  const bundleDirectory = join(directory, 'app-dist')
+  config = readConfig(bundleDirectory)
   origin = new URL(config.url).origin
+  console.log(
+    `[Kairos] Frontend mode: ${config.bundled ? 'bundled' : 'remote'}`,
+  )
+  if (config.bundled) await installBundleProtocol(origin, bundleDirectory)
   console.log(
     `[Kairos] Electron ${process.versions.electron}; URL ${config.url}; desktop identity ${desktopId}`,
   )
-  console.log(
-    `[Kairos] Popup rounded transparency: ${config.popupRounded}; hidden title bar with Linux client frame`,
-  )
+  console.log('[Kairos] Hidden title bar with Linux client frame')
 
   session.defaultSession.setPermissionRequestHandler(
     function permissionRequest(contents, permission, callback, details) {
@@ -136,41 +148,101 @@ function start(): void {
       )
     },
   )
-  ipcMain.handle('kairos:hide-popup', function hidePopup(event) {
-    validateSender(event)
-    popupWindow?.hide()
-    wantPopup = false
+  ipcMain.on('kairos:theme', function receiveTheme(event, payload: unknown) {
+    try {
+      validateSender(event)
+    } catch {
+      return
+    }
+    if (event.sender !== mainView?.webContents) return
+    if (
+      !payload ||
+      typeof payload !== 'object' ||
+      !('theme' in payload) ||
+      !('top' in payload) ||
+      (payload.top !== 'frame' && payload.top !== 'surface')
+    )
+      return
+    const theme = validateTheme(payload.theme)
+    if (!theme) return
+    contentTheme = {
+      ...fallbackTheme(nativeTheme.shouldUseDarkColors),
+      ...theme,
+    }
+    contentTop = payload.top
+    sendTitlebarState()
   })
-  ipcMain.handle('kairos:open-main', function showMain(event) {
-    validateSender(event)
-    openMain()
+  ipcMain.handle('kairos:titlebar-minimize', function minimizeTitlebar(event) {
+    validateTitlebarSender(event)
+    mainWindow?.minimize()
   })
-  ipcMain.handle('kairos:close-window', function closeWindow(event) {
-    validateSender(event)
-    // Reuse the close handlers, which hide the sender's window to the tray.
-    BrowserWindow.fromWebContents(event.sender)?.close()
+  ipcMain.handle('kairos:titlebar-maximize', function maximizeTitlebar(event) {
+    validateTitlebarSender(event)
+    toggleMainMaximize()
+    mainView?.webContents.focus()
   })
-  ipcMain.handle('kairos:toggle-maximize', function toggleMaximize(event) {
-    validateSender(event)
-    if (event.sender !== mainWindow?.webContents) return
-    if (mainWindow.isMaximized()) mainWindow.unmaximize()
-    else mainWindow.maximize()
+  ipcMain.handle('kairos:titlebar-close', function closeTitlebar(event) {
+    validateTitlebarSender(event)
+    mainWindow?.close()
+  })
+  ipcMain.handle('kairos:titlebar-state', function readTitlebarState(event) {
+    validateTitlebarSender(event)
+    return titlebarState()
+  })
+  nativeTheme.on('updated', function nativeThemeUpdated() {
+    if (!contentTheme) {
+      mainWindow?.setBackgroundColor(
+        nativeTheme.shouldUseDarkColors ? '#0d0d0d' : '#f9f9f9',
+      )
+      sendTitlebarState()
+    }
   })
 
   createMenu()
-  createWindows()
+  createMainWindow()
   createTray()
   registerHotkey()
 }
 
 function createMenu(): void {
   const view: MenuItemConstructorOptions[] = [
-    { role: 'reload' },
-    { role: 'resetZoom' },
-    { role: 'zoomIn' },
-    { role: 'zoomOut' },
+    {
+      label: 'Reload',
+      accelerator: 'Control+R',
+      click: function reloadContent() {
+        activeContents()?.reload()
+      },
+    },
+    {
+      label: 'Reset zoom',
+      accelerator: 'Control+0',
+      click: function resetZoom() {
+        activeContents()?.setZoomLevel(0)
+      },
+    },
+    {
+      label: 'Zoom in',
+      accelerator: 'Control+Plus',
+      click: function zoomIn() {
+        changeZoom(1)
+      },
+    },
+    {
+      label: 'Zoom out',
+      accelerator: 'Control+-',
+      click: function zoomOut() {
+        changeZoom(-1)
+      },
+    },
   ]
-  if (!app.isPackaged) view.push({ role: 'toggleDevTools' })
+  if (!app.isPackaged)
+    view.push({
+      label: 'Toggle developer tools',
+      accelerator: 'Control+Shift+I',
+      click: function devtools() {
+        activeContents()?.toggleDevTools()
+      },
+    })
   Menu.setApplicationMenu(
     Menu.buildFromTemplate([
       {
@@ -202,7 +274,7 @@ function createMenu(): void {
   )
 }
 
-function createWindows(): void {
+function createMainWindow(): void {
   const state = readWindowState(
     join(app.getPath('userData'), 'window-state.json'),
   )
@@ -224,11 +296,11 @@ function createWindows(): void {
     resizable: true,
     hasShadow: true,
     show: false,
-    backgroundColor,
+    backgroundColor: nativeTheme.shouldUseDarkColors ? '#0d0d0d' : '#f9f9f9',
     icon: join(directory, 'assets/kairos.png'),
     webPreferences: {
       ...webPreferences,
-      additionalArguments: ['--kairos-window=main'],
+      preload: join(directory, 'dist/titlebar-preload.cjs'),
     },
   })
   mainWindow.setMenuBarVisibility(false)
@@ -249,69 +321,79 @@ function createWindows(): void {
   mainWindow.on('move', scheduleSave)
   mainWindow.on('maximize', scheduleSave)
   mainWindow.on('unmaximize', scheduleSave)
-  configureContents(mainWindow, config.url, false)
-
-  popupWindow = new BrowserWindow({
-    width: 720,
-    height: 560,
-    show: false,
-    frame: false,
-    transparent: config.popupRounded,
-    backgroundColor: config.popupRounded ? '#00000000' : backgroundColor,
-    hasShadow: !config.popupRounded,
-    alwaysOnTop: true,
-    skipTaskbar: true,
-    resizable: false,
-    maximizable: false,
-    fullscreenable: false,
+  mainView = new WebContentsView({
     webPreferences: {
       ...webPreferences,
-      additionalArguments: ['--kairos-window=popup'],
     },
   })
-  popupWindow.setMenuBarVisibility(false)
-  popupWindow.once('ready-to-show', function popupCanShow() {
-    popupReady = true
-    if (wantPopup) showPopup()
+  mainView.setBackgroundColor(backgroundColor)
+  mainWindow.contentView.addChildView(mainView)
+  layoutMainView()
+  mainWindow.on('resize', layoutMainView)
+  mainWindow.on('maximize', layoutMainView)
+  mainWindow.on('unmaximize', layoutMainView)
+  mainWindow.on('enter-full-screen', layoutMainView)
+  mainWindow.on('leave-full-screen', layoutMainView)
+  mainWindow.on('focus', sendTitlebarState)
+  mainWindow.on('blur', sendTitlebarState)
+  mainWindow.on('closed', function closeMainView() {
+    if (mainView && !mainView.webContents.isDestroyed())
+      mainView.webContents.close()
+    mainView = undefined
   })
-  popupWindow.on('blur', function hideOnBlur() {
-    wantPopup = false
-    popupWindow?.hide()
-  })
-  popupWindow.on('close', function hideOnClose(event) {
-    if (!quitting) {
+  mainView.webContents.on(
+    'page-title-updated',
+    function updatePageTitle(event, title) {
       event.preventDefault()
-      wantPopup = false
-      popupWindow?.hide()
-    }
-  })
-  popupWindow.webContents.on(
-    'before-input-event',
-    function escapePopup(event, input) {
-      if (
-        popupWindow?.isFocused() &&
-        input.type === 'keyDown' &&
-        input.key === 'Escape' &&
-        !input.alt &&
-        !input.control &&
-        !input.meta &&
-        !input.shift
-      ) {
-        event.preventDefault()
-        wantPopup = false
-        popupWindow.hide()
+      pageTitle = title.trim() || 'Kairos'
+      mainWindow?.setTitle(pageTitle)
+      sendTitlebarState()
+    },
+  )
+  mainView.webContents.on(
+    'did-start-navigation',
+    function resetTheme(_event, _url, inPlace, isMainFrame) {
+      if (isMainFrame && !inPlace) {
+        contentTheme = undefined
+        contentTop = 'frame'
+        sendTitlebarState()
       }
     },
   )
-  configureContents(popupWindow, `${config.url}/new`, true)
+  // The local chrome cannot navigate to remote content or create child windows.
+  mainWindow.webContents.on(
+    'will-navigate',
+    function denyTitlebarNavigation(event) {
+      event.preventDefault()
+    },
+  )
+  mainWindow.webContents.on(
+    'will-frame-navigate',
+    function denyTitlebarFrame(event) {
+      event.preventDefault()
+    },
+  )
+  mainWindow.webContents.on(
+    'will-attach-webview',
+    function denyTitlebarWebview(event) {
+      event.preventDefault()
+    },
+  )
+  mainWindow.webContents.setWindowOpenHandler(function denyTitlebarNewWindow() {
+    return { action: 'deny' }
+  })
+  mainWindow.webContents.on('did-finish-load', sendTitlebarState)
+  void mainWindow
+    .loadFile(titlebarFile, {
+      query: { mode: nativeTheme.shouldUseDarkColors ? 'dark' : 'light' },
+    })
+    .catch(function titlebarFailed(error) {
+      console.error('[Kairos] Title bar failed:', error)
+    })
+  configureContents(mainView.webContents, config.url)
 }
 
-function configureContents(
-  window: BrowserWindow,
-  target: string,
-  rounded: boolean,
-): void {
-  const contents = window.webContents
+function configureContents(contents: WebContents, target: string): void {
   contents.on('will-navigate', function restrictNavigation(event, url) {
     if (!isConfiguredOrigin(url)) {
       event.preventDefault()
@@ -323,7 +405,7 @@ function configureContents(
     function restrictRedirect(event, url, _inPlace, isMainFrame) {
       if (!isConfiguredOrigin(url)) {
         event.preventDefault()
-        if (isMainFrame) void showOffline(window, target)
+        if (isMainFrame) void showOffline(contents, target)
       }
     },
   )
@@ -342,45 +424,21 @@ function configureContents(
     function failedLoad(_event, code, description, url, isMainFrame) {
       if (!isMainFrame || code === -3 || url.startsWith('file:')) return
       console.warn(`[Kairos] Load failed (${code}): ${description}`)
-      void showOffline(window, target)
+      void showOffline(contents, target)
     },
   )
-  contents.on('did-finish-load', function loaded() {
-    if (rounded && config.popupRounded) {
-      void contents
-        .insertCSS(`
-        html, body { background: transparent !important; }
-        body { margin: 0 !important; padding: 12px !important; box-sizing: border-box; }
-        #root, .offline-shell {
-          height: calc(100dvh - 24px) !important;
-          min-height: 0 !important;
-          border-radius: 16px; overflow: hidden;
-          box-sizing: border-box;
-          background: var(--color-surface, Canvas);
-          border: 1px solid color-mix(in srgb, var(--color-ink, CanvasText) 10%, transparent);
-          box-shadow: 0 4px 12px color-mix(in srgb, CanvasText 15%, transparent);
-        }
-        #root > div { height: 100% !important; min-height: 0 !important; }
-        /* The hosted AppShell uses viewport height; keep it inside the inset surface. */
-        #root .h-screen, #root .min-h-screen { height: 100% !important; min-height: 0 !important; }
-      `)
-        .catch(function cssFailed(error) {
-          console.warn('[Kairos] Rounded popup CSS failed:', error)
-        })
-    }
-  })
-  void window.loadURL(target).catch(function loadRejected(error) {
+  void contents.loadURL(target).catch(function loadRejected(error) {
     console.warn('[Kairos] Initial navigation rejected:', error.message)
   })
 }
 
 async function showOffline(
-  window: BrowserWindow,
+  contents: WebContents,
   target: string,
 ): Promise<void> {
-  if (window.isDestroyed()) return
+  if (contents.isDestroyed()) return
   try {
-    await window.loadFile(offlineFile, { query: { retry: target } })
+    await contents.loadFile(offlineFile, { query: { retry: target } })
   } catch (error) {
     console.error('[Kairos] Offline page failed:', error)
   }
@@ -392,29 +450,14 @@ function openMain(): void {
   if (mainWindow.isMinimized()) mainWindow.restore()
   mainWindow.show()
   mainWindow.focus()
+  mainView?.webContents.focus()
 }
 
-function showPopup(): void {
-  wantPopup = true
-  if (!popupReady || !popupWindow) return
-  const area = screen.getDisplayNearestPoint(
-    screen.getCursorScreenPoint(),
-  ).workArea
-  const bounds = popupWindow.getBounds()
-  // Wayland may ignore these coordinates; the compositor retains placement authority.
-  popupWindow.setPosition(
-    Math.round(area.x + (area.width - bounds.width) / 2),
-    Math.round(area.y + (area.height - bounds.height) / 2),
-  )
-  popupWindow.show()
-  popupWindow.focus()
-}
-
-function togglePopup(): void {
-  if (popupWindow?.isVisible() || wantPopup) {
-    wantPopup = false
-    popupWindow?.hide()
-  } else showPopup()
+function toggleMain(): void {
+  if (mainWindow?.isVisible() && mainWindow.isFocused()) {
+    wantMain = false
+    mainWindow.hide()
+  } else openMain()
 }
 
 function saveWindowState(): void {
@@ -441,13 +484,12 @@ function createTray(): void {
 function updateTrayMenu(): void {
   tray?.setContextMenu(
     Menu.buildFromTemplate([
-      { label: 'Open Kairos', click: openMain },
-      { label: `Quick chat (${config.hotkey})`, click: showPopup },
+      { label: `Open Kairos (${config.hotkey})`, click: openMain },
       {
         label: 'Reload',
         click: function reload() {
-          if (mainWindow)
-            void mainWindow
+          if (mainView)
+            void mainView.webContents
               .loadURL(config.url)
               .catch(function reloadFailed(error) {
                 console.warn('[Kairos] Reload failed:', error.message)
@@ -480,7 +522,7 @@ function updateTrayMenu(): void {
 
 function registerHotkey(): void {
   try {
-    const registered = globalShortcut.register(config.hotkey, togglePopup)
+    const registered = globalShortcut.register(config.hotkey, toggleMain)
     console.log(
       `[Kairos] Hotkey ${config.hotkey}: ${registered ? 'registration succeeded (on Wayland this may only confirm portal submission)' : 'registration failed'}`,
     )
@@ -490,4 +532,57 @@ function registerHotkey(): void {
   console.log(
     '[Kairos] Hotkey fallback: desktop/scripts/kairos-desktop --toggle',
   )
+}
+
+function activeContents(): WebContents | undefined {
+  return mainView?.webContents
+}
+
+function changeZoom(delta: number): void {
+  const contents = activeContents()
+  if (contents) contents.setZoomLevel(contents.getZoomLevel() + delta)
+}
+
+function toggleMainMaximize(): void {
+  if (!mainWindow) return
+  if (mainWindow.isMaximized()) mainWindow.unmaximize()
+  else mainWindow.maximize()
+}
+
+function layoutMainView(): void {
+  if (!mainWindow || !mainView) return
+  const [width, height] = mainWindow.getContentSize()
+  mainView.setBounds({
+    x: 0,
+    y: titlebarHeight,
+    width,
+    height: Math.max(0, height - titlebarHeight),
+  })
+  sendTitlebarState()
+}
+
+function validateTitlebarSender(event: IpcMainInvokeEvent): void {
+  if (
+    event.sender !== mainWindow?.webContents ||
+    !event.senderFrame ||
+    event.senderFrame !== event.sender.mainFrame ||
+    fileURLToPath(new URL(event.senderFrame.url)) !== titlebarFile
+  ) {
+    throw new Error('Untrusted title bar IPC sender')
+  }
+}
+
+function titlebarState(): TitlebarState {
+  return {
+    title: pageTitle,
+    maximized: mainWindow?.isMaximized() ?? false,
+    focused: mainWindow?.isFocused() ?? false,
+    top: contentTop,
+    theme: contentTheme ?? fallbackTheme(nativeTheme.shouldUseDarkColors),
+  }
+}
+
+function sendTitlebarState(): void {
+  if (mainWindow && !mainWindow.webContents.isDestroyed())
+    mainWindow.webContents.send('kairos:titlebar-state', titlebarState())
 }

@@ -1,11 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 
-const windowKind = process.argv.includes('--kairos-window=popup')
-  ? 'popup'
-  : 'main'
-
 function markDesktop(): void {
-  document.documentElement.dataset.desktop = windowKind
+  document.documentElement.dataset.desktop = 'main'
 }
 
 if (document.documentElement) markDesktop()
@@ -14,16 +10,56 @@ else document.addEventListener('DOMContentLoaded', markDesktop, { once: true })
 contextBridge.exposeInMainWorld('kairosDesktop', {
   platform: 'linux',
   isDesktop: true,
-  hidePopup: function hidePopup() {
-    return ipcRenderer.invoke('kairos:hide-popup')
-  },
-  openMain: function openMain() {
-    return ipcRenderer.invoke('kairos:open-main')
-  },
-  closeWindow: function closeWindow() {
-    return ipcRenderer.invoke('kairos:close-window')
-  },
-  toggleMaximize: function toggleMaximize() {
-    return ipcRenderer.invoke('kairos:toggle-maximize')
-  },
 })
+
+// Sandboxed preloads cannot require another local module; keep this allowlist
+// in sync with titlebar-state.ts. The main process validates every update.
+const themeKeys = [
+  '--color-surface',
+  '--color-ink',
+  '--color-primary-100',
+  '--color-primary-200',
+  '--color-primary-500',
+  '--color-primary-700',
+  '--color-primary-950',
+]
+let themeFrame = 0
+
+function queueTheme(): void {
+  if (themeFrame) return
+  themeFrame = requestAnimationFrame(function reportTheme() {
+    themeFrame = 0
+    const styles = getComputedStyle(document.documentElement)
+    const theme: Record<string, string> = {}
+    for (const key of themeKeys) {
+      const value = styles.getPropertyValue(key).trim()
+      if (value) theme[key] = value
+    }
+    const top =
+      document
+        .querySelector('[data-shell-top]')
+        ?.getAttribute('data-shell-top') === 'frame'
+        ? 'frame'
+        : 'surface'
+    ipcRenderer.send('kairos:theme', { theme, top })
+  })
+}
+
+function observeTheme(): void {
+  const observer = new MutationObserver(queueTheme)
+  observer.observe(document.documentElement, {
+    attributes: true,
+    subtree: true,
+    childList: true,
+    attributeFilter: ['data-shell-top', 'class'],
+  })
+  matchMedia('(prefers-color-scheme: dark)').addEventListener(
+    'change',
+    queueTheme,
+  )
+  queueTheme()
+}
+if (document.readyState === 'loading')
+  document.addEventListener('DOMContentLoaded', observeTheme, { once: true })
+else observeTheme()
+window.addEventListener('load', queueTheme, { once: true })

@@ -11,7 +11,7 @@ import { app, screen } from 'electron'
 export type Config = {
   url: string
   hotkey: string
-  popupRounded: boolean
+  bundled: boolean
 }
 
 export type WindowState = {
@@ -35,7 +35,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-export function readConfig(): Config {
+export function readConfig(bundleDirectory: string): Config {
   const value = readJson(`${app.getPath('userData')}/config.json`)
   const config = isRecord(value) ? value : {}
   const url = new URL(
@@ -57,7 +57,10 @@ export function readConfig(): Config {
     url: url.href.replace(/\/$/, ''),
     hotkey:
       typeof config.hotkey === 'string' ? config.hotkey : 'Control+Alt+Space',
-    popupRounded: config.popupRounded !== false,
+    bundled:
+      typeof config.bundled === 'boolean'
+        ? config.bundled
+        : existsSync(`${bundleDirectory}/index.html`),
   }
 }
 

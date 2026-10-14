@@ -1,10 +1,6 @@
 export type KairosDesktop = {
   platform: 'linux'
   isDesktop: true
-  hidePopup: () => Promise<void>
-  openMain: () => Promise<void>
-  closeWindow: () => Promise<void>
-  toggleMaximize: () => Promise<void>
 }
 
 declare global {

@@ -21,13 +21,6 @@
 body {
   margin: 0;
 }
-html[data-desktop] .offline-drag {
-  position: fixed;
-  inset: 0 0 auto;
-  height: 40px;
-  app-region: drag;
-  -webkit-app-region: drag;
-}
 main {
   min-height: 100dvh;
   display: grid;
