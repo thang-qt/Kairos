@@ -114,6 +114,64 @@ func TestAuthHTTPFlow(t *testing.T) {
 	assertStatusCode(t, meAfterLogin, http.StatusOK)
 }
 
+func TestBearerTokenFlow(t *testing.T) {
+	testServer := newTestApp(t, nil)
+
+	signupResponse := performJSONRequest(t, testServer.handler, http.MethodPost, "/api/auth/signup", authRequest{
+		Email:    "native@example.com",
+		Password: "tracepass123",
+	}, nil)
+	assertStatusCode(t, signupResponse, http.StatusCreated)
+
+	badLogin := performJSONRequest(t, testServer.handler, http.MethodPost, "/api/auth/token", authRequest{
+		Email:    "native@example.com",
+		Password: "wrongpass123",
+	}, nil)
+	assertStatusCode(t, badLogin, http.StatusUnauthorized)
+
+	tokenLogin := performJSONRequest(t, testServer.handler, http.MethodPost, "/api/auth/token", authRequest{
+		Email:    "native@example.com",
+		Password: "tracepass123",
+	}, nil)
+	assertStatusCode(t, tokenLogin, http.StatusOK)
+	if cookies := tokenLogin.Result().Cookies(); len(cookies) != 0 {
+		t.Fatalf("token login set %d cookies, want none", len(cookies))
+	}
+	if got := tokenLogin.Header().Get("Cache-Control"); got != "no-store" {
+		t.Fatalf("token login Cache-Control = %q, want no-store", got)
+	}
+	var payload tokenResponse
+	decodeResponseJSON(t, tokenLogin, &payload)
+	if payload.Token == "" || payload.User == nil || payload.ExpiresAt <= time.Now().Unix() {
+		t.Fatalf("token payload = %+v, want token, user and a future expiry", payload)
+	}
+
+	bearerRequest := func(method string, target string, authorization string, cookies []*http.Cookie) *httptest.ResponseRecorder {
+		request := httptest.NewRequest(method, target, nil)
+		if authorization != "" {
+			request.Header.Set("Authorization", authorization)
+		}
+		for _, cookie := range cookies {
+			request.AddCookie(cookie)
+		}
+		response := httptest.NewRecorder()
+		testServer.handler.ServeHTTP(response, request)
+		return response
+	}
+
+	assertStatusCode(t, bearerRequest(http.MethodGet, "/api/me", "Bearer "+payload.Token, nil), http.StatusOK)
+	assertStatusCode(t, bearerRequest(http.MethodGet, "/api/me", "bearer   "+payload.Token+" ", nil), http.StatusOK)
+	assertStatusCode(t, bearerRequest(http.MethodGet, "/api/me", "Basic "+payload.Token, nil), http.StatusUnauthorized)
+	assertStatusCode(t, bearerRequest(http.MethodGet, "/api/me", "Bearer not-a-session", nil), http.StatusUnauthorized)
+
+	// A bearer header wins over a cookie, so a stale browser cookie never masks the native session.
+	staleCookie := &http.Cookie{Name: "kairos_session", Value: "stale"}
+	assertStatusCode(t, bearerRequest(http.MethodGet, "/api/me", "Bearer "+payload.Token, []*http.Cookie{staleCookie}), http.StatusOK)
+
+	assertStatusCode(t, bearerRequest(http.MethodPost, "/api/auth/logout", "Bearer "+payload.Token, nil), http.StatusOK)
+	assertStatusCode(t, bearerRequest(http.MethodGet, "/api/me", "Bearer "+payload.Token, nil), http.StatusUnauthorized)
+}
+
 func TestSignupRejectsDuplicateEmail(t *testing.T) {
 	testServer := newTestApp(t, nil)
 

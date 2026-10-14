@@ -141,6 +141,7 @@ func (app *App) Handler() http.Handler {
 	mux.HandleFunc("GET /api/app/capabilities", app.handleCapabilities)
 	mux.HandleFunc("POST /api/auth/signup", app.handleSignup)
 	mux.HandleFunc("POST /api/auth/login", app.handleLogin)
+	mux.HandleFunc("POST /api/auth/token", app.handleTokenLogin)
 	mux.HandleFunc("POST /api/auth/logout", app.handleLogout)
 	mux.HandleFunc("GET /api/me", app.handleMe)
 	mux.HandleFunc("PATCH /api/me/email", app.handleChangeEmail)

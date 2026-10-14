@@ -31,6 +31,14 @@ type authResponse struct {
 	User *User `json:"user"`
 }
 
+// tokenResponse is returned to native clients, which send the token back as
+// `Authorization: Bearer <token>` instead of holding a cookie.
+type tokenResponse struct {
+	Token     string `json:"token"`
+	ExpiresAt int64  `json:"expiresAt"`
+	User      *User  `json:"user"`
+}
+
 func (app *App) handleSignup(writer http.ResponseWriter, request *http.Request) {
 	var payload authRequest
 	if err := decodeJSON(request, &payload); err != nil {
@@ -77,6 +85,33 @@ func (app *App) handleLogin(writer http.ResponseWriter, request *http.Request) {
 
 	app.writeSessionCookie(writer, token, expiresAt)
 	writeJSON(writer, http.StatusOK, authResponse{User: user})
+}
+
+// handleTokenLogin is the cookie-less login for native clients. The token is the
+// same server-side session a browser login creates, so logout and expiry behave
+// identically.
+func (app *App) handleTokenLogin(writer http.ResponseWriter, request *http.Request) {
+	var payload authRequest
+	if err := decodeJSON(request, &payload); err != nil {
+		writeError(writer, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	user, token, expiresAt, err := app.auth.Login(request.Context(), payload.Email, payload.Password, requestMetaFromHTTP(request))
+	if err != nil {
+		status := http.StatusBadRequest
+		switch {
+		case errors.Is(err, errInvalidCredentials):
+			status = http.StatusUnauthorized
+		case errors.Is(err, errAuthDisabled):
+			status = http.StatusForbidden
+		}
+		writeError(writer, status, err.Error())
+		return
+	}
+
+	writer.Header().Set("Cache-Control", "no-store")
+	writeJSON(writer, http.StatusOK, tokenResponse{Token: token, ExpiresAt: expiresAt.Unix(), User: user})
 }
 
 func (app *App) handleLogout(writer http.ResponseWriter, request *http.Request) {
@@ -171,12 +206,28 @@ func (app *App) handleChangePassword(writer http.ResponseWriter, request *http.R
 	writeJSON(writer, http.StatusOK, map[string]any{"ok": true})
 }
 
+// sessionTokenFromRequest prefers an `Authorization: Bearer` token (native
+// clients) and falls back to the session cookie (browsers). A bearer token is
+// never sent implicitly by a browser, so it needs no CSRF protection.
 func (app *App) sessionTokenFromRequest(request *http.Request) string {
+	if token, ok := bearerToken(request); ok {
+		return token
+	}
 	cookie, err := request.Cookie(app.config.CookieName)
 	if err != nil {
 		return ""
 	}
 	return cookie.Value
+}
+
+func bearerToken(request *http.Request) (string, bool) {
+	header := strings.TrimSpace(request.Header.Get("Authorization"))
+	scheme, token, found := strings.Cut(header, " ")
+	if !found || !strings.EqualFold(scheme, "Bearer") {
+		return "", false
+	}
+	token = strings.TrimSpace(token)
+	return token, token != ""
 }
 
 func (app *App) writeSessionCookie(writer http.ResponseWriter, token string, expiresAt time.Time) {
