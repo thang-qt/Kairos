@@ -9,9 +9,42 @@ import {
   resolveBundlePath,
 } from './bundle-path.js'
 import { createBundleHandler } from './bundle-response.js'
+import { setupOrigin } from './server-state.js'
 
 let fixture: string
 let root: string
+
+test('setup API never touches the network and handlers read the current origin', async function mutableOrigin() {
+  let origin = setupOrigin
+  let fetched = false
+  const handler = createBundleHandler(
+    function currentOrigin() {
+      return origin
+    },
+    root,
+    async function fetch() {
+      fetched = true
+      return new Response('backend')
+    },
+  )
+  const response = await handler(
+    new Request(`${setupOrigin}/api/app/capabilities`),
+  )
+  assert.equal(response.status, 503)
+  assert.deepEqual(await response.json(), { error: 'no server configured' })
+  assert.equal(fetched, false)
+  origin = 'https://server.example'
+  assert.equal(
+    (await handler(new Request(`${setupOrigin}/api/me`))).status,
+    503,
+  )
+  assert.equal(fetched, false)
+  assert.equal(
+    await (await handler(new Request(`${origin}/api/me`))).text(),
+    'backend',
+  )
+  assert.equal(fetched, true)
+})
 before(async function createFixture() {
   fixture = await mkdtemp(join(tmpdir(), 'kairos-bundle-'))
   root = join(fixture, 'app-dist')

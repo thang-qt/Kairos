@@ -10,6 +10,8 @@ import {
 } from '@/lib/app-api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { useNavigate } from '@tanstack/react-router'
+import { getShell } from '@/lib/shell'
 import {
   SettingsField,
   SettingsNotice,
@@ -65,6 +67,8 @@ function readInputValue(value: unknown) {
 }
 
 export function AccountSettingsPanel() {
+  const shell = getShell()
+  const navigate = useNavigate()
   const queryClient = useQueryClient()
   const currentUserQuery = useCurrentUserQuery()
   const [nextEmail, setNextEmail] = useState('')
@@ -123,6 +127,24 @@ export function AccountSettingsPanel() {
       title="Account"
       description="Your sign-in details. Changing your password signs out your other sessions."
     >
+      {shell.canChangeServer ? (
+        <SettingsSection>
+          <SettingsRow label="Server">
+            <span className="max-w-64 min-w-0 truncate text-sm text-primary-700">
+              {shell.server ? new URL(shell.server).host : 'Not configured'}
+            </span>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={function changeServer() {
+                void navigate({ to: '/connect' })
+              }}
+            >
+              Change
+            </Button>
+          </SettingsRow>
+        </SettingsSection>
+      ) : null}
       <SettingsSection title="Profile">
         <SettingsRow label="Email" description="Used to sign in.">
           <span className="truncate text-sm tabular-nums text-primary-700">

@@ -49,11 +49,50 @@ Settings live in `app.getPath('userData')/config.json` (normally
 }
 ```
 
-URL priority is `KAIROS_URL`, config, then `http://localhost:3000`. Settings are
-read at startup; restart after editing. Use the config URL for desktop and login
+URL priority is `KAIROS_URL`, then config `url`, then setup mode. There is no
+automatic localhost server. Settings are read at startup; restart after editing. Use the config URL for desktop and login
 launches, which do not inherit terminal-only environment variables. Start at
 login creates/removes `$XDG_CONFIG_HOME/autostart/org.kairos.Kairos.desktop`
 (default `~/.config/autostart`).
+
+First run without a configured URL opens Connect to Kairos. The bundled frontend
+runs at `https://setup.kairos.invalid/connect`. The reserved placeholder origin
+never goes to the network: its API replies are 503 JSON with
+`{"error":"no server configured"}`. The root route redirects every other setup
+route to Connect before child auth guards or `/api/me` requests. Connect itself
+uses no app API. If the bundle is missing, a local calm page says
+"Build the bundle or set KAIROS_URL." Setup uses the bundle even when `bundled`
+is explicitly false; after selecting a server, that setting controls normal mode.
+
+Enter a server address and Continue. Bare addresses default to HTTPS. Selection
+trims the input, keeps only the origin, and rejects URL credentials and unsupported
+schemes. HTTP is accepted only for localhost, 127/8, ::1, 10/8, 172.16/12,
+192.168/16, and `.local` hosts; the form warns that explicit HTTP is unencrypted.
+The capability probe uses Chromium `net.fetch` with protocol bypass, GET,
+a single 8-second abort timeout, and manual redirects. Same-origin redirects are
+allowed within a small bound; cross-origin redirects are rejected. Success requires
+200, JSON, and a `capabilities.auth` object. Invalid URL, insecure public HTTP,
+network/timeout, certificate, and non-Kairos errors get specific inline messages.
+Certificate verification remains enabled.
+
+On success the choice is saved atomically to config while preserving its other
+fields. If KAIROS_URL is set, the choice is saved for later but the environment
+server stays active for this session; the result reports `overriddenByEnv: true`.
+Login has a host/Change line below the card. Settings → Account has a Server row,
+including for servers with auth disabled. The tray's Change server… entry also
+opens Connect. Cancel returns to the current server's root.
+
+All origin-sensitive operations read `server-state.ts`: protocol routing,
+navigation restrictions, permissions, content IPC, and theme sender validation.
+The set-server IPC is accepted only from the active content view's main frame
+at that current origin, then revalidated after probing. Switching clears only
+service-worker storage for the destination and installs/removes bundle handlers
+as needed. It replaces the content view with a new sandboxed view whose preload
+gets `--kairos-server=<origin>` and loads that origin's root. The old view lives
+until the replacement loads, allowing the IPC result to arrive before disposal.
+Cookies and IndexedDB stay scoped to each real origin in the default session;
+switching back preserves the earlier server's login and user cache. No backend,
+auth protocol, CORS, or streaming changes are made.
 
 `build:web` runs the unchanged root Vite build into `internal/server/static/`
 and copies it to gitignored `desktop/app-dist/`. Bundled mode defaults to true
@@ -111,9 +150,12 @@ The title follows `page-title-updated`. Focus and maximize state dim inactive
 chrome and switch the restore icon. The title bar's isolated preload exposes its
 three controls and a state subscription; main validates its own webContents,
 local file, and main frame for every IPC invocation. The hosted bridge exposes
-only `{ platform: 'linux', isDesktop: true }` and marks HTML as
-`data-desktop="main"`. The web app uses `isDesktopShell()` to omit the sidebar
-logo rows and retain the collapse toggles on the first action rows.
+`{ platform: 'linux', isDesktop: true, server, setServer(url) }` and marks HTML
+as `data-desktop="main"`. Server is null in setup mode and synchronous on first
+render. `src/lib/shell.ts` is the frontend entry point for desktop capabilities:
+identity, window controls, server, and server-changing support. Sidebars use
+`providesIdentity` for their logo and collapse-button placement, and the Tailwind
+`desktop:` variant for top padding.
 
 Theme reporting reads seven allowlisted computed CSS properties on load,
 class/system-mode changes, and shell replacement, throttled to animation frames.
@@ -152,27 +194,31 @@ pnpm check
 ```
 
 Desktop tests use TypeScript plus Node's built-in `node --test`, without a new
-runner dependency or Electron import. Seven tests cover safe paths, SPA fallback,
-worker blocking, POST/uploads, and unbuffered streaming. GUI verification is left
+runner dependency or Electron import. Tests cover safe paths, SPA fallback,
+worker blocking, POST/uploads, unbuffered streaming, mutable-origin routing,
+setup API isolation, URL/scheme policy, probe shape, error mapping, and redirects.
+Frontend tests cover shell capabilities, Connect form/errors/warnings, and setup
+routing before API requests. GUI verification is left
 to the user. Ubuntu's required user-namespace AppArmor profile is in
 `scripts/kairos-electron.apparmor`; keep Chromium's sandbox enabled.
 
 Manual KDE checks:
 
-- Use the hotkey and `--toggle` while focused, unfocused, hidden, and minimized.
-  Verify focused windows hide; all other states come forward with content focus.
-  A cold `--toggle` launch should open exactly one main window.
-- Close hides; tray Open and a plain second instance reopen. Ctrl+Q exits.
-  Check the tray hotkey label and Show or hide Kairos desktop action after reinstall.
-- Drag/double-click the title bar, resize all edges/corners, and check maximize,
-  fullscreen, shadows, scaling, restored dimensions, and title truncation.
-  Hosted headers must have no window controls or drag regions.
-- Chat/settings omit the logo row only in desktop mode and keep the collapse
-  toggle on the first action row. Web sidebar behavior remains unchanged.
-- Toggle panels and narrow the window: title bar colors and neutral hover should
-  follow frame/surface. Test every palette, light/dark/system mode, and cold startup.
-- Type after reopening; reload, zoom/reset, devtools, and clipboard shortcuts
-  should target the app. Check login/history, uploads, incremental streaming,
-  EventSource reconnects, offline behavior, remote HMR, and external links.
-- Test Start at login and remembered window bounds. Repeat window checks on X11
-  if available.
+- With no config URL or KAIROS_URL, verify first-run Connect and no auth requests.
+  Check the missing-bundle message separately. Enter a real server and log in;
+  confirm the choice survives restart.
+- Change server from login, Account settings, and the tray, including a server
+  with auth disabled. Switch A → B → A: cookies and history should stay separate,
+  and A's login should be retained. Check Cancel and current host labels.
+- Test unreachable, wrong server, untrusted TLS, forbidden public HTTP, and local
+  HTTP. Check the warning before submit and disabled/progress state during the
+  probe. Check that an environment override still wins and the chosen config URL
+  is saved for a launch without that override.
+- Confirm bundled and remote modes, service-worker clearing, API uploads, streamed
+  chat, EventSource reconnects, offline behavior, and remote Vite HMR still work.
+- Test hotkey/--toggle while focused, unfocused, hidden, and minimized. Close hides;
+  tray reopening focuses the app; Ctrl+Q exits. Test the desktop action after
+  reinstalling the entry.
+- Check titlebar drag/double-click, all resize edges/corners, maximize/fullscreen,
+  scaling, restored bounds, title truncation, palette/mode sync, and frame/surface
+  transitions. Test desktop sidebar action-row placement and unchanged web logos.

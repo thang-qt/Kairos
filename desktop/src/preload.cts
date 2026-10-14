@@ -10,6 +10,15 @@ else document.addEventListener('DOMContentLoaded', markDesktop, { once: true })
 contextBridge.exposeInMainWorld('kairosDesktop', {
   platform: 'linux',
   isDesktop: true,
+  server:
+    process.argv
+      .find(function serverArgument(value) {
+        return value.startsWith('--kairos-server=')
+      })
+      ?.slice('--kairos-server='.length) || null,
+  setServer: function setServer(url: string) {
+    return ipcRenderer.invoke('kairos:set-server', url)
+  },
 })
 
 // Sandboxed preloads cannot require another local module; keep this allowlist

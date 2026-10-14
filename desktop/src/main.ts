@@ -5,6 +5,7 @@ import {
   ipcMain,
   Menu,
   nativeTheme,
+  net,
   session,
   shell,
   Tray,
@@ -17,13 +18,29 @@ import type {
   WebContents,
 } from 'electron'
 import { dirname, join } from 'node:path'
+import { existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { desktopId, isAutostartEnabled, setAutostart } from './desktop-entry.js'
-import { readConfig, readWindowState, writeJson } from './settings.js'
+import {
+  readConfig,
+  readWindowState,
+  writeJson,
+  saveServerUrl,
+} from './settings.js'
 import type { Config } from './settings.js'
 import { fallbackTheme, validateTheme } from './titlebar-state.js'
 import type { Theme, TitlebarState } from './titlebar-state.js'
-import { installBundleProtocol } from './bundle-protocol.js'
+import {
+  installBundleProtocol,
+  uninstallBundleProtocol,
+} from './bundle-protocol.js'
+import {
+  getCurrentOrigin,
+  getCurrentServer,
+  setCurrentServer,
+} from './server-state.js'
+import { probeServer } from './server-policy.js'
+import type { ServerResult } from './server-policy.js'
 
 const directory = dirname(dirname(fileURLToPath(import.meta.url)))
 const offlineFile = join(directory, 'offline.html')
@@ -35,7 +52,10 @@ const permittedPermissions = new Set([
   'notifications',
 ])
 let config: Config
-let origin: string
+const bundleDirectory = join(directory, 'app-dist')
+let bundleAvailable = false
+let changingServer = false
+const retiringViews = new Set<WebContentsView>()
 let mainWindow: BrowserWindow | undefined
 let mainView: WebContentsView | undefined
 let pageTitle = 'Kairos'
@@ -82,7 +102,10 @@ if (!app.requestSingleInstanceLock()) {
 function isConfiguredOrigin(value: string): boolean {
   try {
     const url = new URL(value)
-    return ['http:', 'https:'].includes(url.protocol) && url.origin === origin
+    return (
+      ['http:', 'https:'].includes(url.protocol) &&
+      url.origin === getCurrentOrigin()
+    )
   } catch {
     return false
   }
@@ -114,15 +137,15 @@ function validateSender(event: IpcMainInvokeEvent | IpcMainEvent): void {
 }
 
 async function start(): Promise<void> {
-  const bundleDirectory = join(directory, 'app-dist')
   config = readConfig(bundleDirectory)
-  origin = new URL(config.url).origin
+  bundleAvailable = existsSync(join(bundleDirectory, 'index.html'))
+  setCurrentServer(config.url ?? null)
   console.log(
-    `[Kairos] Frontend mode: ${config.bundled ? 'bundled' : 'remote'}`,
+    `[Kairos] Frontend mode: ${getCurrentServer() === null ? 'setup' : config.bundled ? 'bundled' : 'remote'}`,
   )
-  if (config.bundled) await installBundleProtocol(origin, bundleDirectory)
+  await configureServing()
   console.log(
-    `[Kairos] Electron ${process.versions.electron}; URL ${config.url}; desktop identity ${desktopId}`,
+    `[Kairos] Electron ${process.versions.electron}; URL ${getCurrentOrigin()}; desktop identity ${desktopId}`,
   )
   console.log('[Kairos] Hidden title bar with Linux client frame')
 
@@ -148,6 +171,7 @@ async function start(): Promise<void> {
       )
     },
   )
+  ipcMain.handle('kairos:set-server', changeServer)
   ipcMain.on('kairos:theme', function receiveTheme(event, payload: unknown) {
     try {
       validateSender(event)
@@ -285,9 +309,6 @@ function createMainWindow(): void {
     nodeIntegration: false,
     webSecurity: true,
   }
-  const backgroundColor = nativeTheme.shouldUseDarkColors
-    ? '#000000'
-    : '#ffffff'
   mainWindow = new BrowserWindow({
     ...state,
     minWidth: 400,
@@ -321,14 +342,7 @@ function createMainWindow(): void {
   mainWindow.on('move', scheduleSave)
   mainWindow.on('maximize', scheduleSave)
   mainWindow.on('unmaximize', scheduleSave)
-  mainView = new WebContentsView({
-    webPreferences: {
-      ...webPreferences,
-    },
-  })
-  mainView.setBackgroundColor(backgroundColor)
-  mainWindow.contentView.addChildView(mainView)
-  layoutMainView()
+  createContentView()
   mainWindow.on('resize', layoutMainView)
   mainWindow.on('maximize', layoutMainView)
   mainWindow.on('unmaximize', layoutMainView)
@@ -337,29 +351,13 @@ function createMainWindow(): void {
   mainWindow.on('focus', sendTitlebarState)
   mainWindow.on('blur', sendTitlebarState)
   mainWindow.on('closed', function closeMainView() {
+    for (const view of retiringViews)
+      if (!view.webContents.isDestroyed()) view.webContents.close()
+    retiringViews.clear()
     if (mainView && !mainView.webContents.isDestroyed())
       mainView.webContents.close()
     mainView = undefined
   })
-  mainView.webContents.on(
-    'page-title-updated',
-    function updatePageTitle(event, title) {
-      event.preventDefault()
-      pageTitle = title.trim() || 'Kairos'
-      mainWindow?.setTitle(pageTitle)
-      sendTitlebarState()
-    },
-  )
-  mainView.webContents.on(
-    'did-start-navigation',
-    function resetTheme(_event, _url, inPlace, isMainFrame) {
-      if (isMainFrame && !inPlace) {
-        contentTheme = undefined
-        contentTop = 'frame'
-        sendTitlebarState()
-      }
-    },
-  )
   // The local chrome cannot navigate to remote content or create child windows.
   mainWindow.webContents.on(
     'will-navigate',
@@ -390,10 +388,9 @@ function createMainWindow(): void {
     .catch(function titlebarFailed(error) {
       console.error('[Kairos] Title bar failed:', error)
     })
-  configureContents(mainView.webContents, config.url)
 }
 
-function configureContents(contents: WebContents, target: string): void {
+function configureContents(contents: WebContents): void {
   contents.on('will-navigate', function restrictNavigation(event, url) {
     if (!isConfiguredOrigin(url)) {
       event.preventDefault()
@@ -405,7 +402,7 @@ function configureContents(contents: WebContents, target: string): void {
     function restrictRedirect(event, url, _inPlace, isMainFrame) {
       if (!isConfiguredOrigin(url)) {
         event.preventDefault()
-        if (isMainFrame) void showOffline(contents, target)
+        if (isMainFrame) void showOffline(contents, `${getCurrentOrigin()}/`)
       }
     },
   )
@@ -424,12 +421,9 @@ function configureContents(contents: WebContents, target: string): void {
     function failedLoad(_event, code, description, url, isMainFrame) {
       if (!isMainFrame || code === -3 || url.startsWith('file:')) return
       console.warn(`[Kairos] Load failed (${code}): ${description}`)
-      void showOffline(contents, target)
+      void showOffline(contents, `${getCurrentOrigin()}/`)
     },
   )
-  void contents.loadURL(target).catch(function loadRejected(error) {
-    console.warn('[Kairos] Initial navigation rejected:', error.message)
-  })
 }
 
 async function showOffline(
@@ -486,14 +480,16 @@ function updateTrayMenu(): void {
     Menu.buildFromTemplate([
       { label: `Open Kairos (${config.hotkey})`, click: openMain },
       {
+        label: 'Change server…',
+        click: function showConnect() {
+          openMain()
+          void loadCurrentContent('/connect')
+        },
+      },
+      {
         label: 'Reload',
         click: function reload() {
-          if (mainView)
-            void mainView.webContents
-              .loadURL(config.url)
-              .catch(function reloadFailed(error) {
-                console.warn('[Kairos] Reload failed:', error.message)
-              })
+          void loadCurrentContent(getCurrentServer() ? '/' : '/connect')
         },
       },
       { type: 'separator' },
@@ -585,4 +581,138 @@ function titlebarState(): TitlebarState {
 function sendTitlebarState(): void {
   if (mainWindow && !mainWindow.webContents.isDestroyed())
     mainWindow.webContents.send('kairos:titlebar-state', titlebarState())
+}
+
+async function configureServing(): Promise<void> {
+  if (
+    (getCurrentServer() === null && bundleAvailable) ||
+    (getCurrentServer() !== null && config.bundled)
+  ) {
+    await installBundleProtocol(getCurrentOrigin, bundleDirectory)
+  } else {
+    uninstallBundleProtocol()
+    await session.defaultSession.clearStorageData({
+      origin: getCurrentOrigin(),
+      storages: ['serviceworkers'],
+    })
+  }
+}
+
+function createContentView(): void {
+  if (!mainWindow || mainWindow.isDestroyed()) return
+  const oldView = mainView
+  if (oldView) retiringViews.add(oldView)
+  const view = new WebContentsView({
+    webPreferences: {
+      preload: join(directory, 'dist/preload.cjs'),
+      contextIsolation: true,
+      sandbox: true,
+      nodeIntegration: false,
+      webSecurity: true,
+      additionalArguments: [`--kairos-server=${getCurrentServer() ?? ''}`],
+    },
+  })
+  mainView = view
+  view.setBackgroundColor(
+    nativeTheme.shouldUseDarkColors ? '#000000' : '#ffffff',
+  )
+  view.setVisible(!oldView)
+  mainWindow.contentView.addChildView(view)
+  layoutMainView()
+  contentTheme = undefined
+  contentTop = 'frame'
+  pageTitle = 'Kairos'
+  sendTitlebarState()
+  view.webContents.on(
+    'page-title-updated',
+    function titleUpdated(event, title) {
+      event.preventDefault()
+      if (view !== mainView) return
+      pageTitle =
+        getCurrentServer() === null ? 'Kairos' : title.trim() || 'Kairos'
+      mainWindow?.setTitle(pageTitle)
+      sendTitlebarState()
+    },
+  )
+  view.webContents.on(
+    'did-start-navigation',
+    function resetTheme(_event, _url, inPlace, isMainFrame) {
+      if (view === mainView && isMainFrame && !inPlace) {
+        contentTheme = undefined
+        contentTop = 'frame'
+        sendTitlebarState()
+      }
+    },
+  )
+  view.webContents.once('did-finish-load', function contentReady() {
+    if (view !== mainView || !mainWindow || mainWindow.isDestroyed()) return
+    view.setVisible(true)
+    if (oldView) {
+      mainWindow.contentView.removeChildView(oldView)
+      if (!oldView.webContents.isDestroyed()) oldView.webContents.close()
+      retiringViews.delete(oldView)
+    }
+    if (mainWindow.isFocused()) view.webContents.focus()
+  })
+  configureContents(view.webContents)
+  void loadCurrentContent(
+    getCurrentServer() ? '/' : '/connect',
+    view.webContents,
+  )
+}
+
+async function loadCurrentContent(
+  path: string,
+  contents = mainView?.webContents,
+): Promise<void> {
+  if (!contents || contents.isDestroyed()) return
+  try {
+    if (getCurrentServer() === null && !bundleAvailable) {
+      await contents.loadFile(offlineFile, {
+        query: { message: 'Build the bundle or set KAIROS_URL.' },
+      })
+    } else await contents.loadURL(`${getCurrentOrigin()}${path}`)
+  } catch (error) {
+    console.warn('[Kairos] Navigation failed:', error)
+  }
+}
+
+async function changeServer(
+  event: IpcMainInvokeEvent,
+  input: unknown,
+): Promise<ServerResult> {
+  validateSender(event)
+  if (changingServer) return { ok: false, error: 'unreachable' }
+  changingServer = true
+  const previous = getCurrentServer()
+  try {
+    const result = await probeServer(input, function fetch(url, options) {
+      return net.fetch(url, options)
+    })
+    if (!result.ok) return result
+    validateSender(event)
+    await saveServerUrl(result.origin)
+    const overriddenByEnv = Boolean(process.env.KAIROS_URL?.trim())
+    const effective = overriddenByEnv ? previous : result.origin
+    setCurrentServer(effective)
+    await configureServing()
+    // Reply before replacing the sender. Keep its webContents alive until the
+    // replacement finishes loading so the renderer can receive the result.
+    setImmediate(function switchContent() {
+      createContentView()
+      if (wantMain) openMain()
+    })
+    return {
+      ok: true,
+      origin: getCurrentOrigin(),
+      insecure: getCurrentOrigin().startsWith('http:'),
+      ...(overriddenByEnv ? { overriddenByEnv: true } : {}),
+    }
+  } catch (error) {
+    setCurrentServer(previous)
+    console.error('[Kairos] Server selection failed:', error)
+    return { ok: false, error: 'unreachable' }
+  } finally {
+    changingServer = false
+  }
 }

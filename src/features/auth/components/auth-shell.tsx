@@ -3,9 +3,10 @@ import { KairosIconBig } from '@/components/icons/kairos-icon-big'
 
 type AuthShellProps = {
   children: ReactNode
+  footer?: ReactNode
 }
 
-export function AuthShell({ children }: AuthShellProps) {
+export function AuthShell({ children, footer }: AuthShellProps) {
   return (
     <div className="relative min-h-screen overflow-hidden bg-surface">
       {/* Subtle radial glow in the background */}
@@ -58,6 +59,8 @@ export function AuthShell({ children }: AuthShellProps) {
               {children}
             </div>
           </div>
+
+          {footer ? <div className="mt-4">{footer}</div> : null}
 
           {/* Bottom tagline */}
           <p className="mt-6 text-center text-xs text-primary-500 select-none">

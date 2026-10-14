@@ -1,15 +1,18 @@
 import { createFileRoute, redirect } from '@tanstack/react-router'
+import { getShell } from '@/lib/shell'
+import { ConnectScreen } from '@/features/auth/connect-screen'
 
 export const Route = createFileRoute('/connect')({
   beforeLoad: function redirectLegacyConnectRoute() {
-    throw redirect({
-      to: '/new',
-      replace: true,
-    })
+    if (!getShell().isDesktop)
+      throw redirect({
+        to: '/new',
+        replace: true,
+      })
   },
   component: ConnectRoute,
 })
 
 function ConnectRoute() {
-  return null
+  return <ConnectScreen />
 }

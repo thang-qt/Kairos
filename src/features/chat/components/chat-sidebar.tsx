@@ -24,7 +24,7 @@ import {
 import { cn } from '@/lib/utils'
 import { ShortcutHint } from '@/components/shortcut-hint'
 import { shortcutTooltip } from '@/lib/shortcuts'
-import { isDesktopShell } from '@/lib/desktop-bridge'
+import { getShell } from '@/lib/shell'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { KairosIconBig } from '@/components/icons/kairos-icon-big'
 
@@ -83,7 +83,7 @@ function ChatSidebarComponent({
 
   // The desktop title bar already shows the Kairos identity, so the main
   // window drops the logo row and the first action row takes its place.
-  const desktopMain = isDesktopShell()
+  const providesIdentity = getShell().providesIdentity
   const collapseToggle = (
     <TooltipProvider>
       <TooltipRoot>
@@ -106,7 +106,7 @@ function ChatSidebarComponent({
 
   return (
     <aside className="flex h-full w-full flex-col overflow-hidden bg-primary-100">
-      {desktopMain ? null : (
+      {providesIdentity ? null : (
         <div className="flex shrink-0 items-center h-12 px-2 justify-between">
           <Link
             to="/new"
@@ -123,9 +123,7 @@ function ChatSidebarComponent({
         </div>
       )}
 
-      <div
-        className={cn('px-2 mb-4 gap-px flex flex-col', desktopMain && 'pt-4')}
-      >
+      <div className={cn('px-2 mb-4 gap-px flex flex-col desktop:pt-4')}>
         <div className="flex items-center gap-1">
           <Button
             disabled={creatingSession}
@@ -144,9 +142,12 @@ function ChatSidebarComponent({
             <span className="overflow-hidden whitespace-nowrap">
               New Session
             </span>
-            <ShortcutHint id="newSession" className="ms-auto opacity-0 group-hover:opacity-100" />
+            <ShortcutHint
+              id="newSession"
+              className="ms-auto opacity-0 group-hover:opacity-100"
+            />
           </Button>
-          {desktopMain ? collapseToggle : null}
+          {providesIdentity ? collapseToggle : null}
         </div>
         <Button
           variant="ghost"

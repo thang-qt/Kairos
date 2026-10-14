@@ -7,9 +7,11 @@ import {
 } from 'node:fs'
 import { dirname } from 'node:path'
 import { app, screen } from 'electron'
+import { mkdir, writeFile, rename } from 'node:fs/promises'
+import { normalizeServer } from './server-policy.js'
 
 export type Config = {
-  url: string
+  url?: string
   hotkey: string
   bundled: boolean
 }
@@ -38,23 +40,14 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 export function readConfig(bundleDirectory: string): Config {
   const value = readJson(`${app.getPath('userData')}/config.json`)
   const config = isRecord(value) ? value : {}
-  const url = new URL(
-    process.env.KAIROS_URL ||
-      (typeof config.url === 'string' ? config.url : 'http://localhost:3000'),
-  )
-  if (
-    !['http:', 'https:'].includes(url.protocol) ||
-    url.username ||
-    url.password
-  ) {
-    throw new Error(
-      'KAIROS_URL must be an HTTP(S) URL without embedded credentials',
-    )
-  }
-  url.hash = ''
-  url.search = ''
+  const input =
+    process.env.KAIROS_URL?.trim() ||
+    (typeof config.url === 'string' ? config.url.trim() : '')
+  const parsed = input ? normalizeServer(input) : undefined
+  if (parsed && !parsed.ok)
+    throw new Error(`Invalid configured server: ${parsed.error}`)
   return {
-    url: url.href.replace(/\/$/, ''),
+    url: parsed?.ok ? parsed.origin : undefined,
     hotkey:
       typeof config.hotkey === 'string' ? config.hotkey : 'Control+Alt+Space',
     bundled:
@@ -62,6 +55,19 @@ export function readConfig(bundleDirectory: string): Config {
         ? config.bundled
         : existsSync(`${bundleDirectory}/index.html`),
   }
+}
+
+export async function saveServerUrl(url: string): Promise<void> {
+  const path = `${app.getPath('userData')}/config.json`
+  const existing = readJson(path)
+  const config = isRecord(existing) ? existing : {}
+  await mkdir(dirname(path), { recursive: true })
+  await writeFile(
+    `${path}.tmp`,
+    `${JSON.stringify({ ...config, url }, null, 2)}\n`,
+    { mode: 0o600 },
+  )
+  await rename(`${path}.tmp`, path)
 }
 
 export function readWindowState(path: string): WindowState {

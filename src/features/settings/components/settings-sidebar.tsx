@@ -17,7 +17,7 @@ import type { SettingsTab } from '../settings-screen'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { KairosIconBig } from '@/components/icons/kairos-icon-big'
 import { cn } from '@/lib/utils'
-import { isDesktopShell } from '@/lib/desktop-bridge'
+import { getShell } from '@/lib/shell'
 
 type SettingsSidebarProps = {
   activeTab: SettingsTab
@@ -86,7 +86,7 @@ export function SettingsSidebar({
 
   // The desktop title bar already shows the Kairos identity, so the main
   // window drops the logo row and the first action row takes its place.
-  const desktopMain = isDesktopShell()
+  const providesIdentity = getShell().providesIdentity
   const collapseToggle = (
     <Button
       size="icon-sm"
@@ -101,7 +101,7 @@ export function SettingsSidebar({
 
   return (
     <aside className="flex h-full w-full flex-col overflow-hidden bg-primary-100">
-      {desktopMain ? null : (
+      {providesIdentity ? null : (
         <div className="flex shrink-0 h-12 items-center justify-between px-2">
           <Link
             to="/new"
@@ -118,12 +118,7 @@ export function SettingsSidebar({
       )}
 
       <div className="flex min-h-0 flex-1 flex-col">
-        <div
-          className={cn(
-            'flex items-center gap-1 px-2 pb-2',
-            desktopMain && 'pt-4',
-          )}
-        >
+        <div className={cn('flex items-center gap-1 px-2 pb-2 desktop:pt-4')}>
           <Button
             variant="ghost"
             size="sm"
@@ -138,7 +133,7 @@ export function SettingsSidebar({
             />
             Back to chat
           </Button>
-          {desktopMain ? collapseToggle : null}
+          {providesIdentity ? collapseToggle : null}
         </div>
 
         <nav

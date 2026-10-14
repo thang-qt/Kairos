@@ -5,6 +5,7 @@ import {
   isServiceWorkerPath,
   resolveBundlePath,
 } from './bundle-path.js'
+import { setupOrigin } from './server-state.js'
 
 export type BundleFetch = (
   input: Request | string,
@@ -33,14 +34,23 @@ const contentTypes: Record<string, string> = {
 }
 
 export function createBundleHandler(
-  origin: string,
+  origin: string | (() => string),
   directory: string,
   fetch: BundleFetch,
 ): (request: Request) => Promise<Response> {
   return async function handle(request: Request): Promise<Response> {
     const url = new URL(request.url)
+    const currentOrigin = typeof origin === 'function' ? origin() : origin
     if (
-      url.origin !== origin ||
+      url.origin === setupOrigin &&
+      (currentOrigin !== setupOrigin ||
+        url.pathname === '/api' ||
+        url.pathname.startsWith('/api/'))
+    ) {
+      return Response.json({ error: 'no server configured' }, { status: 503 })
+    }
+    if (
+      url.origin !== currentOrigin ||
       url.pathname === '/api' ||
       url.pathname.startsWith('/api/')
     ) {
