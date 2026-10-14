@@ -49,6 +49,18 @@ object Fixtures {
 
         The native and web colors come from the same source. Try every palette in both modes, including during generation. Code highlighting is asynchronous, so a paint acknowledgement measures the committed text and layout rather than completion of every syntax highlight. Comparing the first and later conversations helps reveal the cost of warming the renderer.
 
+        > Blockquotes, ~~strikethrough~~ and **bold with *nested* emphasis** should render the same in both.
+
+        1. Ordered item
+           - nested bullet with `inline code`
+           - another one, with ${'$'}\alpha + \beta${'$'} inline
+        2. Second ordered item
+
+        - [x] Task that is done
+        - [ ] Task still pending
+
+        ---
+
         [Open the Android documentation](https://developer.android.com/develop/ui/compose)
     """.trimIndent()
 

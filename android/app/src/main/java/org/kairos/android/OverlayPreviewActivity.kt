@@ -7,6 +7,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import org.kairos.android.markdown.MathRenderer
 
 class OverlayPreviewActivity : ComponentActivity() {
     private val backCallback = if (Build.VERSION.SDK_INT >= 33) android.window.OnBackInvokedCallback { finish() } else null
@@ -17,6 +18,7 @@ class OverlayPreviewActivity : ComponentActivity() {
         enableEdgeToEdge()
         if (Build.VERSION.SDK_INT >= 33 && backCallback != null) window.onBackInvokedDispatcher.registerOnBackInvokedCallback(android.window.OnBackInvokedDispatcher.PRIORITY_OVERLAY, backCallback)
         val app = application as KairosApplication
+        MathRenderer.prewarm()
         conversation = OverlayConversation(app.perf, "Preview")
         conversation.show()
         screenCapture.begin()
@@ -25,7 +27,7 @@ class OverlayPreviewActivity : ComponentActivity() {
             BackHandler { finish() }
             AssistantOverlay(app, conversation, screenCapture, onDismiss = { finish() }, onOpenApp = { messages ->
                 if (messages.isNotEmpty()) app.pendingConversation = messages
-                startActivity(mainAppIntent(this))
+                startActivity(mainAppIntent(this), openAppOptions(this))
                 finish()
             })
         }

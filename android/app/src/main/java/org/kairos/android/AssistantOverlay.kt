@@ -9,6 +9,10 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.rememberDraggableState
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -19,6 +23,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
@@ -34,8 +39,10 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import org.kairos.android.markdown.OverlayMarkdown
 import org.kairos.android.ui.KIcon
 import org.kairos.android.ui.KairosMark
 import org.kairos.android.ui.icons.KairosIcons
@@ -74,14 +81,32 @@ fun AssistantOverlay(
                 if (!dragging && scroll.maxValue - scroll.value <= with(density) { 48.dp.roundToPx() }) follow = true
             }
         }
-        val userScroll = remember(generation) {
+        val swipe = rememberSwipeToOpen(generation) { onOpenApp(conversation.snapshot()) }
+        val userScroll = remember(generation, swipe) {
             object : NestedScrollConnection {
                 override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
-                    if (source == NestedScrollSource.UserInput && available.y != 0f) follow = false
-                    return Offset.Zero
+                    if (source != NestedScrollSource.UserInput) return Offset.Zero
+                    if (available.y != 0f) follow = false
+                    // Pulling back down first undoes a pending swipe-up before the content scrolls.
+                    return Offset(0f, swipe.retract(available.y))
+                }
+                override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
+                    // Dragging up past the end of the replies becomes the swipe-up gesture.
+                    if (source != NestedScrollSource.UserInput || available.y >= 0f) return Offset.Zero
+                    swipe.dragBy(available.y)
+                    return available
+                }
+                override suspend fun onPreFling(available: Velocity): Velocity {
+                    if (!swipe.active) return Velocity.Zero
+                    swipe.release(available.y)
+                    return available
                 }
             }
         }
+        val swipeDrag = Modifier.draggable(
+            rememberDraggableState { delta -> swipe.dragBy(delta) }, Orientation.Vertical,
+            onDragStopped = { velocity -> swipe.release(velocity) },
+        )
         LaunchedEffect(scroll.maxValue, generation, imeVisible) {
             if (follow) scroll.scrollTo(scroll.maxValue)
         }
@@ -95,11 +120,17 @@ fun AssistantOverlay(
                 if (it.key == Key.Escape && it.type == KeyEventType.KeyDown) { onDismiss(); true } else false
             },
         ) {
-            Box(Modifier.fillMaxSize().background(colors.p(950).copy(alpha = 0.20f)).clickable(onClick = onDismiss))
+            val progress = swipe.progress
+            Box(Modifier.fillMaxSize().background(colors.p(950).copy(alpha = 0.20f + 0.4f * progress.coerceAtMost(1f))).clickable(onClick = onDismiss))
+            SwipeHint(progress, Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top = 24.dp))
             val maxCardHeight = maxHeight * 0.60f
             // Same working inset chain moves replies and composer together, with no painted container.
             Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().imePadding().navigationBarsPadding()
-                .padding(horizontal = 12.dp, vertical = 8.dp)) {
+                .padding(horizontal = 12.dp, vertical = 8.dp)
+                .graphicsLayer {
+                    translationY = -swipe.offset
+                    alpha = swipe.alpha
+                }) {
                 AnimatedVisibility(
                     visible = conversation.messages.isNotEmpty(),
                     modifier = Modifier.weight(1f, fill = false).fillMaxWidth().heightIn(max = maxCardHeight).padding(bottom = 8.dp),
@@ -111,9 +142,14 @@ fun AssistantOverlay(
                         Modifier.fillMaxWidth().shadow(10.dp, shape).clip(shape).background(colors.surface)
                             .clickable(interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, indication = null, onClick = {})
                     ) {
-                        OverlayActions(conversation, onOpenApp, { debug = !debug }, Modifier.padding(horizontal = 8.dp, vertical = 4.dp))
-                        Column(Modifier.weight(1f, fill = false).fillMaxWidth()
-                            .nestedScroll(userScroll).verticalScroll(scroll).padding(16.dp),
+                        Column(swipeDrag) {
+                            Box(Modifier.fillMaxWidth().padding(top = 8.dp), contentAlignment = Alignment.Center) {
+                                Box(Modifier.size(width = 40.dp, height = 4.dp).background(colors.p(300), RoundedCornerShape(2.dp)))
+                            }
+                            OverlayActions(conversation, onOpenApp, { debug = !debug }, Modifier.padding(horizontal = 8.dp))
+                        }
+                        SelectionContainer(Modifier.weight(1f, fill = false)) { Column(Modifier.fillMaxWidth()
+                            .nestedScroll(userScroll).verticalScroll(scroll).padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 16.dp),
                             verticalArrangement = Arrangement.spacedBy(16.dp)) {
                             conversation.messages.forEach { message ->
                                 key(message.id) {
@@ -129,12 +165,12 @@ fun AssistantOverlay(
                                         }
                                     } else Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                         message.model?.let { ModelLabel(it) }
-                                        OverlayMarkdown(message.text) { href -> openBrowser(context, href); onDismiss() }
+                                        OverlayMarkdown(message.text, message.streaming, app.theme.dark) { href -> openBrowser(context, href); onDismiss() }
                                         if (message.streaming && message.text.isEmpty()) Text("Thinking…", color = colors.p(500), fontSize = 12.sp)
                                     }
                                 }
                             }
-                        }
+                        } }
                     }
                 }
                 if (debug) Column(Modifier.fillMaxWidth().padding(bottom = 6.dp)
@@ -144,12 +180,12 @@ fun AssistantOverlay(
                     }
                 }
                 if (conversation.messages.isEmpty()) {
-                    OverlayActions(conversation, onOpenApp, { debug = !debug }, Modifier.padding(bottom = 8.dp), floating = true)
+                    OverlayActions(conversation, onOpenApp, { debug = !debug }, swipeDrag.padding(bottom = 8.dp), floating = true)
                 }
                 key(generation) {
                     NativeComposer(conversation.streaming,
                         onSend = { text -> conversation.send(text, screenCapture.takeAttachment()) },
-                        onStop = conversation::stop, focusRequestKey = generation,
+                        onStop = conversation::stop, focusRequestKey = generation, modifier = swipeDrag,
                         screenCapture = screenCapture, floating = true, onScreenSettingsOpened = onDismiss,
                         contentPadding = PaddingValues(top = if (conversation.messages.isEmpty()) 4.dp else 0.dp),
                     )
