@@ -1,5 +1,6 @@
 import { useRef } from 'react'
 import type { KeyboardEvent, PointerEvent } from 'react'
+import { cn } from '@/lib/utils'
 
 type SidebarResizeHandleProps = {
   side: 'left' | 'right'
@@ -87,12 +88,15 @@ export function SidebarResizeHandle({
       onKeyUp={onCommit}
       onBlur={onCommit}
       onDoubleClick={onReset}
-      className="absolute inset-y-0 z-30 w-2 -translate-x-1/2 cursor-col-resize touch-none select-none hover:bg-primary-300/50 focus-visible:bg-primary-300/50 focus-visible:outline-none"
-      style={
-        side === 'left'
-          ? { left: 'var(--left-sidebar-width)' }
-          : { right: 'calc(var(--right-sidebar-width) - 8px)' }
-      }
-    />
+      className={cn(
+        'group absolute inset-y-5 z-30 w-2 cursor-col-resize touch-none select-none focus-visible:outline-none',
+        side === 'left' ? 'left-0 -translate-x-1/2' : 'right-2 translate-x-1/2',
+      )}
+    >
+      <span
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-primary-400 opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100 group-active:opacity-100"
+      />
+    </div>
   )
 }
