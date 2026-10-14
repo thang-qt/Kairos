@@ -1,0 +1,157 @@
+{
+  "token": {
+    "token": "test-only-not-a-secret",
+    "expiresAt": 1900000000,
+    "user": {
+      "id": "user",
+      "email": "demo@example.com",
+      "createdAt": 1
+    }
+  },
+  "capabilities": {
+    "capabilities": {
+      "auth": {
+        "enabled": true,
+        "signupEnabled": false
+      },
+      "providers": {},
+      "models": {}
+    }
+  },
+  "history": {
+    "sessionKey": "key",
+    "sessionId": "friendly",
+    "revision": 1,
+    "cursor": 12,
+    "activeRunIds": ["run"],
+    "messages": [
+      {
+        "id": "u",
+        "role": "user",
+        "clientId": "client",
+        "revision": 1,
+        "content": [
+          {
+            "type": "text",
+            "text": "Hello"
+          }
+        ]
+      },
+      {
+        "id": "a",
+        "role": "assistant",
+        "revision": 1,
+        "status": "running",
+        "runId": "run",
+        "content": [
+          {
+            "type": "text",
+            "text": "Hello"
+          }
+        ],
+        "steps": [],
+        "extra": {
+          "untouched": true
+        }
+      }
+    ]
+  },
+  "session": {
+    "key": "key",
+    "friendlyId": "friendly",
+    "revision": 1,
+    "title": "Demo",
+    "derivedTitle": "Generated",
+    "label": "",
+    "isPinned": true,
+    "updatedAt": 1700000000000,
+    "lastMessage": {
+      "id": "a",
+      "role": "assistant",
+      "revision": 1,
+      "status": "running",
+      "runId": "run",
+      "content": [
+        {
+          "type": "text",
+          "text": "Hello"
+        }
+      ],
+      "steps": [],
+      "extra": {
+        "untouched": true
+      }
+    },
+    "totalTokens": 12,
+    "contextTokens": 32768,
+    "settings": {
+      "model": "provider/model",
+      "systemPrompt": "",
+      "webSearch": true,
+      "mathTools": true,
+      "advanced": {
+        "reasoning": false,
+        "reasoningEffort": "medium",
+        "sampling": false,
+        "temperature": 0.7,
+        "topP": 1,
+        "topK": 0,
+        "penalties": false,
+        "frequencyPenalty": 0,
+        "presencePenalty": 0,
+        "maxTokens": false,
+        "maxTokensValue": 4096
+      }
+    }
+  },
+  "models": {
+    "models": [
+      {
+        "id": "model",
+        "modelRef": "provider/model",
+        "object": "model",
+        "created": 1,
+        "owned_by": "provider",
+        "name": "Demo model",
+        "contextWindow": 128000,
+        "providerRef": "provider",
+        "providerLabel": "Demo",
+        "isCustom": false,
+        "catalogMetadata": {}
+      }
+    ],
+    "preferences": {
+      "defaultModelId": "provider/model",
+      "useSystemProviders": true,
+      "autoGenerateTitle": true,
+      "useSeparateTitleModel": false
+    },
+    "capabilities": {
+      "canSelectModel": true,
+      "defaultModelLocked": false
+    }
+  },
+  "ack": {
+    "revision": 1,
+    "sessionKey": "key",
+    "friendlyId": "friendly",
+    "runId": "run",
+    "userTurnId": "u",
+    "assistantTurnId": "a",
+    "clientId": "client",
+    "userTurn": {
+      "id": "u",
+      "role": "user",
+      "clientId": "client",
+      "revision": 1,
+      "content": [
+        {
+          "type": "text",
+          "text": "Hello"
+        }
+      ]
+    },
+    "invalidatedRunIds": [],
+    "removedTurnIds": []
+  }
+}
