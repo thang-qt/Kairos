@@ -15,6 +15,7 @@ import {
 } from '../utils'
 import { DateDivider } from './date-divider'
 import { MessageItem } from './message-item'
+import { MessageActionsSheet } from './message-actions-sheet'
 import { ConversationNavigator } from './conversation-navigator'
 import { activityKeyFromMessage } from './message-item-utils'
 import type { ConversationTurn } from '../types'
@@ -436,7 +437,7 @@ function ChatMessageListComponent({
     !hasGroup && notice && noticePosition === 'end' ? notice : null
 
   return (
-    <>
+    <MessageActionsSheet>
       <ChatContainerRoot
         className="flex-1 min-h-0"
         data-scroll-restoration-id="chat-scroll"
@@ -497,7 +498,7 @@ function ChatMessageListComponent({
           />
         </ChatContainerContent>
       </ChatContainerRoot>
-    </>
+    </MessageActionsSheet>
   )
 }
 

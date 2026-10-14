@@ -8,6 +8,7 @@ import {
   Tick02Icon,
 } from '@hugeicons/core-free-icons'
 import { MessageTimestamp } from './message-timestamp'
+import { MessageActionsSheetTrigger } from './message-actions-sheet'
 import {
   TooltipContent,
   TooltipProvider,
@@ -54,6 +55,10 @@ export function MessageActionsBar({
     }
   }
 
+  function copyMessage() {
+    handleCopy().catch(() => {})
+  }
+
   const positionClass = align === 'end' ? 'justify-end' : 'justify-start'
 
   return (
@@ -70,18 +75,24 @@ export function MessageActionsBar({
       <div
         className={cn(
           'flex items-center gap-2 transition-opacity duration-100 ease-out',
-          available && 'group-hover:opacity-100 group-focus-within:opacity-100',
-          available && forceVisible ? 'opacity-100' : 'opacity-0',
+          available &&
+            'group-hover:opacity-100 group-hover:pointer-events-auto group-focus-within:opacity-100 group-focus-within:pointer-events-auto',
+          available && forceVisible
+            ? 'pointer-events-auto opacity-100'
+            : 'pointer-events-none opacity-0',
+          align === 'end'
+            ? 'pointer-coarse:hidden'
+            : available &&
+                'pointer-coarse:opacity-100 pointer-coarse:pointer-events-auto',
         )}
       >
         <TooltipProvider>
           <TooltipRoot>
             <TooltipTrigger
               type="button"
-              onClick={() => {
-                handleCopy().catch(() => {})
-              }}
-              className="inline-flex items-center justify-center rounded border border-transparent bg-transparent p-1 text-primary-700 hover:bg-primary-100 hover:text-primary-900"
+              onClick={copyMessage}
+              aria-label="Copy message"
+              className="inline-flex items-center justify-center rounded border border-transparent bg-transparent p-1 pointer-coarse:size-10 text-primary-700 hover:bg-primary-100 hover:text-primary-900"
             >
               <HugeiconsIcon
                 icon={copied ? Tick02Icon : Copy01Icon}
@@ -102,7 +113,8 @@ export function MessageActionsBar({
               <TooltipTrigger
                 type="button"
                 onClick={onClone}
-                className="inline-flex items-center justify-center rounded border border-transparent bg-transparent p-1 text-primary-700 hover:bg-primary-100 hover:text-primary-900"
+                aria-label="Clone message"
+                className="inline-flex items-center justify-center rounded border border-transparent bg-transparent p-1 pointer-coarse:size-10 text-primary-700 hover:bg-primary-100 hover:text-primary-900"
               >
                 <HugeiconsIcon
                   icon={CopyLinkIcon}
@@ -122,7 +134,7 @@ export function MessageActionsBar({
                 data-edit-user-message
                 aria-label="Edit message"
                 onClick={onEdit}
-                className="inline-flex items-center justify-center rounded border border-transparent bg-transparent p-1 text-primary-700 hover:bg-primary-100 hover:text-primary-900"
+                className="inline-flex items-center justify-center rounded border border-transparent bg-transparent p-1 pointer-coarse:size-10 text-primary-700 hover:bg-primary-100 hover:text-primary-900"
               >
                 <HugeiconsIcon
                   icon={PencilEdit02Icon}
@@ -144,7 +156,8 @@ export function MessageActionsBar({
               <TooltipTrigger
                 type="button"
                 onClick={onDelete}
-                className="inline-flex items-center justify-center rounded border border-transparent bg-transparent p-1 text-primary-700 hover:bg-primary-100 hover:text-primary-900"
+                aria-label="Delete message"
+                className="inline-flex items-center justify-center rounded border border-transparent bg-transparent p-1 pointer-coarse:size-10 text-primary-700 hover:bg-primary-100 hover:text-primary-900"
               >
                 <HugeiconsIcon
                   icon={Delete01Icon}
@@ -158,6 +171,17 @@ export function MessageActionsBar({
         ) : null}
         {showTimestamp ? <MessageTimestamp timestamp={timestamp} /> : null}
       </div>
+      {align === 'end' ? (
+        <div className="hidden items-center gap-2 tabular-nums pointer-coarse:flex pointer-fine:hidden">
+          {showTimestamp ? <MessageTimestamp timestamp={timestamp} /> : null}
+          <MessageActionsSheetTrigger
+            onCopy={copyMessage}
+            onEdit={onEdit}
+            onClone={onClone}
+            onDelete={onDelete}
+          />
+        </div>
+      ) : null}
     </div>
   )
 }
