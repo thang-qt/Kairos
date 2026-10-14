@@ -15,6 +15,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
+import { shortcutTooltip } from '@/lib/shortcuts'
 
 type MessageActionsBarProps = {
   text: string
@@ -24,6 +25,7 @@ type MessageActionsBarProps = {
   forceVisible?: boolean
   available?: boolean
   onClone?: () => void
+  editShortcut?: boolean
   onEdit?: () => void
   onDelete?: () => void
 }
@@ -37,6 +39,7 @@ export function MessageActionsBar({
   available = true,
   onClone,
   onEdit,
+  editShortcut = false,
   onDelete,
 }: MessageActionsBarProps) {
   const [copied, setCopied] = useState(false)
@@ -82,11 +85,15 @@ export function MessageActionsBar({
             >
               <HugeiconsIcon
                 icon={copied ? Tick02Icon : Copy01Icon}
-                size={16}
-                strokeWidth={1.6}
+                size={20}
+                strokeWidth={1.5}
               />
             </TooltipTrigger>
-            <TooltipContent side="top">Copy</TooltipContent>
+            <TooltipContent side="top">
+              {align === 'start' && forceVisible
+                ? shortcutTooltip('Copy', 'copyResponse')
+                : 'Copy'}
+            </TooltipContent>
           </TooltipRoot>
         </TooltipProvider>
         {onClone ? (
@@ -99,8 +106,8 @@ export function MessageActionsBar({
               >
                 <HugeiconsIcon
                   icon={CopyLinkIcon}
-                  size={16}
-                  strokeWidth={1.6}
+                  size={20}
+                  strokeWidth={1.5}
                 />
               </TooltipTrigger>
               <TooltipContent side="top">Clone</TooltipContent>
@@ -112,16 +119,22 @@ export function MessageActionsBar({
             <TooltipRoot>
               <TooltipTrigger
                 type="button"
+                data-edit-user-message
+                aria-label="Edit message"
                 onClick={onEdit}
                 className="inline-flex items-center justify-center rounded border border-transparent bg-transparent p-1 text-primary-700 hover:bg-primary-100 hover:text-primary-900"
               >
                 <HugeiconsIcon
                   icon={PencilEdit02Icon}
-                  size={16}
-                  strokeWidth={1.6}
+                  size={20}
+                  strokeWidth={1.5}
                 />
               </TooltipTrigger>
-              <TooltipContent side="top">Edit</TooltipContent>
+              <TooltipContent side="top">
+                {editShortcut
+                  ? shortcutTooltip('Edit (empty composer)', 'editLastMessage')
+                  : 'Edit'}
+              </TooltipContent>
             </TooltipRoot>
           </TooltipProvider>
         ) : null}
@@ -135,8 +148,8 @@ export function MessageActionsBar({
               >
                 <HugeiconsIcon
                   icon={Delete01Icon}
-                  size={16}
-                  strokeWidth={1.6}
+                  size={20}
+                  strokeWidth={1.5}
                 />
               </TooltipTrigger>
               <TooltipContent side="top">Delete</TooltipContent>

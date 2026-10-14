@@ -41,6 +41,7 @@ type MessageItemProps = {
   modelLabelById: ReadonlyMap<string, string>
   mcpToolLabels?: ReadonlyMap<string, string>
   forceActionsVisible?: boolean
+  isLastUser?: boolean
   showAssistantModel?: boolean
   showAssistantActions?: boolean
   wrapperRef?: React.RefObject<HTMLDivElement | null>
@@ -65,6 +66,7 @@ function MessageItemComponent({
   modelLabelById,
   mcpToolLabels,
   forceActionsVisible = false,
+  isLastUser = false,
   showAssistantModel = true,
   showAssistantActions = true,
   wrapperRef,
@@ -280,6 +282,7 @@ function MessageItemComponent({
           text={text}
           timestamp={timestamp}
           align="end"
+          editShortcut={isLastUser}
           forceVisible={forceActionsVisible && !editing}
           onClone={
             onClone && messageId
@@ -305,6 +308,7 @@ export function areMessagesEqual(
   if (prevProps.forceActionsVisible !== nextProps.forceActionsVisible) {
     return false
   }
+  if (prevProps.isLastUser !== nextProps.isLastUser) return false
   if (prevProps.showAssistantModel !== nextProps.showAssistantModel) {
     return false
   }

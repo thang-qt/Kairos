@@ -42,6 +42,7 @@ function PreviewCardPopup({
         sideOffset={sideOffset}
       >
         <PreviewCardPrimitive.Popup
+          data-shortcut-overlay
           className={cn(
             'relative w-64 origin-(--transform-origin) rounded-lg bg-primary-50 p-3 text-sm text-pretty text-primary-900 outline outline-primary-950/10 shadow-2xs',
             className,

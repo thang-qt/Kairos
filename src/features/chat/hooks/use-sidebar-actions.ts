@@ -4,6 +4,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useDeleteSession } from './use-delete-session'
 import { useRenameSession } from './use-rename-session'
 import { useSessionShortcuts } from './use-session-shortcuts'
+import { useShortcut } from '@/lib/use-shortcut'
 import { appQueryKeys, isUnauthorizedError, logout } from '@/lib/app-api'
 import { removeCurrentUserPersistedQueryCache } from '@/lib/persisted-query-cache'
 import type { SessionMeta } from '../types'
@@ -162,6 +163,20 @@ export function useSidebarActions({
     setDeleteSessionTitle(getSessionDisplayTitle(session))
     setDeleteDialogOpen(true)
   }, [])
+
+  const activeSession = sessions.find(function active(session) {
+    return session.friendlyId === activeFriendlyId
+  })
+  useShortcut('renameChat', function rename(event) {
+    if (!activeSession) return
+    event.preventDefault()
+    handleOpenRename(activeSession)
+  })
+  useShortcut('deleteChat', function remove(event) {
+    if (!activeSession) return
+    event.preventDefault()
+    handleOpenDelete(activeSession)
+  })
 
   const handleConfirmDelete = useCallback(
     function handleConfirmDelete() {

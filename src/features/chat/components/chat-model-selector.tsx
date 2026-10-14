@@ -11,6 +11,8 @@ import { ModelPicker } from '@/components/model-picker'
 import { mutationErrorMessage } from '@/lib/error-utils'
 
 type ChatModelSelectorProps = {
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
   models: Array<ProviderModel>
   selectedModelId: string
   defaultModelId?: string
@@ -35,6 +37,8 @@ function updatePayloadPreferences<T extends { preferences: UserPreferences }>(
 }
 
 export function ChatModelSelector({
+  open,
+  onOpenChange,
   models,
   selectedModelId,
   defaultModelId,
@@ -116,6 +120,8 @@ export function ChatModelSelector({
 
   return (
     <ModelPicker
+      open={open}
+      onOpenChange={onOpenChange}
       label="Chat model"
       variant="ghost"
       models={models}

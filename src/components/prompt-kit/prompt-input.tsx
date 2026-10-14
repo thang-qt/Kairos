@@ -15,6 +15,8 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
+import { canHandleShortcut } from '@/lib/shortcut-events'
+import { shortcuts } from '@/lib/shortcuts'
 
 type PromptInputValueContextType = {
   value: string
@@ -66,6 +68,8 @@ function bindGlobalPromptListener() {
     const isEditKey = event.key === 'Backspace'
     if (!isPrintable && !isEditKey) return
     if (!globalPromptTarget || globalPromptTarget.disabled) return
+    // The overlay check scans the DOM, so run it after the cheap filters.
+    if (!canHandleShortcut(event)) return
     globalPromptTarget.focus()
   })
 }
@@ -231,7 +235,15 @@ function PromptInputTextarea({
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
-    if (e.key === 'Enter' && !e.shiftKey) {
+    if (
+      e.key === shortcuts.sendMessage.bindings[0].hotkey &&
+      !e.shiftKey &&
+      !e.ctrlKey &&
+      !e.metaKey &&
+      !e.altKey &&
+      !e.nativeEvent.isComposing &&
+      !e.defaultPrevented
+    ) {
       e.preventDefault()
       onSubmit?.()
     }

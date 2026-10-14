@@ -25,6 +25,8 @@ import { cn } from '@/lib/utils'
 import { CAPABILITY_ICONS, ModelDetails, StatusBadge } from './model-details'
 
 type ModelPickerProps = {
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
   models: Array<ProviderModel>
   selectedModelId?: string
   onSelectModel: (modelId: string) => void
@@ -50,6 +52,8 @@ type ModelGroup = { label: string; models: Array<ProviderModel> }
 // The one model menu: searchable list grouped by provider, with a preview of
 // the highlighted model's limits, capabilities and price beside it.
 export function ModelPicker({
+  open: controlledOpen,
+  onOpenChange,
   models,
   selectedModelId,
   onSelectModel,
@@ -66,7 +70,12 @@ export function ModelPicker({
   align = 'start',
   className,
 }: ModelPickerProps) {
-  const [open, setOpen] = useState(false)
+  const [internalOpen, setInternalOpen] = useState(false)
+  const open = controlledOpen ?? internalOpen
+  function setOpen(nextOpen: boolean) {
+    setInternalOpen(nextOpen)
+    onOpenChange?.(nextOpen)
+  }
   const [query, setQuery] = useState('')
   // The highlighted row: moved by the arrow keys or the pointer, shown in the
   // preview, and picked with Enter.

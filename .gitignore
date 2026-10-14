@@ -16,3 +16,6 @@ count.txt
 todos.json
 .device-keys.json
 tmp/
+
+# Generated desktop frontend bundle
+desktop/app-dist/

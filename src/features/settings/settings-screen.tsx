@@ -13,6 +13,7 @@ import {
   getSettingsTabLabel,
 } from './components/settings-sidebar'
 import { AppShell } from '@/components/app-shell'
+import { GlobalShortcuts } from '@/components/global-shortcuts'
 import { Button } from '@/components/ui/button'
 import { useAppMobile } from '@/app/layout/use-app-mobile'
 import {
@@ -153,6 +154,7 @@ export function SettingsScreen({
         />
       }
     >
+      <GlobalShortcuts onToggleSidebar={handleToggleSidebarCollapse} />
       <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-16 pt-16 sm:px-8">
         <div className="mx-auto w-full max-w-3xl">
           {renderTabPanel(activeTab, onTabChange)}

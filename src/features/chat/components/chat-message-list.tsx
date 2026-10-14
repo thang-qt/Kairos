@@ -16,7 +16,6 @@ import {
 import { DateDivider } from './date-divider'
 import { MessageItem } from './message-item'
 import { ConversationNavigator } from './conversation-navigator'
-import { ShortcutsHelpDialog } from './shortcuts-help-dialog'
 import { activityKeyFromMessage } from './message-item-utils'
 import type { ConversationTurn } from '../types'
 import {
@@ -193,7 +192,7 @@ function ChatMessageListComponent({
     onTargetMessageReached: handleTargetMessageReached,
   })
 
-  const { shortcutsHelpOpen, setShortcutsHelpOpen } = useMessageNavigation({
+  useMessageNavigation({
     viewportNode,
     headerHeight,
   })
@@ -356,6 +355,7 @@ function ChatMessageListComponent({
           message={chatMessage}
           toolResultsByCallId={hasToolCalls ? toolResultsByCallId : undefined}
           forceActionsVisible={forceActionsVisible}
+          isLastUser={index === slicedLastUserIndex}
           showAssistantModel
           showAssistantActions
           modelLabelById={modelLabelById}
@@ -497,10 +497,6 @@ function ChatMessageListComponent({
           />
         </ChatContainerContent>
       </ChatContainerRoot>
-      <ShortcutsHelpDialog
-        open={shortcutsHelpOpen}
-        onOpenChange={setShortcutsHelpOpen}
-      />
     </>
   )
 }

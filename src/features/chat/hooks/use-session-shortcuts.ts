@@ -1,60 +1,29 @@
-import { useHotkey } from '@tanstack/react-hotkeys'
+import { useShortcut } from '@/lib/use-shortcut'
 
 type SessionShortcutOptions = {
   onNewSession: () => void
   onSearchSessions: () => void
   onNavigateSession?: (direction: 'up' | 'down') => void
 }
-
-function useSessionShortcuts({
+export function useSessionShortcuts({
   onNewSession,
   onSearchSessions,
   onNavigateSession,
 }: SessionShortcutOptions) {
-  useHotkey(
-    'Mod+K',
-    function handleSearchHotkey(event) {
-      if (event.altKey || isEditableTarget(event.target)) return
-      event.preventDefault()
-      onSearchSessions()
-    },
-    { preventDefault: true },
-  )
-
-  useHotkey(
-    'Mod+Shift+O',
-    function handleNewSessionHotkey(event) {
-      if (event.altKey || isEditableTarget(event.target)) return
-      event.preventDefault()
-      onNewSession()
-    },
-    { preventDefault: true },
-  )
-
-  useHotkey(
-    'Alt+[',
-    function handleAltLeftBracket(event) {
-      event.preventDefault()
-      onNavigateSession?.('up')
-    },
-    { preventDefault: true },
-  )
-
-  useHotkey(
-    'Alt+]',
-    function handleAltRightBracket(event) {
-      event.preventDefault()
-      onNavigateSession?.('down')
-    },
-    { preventDefault: true },
-  )
+  useShortcut('searchSessions', function search(event) {
+    event.preventDefault()
+    onSearchSessions()
+  })
+  useShortcut('newSession', function create(event) {
+    event.preventDefault()
+    onNewSession()
+  })
+  useShortcut('previousSession', function previous(event) {
+    event.preventDefault()
+    onNavigateSession?.('up')
+  })
+  useShortcut('nextSession', function next(event) {
+    event.preventDefault()
+    onNavigateSession?.('down')
+  })
 }
-
-function isEditableTarget(target: EventTarget | null): boolean {
-  if (!(target instanceof HTMLElement)) return false
-  const tag = target.tagName.toLowerCase()
-  if (tag === 'input' || tag === 'textarea' || tag === 'select') return true
-  return target.isContentEditable
-}
-
-export { useSessionShortcuts }

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { useHotkey } from '@tanstack/react-hotkeys'
+import { useShortcut } from '@/lib/use-shortcut'
 
 import { countConversationTokens, isSessionNotFound } from './utils'
 import {
@@ -19,6 +19,7 @@ import { ChatSidebar } from './components/chat-sidebar'
 import { ChatHeader } from './components/chat-header'
 import { ChatMessageList } from './components/chat-message-list'
 import { ChatComposer } from './components/chat-composer'
+import { ConversationShortcuts } from './components/conversation-shortcuts'
 import { BackendStatusMessage } from './components/backend-status-message'
 import { MessageStatus } from './components/message-status'
 import { UserTurnDeleteDialog } from './components/user-turn-delete-dialog'
@@ -48,6 +49,7 @@ import {
 import { isAssistantStreaming } from './components/message-item-utils'
 import { useMcpApprovals, useMcpToolLabels } from './hooks/use-mcp'
 import { AppShell } from '@/components/app-shell'
+import { GlobalShortcuts } from '@/components/global-shortcuts'
 import { useConversationExport } from '@/features/chat/export/use-conversation-export'
 import { useChatSettings } from '@/app/preferences/app-preferences'
 import { useChatSettingsPreferencesQuery, useModelsQuery } from '@/lib/app-api'
@@ -407,16 +409,20 @@ export function ChatScreen({
     backendStatusQuery.errorUpdatedAt > backendStatusMountRef.current
   const historyEmpty = !historyLoading && displayMessages.length === 0
 
-  useHotkey(
-    'Mod+Shift+P',
-    function toggleThrowawayModeShortcut() {
-      setThrowawayMode((current) => !current)
+  useShortcut(
+    'throwaway',
+    function toggleThrowaway(event) {
+      event.preventDefault()
+      setThrowawayMode(function toggle(current) {
+        return !current
+      })
     },
-    {
-      enabled: isNewChat && displayMessages.length === 0,
-      preventDefault: true,
-    },
+    isNewChat && displayMessages.length === 0,
   )
+  useShortcut('conversationPanel', function togglePanel(event) {
+    event.preventDefault()
+    handleToggleRightSidebar()
+  })
 
   const backendNotice = useMemo(() => {
     const lastTurn = displayMessages.at(-1)
@@ -686,6 +692,7 @@ export function ChatScreen({
             activeActivityKey={activeActivityKey}
             onOpenActivity={handleOpenActivity}
           />
+          <ConversationShortcuts messages={displayMessages} />
           <ChatComposer
             onSubmit={send}
             onStop={handleStopGeneration}
@@ -700,6 +707,7 @@ export function ChatScreen({
         </>
       )}
 
+      <GlobalShortcuts onToggleSidebar={handleToggleSidebarCollapse} />
       <UserTurnDeleteDialog
         open={deletingUserTurn !== null}
         onOpenChange={function handleOpenChange(open) {

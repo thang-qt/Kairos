@@ -1,6 +1,5 @@
-import { useCallback, useState } from 'react'
-import { useHotkey } from '@tanstack/react-hotkeys'
-import { isEditableTarget } from '../components/chat-message-list-utils'
+import { useCallback } from 'react'
+import { useShortcut } from '@/lib/use-shortcut'
 
 type UseMessageNavigationInput = {
   viewportNode: HTMLDivElement | null
@@ -11,8 +10,6 @@ export function useMessageNavigation({
   viewportNode,
   headerHeight,
 }: UseMessageNavigationInput) {
-  const [shortcutsHelpOpen, setShortcutsHelpOpen] = useState(false)
-
   const navigateMessage = useCallback(
     function navigateMessage(direction: 'up' | 'down') {
       if (!viewportNode) return
@@ -78,64 +75,38 @@ export function useMessageNavigation({
     [viewportNode, headerHeight],
   )
 
-  useHotkey(
-    'Alt+ArrowUp',
-    function handleAltArrowUp(event) {
-      event.preventDefault()
-      navigateMessage('up')
-    },
-    { preventDefault: true },
-  )
-
-  useHotkey(
-    'Alt+ArrowDown',
-    function handleAltArrowDown(event) {
-      event.preventDefault()
-      navigateMessage('down')
-    },
-    { preventDefault: true },
-  )
-
-  useHotkey('K', function handleKeyK(event) {
-    if (isEditableTarget(event.target)) return
-    event.preventDefault()
-    if (!viewportNode) return
-    viewportNode.scrollBy({
-      top: -100,
-      behavior: 'smooth',
-    })
-  })
-
-  useHotkey('J', function handleKeyJ(event) {
-    if (isEditableTarget(event.target)) return
-    event.preventDefault()
-    if (!viewportNode) return
-    viewportNode.scrollBy({
-      top: 100,
-      behavior: 'smooth',
-    })
-  })
-
-  useHotkey('[', function handleLeftBracket(event) {
-    if (isEditableTarget(event.target)) return
+  useShortcut('previousMessage', function previous(event) {
     event.preventDefault()
     navigateMessage('up')
   })
-
-  useHotkey(']', function handleRightBracket(event) {
-    if (isEditableTarget(event.target)) return
+  useShortcut(
+    'previousMessage',
+    function previous(event) {
+      event.preventDefault()
+      navigateMessage('up')
+    },
+    true,
+    1,
+  )
+  useShortcut('nextMessage', function next(event) {
     event.preventDefault()
     navigateMessage('down')
   })
-
-  useHotkey({ key: '?', shift: true }, function handleQuestionMark(event) {
-    if (isEditableTarget(event.target)) return
+  useShortcut(
+    'nextMessage',
+    function next(event) {
+      event.preventDefault()
+      navigateMessage('down')
+    },
+    true,
+    1,
+  )
+  useShortcut('scrollUp', function up(event) {
     event.preventDefault()
-    setShortcutsHelpOpen((prev) => !prev)
+    viewportNode?.scrollBy({ top: -100, behavior: 'smooth' })
   })
-
-  return {
-    shortcutsHelpOpen,
-    setShortcutsHelpOpen,
-  }
+  useShortcut('scrollDown', function down(event) {
+    event.preventDefault()
+    viewportNode?.scrollBy({ top: 100, behavior: 'smooth' })
+  })
 }

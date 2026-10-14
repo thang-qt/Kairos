@@ -13,6 +13,11 @@ import { Button } from '@/components/ui/button'
 import { AttachmentButton } from '@/features/chat/components/composer/attachment-button'
 import { AttachmentPreviewList } from '@/features/chat/components/composer/attachment-preview'
 import { cn } from '@/lib/utils'
+import { shortcutTooltip } from '@/lib/shortcuts'
+import {
+  editLastMessageFromComposer,
+  useComposerShortcuts,
+} from './composer-shortcuts'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import type { MCPApproval } from '@/lib/mcp-api'
 import { MCPApprovalDock } from './mcp-approval-dock'
@@ -56,6 +61,7 @@ function ChatComposerComponent({
   const awaitingApproval = Boolean(approvals && approvals.length > 0)
   const [attachments, setAttachments] = useState<Array<AttachmentFile>>([])
   const promptRef = useRef<HTMLTextAreaElement | null>(null)
+  useComposerShortcuts(promptRef, canStop, onStop)
   const valueRef = useRef('')
   const setValueRef = useRef<((value: string) => void) | null>(null)
   const focusPrompt = useCallback(() => {
@@ -188,11 +194,12 @@ function ChatComposerComponent({
               <PromptInputTextarea
                 placeholder="Type a message…"
                 inputRef={promptRef}
+                onKeyDown={editLastMessageFromComposer}
                 className="pl-2 pr-1 flex-1"
               />
               {canStop && onStop ? (
                 <PromptInputAction
-                  tooltip="Stop response"
+                  tooltip={shortcutTooltip('Stop response', 'stopResponse')}
                   render={(triggerProps) => (
                     <Button
                       {...triggerProps}
@@ -214,7 +221,7 @@ function ChatComposerComponent({
                 />
               ) : (
                 <PromptInputAction
-                  tooltip="Send message"
+                  tooltip={shortcutTooltip('Send message', 'sendMessage')}
                   render={(triggerProps) => (
                     <Button
                       {...triggerProps}

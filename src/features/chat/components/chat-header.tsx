@@ -1,4 +1,6 @@
-import { memo } from 'react'
+import { memo, useState } from 'react'
+import { useShortcut } from '@/lib/use-shortcut'
+import { shortcutTooltip } from '@/lib/shortcuts'
 import { HugeiconsIcon } from '@hugeicons/react'
 import {
   IncognitoIcon,
@@ -62,6 +64,15 @@ function ChatHeaderComponent({
   throwawayModeLocked = false,
   onToggleThrowawayMode,
 }: ChatHeaderProps) {
+  const [modelPickerOpen, setModelPickerOpen] = useState(false)
+  useShortcut(
+    'modelPicker',
+    function openModelPicker(event) {
+      event.preventDefault()
+      setModelPickerOpen(true)
+    },
+    canSelectModel && !modelsLoading && models.length > 0,
+  )
   return (
     <div ref={wrapperRef} className="px-4 h-12 flex items-center gap-2">
       {isSidebarCollapsed ? (
@@ -72,7 +83,7 @@ function ChatHeaderComponent({
           className="mr-1 text-primary-800 hover:bg-primary-100"
           aria-label="Open sidebar"
         >
-          <HugeiconsIcon icon={SidebarLeft01Icon} size={18} strokeWidth={1.6} />
+          <HugeiconsIcon icon={SidebarLeft01Icon} size={20} strokeWidth={1.5} />
         </Button>
       ) : null}
       <div className="flex min-w-0 flex-1 items-center gap-2">
@@ -84,6 +95,8 @@ function ChatHeaderComponent({
           <div className="hidden sm:block flex-1" />
         )}
         <ChatModelSelector
+          open={modelPickerOpen}
+          onOpenChange={setModelPickerOpen}
           models={models}
           selectedModelId={selectedModelId}
           defaultModelId={defaultModelId}
@@ -131,7 +144,7 @@ function ChatHeaderComponent({
               <TooltipContent side="bottom" align="end">
                 {throwawayMode
                   ? 'Throwaway mode: not saved to Kairos history'
-                  : 'Use throwaway mode (⌘/Ctrl Shift P)'}
+                  : shortcutTooltip('Use throwaway mode', 'throwaway')}
               </TooltipContent>
             </TooltipRoot>
           </TooltipProvider>

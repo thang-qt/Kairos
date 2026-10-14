@@ -22,6 +22,8 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
+import { ShortcutHint } from '@/components/shortcut-hint'
+import { shortcutTooltip } from '@/lib/shortcuts'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { KairosIconBig } from '@/components/icons/kairos-icon-big'
 
@@ -98,7 +100,9 @@ function ChatSidebarComponent({
                 </Button>
               }
             />
-            <TooltipContent side="right">Close Sidebar</TooltipContent>
+            <TooltipContent side="right">
+              {shortcutTooltip('Close Sidebar', 'sidebar')}
+            </TooltipContent>
           </TooltipRoot>
         </TooltipProvider>
       </div>
@@ -119,11 +123,10 @@ function ChatSidebarComponent({
             className="min-w-5"
           />
           <span className="overflow-hidden whitespace-nowrap">New Session</span>
-          <span className="ms-auto inline-flex items-center gap-1 text-[14px] text-primary-600 opacity-0 transition-none group-hover:opacity-100">
-            <kbd className="font-sans">⇧</kbd>
-            <kbd className="font-sans">⌘</kbd>
-            <kbd className="font-sans">O</kbd>
-          </span>
+          <ShortcutHint
+            id="newSession"
+            className="ms-auto opacity-0 group-hover:opacity-100"
+          />
         </Button>
         <Button
           variant="ghost"
@@ -142,10 +145,10 @@ function ChatSidebarComponent({
           <span className="overflow-hidden whitespace-nowrap">
             Search sessions
           </span>
-          <span className="ms-auto inline-flex items-center gap-1 text-[14px] text-primary-600 opacity-0 transition-none group-hover:opacity-100">
-            <kbd className="font-sans">⌘</kbd>
-            <kbd className="font-sans">K</kbd>
-          </span>
+          <ShortcutHint
+            id="searchSessions"
+            className="ms-auto opacity-0 group-hover:opacity-100"
+          />
         </Button>
       </div>
 
