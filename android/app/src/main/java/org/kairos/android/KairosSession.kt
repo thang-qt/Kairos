@@ -20,6 +20,7 @@ import androidx.core.view.WindowCompat
 import androidx.lifecycle.setViewTreeLifecycleOwner
 import androidx.lifecycle.setViewTreeViewModelStoreOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
+import org.kairos.android.markdown.MathRenderer
 
 class KairosSession(context: Context) : VoiceInteractionSession(context) {
     private val app = context.applicationContext as KairosApplication
@@ -34,6 +35,7 @@ class KairosSession(context: Context) : VoiceInteractionSession(context) {
     override fun onCreate() {
         super.onCreate()
         owner.create()
+        MathRenderer.prewarm()
         // Android only captures the screenshot as part of an assist-data request
         // (AssistDataRequester gates it on fetchData), so SHOW_WITH_ASSIST must stay
         // enabled. The structure/content it delivers is dropped in onHandleAssist.
@@ -78,7 +80,9 @@ class KairosSession(context: Context) : VoiceInteractionSession(context) {
         view.setContent {
             AssistantOverlay(app, conversation, screenCapture, onDismiss = { hide() }, onOpenApp = { messages ->
                 if (messages.isNotEmpty()) app.pendingConversation = messages
-                startAssistantActivity(mainAppIntent(context))
+                // The options overload (API 31+) carries the slide-up entry animation.
+                if (Build.VERSION.SDK_INT >= 31) startAssistantActivity(mainAppIntent(context), openAppOptions(context))
+                else startAssistantActivity(mainAppIntent(context))
                 hide()
             })
         }

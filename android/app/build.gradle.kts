@@ -31,5 +31,12 @@ dependencies {
     implementation(libs.lifecycle.runtime.ktx)
     implementation(libs.lifecycle.viewmodel)
     implementation(libs.savedstate)
+    implementation(libs.commonmark)
+    implementation(libs.commonmark.tables)
+    implementation(libs.commonmark.strikethrough)
+    implementation(libs.commonmark.tasklist)
+    implementation(libs.commonmark.autolink)
+    implementation(libs.jlatexmath)
+    implementation(libs.highlights)
     testImplementation(libs.junit)
 }

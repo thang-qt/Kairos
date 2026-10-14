@@ -1,11 +1,13 @@
 package org.kairos.android
 
+import android.app.ActivityOptions
 import android.app.role.RoleManager
 import android.content.ActivityNotFoundException
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.os.Build
+import android.os.Bundle
 import android.provider.Settings
 import android.service.voice.VoiceInteractionService
 import android.widget.Toast
@@ -39,6 +41,10 @@ fun openBrowser(context: Context, href: String) {
     try { context.startActivity(Intent(Intent.ACTION_VIEW, uri).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
     catch (_: ActivityNotFoundException) { Toast.makeText(context, "No browser installed", Toast.LENGTH_SHORT).show() }
 }
+
+/** Slide-up entry shared by every overlay → app handoff. */
+fun openAppOptions(context: Context): Bundle =
+    ActivityOptions.makeCustomAnimation(context, R.anim.kairos_open_enter, R.anim.kairos_hold).toBundle()
 
 fun mainAppIntent(context: Context): Intent = Intent(context, MainActivity::class.java)
     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
