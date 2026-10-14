@@ -381,7 +381,7 @@ function RightSidebarComponent({
           animate={{ x: 0 }}
           exit={{ x: '100%' }}
           transition={{ duration: 0.2, ease: 'easeOut' }}
-          className="absolute inset-y-0 right-0 z-20 flex w-[280px] flex-col overflow-hidden bg-primary-100"
+          className="absolute inset-y-0 right-0 z-20 flex w-(--right-sidebar-width) flex-col overflow-hidden bg-primary-100"
         >
           <div className="flex h-12 shrink-0 items-center justify-between border-b border-primary-200 px-2">
             <SidebarTabs activeTab={activeTab} onTabChange={onTabChange} />

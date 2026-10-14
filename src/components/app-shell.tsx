@@ -1,8 +1,44 @@
-import type { ReactNode } from 'react'
+import { useRef, useState, useSyncExternalStore } from 'react'
+import type { CSSProperties, ReactNode } from 'react'
+import { SidebarResizeHandle } from './sidebar-resize-handle'
 import { cn } from '@/lib/utils'
 
-// Matches the w-[300px] sidebar containers below.
 const SIDEBAR_WIDTH = 300
+const WIDTHS_STORAGE_KEY = 'kairos-sidebar-widths'
+function subscribeViewport(onChange: () => void) {
+  window.addEventListener('resize', onChange)
+  return function unsubscribe() {
+    window.removeEventListener('resize', onChange)
+  }
+}
+function getViewportWidth() {
+  return window.innerWidth
+}
+function getServerViewportWidth() {
+  return 1280
+}
+
+type SidebarWidths = { left: number; right?: number }
+
+function readWidths(): SidebarWidths {
+  try {
+    const stored = JSON.parse(
+      localStorage.getItem(WIDTHS_STORAGE_KEY) ?? '{}',
+    ) as Partial<SidebarWidths>
+    return {
+      left:
+        typeof stored.left === 'number' && Number.isFinite(stored.left)
+          ? Math.min(480, Math.max(240, stored.left))
+          : SIDEBAR_WIDTH,
+      right:
+        typeof stored.right === 'number' && Number.isFinite(stored.right)
+          ? Math.min(560, Math.max(260, stored.right))
+          : undefined,
+    }
+  } catch {
+    return { left: SIDEBAR_WIDTH }
+  }
+}
 
 type AppShellProps = {
   isMobile: boolean
@@ -18,9 +54,8 @@ type AppShellProps = {
   hideChrome?: boolean
 }
 
-// Sidebars are fixed-width overlays that slide with transforms, so their
-// contents never relayout while animating. The main column's edges ease to
-// match.
+// Sidebars slide with transforms while the main column eases to match.
+// Width changes stay local to this shell while dragging.
 export function AppShell({
   isMobile,
   isSidebarCollapsed,
@@ -33,10 +68,62 @@ export function AppShell({
   mainRef,
   hideChrome = false,
 }: AppShellProps) {
+  const viewportWidth = useSyncExternalStore(
+    subscribeViewport,
+    getViewportWidth,
+    getServerViewportWidth,
+  )
+  const [resizing, setResizing] = useState(false)
+  const lastRightDefault = useRef(rightPanelWidth || 280)
+  if (rightPanelWidth > 0) lastRightDefault.current = rightPanelWidth
+  const [widths, setWidths] = useState(readWidths)
+  const widthsRef = useRef(widths)
+  function changeWidth(side: 'left' | 'right', width: number | undefined) {
+    const next = {
+      ...widthsRef.current,
+      ...(scale < 1
+        ? {
+            left: leftWidth,
+            right: rightOpen ? rightWidth : widthsRef.current.right,
+          }
+        : {}),
+      [side]: width,
+    }
+    widthsRef.current = next
+    setWidths(next)
+  }
+  function persistWidths() {
+    try {
+      localStorage.setItem(
+        WIDTHS_STORAGE_KEY,
+        JSON.stringify(widthsRef.current),
+      )
+    } catch {
+      // Resizing still works when browser storage is unavailable.
+    }
+  }
+  function resetWidth(side: 'left' | 'right') {
+    changeWidth(side, side === 'left' ? SIDEBAR_WIDTH : undefined)
+    persistWidths()
+  }
   const sidebarOpen = !hideChrome && !isSidebarCollapsed
   const desktopChrome = !isMobile && !hideChrome
-  const leftInset = desktopChrome && sidebarOpen ? SIDEBAR_WIDTH : 0
-  const rightInset = desktopChrome ? rightPanelWidth : 0
+  const rightOpen = rightPanelWidth > 0
+  const preferredRight = widths.right ?? lastRightDefault.current
+  const available = Math.max(0, viewportWidth - 320)
+  const total =
+    (sidebarOpen ? widths.left : 0) + (rightOpen ? preferredRight : 0)
+  const scale = total > available && total > 0 ? available / total : 1
+  const leftWidth = Math.round(
+    sidebarOpen ? widths.left * scale : Math.min(widths.left, available),
+  )
+  const rightWidth = Math.round(
+    rightOpen ? preferredRight * scale : Math.min(preferredRight, available),
+  )
+  const leftInset = desktopChrome && sidebarOpen ? leftWidth : 0
+  const rightInset = desktopChrome && rightOpen ? rightWidth : 0
+  const leftMaximum = Math.min(480, Math.max(0, available - rightInset))
+  const rightMaximum = Math.min(560, Math.max(0, available - leftInset))
   // While any sidebar is open the main column floats as a rounded card inside
   // the sidebar-colored frame, so the sidebars read as surrounding it.
   const insetMain = leftInset > 0 || rightInset > 0
@@ -44,6 +131,12 @@ export function AppShell({
   return (
     <div
       data-shell-top={insetMain ? 'frame' : 'surface'}
+      style={
+        {
+          '--left-sidebar-width': `${leftWidth}px`,
+          '--right-sidebar-width': `${rightWidth}px`,
+        } as CSSProperties
+      }
       className={cn(
         'relative h-screen overflow-hidden text-primary-900',
         desktopChrome ? 'bg-primary-100' : 'bg-surface',
@@ -76,7 +169,7 @@ export function AppShell({
         <div
           inert={!sidebarOpen}
           className={cn(
-            'absolute inset-y-0 left-0 z-20 w-[300px] transition-transform duration-200 ease-out',
+            'absolute inset-y-0 left-0 z-20 w-(--left-sidebar-width) transition-transform duration-200 ease-out',
             sidebarOpen ? 'translate-x-0' : '-translate-x-full',
           )}
         >
@@ -90,11 +183,15 @@ export function AppShell({
           // the main column grows into (or yields) the sidebar's space. The
           // chat column inside is max-width and centered, so on wide windows
           // the per-frame relayout only re-centers it rather than re-wrapping.
-          'absolute inset-y-0 isolate flex transition-[left,right,padding] duration-200 ease-out',
+          'absolute inset-y-0 isolate flex duration-200 ease-out',
+          resizing ? 'transition-none' : 'transition-[left,right,padding]',
           insetMain && 'py-2 pr-2',
           insetMain && leftInset === 0 && 'pl-2',
         )}
-        style={{ left: leftInset, right: rightInset }}
+        style={{
+          left: leftInset,
+          right: rightInset,
+        }}
       >
         <main
           className={cn(
@@ -123,6 +220,36 @@ export function AppShell({
       </div>
 
       {hideChrome ? null : rightSidebar}
+      {desktopChrome && sidebarOpen ? (
+        <SidebarResizeHandle
+          side="left"
+          width={leftWidth}
+          maximum={leftMaximum}
+          onResizingChange={setResizing}
+          onChange={function resizeLeft(width) {
+            changeWidth('left', width)
+          }}
+          onCommit={persistWidths}
+          onReset={function resetLeft() {
+            resetWidth('left')
+          }}
+        />
+      ) : null}
+      {desktopChrome && rightInset > 0 ? (
+        <SidebarResizeHandle
+          side="right"
+          width={rightWidth}
+          maximum={rightMaximum}
+          onResizingChange={setResizing}
+          onChange={function resizeRight(width) {
+            changeWidth('right', width)
+          }}
+          onCommit={persistWidths}
+          onReset={function resetRight() {
+            resetWidth('right')
+          }}
+        />
+      ) : null}
     </div>
   )
 }
