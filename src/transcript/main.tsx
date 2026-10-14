@@ -1,79 +1,57 @@
-import { memo, useLayoutEffect, useSyncExternalStore } from 'react'
+import {
+  memo,
+  useCallback,
+  useMemo,
+  useLayoutEffect,
+  useSyncExternalStore,
+} from 'react'
 import { createRoot } from 'react-dom/client'
-import { Message, MessageContent } from '@/components/prompt-kit/message'
+import { MessageItem } from '@/features/chat/components/message-item'
+import { projectConversationTurns } from '@/features/chat/components/chat-message-list-utils'
+import type { ConversationTurn } from '@/features/chat/types'
 // Eagerly load the real renderer before announcing readiness (MessageContent uses it lazily).
 import '@/components/prompt-kit/markdown'
 import '@/styles.css'
 import './transcript.css'
-import { cn } from '@/lib/utils'
 import { installInteractions } from './touch'
 import {
   followBottom,
   getSnapshot,
-  pendingPaints,
   post,
   receive,
   setFollowBottom,
   subscribe,
 } from './store'
-import type { Message as TranscriptMessage, NativeCommand } from './protocol'
+import type { NativeCommand } from './protocol'
+
+const modelLabels: ReadonlyMap<string, string> = new Map()
 
 const MessageRow = memo(function MessageRow({
   message,
 }: {
-  message: TranscriptMessage
+  message: ConversationTurn
 }) {
-  const isUser = message.role === 'user'
+  const projection = useMemo(
+    function tools() {
+      return projectConversationTurns([message])
+    },
+    [message],
+  )
+  const openActivity = useCallback(
+    function openActivity() {
+      if (message.id) post({ type: 'activity', id: message.id })
+    },
+    [message.id],
+  )
   return (
-    <article
-      data-message-id={message.id}
-      className={cn(
-        'flex min-w-0 flex-col gap-2 text-pretty',
-        isUser ? 'items-end' : 'items-start',
-      )}
-    >
-      {!isUser && (
-        <span className="font-mono text-sm font-medium text-primary-900">
-          {message.model ?? 'Kairos'}
-        </span>
-      )}
-      <Message className={cn(isUser && 'flex-row-reverse')}>
-        <MessageContent
-          markdown={!isUser}
-          className={cn(
-            'text-primary-950 text-pretty',
-            isUser
-              ? 'text-primary-900 max-w-[85%] bg-primary-100 px-4 py-2.5 whitespace-pre-wrap'
-              : 'w-full',
-          )}
-        >
-          {isUser ? (
-            <div className="flex flex-col gap-2">
-              {message.attachment && (
-                <img
-                  src={message.attachment.url}
-                  width={message.attachment.width}
-                  height={message.attachment.height}
-                  alt="Attached screen"
-                  className="max-h-72 max-w-full rounded-lg object-contain"
-                />
-              )}
-              {message.text && (
-                <p className="whitespace-pre-wrap text-pretty">
-                  {message.text}
-                </p>
-              )}
-            </div>
-          ) : (
-            message.text
-          )}
-        </MessageContent>
-      </Message>
-      {message.streaming && (
-        <span className="rounded-lg bg-primary-100 px-2 py-1 text-xs text-primary-700">
-          Generating…
-        </span>
-      )}
+    <article className="min-w-0 text-pretty">
+      <MessageItem
+        message={message}
+        modelLabelById={modelLabels}
+        toolResultsByCallId={projection.toolResultsByCallId}
+        showAssistantActions={false}
+        onOpenActivity={openActivity}
+      />
     </article>
   )
 })
@@ -82,7 +60,6 @@ function Transcript() {
   const state = useSyncExternalStore(subscribe, getSnapshot)
   useLayoutEffect(
     function followAndAcknowledge() {
-      const traces = pendingPaints.splice(0)
       if (followBottom)
         window.scrollTo(0, document.documentElement.scrollHeight)
       // A second frame gives Chromium an opportunity to paint the committed React tree.
@@ -90,14 +67,6 @@ function Transcript() {
         requestAnimationFrame(function acknowledge() {
           if (followBottom)
             window.scrollTo(0, document.documentElement.scrollHeight)
-          traces.forEach(function acknowledgeTrace(trace) {
-            post({
-              type: 'paint',
-              trace: trace.trace,
-              stage: trace.stage,
-              elapsedMs: performance.now() - trace.received,
-            })
-          })
         })
       })
     },
@@ -124,8 +93,8 @@ window.addEventListener('message', function nativeMessage(event) {
   if (event.source !== null) return
   try {
     receive(JSON.parse(event.data) as NativeCommand)
-  } catch (error) {
-    console.warn('Invalid Kairos bridge message', error)
+  } catch {
+    console.warn('Invalid Kairos bridge message')
   }
 })
 let previousBottom = true

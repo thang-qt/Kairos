@@ -7,6 +7,15 @@ import * as hugeicons from '@hugeicons/core-free-icons'
 
 const ICONS = [
   'AiMagicIcon',
+  'AlertCircleIcon',
+  'ArrowLeft01Icon',
+  'Loading03Icon',
+  'Logout01Icon',
+  'Pen01Icon',
+  'PinIcon',
+  'ViewIcon',
+  'ViewOffSlashIcon',
+  'RefreshIcon',
   'ArrowDown01Icon',
   'ArrowRight01Icon',
   'ArrowUp02Icon',

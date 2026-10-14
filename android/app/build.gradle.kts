@@ -1,6 +1,7 @@
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
+    alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.kotlin.compose)
 }
 android {
@@ -12,7 +13,7 @@ android {
         minSdk = 26
         targetSdk = 35
         versionCode = 1
-        versionName = "0.1-prototype"
+        versionName = "0.2-demo"
     }
     buildFeatures { compose = true; buildConfig = true }
     compileOptions {
@@ -22,6 +23,9 @@ android {
 }
 kotlin { jvmToolchain(17) }
 dependencies {
+    implementation(libs.okhttp)
+    implementation(libs.serialization.json)
+    implementation(libs.lifecycle.viewmodel.compose)
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.foundation)
     implementation(libs.compose.material3)

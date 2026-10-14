@@ -47,6 +47,75 @@ object KairosIcons {
         }
     }
 
+    val AlertCircle: ImageVector by lazy {
+        icon("AlertCircle") {
+            path("M2 12a10 10 0 1 0 20 0a10 10 0 1 0 -20 0Z", stroke = true, cap = StrokeCap.Round, join = StrokeJoin.Round)
+            path("M12 8V12.5", stroke = true, cap = StrokeCap.Round, join = StrokeJoin.Round)
+            path("M12 15.9883V15.9983", stroke = true, cap = StrokeCap.Round, join = StrokeJoin.Round)
+        }
+    }
+
+    val ArrowLeft01: ImageVector by lazy {
+        icon("ArrowLeft01") {
+            path("M15 6C15 6 9.00001 10.4189 9 12C8.99999 13.5812 15 18 15 18", stroke = true, cap = StrokeCap.Round, join = StrokeJoin.Round)
+        }
+    }
+
+    val Loading03: ImageVector by lazy {
+        icon("Loading03") {
+            path("M12 3V6", stroke = true, cap = StrokeCap.Round)
+            path("M12 18V21", stroke = true, cap = StrokeCap.Round)
+            path("M21 12L18 12", stroke = true, cap = StrokeCap.Round)
+            path("M6 12L3 12", stroke = true, cap = StrokeCap.Round)
+            path("M18.3635 5.63672L16.2422 7.75804", stroke = true, cap = StrokeCap.Round)
+            path("M7.75804 16.2422L5.63672 18.3635", stroke = true, cap = StrokeCap.Round)
+            path("M18.3635 18.3635L16.2422 16.2422", stroke = true, cap = StrokeCap.Round)
+            path("M7.75804 7.75804L5.63672 5.63672", stroke = true, cap = StrokeCap.Round)
+        }
+    }
+
+    val Logout01: ImageVector by lazy {
+        icon("Logout01") {
+            path("M15.5 8.04045C15.4588 6.87972 15.3216 6.15451 14.8645 5.58671C14.2114 4.77536 13.0944 4.52064 10.8605 4.01121L9.85915 3.78286C6.4649 3.00882 4.76777 2.6218 3.63388 3.51317C2.5 4.40454 2.5 6.1257 2.5 9.56803V14.432C2.5 17.8743 2.5 19.5955 3.63388 20.4868C4.76777 21.3782 6.4649 20.9912 9.85915 20.2171L10.8605 19.9888C13.0944 19.4794 14.2114 19.2246 14.8645 18.4133C15.3216 17.8455 15.4588 17.1203 15.5 15.9595", stroke = true, cap = StrokeCap.Round, join = StrokeJoin.Round)
+            path("M18.5 9.01172C18.5 9.01172 21.5 11.2212 21.5 12.0117C21.5 12.8023 18.5 15.0117 18.5 15.0117M21 12.0117H8.49998", stroke = true, cap = StrokeCap.Round, join = StrokeJoin.Round)
+        }
+    }
+
+    val Pen01: ImageVector by lazy {
+        icon("Pen01") {
+            path("M3.49977 18.9853V20.5H5.01449C6.24074 20.5 6.85387 20.5 7.40518 20.2716C7.9565 20.0433 8.39004 19.6097 9.25713 18.7426L19.1211 8.87868C20.0037 7.99612 20.4449 7.55483 20.4937 7.01325C20.5018 6.92372 20.5018 6.83364 20.4937 6.74411C20.4449 6.20253 20.0037 5.76124 19.1211 4.87868C18.2385 3.99612 17.7972 3.55483 17.2557 3.50605C17.1661 3.49798 17.0761 3.49798 16.9865 3.50605C16.4449 3.55483 16.0037 3.99612 15.1211 4.87868L5.25713 14.7426C4.39004 15.6097 3.9565 16.0433 3.72813 16.5946C3.49977 17.1459 3.49977 17.759 3.49977 18.9853Z", stroke = true, cap = StrokeCap.Round, join = StrokeJoin.Round)
+            path("M13.5 6.5L17.5 10.5", stroke = true, cap = StrokeCap.Round, join = StrokeJoin.Round)
+        }
+    }
+
+    val Pin: ImageVector by lazy {
+        icon("Pin") {
+            path("M3 21L8 16", stroke = true, cap = StrokeCap.Round, join = StrokeJoin.Round)
+            path("M13.2585 18.8714C9.51516 18.0215 5.97844 14.4848 5.12853 10.7415C4.99399 10.1489 4.92672 9.85266 5.12161 9.37197C5.3165 8.89129 5.55457 8.74255 6.03071 8.44509C7.10705 7.77265 8.27254 7.55888 9.48209 7.66586C11.1793 7.81598 12.0279 7.89104 12.4512 7.67048C12.8746 7.44991 13.1622 6.93417 13.7376 5.90269L14.4664 4.59604C14.9465 3.73528 15.1866 3.3049 15.7513 3.10202C16.316 2.89913 16.6558 3.02199 17.3355 3.26771C18.9249 3.84236 20.1576 5.07505 20.7323 6.66449C20.978 7.34417 21.1009 7.68401 20.898 8.2487C20.6951 8.8134 20.2647 9.05346 19.4039 9.53358L18.0672 10.2792C17.0376 10.8534 16.5229 11.1406 16.3024 11.568C16.0819 11.9955 16.162 12.8256 16.3221 14.4859C16.4399 15.7068 16.2369 16.88 15.5555 17.9697C15.2577 18.4458 15.1088 18.6839 14.6283 18.8786C14.1477 19.0733 13.8513 19.006 13.2585 18.8714Z", stroke = true, cap = StrokeCap.Round, join = StrokeJoin.Round)
+        }
+    }
+
+    val View: ImageVector by lazy {
+        icon("View") {
+            path("M21.544 11.045C21.848 11.4713 22 11.6845 22 12C22 12.3155 21.848 12.5287 21.544 12.955C20.1779 14.8706 16.6892 19 12 19C7.31078 19 3.8221 14.8706 2.45604 12.955C2.15201 12.5287 2 12.3155 2 12C2 11.6845 2.15201 11.4713 2.45604 11.045C3.8221 9.12944 7.31078 5 12 5C16.6892 5 20.1779 9.12944 21.544 11.045Z", stroke = true)
+            path("M15 12C15 10.3431 13.6569 9 12 9C10.3431 9 9 10.3431 9 12C9 13.6569 10.3431 15 12 15C13.6569 15 15 13.6569 15 12Z", stroke = true)
+        }
+    }
+
+    val ViewOffSlash: ImageVector by lazy {
+        icon("ViewOffSlash") {
+            path("M19.439 15.439C20.3636 14.5212 21.0775 13.6091 21.544 12.955C21.848 12.5287 22 12.3155 22 12C22 11.6845 21.848 11.4713 21.544 11.045C20.1779 9.12944 16.6892 5 12 5C11.0922 5 10.2294 5.15476 9.41827 5.41827M6.74742 6.74742C4.73118 8.1072 3.24215 9.94266 2.45604 11.045C2.15201 11.4713 2 11.6845 2 12C2 12.3155 2.15201 12.5287 2.45604 12.955C3.8221 14.8706 7.31078 19 12 19C13.9908 19 15.7651 18.2557 17.2526 17.2526", stroke = true, cap = StrokeCap.Round, join = StrokeJoin.Round)
+            path("M9.85786 10C9.32783 10.53 9 11.2623 9 12.0711C9 13.6887 10.3113 15 11.9289 15C12.7377 15 13.47 14.6722 14 14.1421", stroke = true, cap = StrokeCap.Round)
+            path("M3 3L21 21", stroke = true, cap = StrokeCap.Round, join = StrokeJoin.Round)
+        }
+    }
+
+    val Refresh: ImageVector by lazy {
+        icon("Refresh") {
+            path("M20.0092 2V5.13219C20.0092 5.42605 19.6418 5.55908 19.4537 5.33333C17.6226 3.2875 14.9617 2 12 2C6.47715 2 2 6.47715 2 12C2 17.5228 6.47715 22 12 22C17.5228 22 22 17.5228 22 12", stroke = true, cap = StrokeCap.Round, join = StrokeJoin.Round)
+        }
+    }
+
     val ArrowDown01: ImageVector by lazy {
         icon("ArrowDown01") {
             path("M18 9.00005C18 9.00005 13.5811 15 12 15C10.4188 15 6 9 6 9", stroke = true, cap = StrokeCap.Round, join = StrokeJoin.Round)
