@@ -165,6 +165,38 @@ describe('persisted query cache', function persistedQueryCacheSuite() {
     ).toEqual([7, 6, 5, 4, 3])
   })
 
+  it('rejects oversized history before serializing or encoding its data', function () {
+    const oversizedHistory = createPersistedQuery(
+      ['chat', 'history', 'friendly-large', 'session-large'],
+      2,
+      {
+        messages: [
+          {
+            id: 'large',
+            content: [{ type: 'text', text: 'x'.repeat(2_000_000) }],
+          },
+        ],
+      },
+    )
+    const smallHistory = createPersistedQuery(
+      ['chat', 'history', 'friendly-small', 'session-small'],
+      1,
+      { messages: [{ id: 'small', role: 'user' }] },
+    )
+    const stringify = vi.spyOn(JSON, 'stringify')
+    const encode = vi.spyOn(TextEncoder.prototype, 'encode')
+
+    const limited = limitPersistedClient(
+      createPersistedClient([oversizedHistory, smallHistory]),
+    )
+
+    expect(limited.clientState.queries).toEqual([smallHistory])
+    expect(stringify).not.toHaveBeenCalled()
+    expect(encode).not.toHaveBeenCalled()
+    stringify.mockRestore()
+    encode.mockRestore()
+  })
+
   it('coalesces burst cache updates before dehydration and persistence', async function () {
     vi.useFakeTimers()
     const queryClient = new QueryClient()

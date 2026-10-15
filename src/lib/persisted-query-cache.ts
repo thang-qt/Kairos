@@ -13,6 +13,8 @@ const MAX_PERSISTED_HISTORIES = 5
 const MAX_HISTORY_BYTES = 1000 * 1000
 const MAX_TOTAL_HISTORY_BYTES = 2 * 1000 * 1000
 const PERSIST_THROTTLE_MS = 1000
+const HISTORY_SIZE_OVERFLOW = MAX_HISTORY_BYTES + 1
+const cachedJsonSizeByObject = new WeakMap<object, number>()
 
 export const persistedQueryCacheMaxAge = 1000 * 60 * 60 * 24
 export const persistedQueryCacheBuster = 'kairos-query-cache-v1'
@@ -265,7 +267,7 @@ export function limitPersistedClient(client: PersistedClient): PersistedClient {
   let retainedHistoryBytes = 0
   for (const query of historyQueries) {
     if (retainedHistories.length >= MAX_PERSISTED_HISTORIES) break
-    const queryBytes = serializedByteLength(query.state.data)
+    const queryBytes = estimateJsonByteLength(query.state.data)
     if (queryBytes > MAX_HISTORY_BYTES) continue
     if (retainedHistoryBytes + queryBytes > MAX_TOTAL_HISTORY_BYTES) continue
     retainedHistories.push(query)
@@ -348,12 +350,93 @@ function removeEphemeralQueries(
   }
 }
 
-function serializedByteLength(value: unknown) {
+function estimateJsonByteLength(value: unknown): number {
+  const ancestors = new WeakSet<object>()
+  return estimateJsonValue(value, ancestors)
+}
+
+function estimateJsonValue(value: unknown, ancestors: WeakSet<object>): number {
+  if (value === null) return 4
+  if (typeof value === 'boolean') return value ? 5 : 6
+  if (typeof value === 'number') return 32
+  if (typeof value === 'string') return escapedStringSize(value)
+  if (typeof value !== 'object') return HISTORY_SIZE_OVERFLOW
+
+  const cachedSize = cachedJsonSizeByObject.get(value)
+  if (cachedSize !== undefined) return cachedSize
+  if (ancestors.has(value)) return HISTORY_SIZE_OVERFLOW
+  ancestors.add(value)
+
+  let size = 2
   try {
-    return new TextEncoder().encode(JSON.stringify(value)).byteLength
+    if (Array.isArray(value)) {
+      let first = true
+      for (const item of value) {
+        if (!first) size += 1
+        first = false
+        size += estimateJsonValue(item, ancestors)
+        if (size >= HISTORY_SIZE_OVERFLOW) break
+      }
+    } else {
+      let first = true
+      for (const key in value) {
+        if (!Object.prototype.hasOwnProperty.call(value, key)) continue
+        const record = value as Record<string, unknown>
+        const child = record[key]
+        if (
+          child === undefined ||
+          typeof child === 'function' ||
+          typeof child === 'symbol'
+        ) {
+          continue
+        }
+        if (!first) size += 1
+        first = false
+        size += escapedStringSize(key) + 1 + estimateJsonValue(child, ancestors)
+        if (size >= HISTORY_SIZE_OVERFLOW) break
+      }
+    }
   } catch {
-    return Number.POSITIVE_INFINITY
+    size = HISTORY_SIZE_OVERFLOW
+  } finally {
+    ancestors.delete(value)
   }
+
+  const boundedSize = Math.min(size, HISTORY_SIZE_OVERFLOW)
+  cachedJsonSizeByObject.set(value, boundedSize)
+  return boundedSize
+}
+
+function escapedStringSize(value: string): number {
+  let size = 2
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index)
+    let characterSize: number
+    if (code === 0x22 || code === 0x5c) {
+      characterSize = 2
+    } else if (code < 0x20) {
+      characterSize = 6
+    } else if (code < 0x80) {
+      characterSize = 1
+    } else if (code < 0x800) {
+      characterSize = 2
+    } else if (code >= 0xd800 && code <= 0xdbff) {
+      const nextCode = value.charCodeAt(index + 1)
+      if (nextCode >= 0xdc00 && nextCode <= 0xdfff) {
+        characterSize = 4
+        index += 1
+      } else {
+        characterSize = 6
+      }
+    } else if (code >= 0xdc00 && code <= 0xdfff) {
+      characterSize = 6
+    } else {
+      characterSize = 3
+    }
+    size += characterSize
+    if (size >= HISTORY_SIZE_OVERFLOW) return HISTORY_SIZE_OVERFLOW
+  }
+  return size
 }
 
 function openDatabase(): Promise<IDBDatabase> {
