@@ -202,13 +202,12 @@ export function AppShell({
           ref={mainRef}
         >
           <div
-            className="pointer-events-none absolute left-0 right-0 top-0 z-10"
+            className="pointer-events-none absolute left-0 right-0 top-0 z-10 h-12"
             style={{
-              height: 80,
-              // Denser than a linear fade behind the 48px header (~80% at its
-              // bottom edge) so scrolled text recedes without a solid band.
+              // Matches the 48px header so scrolled text recedes without a solid band
+              // and does not fade content below the topbar.
               background:
-                'linear-gradient(to bottom, var(--color-surface) 0%, color-mix(in oklab, var(--color-surface) 93%, transparent) 35%, color-mix(in oklab, var(--color-surface) 80%, transparent) 60%, transparent 100%)',
+                'linear-gradient(to bottom, var(--color-surface) 0%, color-mix(in oklab, var(--color-surface) 93%, transparent) 65%, color-mix(in oklab, var(--color-surface) 80%, transparent) 85%, transparent 100%)',
             }}
           >
             <div className="pointer-events-auto">{header}</div>

@@ -42,7 +42,7 @@ function ScrollAreaScrollbar({
   return (
     <ScrollArea.Scrollbar
       className={cn(
-        'flex w-2 touch-none select-none p-0.5 outline-none focus-visible:outline-none',
+        'z-20 flex w-2 touch-none select-none p-0.5 outline-none focus-visible:outline-none',
         'opacity-0 transition-opacity duration-150',
         'data-hovering:opacity-100 data-scrolling:opacity-100 group-hover/scroll-area:opacity-100',
         className,
@@ -72,7 +72,7 @@ function ScrollAreaCorner({ className, ...props }: ScrollAreaCornerProps) {
   return (
     <ScrollArea.Corner
       className={cn(
-        'bg-primary-100 outline-none focus-visible:outline-none',
+        'z-20 bg-primary-100 outline-none focus-visible:outline-none',
         className,
       )}
       {...props}
