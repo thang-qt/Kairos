@@ -24,15 +24,8 @@ type MCPApproval struct {
 }
 
 func (service *MCPService) Approvals(ctx context.Context, user, friendly string) ([]MCPApproval, error) {
-	_, err := service.db.ExecContext(ctx, `UPDATE mcp_approvals SET state='cancelled' WHERE user_id=? AND state IN ('pending','approved','executing') AND NOT EXISTS(SELECT 1 FROM chat_runs r JOIN chat_sessions s ON s.id=r.session_id WHERE r.id=mcp_approvals.run_id AND r.status='running' AND r.invalidated=0 AND r.lease_token=mcp_approvals.lease_token AND r.lease_until>? AND r.revision=s.revision)`, user, time.Now().UnixMilli())
-	if err != nil {
-		return nil, err
-	}
-	_, err = service.db.ExecContext(ctx, `UPDATE mcp_approvals SET state='expired' WHERE user_id=? AND state IN ('pending','approved') AND expires_at<?`, user, time.Now().UnixMilli())
-	if err != nil {
-		return nil, err
-	}
-	rows, err := service.db.QueryContext(ctx, `SELECT a.id,a.run_id,a.server_id,a.server_name,a.tool_name,a.arguments_json,a.state,a.expires_at,a.progress_json FROM mcp_approvals a JOIN chat_runs r ON r.id=a.run_id JOIN chat_sessions s ON s.id=r.session_id WHERE a.user_id=? AND a.state IN ('pending','approved','executing') AND (?='' OR s.friendly_id=?) ORDER BY a.created_at`, user, friendly, friendly)
+	now := time.Now().UnixMilli()
+	rows, err := service.db.QueryContext(ctx, `SELECT a.id,a.run_id,a.server_id,a.server_name,a.tool_name,a.arguments_json,a.state,a.expires_at,a.progress_json FROM mcp_approvals a JOIN chat_runs r ON r.id=a.run_id JOIN chat_sessions s ON s.id=r.session_id WHERE a.user_id=? AND a.state IN ('pending','approved','executing') AND (a.state='executing' OR a.expires_at>?) AND r.user_id=a.user_id AND r.status='running' AND r.invalidated=0 AND r.lease_token=a.lease_token AND r.lease_until>? AND r.revision=s.revision AND (?='' OR s.friendly_id=?) ORDER BY a.created_at`, user, now, now, friendly, friendly)
 	if err != nil {
 		return nil, err
 	}

@@ -217,7 +217,7 @@ func TestMCPToolApprovalRunsInsideOneAssistantTurn(t *testing.T) {
 	}
 }
 func TestMCPPendingApprovalRevokedByDisableAndCancellation(t *testing.T) {
-	for _, mode := range []string{"disable", "delete", "cancel", "deny"} {
+	for _, mode := range []string{"disable", "delete", "cancel", "deny", "expire"} {
 		t.Run(mode, func(t *testing.T) {
 			app, user, session := runtimeFixture(t)
 			var executed atomic.Int32
@@ -251,8 +251,29 @@ func TestMCPPendingApprovalRevokedByDisableAndCancellation(t *testing.T) {
 				if err := app.app.mcp.Decide(context.Background(), user, approval.ID, "denied"); err != nil {
 					t.Fatal(err)
 				}
+			case "expire":
+				if _, err := app.app.db.Exec(`UPDATE mcp_approvals SET expires_at=0 WHERE id=?`, approval.ID); err != nil {
+					t.Fatal(err)
+				}
+				values, err := app.app.mcp.Approvals(context.Background(), user, session.FriendlyID)
+				if err != nil {
+					t.Fatal(err)
+				}
+				for _, value := range values {
+					if value.ID == approval.ID {
+						t.Fatal("expired approval remained visible")
+					}
+				}
+				var state string
+				if err := app.app.db.QueryRow(`SELECT state FROM mcp_approvals WHERE id=?`, approval.ID).Scan(&state); err != nil {
+					t.Fatal(err)
+				}
+				if state != "pending" {
+					t.Fatalf("approval state after read = %q, want pending", state)
+				}
+				_, _ = app.app.runtime.CancelRun(context.Background(), user, session.FriendlyID, run.RunID)
 			}
-			if mode == "cancel" {
+			if mode == "cancel" || mode == "expire" {
 				waitForRunStatus(t, app, run.RunID, "aborted")
 			} else if mode == "deny" {
 				waitForRunStatus(t, app, run.RunID, "completed")

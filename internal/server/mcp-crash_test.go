@@ -112,6 +112,13 @@ func TestMCPProcessCrashNeverReplaysUncertainEffect(t *testing.T) {
 	if err != nil || len(approvals) != 0 {
 		t.Fatalf("stale approval survived recovery: %v %v", approvals, err)
 	}
+	var approvalState string
+	if err := app.app.db.QueryRow(`SELECT state FROM mcp_approvals WHERE id=?`, approval.ID).Scan(&approvalState); err != nil {
+		t.Fatal(err)
+	}
+	if approvalState != "executing" {
+		t.Fatalf("stale approval state after read = %q, want executing", approvalState)
+	}
 	if err := app.app.mcp.Decide(context.Background(), user, approval.ID, "approved"); err == nil {
 		t.Fatal("crashed execution approval reused")
 	}
