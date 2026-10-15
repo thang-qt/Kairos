@@ -508,9 +508,7 @@ function updateTrayMenu(): void {
             setAutostart(
               item.checked,
               directory,
-              process.env.APPIMAGE ||
-                process.env.KAIROS_DESKTOP_LAUNCHER ||
-                (app.isPackaged ? process.execPath : undefined),
+              installedLauncher(),
               app.isPackaged ? 'kairos' : undefined,
             )
           } catch (error) {
@@ -539,7 +537,16 @@ function registerHotkey(): void {
     console.warn(`[Kairos] Hotkey ${config.hotkey}: registration failed`, error)
   }
   console.log(
-    '[Kairos] Hotkey fallback: desktop/scripts/kairos-desktop --toggle',
+    `[Kairos] Hotkey fallback: ${installedLauncher() ?? 'desktop/scripts/kairos-desktop'} --toggle`,
+  )
+}
+
+// The AppImage file, the Nix wrapper, or the packaged binary; undefined in a checkout.
+function installedLauncher(): string | undefined {
+  return (
+    process.env.APPIMAGE ||
+    process.env.KAIROS_DESKTOP_LAUNCHER ||
+    (app.isPackaged ? process.execPath : undefined)
   )
 }
 

@@ -1,227 +1,157 @@
-# Kairos desktop
+# Kairos for Linux
 
-See [Linux packaging and releases](packaging.md) for `.deb`, AppImage, tarball,
-Nix, and GitHub Actions instructions.
+A desktop app for your Kairos server. It lives in the tray, opens with a global
+hotkey, and ships the Kairos interface, so pages load instantly and keep working
+when the connection drops. It doesn't include a server: point it at the Kairos
+server you already run.
 
-Linux Electron 44.7.0 shell with one main window and a compact local title bar.
-The React frontend can be bundled; the backend always remains hosted. The page
-keeps the configured HTTP(S) origin and the default persistent Electron session.
+## Install
 
-```sh
-pnpm --dir desktop install
-pnpm --dir desktop build:web
-KAIROS_URL=https://your-kairos-host.example pnpm --dir desktop dev
-```
+Download the file for your machine (`x64` or `arm64`) from the
+[releases page](https://github.com/thang-qt/Kairos/releases).
 
-`dev` compiles with TypeScript and launches Electron. After building, use
-`pnpm --dir desktop start`. Sandboxed `.cts` preloads emit CommonJS; other files
-emit ES modules. Electron's dependency install script is explicitly allowed for
-pnpm versions that gate builds. Its download tooling requires Node 22.12+.
-
-The hotkey defaults to `Control+Alt+Space`. If the main window is visible and
-focused, the hotkey hides it to the tray. Otherwise it shows the window, restores
-it if minimized, and focuses the hosted content view for typing. A visible but
-unfocused window comes forward instead of hiding. Close also hides to the tray;
-Ctrl+Q or the tray's Quit exits. The tray's Open Kairos item displays the hotkey
-and always shows/focuses the window.
-
-Install the local desktop entry and icon before testing portal shortcuts:
+**Debian and Ubuntu**: install the `.deb`. It adds Kairos to your app menu and
+sets up the sandbox permissions Ubuntu 24.04 and later require.
 
 ```sh
-desktop/scripts/install-desktop-entry.sh
-desktop/scripts/kairos-desktop --toggle
+sudo apt install ./kairos-<version>-linux-x64.deb
 ```
 
-The installer writes `org.kairos.Kairos.desktop` under
-`$XDG_DATA_HOME/applications` (default `~/.local/share/applications`), using this
-checkout's absolute launcher path, and installs the icon in the hicolor theme.
-Its Show or hide Kairos desktop action runs `--toggle`. A second instance with
-`--toggle` toggles the running window; without arguments it opens/focuses it.
-Launching `--toggle` when no instance exists opens the main window. The launcher
-builds only when `dist/main.js` is missing; use `dev` after source edits. Re-run
-the installer to update an already-installed desktop action.
+**Other distributions**: use the `.AppImage`. Make it executable and run it:
 
-Settings live in `app.getPath('userData')/config.json` (normally
-`~/.config/Kairos/config.json`, respecting Electron's XDG config location):
+```sh
+chmod +x kairos-<version>-linux-x64.AppImage
+./kairos-<version>-linux-x64.AppImage
+```
+
+The `.tar.gz` is the same app as a plain folder. Extract it and run `kairos`,
+keeping the folder's contents together.
+
+**NixOS and Nix**:
+
+```sh
+nix run github:thang-qt/Kairos#desktop
+```
+
+To install it permanently, add
+`inputs.kairos.packages.${pkgs.system}.kairos-desktop` to
+`environment.systemPackages` or Home Manager's `home.packages`.
+
+To update, install the newer package the same way. Your settings and logins
+are kept.
+
+## First run
+
+Kairos asks for your server's address. Enter it (for example
+`kairos.example.com`) and choose **Continue**, then sign in.
+
+- Addresses use HTTPS unless you type `http://`.
+- Plain HTTP is only accepted for local network addresses such as `localhost`,
+  `192.168.x.x`, `10.x.x.x` or `*.local`.
+
+To switch servers later, use **Change** under the sign-in card, **Settings →
+Account → Server**, or **Change server…** in the tray menu. Each server keeps
+its own login.
+
+## Everyday use
+
+- **Control+Alt+Space** shows Kairos, or hides it if it's already in front.
+- Closing the window hides it to the tray; quit with **Ctrl+Q** or the tray's
+  **Quit**.
+- **Start at login** in the tray menu opens Kairos when you sign in. On Nix,
+  this needs Kairos installed in your system or user profile.
+
+On Wayland, your desktop may ask you to confirm the shortcut the first time. If
+it never works, bind a custom shortcut in your desktop settings to:
+
+```sh
+kairos --toggle
+```
+
+For an AppImage, use the AppImage's path instead of `kairos`.
+
+## Settings
+
+Settings are stored in `~/.config/Kairos/config.json`:
 
 ```json
 {
-  "url": "https://your-kairos-host.example",
-  "hotkey": "Control+Alt+Space",
-  "bundled": true
+  "url": "https://kairos.example.com",
+  "hotkey": "Control+Alt+Space"
 }
 ```
 
-URL priority is `KAIROS_URL`, then config `url`, then setup mode. There is no
-automatic localhost server. Settings are read at startup; restart after editing. Use the config URL for desktop and login
-launches, which do not inherit terminal-only environment variables. Start at
-login creates/removes `$XDG_CONFIG_HOME/autostart/org.kairos.Kairos.desktop`
-(default `~/.config/autostart`).
+`hotkey` uses
+[Electron's accelerator format](https://www.electronjs.org/docs/latest/api/accelerator).
+Restart Kairos after editing the file. Setting `"bundled": false` loads the
+interface from the server instead of the copy shipped with the app, which you
+may want if your server runs a newer Kairos than the app.
 
-First run without a configured URL opens Connect to Kairos. The bundled frontend
-runs at `https://setup.kairos.invalid/connect`. The reserved placeholder origin
-never goes to the network: its API replies are 503 JSON with
-`{"error":"no server configured"}`. The root route redirects every other setup
-route to Connect before child auth guards or `/api/me` requests. Connect itself
-uses no app API. If the bundle is missing, a local calm page says
-"Build the bundle or set KAIROS_URL." Setup uses the bundle even when `bundled`
-is explicitly false; after selecting a server, that setting controls normal mode.
+## Troubleshooting
 
-Enter a server address and Continue. Bare addresses default to HTTPS. Selection
-trims the input, keeps only the origin, and rejects URL credentials and unsupported
-schemes. HTTP is accepted only for localhost, 127/8, ::1, 10/8, 172.16/12,
-192.168/16, and `.local` hosts; the form warns that explicit HTTP is unencrypted.
-The capability probe uses Chromium `net.fetch` with protocol bypass, GET,
-a single 8-second abort timeout, and manual redirects. Same-origin redirects are
-allowed within a small bound; cross-origin redirects are rejected. Success requires
-200, JSON, and a `capabilities.auth` object. Invalid URL, insecure public HTTP,
-network/timeout, certificate, and non-Kairos errors get specific inline messages.
-Certificate verification remains enabled.
+- **Kairos won't start on Ubuntu 24.04+ (AppImage or `.tar.gz`)**: Ubuntu blocks
+  the sandbox Kairos needs unless an AppArmor profile allows it. Use the `.deb`,
+  which installs one.
+- **"Couldn't reach that address"**: check that the address opens in a browser
+  on this machine. Kairos doesn't bypass certificate errors.
+- **Something looks out of date after a server upgrade**: install the latest
+  desktop release, or set `"bundled": false`.
 
-On success the choice is saved atomically to config while preserving its other
-fields. If KAIROS_URL is set, the choice is saved for later but the environment
-server stays active for this session; the result reports `overriddenByEnv: true`.
-Login has a host/Change line below the card. Settings → Account has a Server row,
-including for servers with auth disabled. The tray's Change server… entry also
-opens Connect. Cancel returns to the current server's root.
+Uninstalling the app leaves your settings in `~/.config/Kairos`; delete that
+folder to remove them.
 
-All origin-sensitive operations read `server-state.ts`: protocol routing,
-navigation restrictions, permissions, content IPC, and theme sender validation.
-The set-server IPC is accepted only from the active content view's main frame
-at that current origin, then revalidated after probing. Switching clears only
-service-worker storage for the destination and installs/removes bundle handlers
-as needed. It replaces the content view with a new sandboxed view whose preload
-gets `--kairos-server=<origin>` and loads that origin's root. The old view lives
-until the replacement loads, allowing the IPC result to arrive before disposal.
-Cookies and IndexedDB stay scoped to each real origin in the default session;
-switching back preserves the earlier server's login and user cache. No backend,
-auth protocol, CORS, or streaming changes are made.
+## Development
 
-`build:web` runs the unchanged root Vite build into `internal/server/static/`
-and copies it to gitignored `desktop/app-dist/`. Bundled mode defaults to true
-when `app-dist/index.html` exists and false otherwise. Explicit `bundled: true`
-requires that file; `bundled: false` loads the remote frontend. Startup logs the
-mode. Rebuild the bundle after frontend changes. For Vite HMR, set
-`"bundled": false`, start the usual development servers, then run:
+Needs Node 22.12+ and pnpm 9.15.4. From the repository root:
 
 ```sh
-KAIROS_URL=http://localhost:3000 pnpm --dir desktop dev
+pnpm install
+pnpm --dir desktop install
+pnpm --dir desktop build:web   # bundle the frontend into desktop/app-dist
+pnpm --dir desktop dev         # compile and launch
 ```
 
-Bundled mode installs a default-session `protocol.handle('https', ...)`, also
-handling `http` when the configured URL is HTTP. Only the configured origin's
-frontend requests are served locally. `/api/` (and `/api`) and other origins use
-the original Request with
-`net.fetch(request, { bypassCustomProtocolHandlers: true })`; the Response is
-returned directly. Methods, headers, JSON, multipart uploads, cookies, and
-streaming bodies are not reconstructed or buffered by our handler. HttpOnly
-login cookies, fetch, and EventSource/SSE keep using the hosted backend.
+- `KAIROS_URL=<origin>` overrides the configured server for one launch.
+- For live frontend reloads, set `"bundled": false`, run `pnpm dev`, and launch
+  with `KAIROS_URL=http://localhost:3000`.
+- `desktop/scripts/install-desktop-entry.sh` registers this checkout in your app
+  menu, which Wayland needs before the global shortcut works.
+- On Ubuntu 24.04+, `desktop/scripts/kairos-electron.apparmor` allows the
+  development Electron binary to sandbox; edit its path first.
 
-This behavior is documented in Electron's pinned
-[protocol API](https://github.com/electron/electron/blob/v44.7.0/docs/api/protocol.md)
-and [net API](https://github.com/electron/electron/blob/v44.7.0/docs/api/net.md).
-The [protocol implementation](https://github.com/electron/electron/blob/v44.7.0/lib/browser/api/protocol.ts)
-carries upload bodies and response streams. Backend login, uploads, streamed chat,
-and EventSource reconnects still need manual Electron testing.
+Run `pnpm --dir desktop typecheck` and `pnpm --dir desktop test` before
+committing.
 
-The resolver decodes paths, rejects dot-dot segments, backslashes, NUL, invalid
-encoding, and escaping symlinks, then normalizes strictly inside the bundle.
-`/` maps to `index.html`. Missing paths get SPA fallback only for navigation
-requests (`mode=navigate` or `Accept: text/html`); missing assets return 404.
-Static responses have explicit MIME types and `Cache-Control: no-store`.
-
-Bundled startup clears service-worker registrations for the configured origin.
-`/sw.js`, `/registerSW.js`, and `/workbox-*.js` return 404, preventing the built
-PWA registration script from controlling the page; a registration 404 may appear
-in the console. Other storage and login cookies remain. Remote mode retains the
-site's normal service worker behavior. Bundled pages load offline and use the
-app's existing API error handling. Remote navigation failures show the local
-offline/retry page. Version skew is not handled: the bundled frontend must remain
-compatible with the deployed backend. No backend, packaging, or auto-update is
-bundled.
-
-The window uses `titleBarStyle: 'hidden'` without an overlay, with resizing and
-shadows enabled. Its own webContents loads `titlebar.html`: a 32px strip with
-icon, truncated page title, minimize, maximize/restore, and close. A child
-`WebContentsView` hosts the app at `(0, 32)` and the remaining client height.
-Resize, maximize/restore, and fullscreen transitions update its bounds. Hosted
-viewport-height layouts need no overrides; offline pages use that same view.
-Reload, zoom, and devtools target the content view. Child webContents are closed
-when the window is destroyed. Only the local title bar is a drag surface.
-
-The title follows `page-title-updated`. Focus and maximize state dim inactive
-chrome and switch the restore icon. The title bar's isolated preload exposes its
-three controls and a state subscription; main validates its own webContents,
-local file, and main frame for every IPC invocation. The hosted bridge exposes
-`{ platform: 'linux', isDesktop: true, server, setServer(url) }` and marks HTML
-as `data-desktop="main"`. Server is null in setup mode and synchronous on first
-render. `src/lib/shell.ts` is the frontend entry point for desktop capabilities:
-identity, window controls, server, and server-changing support. Sidebars use
-`providesIdentity` for their logo and collapse-button placement, and the Tailwind
-`desktop:` variant for top padding.
-
-Theme reporting reads seven allowlisted computed CSS properties on load,
-class/system-mode changes, and shell replacement, throttled to animation frames.
-Main validates the content view and configured origin, property names, strings
-under 100 characters, and conservative color syntax excluding braces, separators,
-and `url()`. The local renderer applies approved properties with `setProperty`.
-Default light/dark colors follow nativeTheme until the page reports.
-`data-shell-top="frame"` indicates an active desktop inset; otherwise it is
-`surface`. The top value is validated and the bar transitions between primary-100
-and surface over 200ms ease-out. Neutral hover is primary-200 on frame and
-primary-100 on surface. Startup fallback remains frame.
-
-Electron's [WebContentsView API](https://www.electronjs.org/docs/latest/api/web-contents-view)
-provides the composition. Its pinned
-[non-client hit testing](https://github.com/electron/electron/blob/v44.7.0/shell/browser/native_window.cc)
-and [child event dispatch](https://github.com/electron/electron/blob/v44.7.0/shell/browser/native_window_views.cc)
-check resize borders before children. No extra view inset is needed. Chromium's
-[Linux window event filter](https://github.com/chromium/chromium/blob/152.0.7977.130/ui/views/widget/desktop_aura/window_event_filter_linux.cc)
-handles caption double-clicks with the default maximize/restore action, respecting
-desktop settings; no JavaScript double-click handler is added.
-
-The [global shortcut docs](https://github.com/electron/electron/blob/v44.7.0/docs/api/global-shortcut.md)
-say the Wayland portal path is enabled by default. We also explicitly enable
-`GlobalShortcutsPortal`. The identity must match the installed desktop entry;
-KDE exposes bindings in System Settings. Registration logs alone do not prove
-activation. Bind a KDE shortcut to this checkout's `scripts/kairos-desktop --toggle`
-if the portal fails. Wayland controls focus and placement; verify both manually.
-
-Verification commands:
+### Packaging
 
 ```sh
-pnpm --dir desktop build
-pnpm --dir desktop typecheck
-pnpm --dir desktop test
-pnpm check
+pnpm --dir desktop package:linux --x64     # or --arm64 on an ARM64 machine
+pnpm --dir desktop package:dir             # unpacked app, for inspection
+nix build .#kairos-desktop
 ```
 
-Desktop tests use TypeScript plus Node's built-in `node --test`, without a new
-runner dependency or Electron import. Tests cover safe paths, SPA fallback,
-worker blocking, POST/uploads, unbuffered streaming, mutable-origin routing,
-setup API isolation, URL/scheme policy, probe shape, error mapping, and redirects.
-Frontend tests cover shell capabilities, Connect form/errors/warnings, and setup
-routing before API requests. GUI verification is left
-to the user. Ubuntu's required user-namespace AppArmor profile is in
-`scripts/kairos-electron.apparmor`; keep Chromium's sandbox enabled.
+Packages are written to `desktop/release/`. The `.deb`, AppImage and tarball
+come from Ubuntu builders (22.04 for x64, 24.04 for ARM64), so older
+distributions aren't supported.
 
-Manual KDE checks:
+When dependencies change:
 
-- With no config URL or KAIROS_URL, verify first-run Connect and no auth requests.
-  Check the missing-bundle message separately. Enter a real server and log in;
-  confirm the choice survives restart.
-- Change server from login, Account settings, and the tray, including a server
-  with auth disabled. Switch A → B → A: cookies and history should stay separate,
-  and A's login should be retained. Check Cancel and current host labels.
-- Test unreachable, wrong server, untrusted TLS, forbidden public HTTP, and local
-  HTTP. Check the warning before submit and disabled/progress state during the
-  probe. Check that an environment override still wins and the chosen config URL
-  is saved for a launch without that override.
-- Confirm bundled and remote modes, service-worker clearing, API uploads, streamed
-  chat, EventSource reconnects, offline behavior, and remote Vite HMR still work.
-- Test hotkey/--toggle while focused, unfocused, hidden, and minimized. Close hides;
-  tray reopening focuses the app; Ctrl+Q exits. Test the desktop action after
-  reinstalling the entry.
-- Check titlebar drag/double-click, all resize edges/corners, maximize/fullscreen,
-  scaling, restored bounds, title truncation, palette/mode sync, and frame/surface
-  transitions. Test desktop sidebar action-row placement and unchanged web logos.
+- **`desktop/pnpm-lock.yaml`**: update the `pnpmDeps` hash in
+  `nix/desktop.nix`. Set it to `lib.fakeHash`, build, and copy the reported
+  hash.
+- **Electron version**: update both archive hashes in
+  `desktop/electron-checksums.json` from the release's `SHASUMS256.txt`.
+- **Root `pnpm-lock.yaml`**: the frontend hash in `flake.nix` may need the same
+  treatment.
+
+### Releasing
+
+`.github/workflows/desktop-release.yml` builds and smoke-tests both
+architectures and the Nix package whenever the desktop app or frontend changes.
+To publish a release:
+
+1. Set `version` in `desktop/package.json` and commit.
+2. Tag that commit `desktop-v<version>` and push the tag. The workflow rejects
+   a tag that doesn't match the version.
+3. When the run passes, review the draft release it created, which includes
+   `SHA256SUMS`, and publish it.

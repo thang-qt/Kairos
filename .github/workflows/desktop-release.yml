@@ -1,10 +1,26 @@
 name: Desktop Linux
 
+# Path filters skip pushes and PRs that cannot change the packages. Tag pushes
+# ignore path filters, so release tags always build.
 on:
   push:
     branches: [main, desktop-electron]
     tags: ['desktop-v*']
+    paths: &package-paths
+      - desktop/**
+      - nix/**
+      - flake.nix
+      - flake.lock
+      - src/**
+      - public/**
+      - index.html
+      - package.json
+      - pnpm-lock.yaml
+      - vite.config.ts
+      - tsconfig.json
+      - .github/workflows/desktop-release.yml
   pull_request:
+    paths: *package-paths
   workflow_dispatch:
 
 permissions:
@@ -18,11 +34,9 @@ jobs:
   check:
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 9.15.4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: pnpm
@@ -31,7 +45,9 @@ jobs:
             desktop/pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
       - run: pnpm --dir desktop install --frozen-lockfile
-      - run: pnpm check
+      # ci.yml checks the frontend on pushes and PRs; tags only run here.
+      - if: startsWith(github.ref, 'refs/tags/')
+        run: pnpm check
       - run: pnpm --dir desktop typecheck
       - run: pnpm --dir desktop test
       - name: Validate release tag
@@ -52,11 +68,9 @@ jobs:
             arch: arm64
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 9.15.4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: pnpm
@@ -83,7 +97,7 @@ jobs:
             "${images[0]}" --appimage-extract >/dev/null
           )
           test -f desktop/release/squashfs-root/resources/app-dist/index.html
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: kairos-linux-${{ matrix.arch }}
           if-no-files-found: error
@@ -96,7 +110,7 @@ jobs:
     needs: check
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: cachix/install-nix-action@v31
       - run: nix build .#kairos-desktop --print-build-logs
       - run: nix flake check --no-build
@@ -108,7 +122,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           pattern: kairos-linux-*
           merge-multiple: true

@@ -19,12 +19,10 @@ test('desktop and autostart entries use the packaged launcher with safe quoting'
     assert.match(entry, /Icon=org.kairos.Kairos/)
     assert.match(desktopEntry(directory, '/tmp/100%/kairos'), /100%%/)
     assert.match(desktopEntry(directory), /scripts\/kairos-desktop/)
-    setAutostart(true, directory, '/nix/store/example/bin/kairos')
+    // Nix passes a bare name so autostart survives store garbage collection.
+    setAutostart(true, directory, 'kairos')
     const path = join(directory, 'autostart/org.kairos.Kairos.desktop')
-    assert.match(
-      readFileSync(path, 'utf8'),
-      /Exec="\/nix\/store\/example\/bin\/kairos"/,
-    )
+    assert.match(readFileSync(path, 'utf8'), /Exec="kairos"/)
     setAutostart(false, directory)
     assert.throws(
       function removed() {

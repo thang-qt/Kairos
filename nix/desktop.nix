@@ -17,7 +17,10 @@ let
       sha256 = checksums.${archive};
     };
     # Electron 44 ships SwiftShader without the separate libEGL/libGLES files.
+    # Fail loudly if a Nixpkgs update changes the text this rewrites.
     postFixup =
+      assert lib.assertMsg (lib.hasInfix "$out/libexec/electron/lib*GL*" old.postFixup)
+        "electron_42-bin postFixup changed; update the Electron override in nix/desktop.nix";
       builtins.replaceStrings
         [ "$out/libexec/electron/lib*GL*" ]
         [ "$out/libexec/electron/libvk_swiftshader.so" ]
@@ -45,7 +48,7 @@ pkgs.stdenvNoCC.mkDerivation (finalAttrs: {
 
   buildPhase = ''
     runHook preBuild
-    pnpm build
+    # The test script builds first.
     pnpm test
     runHook postBuild
   '';
@@ -54,9 +57,10 @@ pkgs.stdenvNoCC.mkDerivation (finalAttrs: {
     mkdir -p $out/share/kairos $out/share/applications $out/share/icons/hicolor/512x512/apps
     cp -r dist assets *.html *.css kairos.desktop package.json $out/share/kairos/
     cp -r ${frontend} $out/share/kairos/app-dist
+    # Autostart entries outlive this store path, so they launch `kairos` from PATH.
     makeWrapper ${electron}/bin/electron $out/bin/kairos \
       --add-flags "$out/share/kairos" \
-      --set KAIROS_DESKTOP_LAUNCHER "$out/bin/kairos"
+      --set KAIROS_DESKTOP_LAUNCHER kairos
     substitute kairos.desktop $out/share/applications/org.kairos.Kairos.desktop \
       --replace-fail '@LAUNCHER@' "$out/bin/kairos" \
       --replace-fail '@ICON@' 'org.kairos.Kairos'

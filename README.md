@@ -12,6 +12,12 @@ It is a lightweight open WebUI alternative for hosted models only: no local mode
 
 ![Theme settings](docs/screenshots/theme-settings.png)
 
+## Desktop app
+
+A Linux desktop app with a tray icon and a global hotkey is available from the
+[releases page](https://github.com/thang-qt/Kairos/releases). See
+[desktop/README.md](desktop/README.md) to install it.
+
 ## Development
 
 ```bash
