@@ -382,22 +382,20 @@ function ChatMessageListComponent({
   }
 
   const renderedMessages = useMemo(() => {
-    const flat = slicedMessages.map(
-      function renderFlatMessage(chatMessage, index) {
-        return renderMessage(chatMessage, index)
-      },
-    )
-
     if (!hasGroup) {
       return {
-        flat,
+        flat: slicedMessages.map(
+          function renderFlatMessage(chatMessage, index) {
+            return renderMessage(chatMessage, index)
+          },
+        ),
         beforeGroup: null,
         group: null,
       }
     }
 
     return {
-      flat,
+      flat: null,
       beforeGroup: slicedMessages
         .slice(0, groupStartIndex)
         .map(function renderLeadingMessage(chatMessage, index) {
