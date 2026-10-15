@@ -237,6 +237,9 @@ func (app *App) frontendRedirectTarget(request *http.Request) (string, bool) {
 	if strings.HasPrefix(request.URL.Path, "/api/") {
 		return "", false
 	}
+	if !isProtectedFrontendRoute(request.URL.Path) && !isGuestOnlyFrontendRoute(request.URL.Path) {
+		return "", false
+	}
 
 	user, err := app.auth.CurrentUser(request.Context(), app.sessionTokenFromRequest(request))
 	isAuthenticated := err == nil && user != nil

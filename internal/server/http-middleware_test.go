@@ -67,6 +67,17 @@ func TestFrontendHandlerDoesNotFallbackForMissingAssets(t *testing.T) {
 	}
 }
 
+func TestFrontendStaticPathsSkipAuthenticationLookup(t *testing.T) {
+	app := &App{config: Config{AuthEnabled: true}}
+	for _, pathname := range []string{"/manifest.json", "/assets/app-abc123.js", "/"} {
+		request := httptest.NewRequest(http.MethodGet, pathname, nil)
+		request.AddCookie(&http.Cookie{Name: "session", Value: "unavailable-db-token"})
+		if target, ok := app.frontendRedirectTarget(request); ok || target != "" {
+			t.Fatalf("frontendRedirectTarget(%q) = %q, %t, want no redirect", pathname, target, ok)
+		}
+	}
+}
+
 func TestEmbeddedFrontendIncludesUnderscoreAssets(t *testing.T) {
 	assetPaths, err := filepath.Glob("static/assets/_*.js")
 	if err != nil {
