@@ -23,6 +23,41 @@ const modelLabelById = new Map([
 ])
 
 describe('assistantPartRenderOrder', function () {
+  it('shows MCP response content instead of execution metadata', function () {
+    const result: ConversationTurn = {
+      role: 'toolResult',
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify({
+            content: [{ type: 'text', text: 'Earth diameter: 12,742 km' }],
+          }),
+        },
+      ],
+      details: {
+        mcpServer: 'WolframAlpha',
+        mcpTool: 'WolframAlpha',
+        approvalId: 'approval',
+        durationMs: 5476,
+      },
+    }
+    const tool = mapToolCallToToolPart(
+      {
+        type: 'toolCall',
+        id: 'call',
+        name: 'mcp_wolfram',
+        arguments: { query: 'diameter of Earth' },
+      },
+      result,
+    )
+    expect(tool.output).toEqual({
+      content: [{ type: 'text', text: 'Earth diameter: 12,742 km' }],
+    })
+    expect(tool.input).toEqual({ query: 'diameter of Earth' })
+    expect(mapStandaloneToolResultToToolPart(result).output).toEqual(
+      tool.output,
+    )
+  })
   it('keeps assistant content order from message parts', function () {
     const message: ConversationTurn = {
       role: 'assistant',

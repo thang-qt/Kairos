@@ -85,6 +85,9 @@ function toolCallOutput(
   assistantMessage?: ConversationTurn,
 ): Record<string, unknown> | undefined {
   const details = detailsRecord(resultMessage?.details)
+  if (details?.mcpServer && details?.mcpTool) {
+    return resultText ? parseToolResultText(resultText) : undefined
+  }
   const persistedResult = persistedToolResult(
     toolCall,
     resultMessage,
@@ -162,11 +165,15 @@ export function mapStandaloneToolResultToToolPart(
   const isError = Boolean(message.isError)
   const text = toolResultText(message)
   const output =
-    message.details && typeof message.details === 'object'
-      ? message.details
-      : text
-        ? { text }
+    message.details?.mcpServer && message.details?.mcpTool
+      ? text
+        ? parseToolResultText(text)
         : undefined
+      : message.details && typeof message.details === 'object'
+        ? message.details
+        : text
+          ? { text }
+          : undefined
 
   return {
     type:

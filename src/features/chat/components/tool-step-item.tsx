@@ -275,7 +275,11 @@ function SourceCard({ source }: { source: SearchSourceCard }) {
 
 function ToolDetails({ toolPart }: { toolPart: ToolPart }) {
   const [open, setOpen] = useState(false)
-  if (toolPart.compact || toolPart.type === 'math_eval') return null
+  if (
+    (toolPart.compact && !isMcpToolPart(toolPart)) ||
+    toolPart.type === 'math_eval'
+  )
+    return null
   if (toolPart.state === 'output-error') {
     return (
       <div className="text-pretty rounded-lg bg-surface p-2.5 text-xs text-primary-800 ring-1 ring-primary-200">
@@ -283,7 +287,9 @@ function ToolDetails({ toolPart }: { toolPart: ToolPart }) {
       </div>
     )
   }
-  const value = toolPart.output ?? toolPart.input
+  const value = isMcpToolPart(toolPart)
+    ? { input: toolPart.input, output: toolPart.output }
+    : (toolPart.output ?? toolPart.input)
   if (!value) return null
   return (
     <div className="space-y-1.5">
