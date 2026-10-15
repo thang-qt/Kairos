@@ -68,94 +68,147 @@ export async function buildBulkExport(
   const selected = selectExportSessions([...sessions.values()], selection)
   if (!selected.length)
     throw new Error('No conversations match your selection.')
-  const files: Record<string, Uint8Array> = {}
+  const archive = await createExportArchive(signal)
   const conversations: Array<{ key: string; title: string; file: string }> = []
   const exportedAt = new Date().toISOString()
   const extension =
     format === 'markdown' ? 'md' : format === 'text' ? 'txt' : 'json'
   const encoder = new TextEncoder()
-  for (const [index, session] of selected.entries()) {
-    signal.throwIfAborted()
-    onProgress(`Exporting conversations… ${index + 1} of ${selected.length}`)
-    const history = await backend.getConversationHistory({
-      sessionKey: session.key,
-      friendlyId: session.friendlyId,
-      signal,
-    })
-    signal.throwIfAborted()
-    const title =
-      session.label ||
-      session.title ||
-      session.derivedTitle ||
-      session.friendlyId
-    const file = `conversations/${String(index + 1).padStart(4, '0')}-${sanitizeFilename(title)}.${extension}`
-    conversations.push({ key: session.key, title, file })
-    let content: string
-    if (format === 'json')
-      content = JSON.stringify(
-        {
-          version: 1,
-          exportedAt,
-          ...session,
-          title,
-          messages: history.messages,
-        },
-        null,
-        2,
-      )
-    else {
-      const messages = history.messages.filter(function chatMessage(message) {
-        return message.role === 'user' || message.role === 'assistant'
+  try {
+    for (const [index, session] of selected.entries()) {
+      signal.throwIfAborted()
+      onProgress(`Exporting conversations… ${index + 1} of ${selected.length}`)
+      const history = await backend.getConversationHistory({
+        sessionKey: session.key,
+        friendlyId: session.friendlyId,
+        signal,
       })
-      content =
-        format === 'markdown'
-          ? toMarkdown(messages, title)
-          : toPlainText(messages, title)
+      signal.throwIfAborted()
+      const title =
+        session.label ||
+        session.title ||
+        session.derivedTitle ||
+        session.friendlyId
+      const file = `conversations/${String(index + 1).padStart(4, '0')}-${sanitizeFilename(title)}.${extension}`
+      conversations.push({ key: session.key, title, file })
+      let content: string
+      if (format === 'json')
+        content = JSON.stringify(
+          {
+            version: 1,
+            exportedAt,
+            ...session,
+            title,
+            messages: history.messages,
+          },
+          null,
+          2,
+        )
+      else {
+        const messages = history.messages.filter(function chatMessage(message) {
+          return message.role === 'user' || message.role === 'assistant'
+        })
+        content =
+          format === 'markdown'
+            ? toMarkdown(messages, title)
+            : toPlainText(messages, title)
+      }
+      archive.add(file, encoder.encode(content))
     }
-    files[file] = encoder.encode(content)
-  }
-  files['index.json'] = encoder.encode(
-    JSON.stringify({ version: 1, exportedAt, format, conversations }, null, 2),
-  )
-  signal.throwIfAborted()
-  onProgress('Compressing ZIP archive…')
-  return {
-    count: selected.length,
-    content: await createExportArchive(files, signal),
+    archive.add(
+      'index.json',
+      encoder.encode(
+        JSON.stringify(
+          { version: 1, exportedAt, format, conversations },
+          null,
+          2,
+        ),
+      ),
+    )
+    signal.throwIfAborted()
+    onProgress('Compressing ZIP archive…')
+    return {
+      count: selected.length,
+      content: await archive.finish(),
+    }
+  } catch (error) {
+    archive.cancel(error)
+    throw error
   }
 }
 
-export async function createExportArchive(
-  files: Record<string, Uint8Array>,
-  signal: AbortSignal,
-): Promise<Blob> {
+export async function createExportArchive(signal: AbortSignal) {
   signal.throwIfAborted()
-  const { zip } = await import('fflate')
+  const { AsyncZipDeflate, Zip } = await import('fflate')
   signal.throwIfAborted()
-  return new Promise(function compress(resolve, reject) {
-    let terminate = function terminatePending() {}
-    function abort() {
-      terminate()
-      reject(
-        signal.reason ?? new DOMException('Export cancelled.', 'AbortError'),
-      )
+  const chunks: Array<Uint8Array> = []
+  let rejectArchive: (error: unknown) => void = function ignoreRejection() {}
+  let resolveArchive: (archive: Blob) => void = function ignoreResolution() {}
+  let settled = false
+  let terminated = false
+  const completed = new Promise<Blob>(function waitForArchive(resolve, reject) {
+    resolveArchive = resolve
+    rejectArchive = reject
+  })
+  completed.catch(function avoidUnhandledArchiveFailure() {})
+  const zip = new Zip(function collect(error, chunk, final) {
+    if (error) {
+      finishWithError(error)
+      return
     }
-    signal.addEventListener('abort', abort, { once: true })
-    try {
-      terminate = zip(files, { level: 6 }, function complete(error, data) {
-        signal.removeEventListener('abort', abort)
-        if (signal.aborted) {
-          reject(
-            signal.reason ??
-              new DOMException('Export cancelled.', 'AbortError'),
-          )
-        } else if (error) reject(error)
-        else
-          resolve(new Blob([new Uint8Array(data)], { type: 'application/zip' }))
-      })
-    } catch (error) {
-      signal.removeEventListener('abort', abort)
-      reject(error)
+    if (chunk) chunks.push(chunk)
+    if (final) {
+      finishWithBlob()
     }
   })
+
+  function cleanup() {
+    signal.removeEventListener('abort', abort)
+  }
+
+  function finishWithError(error: unknown) {
+    if (settled) return
+    settled = true
+    cleanup()
+    rejectArchive(error)
+  }
+
+  function finishWithBlob() {
+    if (settled) return
+    settled = true
+    cleanup()
+    const parts = chunks.map(function blobPart(chunk) {
+      return new Uint8Array(chunk).buffer as ArrayBuffer
+    })
+    resolveArchive(new Blob(parts, { type: 'application/zip' }))
+  }
+
+  function abort() {
+    cancel(signal.reason ?? new DOMException('Export cancelled.', 'AbortError'))
+  }
+
+  function cancel(error: unknown) {
+    if (settled) return
+    terminated = true
+    zip.terminate()
+    finishWithError(error)
+  }
+
+  signal.addEventListener('abort', abort, { once: true })
+
+  return {
+    add(path: string, content: Uint8Array) {
+      signal.throwIfAborted()
+      if (terminated) throw new DOMException('Export cancelled.', 'AbortError')
+      const file = new AsyncZipDeflate(path, { level: 6 })
+      zip.add(file)
+      file.push(content, true)
+    },
+    finish() {
+      signal.throwIfAborted()
+      zip.end()
+      return completed
+    },
+    cancel,
+  }
 }
