@@ -5,6 +5,7 @@ import { AnimatePresence, motion } from 'motion/react'
 import type { ConversationTurn } from '../types'
 import { useChatSettingsStore } from '@/app/preferences/app-preferences'
 import { Button } from '@/components/ui/button'
+import { ScrollPanel } from '@/components/ui/scroll-area'
 import { ActivityPart, visibleActivityIndexes } from './activity-part'
 import { ElapsedTime } from './elapsed-time'
 import { projectConversationTurns } from './chat-message-list-utils'
@@ -156,23 +157,25 @@ function ActivityContent({
         </Button>
       </div>
       {target ? (
-        <ol className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
-          {stepIndexes.map(function renderStep(partIndex, order) {
-            const isLast = order === stepIndexes.length - 1
-            return (
-              <ActivityPart
-                key={`${partIndex}-${parts[partIndex].type}`}
-                part={parts[partIndex]}
-                index={partIndex}
-                message={target.message}
-                streaming={streaming && isLast}
-                isLast={isLast}
-                toolResultsByCallId={toolResultsByCallId}
-                mcpToolLabels={mcpToolLabels}
-              />
-            )
-          })}
-        </ol>
+        <ScrollPanel className="flex-1">
+          <ol className="px-4 py-4">
+            {stepIndexes.map(function renderStep(partIndex, order) {
+              const isLast = order === stepIndexes.length - 1
+              return (
+                <ActivityPart
+                  key={`${partIndex}-${parts[partIndex].type}`}
+                  part={parts[partIndex]}
+                  index={partIndex}
+                  message={target.message}
+                  streaming={streaming && isLast}
+                  isLast={isLast}
+                  toolResultsByCallId={toolResultsByCallId}
+                  mcpToolLabels={mcpToolLabels}
+                />
+              )
+            })}
+          </ol>
+        </ScrollPanel>
       ) : (
         <div className="flex flex-1 items-center justify-center px-6 text-center">
           <p className="text-pretty text-sm text-primary-500">

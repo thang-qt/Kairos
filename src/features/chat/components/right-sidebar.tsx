@@ -21,6 +21,7 @@ import type { ProviderModel } from '@/lib/app-api'
 import { Button } from '@/components/ui/button'
 import { ExportMenu } from '@/features/chat/export/export-menu'
 import { cn } from '@/lib/utils'
+import { ScrollPanel } from '@/components/ui/scroll-area'
 import {
   TooltipContent,
   TooltipProvider,
@@ -259,7 +260,7 @@ function SidebarBody({
   selectedModelId: string
 }) {
   return (
-    <div className="min-h-0 flex-1 overflow-y-auto px-1">
+    <ScrollPanel className="flex-1" viewportClassName="px-1">
       {activeTab === 'options' ? (
         <OptionsPanel
           activeSession={activeSession}
@@ -280,7 +281,7 @@ function SidebarBody({
           onChange={onModelSettingsChange}
         />
       ) : null}
-    </div>
+    </ScrollPanel>
   )
 }
 

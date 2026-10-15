@@ -18,6 +18,7 @@ import type { SettingsTab } from '../settings-screen'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { KairosIconBig } from '@/components/icons/kairos-icon-big'
 import { cn } from '@/lib/utils'
+import { ScrollPanel } from '@/components/ui/scroll-area'
 import { getShell } from '@/lib/shell'
 
 type SettingsSidebarProps = {
@@ -145,42 +146,42 @@ export function SettingsSidebar({
           {providesIdentity ? collapseToggle : null}
         </div>
 
-        <nav
-          aria-label="Settings"
-          className="flex-1 space-y-5 overflow-y-auto px-2 py-2"
-        >
-          {SETTINGS_GROUPS.map((group) => (
-            <div key={group.label} className="flex flex-col gap-px">
-              <div className="px-1.5 pb-1 text-xs text-primary-500">
-                {group.label}
+        <ScrollPanel className="flex-1">
+          <nav aria-label="Settings" className="space-y-5 px-2 py-2">
+            {SETTINGS_GROUPS.map((group) => (
+              <div key={group.label} className="flex flex-col gap-px">
+                <div className="px-1.5 pb-1 text-xs text-primary-500">
+                  {group.label}
+                </div>
+                {group.items.map((item) => {
+                  if (item.desktopOnly && !shell.canConfigureDesktop)
+                    return null
+                  const active = activeTab === item.id
+                  return (
+                    <button
+                      key={item.id}
+                      type="button"
+                      aria-current={active ? 'page' : undefined}
+                      onClick={() => onTabChange(item.id)}
+                      className={cn(
+                        'flex h-8 w-full items-center gap-2 rounded-lg pl-1.5 pr-2 text-left text-sm font-[450] text-primary-950 transition-colors duration-0 hover:bg-primary-200',
+                        active && 'bg-primary-200',
+                      )}
+                    >
+                      <HugeiconsIcon
+                        icon={item.icon}
+                        size={20}
+                        strokeWidth={1.5}
+                        className="min-w-5 text-primary-700"
+                      />
+                      <span className="truncate">{item.label}</span>
+                    </button>
+                  )
+                })}
               </div>
-              {group.items.map((item) => {
-                if (item.desktopOnly && !shell.canConfigureDesktop) return null
-                const active = activeTab === item.id
-                return (
-                  <button
-                    key={item.id}
-                    type="button"
-                    aria-current={active ? 'page' : undefined}
-                    onClick={() => onTabChange(item.id)}
-                    className={cn(
-                      'flex h-8 w-full items-center gap-2 rounded-lg pl-1.5 pr-2 text-left text-sm font-[450] text-primary-950 transition-colors duration-0 hover:bg-primary-200',
-                      active && 'bg-primary-200',
-                    )}
-                  >
-                    <HugeiconsIcon
-                      icon={item.icon}
-                      size={20}
-                      strokeWidth={1.5}
-                      className="min-w-5 text-primary-700"
-                    />
-                    <span className="truncate">{item.label}</span>
-                  </button>
-                )
-              })}
-            </div>
-          ))}
-        </nav>
+            ))}
+          </nav>
+        </ScrollPanel>
       </div>
     </aside>
   )

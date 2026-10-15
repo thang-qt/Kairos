@@ -80,7 +80,32 @@ function ScrollAreaCorner({ className, ...props }: ScrollAreaCornerProps) {
   )
 }
 
+// A vertical scroll region with the app's overlay scrollbar, for panels that
+// would otherwise use `overflow-y-auto`. `className` sizes the region;
+// `viewportClassName` styles the scrolling element (padding, list layout).
+function ScrollPanel({
+  className,
+  viewportClassName,
+  children,
+}: {
+  className?: string
+  viewportClassName?: string
+  children: React.ReactNode
+}) {
+  return (
+    <ScrollAreaRoot className={cn('min-h-0', className)}>
+      <ScrollAreaViewport className={viewportClassName}>
+        {children}
+      </ScrollAreaViewport>
+      <ScrollAreaScrollbar orientation="vertical">
+        <ScrollAreaThumb />
+      </ScrollAreaScrollbar>
+    </ScrollAreaRoot>
+  )
+}
+
 export {
+  ScrollPanel,
   ScrollAreaRoot,
   ScrollAreaViewport,
   ScrollAreaScrollbar,

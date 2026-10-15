@@ -17,6 +17,7 @@ import {
 import { AppShell } from '@/components/app-shell'
 import { GlobalShortcuts } from '@/components/global-shortcuts'
 import { Button } from '@/components/ui/button'
+import { ScrollPanel } from '@/components/ui/scroll-area'
 import { getShell } from '@/lib/shell'
 import { useAppMobile } from '@/app/layout/use-app-mobile'
 import {
@@ -168,11 +169,14 @@ export function SettingsScreen({
       }
     >
       <GlobalShortcuts onToggleSidebar={handleToggleSidebarCollapse} />
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-16 pt-16 sm:px-8">
+      <ScrollPanel
+        className="flex-1"
+        viewportClassName="px-4 pb-16 pt-16 sm:px-8"
+      >
         <div className="mx-auto w-full max-w-3xl">
           {renderTabPanel(activeTab, onTabChange)}
         </div>
-      </div>
+      </ScrollPanel>
     </AppShell>
   )
 }
