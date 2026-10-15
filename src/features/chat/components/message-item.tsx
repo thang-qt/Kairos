@@ -1,4 +1,5 @@
 import { memo, useState } from 'react'
+import { AnimatePresence, motion } from 'motion/react'
 import {
   getTurnId,
   getMessageTimestamp,
@@ -8,6 +9,12 @@ import {
 import { MessageActionsBar } from './message-actions-bar'
 import { ActivityChip } from './activity-chip'
 import { latestActivityLabel } from './activity-part'
+import {
+  ACTIVITY_COLLAPSE_TRANSITION,
+  LiveActivity,
+  LiveActivityCollapse,
+} from './live-activity'
+import { TypingIndicator } from '@/components/prompt-kit/typing-indicator'
 import type { ConversationTurn } from '../types'
 import { Message, MessageContent } from '@/components/prompt-kit/message'
 import { Tool } from '@/components/prompt-kit/tool'
@@ -17,6 +24,8 @@ import { MessageItemEditor } from './message-item-editor'
 import {
   activityKeyFromMessage,
   isAssistantStreaming,
+  isAwaitingFirstOutput,
+  showsLiveActivity,
   splitAssistantActivity,
   mapStandaloneToolResultToToolPart,
   assistantPartRenderOrder,
@@ -86,6 +95,9 @@ function MessageItemComponent({
   const showToolMessages = useChatSettingsStore(
     (state) => state.settings.showToolMessages,
   )
+  const showLiveActivity = useChatSettingsStore(
+    (state) => state.settings.showLiveActivity,
+  )
   const role = message.role || 'assistant'
   const text = textFromMessage(message)
   const messageId = getTurnId(message) ?? ''
@@ -134,6 +146,7 @@ function MessageItemComponent({
     ? splitAssistantActivity(message, showReasoningBlocks, showToolMessages)
     : null
   const activityKey = activityKeyFromMessage(message)
+  const liveActivity = showsLiveActivity(message, activity, showLiveActivity)
 
   return (
     <div
@@ -211,31 +224,60 @@ function MessageItemComponent({
         </div>
       ) : null}
 
-      {activity && activity.activityIndexes.length > 0 ? (
-        <ActivityChip
-          streaming={assistantIsStreaming}
-          durationMs={activity.durationMs}
-          toolCount={activity.toolCount}
-          hasThinking={activity.hasThinking}
-          startedAt={message.timestamp}
-          latest={
-            assistantIsStreaming
-              ? latestActivityLabel(
-                  message,
-                  activity.activityIndexes,
-                  toolResultsByCallId,
-                  mcpToolLabels,
-                )
-              : undefined
-          }
-          selected={activitySelected}
-          onOpen={
-            onOpenActivity && activityKey
-              ? () => onOpenActivity(activityKey)
-              : undefined
-          }
-        />
+      {/* While live steps are in the chat they stand in for the chip; it
+          grows in as they fold away when the turn finishes. */}
+      <AnimatePresence initial={false}>
+        {activity && activity.activityIndexes.length > 0 && !liveActivity ? (
+          <motion.div
+            key="activity-chip"
+            className="w-full overflow-y-clip"
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            transition={ACTIVITY_COLLAPSE_TRANSITION}
+          >
+            <ActivityChip
+              streaming={assistantIsStreaming}
+              durationMs={activity.durationMs}
+              toolCount={activity.toolCount}
+              hasThinking={activity.hasThinking}
+              startedAt={message.timestamp}
+              latest={
+                assistantIsStreaming
+                  ? latestActivityLabel(
+                      message,
+                      activity.activityIndexes,
+                      toolResultsByCallId,
+                      mcpToolLabels,
+                    )
+                  : undefined
+              }
+              selected={activitySelected}
+              onOpen={
+                onOpenActivity && activityKey
+                  ? () => onOpenActivity(activityKey)
+                  : undefined
+              }
+            />
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
+
+      {isAwaitingFirstOutput(message, activity) ? (
+        <TypingIndicator className="py-1" />
       ) : null}
+
+      <AnimatePresence initial={false}>
+        {liveActivity && activity ? (
+          <LiveActivityCollapse key="live-activity">
+            <LiveActivity
+              message={message}
+              activityIndexes={activity.activityIndexes}
+              toolResultsByCallId={toolResultsByCallId}
+              mcpToolLabels={mcpToolLabels}
+            />
+          </LiveActivityCollapse>
+        ) : null}
+      </AnimatePresence>
 
       {activity
         ? assistantParts.map(function renderAnswerPart(part, index) {

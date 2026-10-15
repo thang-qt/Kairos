@@ -57,6 +57,8 @@ export type ChatSettings = {
   showToolMessages: boolean
   showReasoningBlocks: boolean
   reasoningCollapseMode: ReasoningCollapseMode
+  // Show a working turn's steps in the chat until its answer starts.
+  showLiveActivity: boolean
   showConversationNavigator: boolean
   showSidebarSectionCounts: boolean
   themeMode: ThemeMode
@@ -83,6 +85,7 @@ const DEFAULT_CHAT_SETTINGS: ChatSettings = {
   showToolMessages: true,
   showReasoningBlocks: true,
   reasoningCollapseMode: 'expanded-while-thinking',
+  showLiveActivity: false,
   showConversationNavigator: true,
   showSidebarSectionCounts: false,
   themeMode: 'system',
@@ -164,6 +167,10 @@ function normalizeChatSettings(value: unknown): ChatSettings {
       DEFAULT_CHAT_SETTINGS.showReasoningBlocks,
     ),
     reasoningCollapseMode,
+    showLiveActivity: booleanOrDefault(
+      record?.showLiveActivity,
+      DEFAULT_CHAT_SETTINGS.showLiveActivity,
+    ),
     showConversationNavigator: booleanOrDefault(
       record?.showConversationNavigator,
       DEFAULT_CHAT_SETTINGS.showConversationNavigator,

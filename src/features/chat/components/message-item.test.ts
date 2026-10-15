@@ -11,7 +11,9 @@ import {
 import {
   splitAssistantActivity,
   mapToolCallToToolPart,
+  showsLiveActivity,
 } from './message-item-utils'
+import { LiveActivity } from './live-activity'
 import { ActivitySidebar } from './activity-sidebar'
 import type { ConversationTurn } from '../types'
 
@@ -241,6 +243,86 @@ describe('MessageItem', function () {
     )
     expect(activityHtml).toContain('Calculating: 2 + 2')
     expect(activityHtml).toContain('Calculating: 3 + 3')
+  })
+
+  it('shows live activity in the chat until the turn completes', function () {
+    const working: ConversationTurn = {
+      role: 'assistant',
+      status: 'running',
+      content: [
+        { type: 'text', text: 'I will check that.' },
+        {
+          type: 'toolCall',
+          id: 'call-1',
+          name: 'math_eval',
+          arguments: { expr: '2 + 2' },
+        },
+      ],
+    }
+    const toolResultsByCallId = new Map<string, ConversationTurn>([
+      [
+        'call-1',
+        {
+          role: 'toolResult',
+          toolCallId: 'call-1',
+          toolName: 'math_eval',
+          content: [{ type: 'text', text: '4' }],
+        },
+      ],
+    ])
+    function shows(message: ConversationTurn, enabled = true) {
+      return showsLiveActivity(
+        message,
+        splitAssistantActivity(message, true, true),
+        enabled,
+      )
+    }
+
+    expect(shows(working)).toBe(true)
+    expect(shows(working, false)).toBe(false)
+    expect(shows({ ...working, status: 'completed' })).toBe(false)
+    // The steps stay while the answer streams below them.
+    expect(
+      shows({
+        ...working,
+        content: [
+          ...(working.content ?? []),
+          { type: 'text', text: 'The answer is 4.', phase: 'final_answer' },
+        ],
+      } as ConversationTurn),
+    ).toBe(true)
+
+    const html = renderToStaticMarkup(
+      React.createElement(LiveActivity, {
+        message: working,
+        activityIndexes: splitAssistantActivity(working, true, true)
+          .activityIndexes,
+        toolResultsByCallId,
+      }),
+    )
+    expect(html).toContain('I will check that.')
+    expect(html).toContain('Calculating: 2 + 2')
+  })
+
+  it('shows a generating indicator until the first output arrives', function () {
+    function render(message: ConversationTurn) {
+      return renderToStaticMarkup(
+        React.createElement(MessageItem, { message, modelLabelById }),
+      )
+    }
+    expect(
+      render({ role: 'assistant', status: 'running', content: [] }),
+    ).toContain('Generating')
+    expect(
+      render({
+        role: 'assistant',
+        status: 'running',
+        content: [{ type: 'text', text: 'Hello' }],
+      }),
+    ).not.toContain('Generating')
+    expect(
+      render({ role: 'assistant', status: 'completed', content: [] }),
+    ).not.toContain('Generating')
   })
 
   it('preserves user message line breaks in the rendered bubble', function () {

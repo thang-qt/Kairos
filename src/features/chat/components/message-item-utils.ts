@@ -279,6 +279,34 @@ export function splitAssistantActivity(
   }
 }
 
+// With live activity on, a working turn's steps stay in the chat, above its
+// streaming answer, until the turn completes; then only the chip remains.
+export function showsLiveActivity(
+  message: ConversationTurn,
+  activity: AssistantActivitySplit | null,
+  enabled: boolean,
+): boolean {
+  return (
+    enabled &&
+    activity !== null &&
+    activity.activityIndexes.length > 0 &&
+    isAssistantStreaming(message)
+  )
+}
+
+// A working turn with nothing to show yet: no steps and no answer text.
+export function isAwaitingFirstOutput(
+  message: ConversationTurn,
+  activity: AssistantActivitySplit | null,
+): boolean {
+  return (
+    activity !== null &&
+    activity.activityIndexes.length === 0 &&
+    activity.answerIndexes.size === 0 &&
+    isAssistantStreaming(message)
+  )
+}
+
 const ANSWER_HOLD_MAX_CHARS = 160
 
 function looksLikeAnswer(

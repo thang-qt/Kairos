@@ -134,6 +134,18 @@ export function AppearanceSettingsPanel() {
         description="Thinking and tool steps appear in the activity panel next to each response."
       >
         <SettingsRow
+          label="Live activity in chat"
+          description="Show steps in the conversation while a response works, then move them to the activity panel once it finishes."
+        >
+          <Switch
+            aria-label="Live activity in chat"
+            checked={settings.showLiveActivity}
+            onCheckedChange={(checked) =>
+              updateSettings({ showLiveActivity: checked })
+            }
+          />
+        </SettingsRow>
+        <SettingsRow
           label="Tool steps"
           description="Include tool calls and web searches."
         >
