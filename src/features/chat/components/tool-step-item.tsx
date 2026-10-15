@@ -9,6 +9,7 @@ import {
 } from '@hugeicons/core-free-icons'
 import type { ToolPart } from '@/components/prompt-kit/tool'
 import { TextShimmer } from '@/components/prompt-kit/text-shimmer'
+import { ScrollPanel } from '@/components/ui/scroll-area'
 import type { ConversationTurn, ToolCallContent } from '../types'
 import { mapToolCallToToolPart } from './message-item-utils'
 import { toolResultLookupKey } from './chat-message-list-utils'
@@ -43,7 +44,8 @@ const VISIBLE_SOURCE_CHIPS = 3
 export function ToolStepItem({ step }: { step: ToolStep }) {
   const running = isToolStepRunning(step)
   const title = toolStepTitle(step)
-  const meta = stepMeta(step)
+  const page = step.kind === 'web' ? singlePageSource(step) : null
+  const meta = page ? '' : stepMeta(step)
   return (
     <div className="min-w-0 space-y-1.5">
       <div className="text-pretty text-sm leading-6 text-primary-800">
@@ -62,7 +64,9 @@ export function ToolStepItem({ step }: { step: ToolStep }) {
           {meta}
         </div>
       ) : null}
-      {step.kind === 'web' ? (
+      {page ? (
+        <PageSource source={page} />
+      ) : step.kind === 'web' ? (
         <WebSources step={step} />
       ) : (
         <ToolDetails toolPart={step.toolPart} />
@@ -114,6 +118,55 @@ function isToolStepFailed(step: ToolStep) {
     )
   }
   return step.toolPart.state === 'output-error'
+}
+
+// A step that read one page. Its title already names the page, so the
+// source shows once, as the host linking to it, instead of as a chip too.
+function singlePageSource(step: Extract<ToolStep, { kind: 'web' }>) {
+  const events = webToolEventCardsFromMessage(step.message, step.toolCallIds)
+  if (events.length !== 1 || events[0].name !== 'web_fetch' || events[0].error)
+    return null
+  const sources = searchSourceCardsFromMessage(step.message, step.toolCallIds)
+  return sources.length === 1 ? sources[0] : null
+}
+
+function PageSource({ source }: { source: SearchSourceCard }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <div className="space-y-1.5">
+      <div className="flex min-w-0 items-center gap-1 text-xs">
+        <a
+          href={source.url}
+          target="_blank"
+          rel="noreferrer"
+          title={source.url}
+          className="truncate text-primary-500 transition-colors hover:text-primary-800 hover:underline"
+        >
+          {hostnameFromURL(source.url) ?? source.url}
+        </a>
+        {source.content ? (
+          <button
+            type="button"
+            onClick={() => setOpen((current) => !current)}
+            aria-expanded={open}
+            className="shrink-0 rounded-md px-1.5 py-0.5 text-primary-500 transition-colors hover:bg-primary-200 hover:text-primary-800"
+          >
+            {open ? 'Hide' : 'Details'}
+          </button>
+        ) : null}
+      </div>
+      {open && source.content ? (
+        <ScrollPanel
+          className="rounded-lg bg-surface ring-1 ring-primary-200"
+          viewportClassName="max-h-60"
+        >
+          <p className="whitespace-pre-line text-pretty p-2.5 text-xs leading-relaxed text-primary-700">
+            {pageExcerpt(source.content)}
+          </p>
+        </ScrollPanel>
+      ) : null}
+    </div>
+  )
 }
 
 function WebSources({ step }: { step: Extract<ToolStep, { kind: 'web' }> }) {
@@ -249,6 +302,15 @@ function ToolDetails({ toolPart }: { toolPart: ToolPart }) {
       ) : null}
     </div>
   )
+}
+
+// Enough of the page to skim in a scrolling box, keeping its paragraphs.
+function pageExcerpt(content: string) {
+  const normalized = content
+    .replace(/[ \t]+/g, ' ')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+  return normalized.length > 4000 ? `${normalized.slice(0, 4000)}…` : normalized
 }
 
 function truncateSourceContent(content: string) {
@@ -388,8 +450,11 @@ export function toolStepFromPart(
     ? (toolResultsByCallId?.get(toolResultLookupKey(message, part.id)) ??
       toolResultsByCallId?.get(part.id))
     : undefined
+  // The backend marks a call "running" while it executes; web calls stay on
+  // the web path then too, so they're held back until their results land.
+  // Other statuses (aborted, error) fall through to the generic tool step.
   return (part.name === 'web_search' || part.name === 'web_fetch') &&
-    part.status === undefined
+    (part.status === undefined || part.status === 'running')
     ? {
         kind: 'web',
         key: `web-tool-${part.id || index}`,
