@@ -317,7 +317,7 @@
             prePnpmInstall = ''
               rm -f .npmrc
             '';
-            hash = "sha256-ofWimVrM5VrMb1WmOjMGqDELP7mu/6VU43I4gH5xuxQ=";
+            hash = "sha256-BRMhqANV2ZNDNDR1i/2lLl82QtwxTgwYWBjjHU7umfM=";
           };
 
           postPatch = ''
@@ -342,7 +342,7 @@
           pname = "kairos";
           inherit version src;
 
-          vendorHash = "sha256-B//2WMj8J8MFooEs9jssZxHwGZm9LfNLUd2QZuXkAeQ=";
+          vendorHash = "sha256-DaMgsXldDXrIsebfuwkrrOXdsIkpNLbI+ZzBAmbfRLU=";
           subPackages = [ "./cmd/kairosd" ];
 
           preBuild = ''
