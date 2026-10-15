@@ -279,6 +279,7 @@ export function ChatScreen({
 
   const {
     activeRunIds,
+    adoptScope,
     beginGeneration,
     finishAllRuns,
     finishGeneration,
@@ -288,6 +289,17 @@ export function ChatScreen({
     startRun,
     waitingForResponse,
   } = useChatRuns({ refreshHistory, scopeKey: activeCanonicalKey })
+
+  const handleSessionCreated = useCallback(
+    function handleSessionCreated(payload: {
+      sessionKey: string
+      friendlyId: string
+    }) {
+      adoptScope(payload.sessionKey)
+      onSessionResolved?.(payload)
+    },
+    [adoptScope, onSessionResolved],
+  )
 
   const {
     restoreScrollTop,
@@ -323,7 +335,7 @@ export function ChatScreen({
     forcedSessionKey,
     resolvedSessionKey,
     activeSessionKey,
-    onSessionResolved,
+    onSessionResolved: onSessionResolved ? handleSessionCreated : undefined,
     resolvedConversationModel,
     resolvedSystemPrompt,
     resolvedWebSearch,

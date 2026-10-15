@@ -20,6 +20,7 @@ import { Message, MessageContent } from '@/components/prompt-kit/message'
 import { Tool } from '@/components/prompt-kit/tool'
 import { useChatSettingsStore } from '@/app/preferences/app-preferences'
 import { cn } from '@/lib/utils'
+import { MessageAttachmentImage } from './message-attachment-image'
 import { MessageItemEditor } from './message-item-editor'
 import {
   activityKeyFromMessage,
@@ -177,15 +178,10 @@ function MessageItemComponent({
           )}
         >
           {images.map((img, idx) => (
-            <img
+            <MessageAttachmentImage
               key={idx}
-              src={
-                img.source.type === 'asset'
-                  ? `/api/assets/${encodeURIComponent(img.source.assetId)}`
-                  : `data:${img.source.media_type};base64,${img.source.data}`
-              }
+              source={img.source}
               alt={`Attachment ${idx + 1}`}
-              className="max-w-[300px] max-h-[300px] rounded-lg object-cover"
             />
           ))}
         </div>

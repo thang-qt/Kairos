@@ -22,10 +22,16 @@ export function useChatRuns({
   const completedRunIdsRef = useRef(new Set<string>())
   const pendingRunTimersRef = useRef(new Map<string, number>())
   const scopeKeyRef = useRef(scopeKey)
+  const promotedScopeRef = useRef<string | null>(null)
 
   const beginGeneration = useCallback(function beginGeneration() {
     setPendingGeneration(true)
     setWaitingForResponse(true)
+  }, [])
+
+  // Promote the draft to its saved identity without cancelling its active run.
+  const adoptScope = useCallback(function adoptScope(nextScopeKey: string) {
+    promotedScopeRef.current = nextScopeKey
   }, [])
 
   const finishGeneration = useCallback(function finishGeneration() {
@@ -120,7 +126,8 @@ export function useChatRuns({
   useEffect(() => {
     if (scopeKeyRef.current !== scopeKey) {
       scopeKeyRef.current = scopeKey
-      finishAllRuns()
+      if (promotedScopeRef.current !== scopeKey) finishAllRuns()
+      promotedScopeRef.current = null
     }
   }, [finishAllRuns, scopeKey])
 
@@ -138,6 +145,7 @@ export function useChatRuns({
 
   return {
     activeRunIds,
+    adoptScope,
     beginGeneration,
     finishAllRuns,
     finishGeneration,

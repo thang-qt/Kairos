@@ -481,6 +481,7 @@ export function useChatMutations({
               'new',
               friendlyId,
               sessionKey,
+              true,
             )
             acceptConversationCommand(
               queryClient,
@@ -508,10 +509,16 @@ export function useChatMutations({
               onSessionResolved({ sessionKey, friendlyId })
               return
             }
-            navigate({
+            void navigate({
               to: '/chat/$sessionKey',
               params: { sessionKey: friendlyId },
               replace: true,
+            }).then(function releaseDraftHistory() {
+              queryClient.removeQueries({
+                queryKey: chatQueryKeys.history('new', 'new'),
+                exact: true,
+                type: 'inactive',
+              })
             })
           })
           .catch(() => {

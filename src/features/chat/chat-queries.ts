@@ -213,6 +213,7 @@ export function moveHistoryMessages(
   fromSessionKey: string,
   toFriendlyId: string,
   toSessionKey: string,
+  preserveSource = false,
 ) {
   const fromKey = chatQueryKeys.history(fromFriendlyId, fromSessionKey)
   const toKey = chatQueryKeys.history(toFriendlyId, toSessionKey)
@@ -224,7 +225,8 @@ export function moveHistoryMessages(
     sessionId: fromData.sessionId,
     messages,
   })
-  queryClient.removeQueries({ queryKey: fromKey, exact: true })
+  if (!preserveSource)
+    queryClient.removeQueries({ queryKey: fromKey, exact: true })
 }
 
 export function updateSessionLastMessage(

@@ -114,7 +114,12 @@ function ChatMessageListComponent({
   )
 
   function getMessageKey(message: ConversationTurn, index: number): string {
-    return message.__optimisticId || getTurnId(message) || String(index)
+    return (
+      (typeof message.clientId === 'string' && message.clientId) ||
+      message.__optimisticId ||
+      getTurnId(message) ||
+      String(index)
+    )
   }
 
   function getOrCreateUserTurnRef(messageId: string) {

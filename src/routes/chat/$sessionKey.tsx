@@ -2,7 +2,7 @@ import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useCallback, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { ChatScreen } from '@/features/chat/chat-screen'
-import { moveHistoryMessages } from '@/features/chat/chat-queries'
+import { chatQueryKeys } from '@/features/chat/chat-queries'
 import { beginFreshNewChat } from '@/features/chat/conversation-settings'
 import { requireAuthenticatedUser } from '@/lib/route-auth'
 
@@ -50,22 +50,21 @@ function ChatRoute() {
       friendlyId: string
       sessionKey: string
     }) {
-      moveHistoryMessages(
-        queryClient,
-        'new',
-        'new',
-        payload.friendlyId,
-        payload.sessionKey,
-      )
       setForcedSession({
         friendlyId: payload.friendlyId,
         sessionKey: payload.sessionKey,
       })
-      navigate({
+      void navigate({
         to: '/chat/$sessionKey',
         params: { sessionKey: payload.friendlyId },
         search: {},
         replace: true,
+      }).then(function releaseDraftHistory() {
+        queryClient.removeQueries({
+          queryKey: chatQueryKeys.history('new', 'new'),
+          exact: true,
+          type: 'inactive',
+        })
       })
     },
     [navigate, queryClient],

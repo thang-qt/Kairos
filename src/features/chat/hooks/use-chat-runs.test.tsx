@@ -52,3 +52,24 @@ describe('useChatRuns active run lifecycle', function () {
     expect(result.current.waitingForResponse).toBe(true)
   })
 })
+
+it('preserves the active generation when a new draft becomes a saved chat', function () {
+  const refreshHistory = vi.fn()
+  const { result, rerender } = renderHook(
+    ({ scopeKey }) => useChatRuns({ refreshHistory, scopeKey }),
+    { initialProps: { scopeKey: 'new' } },
+  )
+  act(function createConversation() {
+    result.current.startRun('first-run')
+    result.current.adoptScope('saved-session')
+  })
+  // The route can render the draft again while authentication/navigation waits.
+  rerender({ scopeKey: 'new' })
+  expect(result.current.waitingForResponse).toBe(true)
+  rerender({ scopeKey: 'saved-session' })
+  expect(result.current.activeRunIds.has('first-run')).toBe(true)
+  expect(result.current.waitingForResponse).toBe(true)
+  rerender({ scopeKey: 'another-session' })
+  expect(result.current.activeRunIds.size).toBe(0)
+  expect(result.current.waitingForResponse).toBe(false)
+})
