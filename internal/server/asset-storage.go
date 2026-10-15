@@ -3,15 +3,18 @@ package server
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 )
 
 type assetStorage interface {
@@ -109,9 +112,65 @@ func (store *s3AssetStorage) key(key string) string {
 	return store.prefix + "/" + key
 }
 
-func (store *s3AssetStorage) Put(ctx context.Context, key, mime string, data []byte) error {
-	_, err := store.client.PutObject(ctx, &s3.PutObjectInput{Bucket: aws.String(store.bucket), Key: aws.String(store.key(key)), ContentType: aws.String(mime), Body: bytes.NewReader(data)})
-	return err
+const s3UploadPartSize = 5 * 1024 * 1024
+
+func (store *s3AssetStorage) Put(ctx context.Context, key, mime string, data []byte) (err error) {
+	bucket, objectKey := aws.String(store.bucket), aws.String(store.key(key))
+	if len(data) <= s3UploadPartSize {
+		_, err = store.client.PutObject(ctx, &s3.PutObjectInput{Bucket: bucket, Key: objectKey, ContentType: aws.String(mime), Body: bytes.NewReader(data)})
+		return err
+	}
+	created, err := store.client.CreateMultipartUpload(ctx, &s3.CreateMultipartUploadInput{
+		Bucket: bucket, Key: objectKey, ContentType: aws.String(mime),
+	})
+	if err != nil {
+		return fmt.Errorf("start multipart upload: %w", err)
+	}
+	if aws.ToString(created.UploadId) == "" {
+		return fmt.Errorf("start multipart upload: missing upload ID")
+	}
+	defer func() {
+		if err == nil {
+			return
+		}
+		// Cancellation must not prevent cleanup of already uploaded parts.
+		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 15*time.Second)
+		defer cancel()
+		_, cleanupErr := store.client.AbortMultipartUpload(cleanupCtx, &s3.AbortMultipartUploadInput{
+			Bucket: bucket, Key: objectKey, UploadId: created.UploadId,
+		})
+		if cleanupErr != nil {
+			err = errors.Join(err, fmt.Errorf("abort multipart upload: %w", cleanupErr))
+		}
+	}()
+	parts := make([]types.CompletedPart, 0, (len(data)+s3UploadPartSize-1)/s3UploadPartSize)
+	for offset := 0; offset < len(data); offset += s3UploadPartSize {
+		number := int32(len(parts) + 1)
+		end := min(offset+s3UploadPartSize, len(data))
+		// A seekable reader lets the SDK retry just this part on transient errors.
+		part, uploadErr := store.client.UploadPart(ctx, &s3.UploadPartInput{
+			Bucket: bucket, Key: objectKey, UploadId: created.UploadId,
+			PartNumber: aws.Int32(number), Body: bytes.NewReader(data[offset:end]),
+		})
+		if uploadErr != nil {
+			return fmt.Errorf("upload part %d: %w", number, uploadErr)
+		}
+		if aws.ToString(part.ETag) == "" {
+			return fmt.Errorf("upload part %d: missing ETag", number)
+		}
+		parts = append(parts, types.CompletedPart{PartNumber: aws.Int32(number), ETag: part.ETag,
+			ChecksumCRC32: part.ChecksumCRC32, ChecksumCRC32C: part.ChecksumCRC32C,
+			ChecksumSHA1: part.ChecksumSHA1, ChecksumSHA256: part.ChecksumSHA256,
+			ChecksumCRC64NVME: part.ChecksumCRC64NVME})
+	}
+	_, err = store.client.CompleteMultipartUpload(ctx, &s3.CompleteMultipartUploadInput{
+		Bucket: bucket, Key: objectKey, UploadId: created.UploadId,
+		MultipartUpload: &types.CompletedMultipartUpload{Parts: parts},
+	})
+	if err != nil {
+		return fmt.Errorf("complete multipart upload: %w", err)
+	}
+	return nil
 }
 
 func (store *s3AssetStorage) Get(ctx context.Context, key string) (io.ReadCloser, error) {

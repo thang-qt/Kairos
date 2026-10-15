@@ -59,7 +59,13 @@ S3_PREFIX=kairos/assets
 
 The server uses the standard AWS credential chain, including `AWS_ACCESS_KEY_ID`
 and `AWS_SECRET_ACCESS_KEY`, shared AWS configuration, and IAM roles. Grant
-`s3:PutObject`, `s3:GetObject`, and `s3:DeleteObject` for the configured prefix.
+`s3:PutObject`, `s3:GetObject`, `s3:DeleteObject`, and `s3:AbortMultipartUpload`
+for the configured prefix. Assets larger than 5 MiB upload in 5 MiB parts, with
+per-part retries and cleanup on failure or cancellation. Smaller assets use a
+single PUT. Multipart uploads do not resume across server restarts; browser
+uploads still use a single request and images are decoded in memory before
+storage. A bucket lifecycle rule to abort incomplete multipart uploads can
+clean up parts left by a server crash.
 Kairos does not create buckets or make objects public. For an S3-compatible
 service, set `S3_ENDPOINT` and, if needed, `S3_FORCE_PATH_STYLE=true`.
 
