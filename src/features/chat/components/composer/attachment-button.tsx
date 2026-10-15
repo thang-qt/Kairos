@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useRef } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 import { HugeiconsIcon } from '@hugeicons/react'
 import { PlusSignIcon } from '@hugeicons/core-free-icons'
 
@@ -81,7 +81,7 @@ function isCanvasSupported(): boolean {
  * @returns Base64-encoded compressed image (without data URL prefix)
  * @throws Error if canvas is unavailable or image fails to load
  */
-async function compressImage(file: File): Promise<string> {
+async function compressImage(file: File, signal: AbortSignal): Promise<string> {
   if (!isCanvasSupported()) {
     throw new Error('Image compression not available in this browser')
   }
@@ -89,12 +89,37 @@ async function compressImage(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const img = new Image()
     const objectUrl = URL.createObjectURL(file)
+    let settled = false
 
-    const cleanup = () => {
+    function cleanup() {
+      signal.removeEventListener('abort', abort)
+      img.onload = null
+      img.onerror = null
       URL.revokeObjectURL(objectUrl)
     }
 
-    img.onload = () => {
+    function finishWithError(error: Error) {
+      if (settled) return
+      settled = true
+      cleanup()
+      reject(error)
+    }
+
+    function abort() {
+      finishWithError(
+        signal.reason instanceof Error
+          ? signal.reason
+          : new DOMException('Image processing cancelled.', 'AbortError'),
+      )
+    }
+
+    signal.addEventListener('abort', abort, { once: true })
+    if (signal.aborted) {
+      abort()
+      return
+    }
+
+    img.onload = async () => {
       try {
         // Calculate new dimensions maintaining aspect ratio
         let width = img.width
@@ -117,8 +142,7 @@ async function compressImage(file: File): Promise<string> {
 
         const ctx = canvas.getContext('2d')
         if (!ctx) {
-          cleanup()
-          reject(new Error('Failed to get canvas context'))
+          finishWithError(new Error('Failed to get canvas context'))
           return
         }
 
@@ -129,41 +153,137 @@ async function compressImage(file: File): Promise<string> {
           file.type === 'image/png' ? 'image/png' : 'image/jpeg'
         let quality = IMAGE_QUALITY
 
-        // Progressive quality reduction for JPEG
-        let dataUrl = canvas.toDataURL(outputType, quality)
+        let blob = await canvasToBlob(canvas, outputType, quality, signal)
 
         if (outputType === 'image/jpeg') {
-          const targetDataUrlSize = TARGET_IMAGE_SIZE * 1.37
-          while (dataUrl.length > targetDataUrlSize && quality > 0.3) {
+          while (blob.size > TARGET_IMAGE_SIZE && quality > 0.3) {
             quality -= 0.1
-            dataUrl = canvas.toDataURL(outputType, quality)
+            blob = await canvasToBlob(canvas, outputType, quality, signal)
           }
         }
 
-        // Extract base64 from data URL
+        const dataUrl = await blobToDataUrl(blob, signal)
         const base64 = dataUrl.split(',')[1]
         if (!base64) {
-          cleanup()
-          reject(new Error('Failed to encode image'))
+          finishWithError(new Error('Failed to encode image'))
           return
         }
 
+        if (signal.aborted) {
+          abort()
+          return
+        }
+        settled = true
         cleanup()
         resolve(base64)
       } catch (err) {
-        cleanup()
-        reject(
+        finishWithError(
           err instanceof Error ? err : new Error('Image compression failed'),
         )
       }
     }
 
     img.onerror = () => {
-      cleanup()
-      reject(new Error('Failed to load image'))
+      finishWithError(new Error('Failed to load image'))
     }
 
     img.src = objectUrl
+  })
+}
+
+function canvasToBlob(
+  canvas: HTMLCanvasElement,
+  mimeType: string,
+  quality: number,
+  signal: AbortSignal,
+): Promise<Blob> {
+  return new Promise((resolve, reject) => {
+    let settled = false
+
+    function cleanup() {
+      signal.removeEventListener('abort', abort)
+    }
+
+    function fail(error: Error) {
+      if (settled) return
+      settled = true
+      cleanup()
+      reject(error)
+    }
+
+    function abort() {
+      fail(
+        signal.reason instanceof Error
+          ? signal.reason
+          : new DOMException('Image processing cancelled.', 'AbortError'),
+      )
+    }
+
+    signal.addEventListener('abort', abort, { once: true })
+    if (signal.aborted) {
+      abort()
+      return
+    }
+    canvas.toBlob(
+      (blob) => {
+        if (settled) return
+        settled = true
+        cleanup()
+        if (signal.aborted)
+          reject(new DOMException('Image processing cancelled.', 'AbortError'))
+        else if (!blob) reject(new Error('Failed to encode image'))
+        else resolve(blob)
+      },
+      mimeType,
+      quality,
+    )
+  })
+}
+
+function blobToDataUrl(blob: Blob, signal: AbortSignal): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    let settled = false
+
+    function cleanup() {
+      signal.removeEventListener('abort', abort)
+      reader.onload = null
+      reader.onerror = null
+      reader.onabort = null
+    }
+
+    function fail(error: Error) {
+      if (settled) return
+      settled = true
+      cleanup()
+      reject(error)
+    }
+
+    function abort() {
+      reader.abort()
+      fail(
+        signal.reason instanceof Error
+          ? signal.reason
+          : new DOMException('Image processing cancelled.', 'AbortError'),
+      )
+    }
+
+    signal.addEventListener('abort', abort, { once: true })
+    if (signal.aborted) {
+      abort()
+      return
+    }
+    reader.onload = () => {
+      if (typeof reader.result === 'string') {
+        settled = true
+        cleanup()
+        resolve(reader.result)
+      } else fail(new Error('Failed to encode image'))
+    }
+    reader.onerror = () => fail(new Error('Failed to encode image'))
+    reader.onabort = () =>
+      fail(new DOMException('Image processing cancelled.', 'AbortError'))
+    reader.readAsDataURL(blob)
   })
 }
 
@@ -189,6 +309,11 @@ export function AttachmentButton({
   buttonProps,
 }: AttachmentButtonProps) {
   const inputRef = useRef<HTMLInputElement>(null)
+  const processingRef = useRef<AbortController | null>(null)
+
+  useEffect(() => {
+    return () => processingRef.current?.abort()
+  }, [])
 
   const handleClick = useCallback(() => {
     inputRef.current?.click()
@@ -201,6 +326,8 @@ export function AttachmentButton({
 
       // Reset input to allow selecting the same file again
       event.target.value = ''
+      processingRef.current?.abort()
+      processingRef.current = null
 
       const id = randomUUID()
 
@@ -231,8 +358,11 @@ export function AttachmentButton({
         return
       }
 
+      const controller = new AbortController()
+      processingRef.current = controller
       try {
-        const base64 = await compressImage(file)
+        const base64 = await compressImage(file, controller.signal)
+        if (controller.signal.aborted) return
         const preview = URL.createObjectURL(file)
 
         onFileSelect({
@@ -243,6 +373,7 @@ export function AttachmentButton({
           base64,
         })
       } catch (err) {
+        if (controller.signal.aborted) return
         onFileSelect({
           id,
           file,
@@ -251,6 +382,8 @@ export function AttachmentButton({
           base64: null,
           error: err instanceof Error ? err.message : 'Failed to process image',
         })
+      } finally {
+        if (processingRef.current === controller) processingRef.current = null
       }
     },
     [onFileSelect],
