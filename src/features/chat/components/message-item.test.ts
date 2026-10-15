@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import React from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import {
@@ -434,6 +434,32 @@ describe('areMessagesEqual render boundary', function () {
     const prevProps = { message, modelLabelById }
     const nextProps = { message, modelLabelById }
     expect(areMessagesEqual(prevProps, nextProps)).toBe(true)
+  })
+
+  it('skips deep message signatures for an unchanged turn but checks tool maps', function () {
+    const message: ConversationTurn = {
+      id: 'm1',
+      role: 'assistant',
+      content: [{ type: 'text', text: 'x'.repeat(10_000) }],
+    }
+    const modelLabelById = new Map()
+    const toolResultsByCallId = new Map()
+    const stringify = vi.spyOn(JSON, 'stringify')
+
+    expect(
+      areMessagesEqual(
+        { message, modelLabelById, toolResultsByCallId },
+        { message, modelLabelById, toolResultsByCallId },
+      ),
+    ).toBe(true)
+    expect(stringify).not.toHaveBeenCalled()
+    expect(
+      areMessagesEqual(
+        { message, modelLabelById, toolResultsByCallId },
+        { message, modelLabelById, toolResultsByCallId: new Map() },
+      ),
+    ).toBe(false)
+    stringify.mockRestore()
   })
 
   it('considers a changed target highlight as not equal', function () {

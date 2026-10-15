@@ -376,6 +376,16 @@ export function areMessagesEqual(
   if (prevProps.activitySelected !== nextProps.activitySelected) return false
   if (prevProps.onOpenActivity !== nextProps.onOpenActivity) return false
   if (prevProps.mcpToolLabels !== nextProps.mcpToolLabels) return false
+  if (prevProps.toolResultsByCallId !== nextProps.toolResultsByCallId) {
+    return false
+  }
+  if (prevProps.modelLabelById !== nextProps.modelLabelById) {
+    return false
+  }
+  // Stream events commonly replace the history array while keeping all
+  // unaffected turns immutable. Once every prop that affects this row has
+  // matched, retaining the same turn object is enough to skip deep checks.
+  if (prevProps.message === nextProps.message) return true
   if (
     (prevProps.message.role || 'assistant') !==
     (nextProps.message.role || 'assistant')
@@ -436,9 +446,6 @@ export function areMessagesEqual(
     getRawMessageTimestamp(prevProps.message) !==
     getRawMessageTimestamp(nextProps.message)
   ) {
-    return false
-  }
-  if (prevProps.modelLabelById !== nextProps.modelLabelById) {
     return false
   }
   if (
