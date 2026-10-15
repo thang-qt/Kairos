@@ -42,6 +42,10 @@ type ChatSidebarProps = {
   onActiveSessionDelete?: () => void
 }
 
+// Hidden hints take no space, and only appear when the row can fit them
+// beside the label, so a narrow sidebar never squeezes the label away.
+const rowHintClass = 'ms-auto hidden group-hover:@min-[13rem]:inline-flex'
+
 function ChatSidebarComponent({
   hasMoreSessions,
   loadingMoreSessions,
@@ -133,7 +137,7 @@ function ChatSidebarComponent({
             size="sm"
             onClick={onCreateSession}
             onMouseUp={onSelectSession}
-            className="group min-w-0 flex-1 pl-1.5 justify-start transition-colors duration-0"
+            className="group @container min-w-0 flex-1 pl-1.5 justify-start transition-colors duration-0"
           >
             <HugeiconsIcon
               icon={PencilEdit02Icon}
@@ -144,10 +148,7 @@ function ChatSidebarComponent({
             <span className="overflow-hidden whitespace-nowrap">
               New Session
             </span>
-            <ShortcutHint
-              id="newSession"
-              className="ms-auto opacity-0 group-hover:opacity-100"
-            />
+            <ShortcutHint id="newSession" className={rowHintClass} />
           </Button>
           {providesIdentity ? collapseToggle : null}
         </div>
@@ -157,7 +158,7 @@ function ChatSidebarComponent({
           onClick={function handleOpenSearch() {
             setSearchDialogOpen(true)
           }}
-          className="group w-full pl-1.5 justify-start transition-colors duration-0"
+          className="group @container w-full pl-1.5 justify-start transition-colors duration-0"
         >
           <HugeiconsIcon
             icon={Search01Icon}
@@ -168,10 +169,7 @@ function ChatSidebarComponent({
           <span className="overflow-hidden whitespace-nowrap">
             Search sessions
           </span>
-          <ShortcutHint
-            id="searchSessions"
-            className="ms-auto opacity-0 group-hover:opacity-100"
-          />
+          <ShortcutHint id="searchSessions" className={rowHintClass} />
         </Button>
       </div>
 
