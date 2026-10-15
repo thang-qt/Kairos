@@ -19,6 +19,7 @@ type assetService struct {
 	cleanupCancel context.CancelFunc
 	cleanupWG     sync.WaitGroup
 	cleanupOnce   sync.Once
+	importWrites  sync.RWMutex
 }
 
 type assetRecord struct {

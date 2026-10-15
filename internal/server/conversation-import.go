@@ -127,11 +127,11 @@ func (service *ConversationService) commitConversationImport(ctx context.Context
 }
 
 func (service *ConversationService) commitConversationImportWithProgress(ctx context.Context, userID string, adapter conversationImporter, report conversationImportReport, progress func(conversationImportReport)) conversationImportReport {
-	// Serializes concurrent imports and existing conversation commands. Each
-	// conversation and its deduplication marker commit together, making retry safe.
-	service.commandMu.Lock()
-	defer service.commandMu.Unlock()
 	err := adapter.Walk(ctx, inlineImportImageStore{}, func(conversation importConversation) error {
+		if service.assets != nil {
+			service.assets.importWrites.RLock()
+			defer service.assets.importWrites.RUnlock()
+		}
 		sourceID := conversation.SourceID
 		exists, err := service.importExists(ctx, userID, adapter.Source(), sourceID)
 		if err != nil || exists {
@@ -151,6 +151,13 @@ func (service *ConversationService) commitConversationImportWithProgress(ctx con
 			return err
 		}
 		defer tx.Rollback()
+		// A concurrent import may have committed while this one uploaded images.
+		if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM chat_imports WHERE user_id=? AND source=? AND source_id=?)`, userID, adapter.Source(), sourceID).Scan(&exists); err != nil {
+			return err
+		}
+		if exists {
+			return nil
+		}
 		sessionID := newID()
 		friendlyID := newFriendlyID()
 		now := time.Now().UnixMilli()

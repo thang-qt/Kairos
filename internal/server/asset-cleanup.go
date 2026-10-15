@@ -79,6 +79,11 @@ func (service *assetService) cleanupBatch(ctx context.Context, commandMu *sync.M
 }
 
 func (service *assetService) claimCleanup(ctx context.Context, commandMu *sync.Mutex) (*assetRecord, error) {
+	// Import uploads are protected separately so they never hold the command lock.
+	if !service.importWrites.TryLock() {
+		return nil, nil
+	}
+	defer service.importWrites.Unlock()
 	// Writers can temporarily own an asset before committing its message. Claim
 	// only between commands; never hold their lock while contacting object storage.
 	if !commandMu.TryLock() {
