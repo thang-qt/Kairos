@@ -63,7 +63,7 @@ func (service *AgentRuntime) Close() {
 		service.runMu.Unlock()
 		// Fence local workers before closing SQLite, including adapters slow to cancel.
 		ctx := context.Background()
-		tx, err := service.db.BeginTx(ctx, nil)
+		tx, err := service.beginEventTx(ctx, nil)
 		if err == nil {
 			for _, id := range ids {
 				requeued, updateErr := tx.ExecContext(ctx, `UPDATE chat_runs SET status='queued',lease_token='',lease_until=0 WHERE id=? AND status='preparing'`, id)
@@ -122,7 +122,7 @@ func (service *AgentRuntime) dispatchJobs(ctx context.Context) error {
 	now := time.Now().UnixMilli()
 	// Preparing has not crossed the execution boundary; reclaim it safely.
 	// Never replay uncertain model/tool execution automatically.
-	tx, err := service.db.BeginTx(ctx, nil)
+	tx, err := service.beginEventTx(ctx, nil)
 	if err != nil {
 		return err
 	}
@@ -233,7 +233,7 @@ func (service *AgentRuntime) guardRunExec(ctx context.Context, exec sqlExecutor,
 
 func (service *AgentRuntime) releaseUnstartedClaim(record executionRecord) {
 	ctx := context.Background()
-	tx, err := service.db.BeginTx(ctx, nil)
+	tx, err := service.beginEventTx(ctx, nil)
 	if err != nil {
 		return
 	}

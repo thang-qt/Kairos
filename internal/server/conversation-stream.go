@@ -29,6 +29,9 @@ func (service *AgentRuntime) StreamSessionFromCursor(
 		return err
 	}
 
+	// Subscribe before the snapshot so commits during loading cannot be missed.
+	changed, unsubscribe := service.conversations.notifications.subscribe(session.ID)
+	defer unsubscribe()
 	history, err := service.conversations.GetHistory(ctx, userID, friendlyID)
 	if err != nil {
 		return err
@@ -38,7 +41,7 @@ func (service *AgentRuntime) StreamSessionFromCursor(
 	}
 	afterCursor = maxInt64(afterCursor, history.Cursor)
 	log.Printf("kairos: stage=snapshot_delivery conversation=%s cursor=%d", session.ID, history.Cursor)
-	ticker := time.NewTicker(50 * time.Millisecond)
+	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
 	heartbeat := time.NewTicker(15 * time.Second)
 	defer heartbeat.Stop()
@@ -56,13 +59,23 @@ func (service *AgentRuntime) StreamSessionFromCursor(
 			}
 			afterCursor = event.Cursor
 		}
-		select {
-		case <-ctx.Done():
-			return nil
-		case <-ticker.C:
-		case <-heartbeat.C:
-			if err := onEvent(ConversationEvent{State: "heartbeat"}); err != nil {
-				return err
+		// Drain a full page before sleeping; one coalesced wake may cover many events.
+		if len(events) == 256 {
+			continue
+		}
+		waiting := true
+		for waiting {
+			select {
+			case <-ctx.Done():
+				return nil
+			case <-changed:
+				waiting = false
+			case <-ticker.C:
+				waiting = false
+			case <-heartbeat.C:
+				if err := onEvent(ConversationEvent{State: "heartbeat"}); err != nil {
+					return err
+				}
 			}
 		}
 	}

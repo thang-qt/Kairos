@@ -63,9 +63,10 @@ type HistoryPayload struct {
 }
 
 type ConversationService struct {
-	assets    *assetService
-	db        *sql.DB
-	commandMu sync.Mutex
+	assets        *assetService
+	db            *sql.DB
+	commandMu     sync.Mutex
+	notifications conversationNotifications
 }
 
 type sessionRecord struct {
@@ -416,7 +417,7 @@ func (service *ConversationService) DeleteUserMessageAtRevision(
 		return SessionSummary{}, fmt.Errorf("only user messages can be deleted")
 	}
 
-	tx, err := service.db.BeginTx(ctx, nil)
+	tx, err := service.beginEventTx(ctx, nil)
 	if err != nil {
 		return SessionSummary{}, err
 	}
@@ -544,7 +545,7 @@ func (service *ConversationService) appendMessagesWithOptions(
 	if len(messages) == 0 {
 		return sessionRecordToSummary(session)
 	}
-	transaction, err := service.db.BeginTx(ctx, nil)
+	transaction, err := service.beginEventTx(ctx, nil)
 	if err != nil {
 		return SessionSummary{}, fmt.Errorf("begin append messages tx: %w", err)
 	}
@@ -693,7 +694,7 @@ func (service *ConversationService) UpdateSessionTitleIfEmptyAtRevision(ctx cont
 	if title == "" {
 		return false, nil
 	}
-	tx, err := service.db.BeginTx(ctx, nil)
+	tx, err := service.beginEventTx(ctx, nil)
 	if err != nil {
 		return false, err
 	}
@@ -798,7 +799,7 @@ func (service *ConversationService) createClonedSession(
 		lastMessageJSON = nullableString(messageRecords[len(messageRecords)-1].MessageJSON)
 	}
 
-	transaction, err := service.db.BeginTx(ctx, nil)
+	transaction, err := service.beginEventTx(ctx, nil)
 	if err != nil {
 		return SessionSummary{}, fmt.Errorf("begin clone session tx: %w", err)
 	}

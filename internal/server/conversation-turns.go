@@ -120,6 +120,11 @@ func insertChatEventExec(ctx context.Context, exec sqlExecutor, event Conversati
 		return err
 	}
 	_, err = exec.ExecContext(ctx, `INSERT INTO chat_events(session_id,revision,event_json,created_at) VALUES(?,?,?,?)`, event.SessionKey, event.Revision, string(encoded), time.Now().UnixMilli())
+	if err == nil {
+		if tx, ok := exec.(*conversationTransaction); ok {
+			tx.recordEvent(event.SessionKey)
+		}
+	}
 	return err
 }
 
@@ -134,7 +139,7 @@ func checkpointStepExec(ctx context.Context, exec sqlExecutor, runID string, mes
 
 func (service *AgentRuntime) finishOwnedRun(record executionRecord, status string, runErr error) {
 	ctx := context.Background()
-	tx, err := service.db.BeginTx(ctx, nil)
+	tx, err := service.beginEventTx(ctx, nil)
 	if err != nil {
 		log.Printf("kairos: terminal tx: %v", err)
 		return
@@ -169,7 +174,7 @@ func (service *ConversationService) GetHistory(ctx context.Context, userID, frie
 	if err != nil {
 		return HistoryPayload{}, err
 	}
-	tx, err := service.db.BeginTx(ctx, nil)
+	tx, err := service.beginEventTx(ctx, nil)
 	if err != nil {
 		return HistoryPayload{}, err
 	}

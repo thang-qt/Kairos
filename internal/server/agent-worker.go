@@ -66,7 +66,7 @@ type persistedGenerationSink struct {
 }
 
 func (sink *persistedGenerationSink) ModelResolved(model ProviderModel) error {
-	tx, err := sink.service.db.BeginTx(context.Background(), nil)
+	tx, err := sink.service.beginEventTx(context.Background(), nil)
 	if err != nil {
 		return err
 	}
@@ -98,7 +98,7 @@ func (sink *persistedGenerationSink) ModelStarted() error {
 		return sink.service.workerContext.Err()
 	}
 	ctx := context.Background()
-	tx, err := sink.service.db.BeginTx(ctx, nil)
+	tx, err := sink.service.beginEventTx(ctx, nil)
 	if err != nil {
 		return err
 	}
@@ -128,7 +128,7 @@ func (sink *persistedGenerationSink) Delta(message map[string]any) error {
 	checkpointStarted := time.Now()
 	firstCheckpoint := sink.lastCheckpoint.IsZero()
 	ctx := context.Background()
-	tx, err := sink.service.db.BeginTx(ctx, nil)
+	tx, err := sink.service.beginEventTx(ctx, nil)
 	if err != nil {
 		return err
 	}
@@ -189,7 +189,7 @@ func (service *AgentRuntime) completeRunWithFinalMessage(ctx context.Context, re
 
 func (service *AgentRuntime) commitRunMessages(ctx context.Context, record executionRecord, session sessionRecord, messages []map[string]any, options appendMessageOptions, final bool, totalTokens int64) (SessionSummary, bool, error) {
 	checkpointStarted := time.Now()
-	tx, err := service.db.BeginTx(ctx, nil)
+	tx, err := service.beginEventTx(ctx, nil)
 	if err != nil {
 		return SessionSummary{}, false, err
 	}

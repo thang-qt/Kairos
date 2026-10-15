@@ -20,7 +20,7 @@ func (service *AgentRuntime) RetryRun(ctx context.Context, userID, friendlyID, r
 	if err != nil {
 		return SubmitTurnResult{}, err
 	}
-	tx, err := service.db.BeginTx(ctx, nil)
+	tx, err := service.beginEventTx(ctx, nil)
 	if err != nil {
 		return SubmitTurnResult{}, err
 	}

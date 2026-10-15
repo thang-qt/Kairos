@@ -236,7 +236,7 @@ func (service *AgentRuntime) StartRun(
 		AssistantTurnID: assistantTurnID,
 	}
 
-	transaction, err := service.db.BeginTx(ctx, nil)
+	transaction, err := service.beginEventTx(ctx, nil)
 	if err != nil {
 		return SubmitTurnResult{}, fmt.Errorf("begin run tx: %w", err)
 	}
@@ -407,7 +407,7 @@ func (service *AgentRuntime) cancelRuns(ctx context.Context, userID, friendlyID,
 		return false, err
 	}
 
-	tx, err := service.db.BeginTx(ctx, nil)
+	tx, err := service.beginEventTx(ctx, nil)
 	if err != nil {
 		return false, err
 	}
