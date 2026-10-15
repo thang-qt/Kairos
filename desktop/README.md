@@ -154,4 +154,4 @@ To publish a release:
 2. Tag that commit `desktop-v<version>` and push the tag. The workflow rejects
    a tag that doesn't match the version.
 3. When the run passes, review the draft release it created, which includes
-   `SHA256SUMS`, and publish it.
+   `SHA256SUMS`, and publish it. 0.x versions are marked as pre-releases.
