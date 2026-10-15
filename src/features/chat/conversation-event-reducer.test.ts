@@ -190,3 +190,19 @@ it('applies compact string and tool patches without duplicating content', functi
   expect(before[0].content?.[0]).toEqual({ type: 'text', text: 'Hello' })
   expect(applyConversationEvent(after, { ...event, revision: 0 })).toBe(after)
 })
+
+it('handles large histories without spreading every revision onto the call stack', function () {
+  const messages = Array.from({ length: 150_000 }, function makeTurn(_, index) {
+    return { id: `turn-${index}`, role: 'user', revision: index }
+  }) as Array<ConversationTurn>
+  const unchanged = messages[75_000]
+  const updated = applyConversationEvent(messages, {
+    revision: 150_001,
+    state: 'delta',
+    message: { id: 'turn-149999', role: 'assistant', revision: 150_001 },
+  })
+
+  expect(updated).toHaveLength(messages.length)
+  expect(updated[75_000]).toBe(unchanged)
+  expect(updated[149_999]?.role).toBe('assistant')
+})

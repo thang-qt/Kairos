@@ -224,3 +224,100 @@ it('keeps previous turns when another client appends a newer revision', function
   ).toEqual(['old-user', 'old-answer', 'new-user'])
   hook.unmount()
 })
+
+it('applies each event and its cursor in one history cache write', function () {
+  const client = new QueryClient()
+  const key = chatQueryKeys.history('friendly', 'session')
+  client.setQueryData<HistoryResponse>(key, {
+    sessionKey: 'session',
+    revision: 1,
+    cursor: 4,
+    messages: [{ id: 'turn', role: 'assistant', revision: 1 }],
+  })
+  const hook = mountStream(client, vi.fn())
+  const historyUpdates = vi.fn()
+  const unsubscribe = client.getQueryCache().subscribe(function observe(event) {
+    if (
+      event.query.queryHash ===
+      client.getQueryCache().find({ queryKey: key })?.queryHash
+    ) {
+      historyUpdates()
+    }
+  })
+
+  act(function receiveDelta() {
+    transport.receive?.({
+      state: 'delta',
+      sessionKey: 'session',
+      revision: 1,
+      cursor: 5,
+      turnId: 'turn',
+      runId: 'run',
+      turnPatch: [
+        { op: 'set', path: ['content'], value: [{ type: 'text', text: 'x' }] },
+      ],
+    })
+  })
+
+  expect(historyUpdates).toHaveBeenCalledTimes(1)
+  expect(client.getQueryData<HistoryResponse>(key)?.cursor).toBe(5)
+  unsubscribe()
+  hook.unmount()
+})
+
+it('throttles sidebar message syncs during a stream and syncs at completion', function () {
+  const client = new QueryClient()
+  const hook = mountStream(client, vi.fn())
+  const sessionsKey = client.getQueryCache().build(client, {
+    queryKey: chatQueryKeys.sessions,
+  }).queryHash
+  const sidebarUpdates = vi.fn()
+  const unsubscribe = client.getQueryCache().subscribe(function observe(event) {
+    if (event.query.queryHash === sessionsKey && event.type === 'updated') {
+      sidebarUpdates()
+    }
+  })
+
+  act(function acceptUserTurn() {
+    transport.receive?.({
+      state: 'user',
+      sessionKey: 'session',
+      revision: 1,
+      cursor: 1,
+      message: { id: 'turn', role: 'user', content: [] },
+    })
+  })
+  for (let cursor = 2; cursor <= 12; cursor += 1) {
+    act(function streamDelta() {
+      transport.receive?.({
+        state: 'delta',
+        sessionKey: 'session',
+        revision: 1,
+        cursor,
+        turnId: 'turn',
+        runId: 'run',
+        turnPatch: [
+          {
+            op: 'set',
+            path: ['content'],
+            value: [{ type: 'text', text: String(cursor) }],
+          },
+        ],
+      })
+    })
+  }
+
+  expect(sidebarUpdates).toHaveBeenCalledTimes(1)
+  act(function finishTurn() {
+    transport.receive?.({
+      state: 'final',
+      sessionKey: 'session',
+      revision: 1,
+      cursor: 13,
+      message: { id: 'turn', role: 'assistant', content: [] },
+    })
+  })
+  expect(sidebarUpdates).toHaveBeenCalledTimes(2)
+  unsubscribe()
+  hook.unmount()
+})

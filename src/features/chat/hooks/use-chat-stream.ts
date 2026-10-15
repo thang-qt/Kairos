@@ -2,18 +2,21 @@ import { useCallback, useEffect, useEffectEvent, useRef } from 'react'
 
 import {
   chatQueryKeys,
-  updateHistoryMessages,
   updateSessionLastMessage,
   upsertSessionSummary,
 } from '../chat-queries'
 import {
   turnFromConversationEvent,
   applyConversationEvent,
+  findConversationTurn,
 } from '../conversation-event-reducer'
 import type { QueryClient } from '@tanstack/react-query'
 import type { ConversationTurn, HistoryResponse } from '../types'
 import type { ConversationEvent } from '@/lib/chat-backend'
 import { getChatBackend } from '@/lib/chat-backend'
+
+const SIDEBAR_SYNC_INTERVAL_MS = 500
+const lastSidebarSyncBySession = new Map<string, number>()
 
 type UseChatStreamInput = {
   activeFriendlyId: string
@@ -68,40 +71,29 @@ export function useChatStream({
     )
       return
     if (payload.cursor && payload.cursor <= (cached?.cursor ?? 0)) return
-    if (
+    const hasNewRevision =
       payload.revision !== undefined &&
       payload.revision > (cached?.revision ?? -1)
-    ) {
-      queryClient.setQueryData<HistoryResponse>(
-        key,
-        function setRevision(previous) {
-          return {
-            ...previous,
-            sessionKey: previous?.sessionKey ?? sessionKeyForHistory,
-            messages:
-              payload.state === 'reconcile' && previous?.revision !== undefined
-                ? []
-                : (previous?.messages ?? []),
-            revision: payload.revision,
-          }
-        },
-      )
+    if (hasNewRevision) {
       refreshHistoryRef.current()
     }
     onChatEvent?.(payload)
 
     const payloadState = typeof payload.state === 'string' ? payload.state : ''
+    const payloadSessionKey =
+      typeof payload.sessionKey === 'string' ? payload.sessionKey : ''
+    const syncSidebar = shouldSyncSidebar(
+      `${activeFriendlyId}:${payloadSessionKey || sessionKeyForHistory}`,
+      payloadState,
+    )
 
     const authoritativeSession =
       payload.session && typeof payload.session === 'object'
         ? payload.session
         : null
-    if (authoritativeSession) {
+    if (authoritativeSession && syncSidebar) {
       upsertSessionSummary(queryClient, authoritativeSession)
     }
-
-    const payloadSessionKey =
-      typeof payload.sessionKey === 'string' ? payload.sessionKey : ''
     if (
       (!payload.message || typeof payload.message !== 'object') &&
       !payload.turnPatch?.length
@@ -112,21 +104,41 @@ export function useChatStream({
         payloadState === 'error' ||
         payloadState === 'aborted'
       ) {
-        updateHistoryMessages(
-          queryClient,
-          activeFriendlyId,
-          sessionKeyForHistory,
-          function reduceTerminalEvent(messages) {
-            return applyConversationEvent(messages, payload)
-          },
-        )
+        function applyTerminalEvent(previous: HistoryResponse | undefined) {
+          const previousMessages = previous?.messages ?? []
+          const messages =
+            payloadState === 'reconcile' &&
+            hasNewRevision &&
+            previous?.revision !== undefined
+              ? []
+              : previousMessages
+          return {
+            ...previous,
+            sessionKey: previous?.sessionKey ?? sessionKeyForHistory,
+            messages: applyConversationEvent(messages, payload),
+            revision: payload.revision ?? previous?.revision,
+            cursor: payload.cursor ?? previous?.cursor,
+          }
+        }
+        queryClient.setQueryData<HistoryResponse>(key, applyTerminalEvent)
         if (payloadSessionKey && payloadSessionKey !== sessionKeyForHistory) {
-          updateHistoryMessages(
-            queryClient,
-            activeFriendlyId,
-            payloadSessionKey,
-            function reduceMirroredTerminalEvent(messages) {
-              return applyConversationEvent(messages, payload)
+          queryClient.setQueryData<HistoryResponse>(
+            chatQueryKeys.history(activeFriendlyId, payloadSessionKey),
+            function reduceMirroredTerminalEvent(previous) {
+              const previousMessages = previous?.messages ?? []
+              const messages =
+                payloadState === 'reconcile' &&
+                hasNewRevision &&
+                previous?.revision !== undefined
+                  ? []
+                  : previousMessages
+              return {
+                ...previous,
+                sessionKey: previous?.sessionKey ?? payloadSessionKey,
+                messages: applyConversationEvent(messages, payload),
+                revision: payload.revision ?? previous?.revision,
+                cursor: payload.cursor ?? previous?.cursor,
+              }
             },
           )
         }
@@ -146,43 +158,61 @@ export function useChatStream({
 
     if (
       !payload.message &&
-      !cached?.messages.some(function target(turn) {
-        return turn.id === payload.turnId
-      })
+      !findConversationTurn(cached?.messages ?? [], payload.turnId)
     ) {
       refreshHistoryRef.current()
       return
     }
 
-    updateHistoryMessages(
-      queryClient,
-      activeFriendlyId,
-      sessionKeyForHistory,
-      function reduceEvent(messages) {
-        return applyConversationEvent(messages, payload)
+    let nextMessages = cached?.messages ?? []
+    queryClient.setQueryData<HistoryResponse>(
+      key,
+      function reduceEvent(previous) {
+        const previousMessages = previous?.messages ?? []
+        const messages =
+          payloadState === 'reconcile' &&
+          hasNewRevision &&
+          previous?.revision !== undefined
+            ? []
+            : previousMessages
+        nextMessages = applyConversationEvent(messages, payload)
+        return {
+          ...previous,
+          sessionKey: previous?.sessionKey ?? sessionKeyForHistory,
+          messages: nextMessages,
+          revision: payload.revision ?? previous?.revision,
+          cursor: payload.cursor ?? previous?.cursor,
+        }
       },
     )
 
     if (payloadSessionKey && payloadSessionKey !== sessionKeyForHistory) {
-      updateHistoryMessages(
-        queryClient,
-        activeFriendlyId,
-        payloadSessionKey,
-        function reduceMirroredEvent(messages) {
-          return applyConversationEvent(messages, payload)
+      queryClient.setQueryData<HistoryResponse>(
+        chatQueryKeys.history(activeFriendlyId, payloadSessionKey),
+        function reduceMirroredEvent(previous) {
+          const previousMessages = previous?.messages ?? []
+          const messages =
+            payloadState === 'reconcile' &&
+            hasNewRevision &&
+            previous?.revision !== undefined
+              ? []
+              : previousMessages
+          return {
+            ...previous,
+            sessionKey: previous?.sessionKey ?? payloadSessionKey,
+            messages: applyConversationEvent(messages, payload),
+            revision: payload.revision ?? previous?.revision,
+            cursor: payload.cursor ?? previous?.cursor,
+          }
         },
       )
     }
 
     const nextMessage = payload.message
       ? turnFromConversationEvent(payload)
-      : queryClient
-          .getQueryData<HistoryResponse>(key)
-          ?.messages.find(function target(turn) {
-            return turn.id === payload.turnId
-          })
+      : findConversationTurn(nextMessages, payload.turnId)
     if (!nextMessage) return
-    if (payloadSessionKey && !authoritativeSession) {
+    if (payloadSessionKey && !authoritativeSession && syncSidebar) {
       updateSessionLastMessage(
         queryClient,
         payloadSessionKey,
@@ -191,17 +221,6 @@ export function useChatStream({
       )
     }
 
-    queryClient.setQueryData<HistoryResponse>(
-      key,
-      function advanceCursor(previous) {
-        if (!previous) return previous
-        return {
-          ...previous,
-          revision: payload.revision ?? previous.revision,
-          cursor: payload.cursor ?? previous.cursor,
-        }
-      },
-    )
     if (isTerminalState(payloadState)) {
       refreshHistoryRef.current()
     }
@@ -248,4 +267,22 @@ export function useChatStream({
 
 function isTerminalState(state: string): boolean {
   return state === 'final' || state === 'error' || state === 'aborted'
+}
+
+function shouldSyncSidebar(sessionKey: string, state: string): boolean {
+  const now = Date.now()
+  const previousSync = lastSidebarSyncBySession.get(sessionKey) ?? 0
+  const boundary =
+    state === 'user' ||
+    state === 'final' ||
+    state === 'error' ||
+    state === 'aborted' ||
+    state === 'reconcile'
+  if (!boundary && now - previousSync < SIDEBAR_SYNC_INTERVAL_MS) return false
+  lastSidebarSyncBySession.set(sessionKey, now)
+  if (lastSidebarSyncBySession.size > 100) {
+    const oldest = lastSidebarSyncBySession.keys().next().value
+    if (oldest) lastSidebarSyncBySession.delete(oldest)
+  }
+  return true
 }

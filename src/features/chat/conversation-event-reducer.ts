@@ -5,6 +5,70 @@ import type {
   TurnPatchOperation,
 } from '@/lib/chat-backend'
 
+type TurnIndexes = {
+  maxRevision: number
+  byId?: Map<string, number>
+  byClientId?: Map<string, number>
+  changedIds?: Map<string, number | null>
+  changedClientIds?: Map<string, number | null>
+  parent?: TurnIndexes
+  depth: number
+}
+
+const turnIndexesByArray = new WeakMap<Array<ConversationTurn>, TurnIndexes>()
+const MAX_TURN_INDEX_DEPTH = 32
+
+function lookupTurnIndex(
+  indexes: TurnIndexes,
+  key: string,
+  identity: 'id' | 'clientId',
+): number | undefined {
+  let current: TurnIndexes | undefined = indexes
+  while (current) {
+    const changes =
+      identity === 'id' ? current.changedIds : current.changedClientIds
+    if (changes?.has(key)) return changes.get(key) ?? undefined
+    const base = identity === 'id' ? current.byId : current.byClientId
+    if (base) return base.get(key)
+    current = current.parent
+  }
+  return undefined
+}
+
+function indexesFor(messages: Array<ConversationTurn>): TurnIndexes {
+  const cached = turnIndexesByArray.get(messages)
+  if (cached) return cached
+  const indexes: TurnIndexes = {
+    maxRevision: -1,
+    byId: new Map(),
+    byClientId: new Map(),
+    depth: 0,
+  }
+  const byId = indexes.byId!
+  const byClientId = indexes.byClientId!
+  for (let index = 0; index < messages.length; index += 1) {
+    const turn = messages[index]
+    indexes.maxRevision = Math.max(indexes.maxRevision, turn.revision ?? -1)
+    if (typeof turn.id === 'string' && !byId.has(turn.id)) {
+      byId.set(turn.id, index)
+    }
+    if (typeof turn.clientId === 'string' && !byClientId.has(turn.clientId)) {
+      byClientId.set(turn.clientId, index)
+    }
+  }
+  turnIndexesByArray.set(messages, indexes)
+  return indexes
+}
+
+export function findConversationTurn(
+  messages: Array<ConversationTurn>,
+  id: string | undefined,
+): ConversationTurn | undefined {
+  if (!id) return undefined
+  const index = lookupTurnIndex(indexesFor(messages), id, 'id')
+  return typeof index === 'number' ? messages[index] : undefined
+}
+
 export function turnFromConversationEvent(
   event: ConversationEvent,
 ): ConversationTurn | null {
@@ -22,18 +86,14 @@ export function applyConversationEvent(
   messages: Array<ConversationTurn>,
   event: ConversationEvent,
 ): Array<ConversationTurn> {
-  const revision = Math.max(
-    -1,
-    ...messages.map(function currentRevision(turn) {
-      return turn.revision ?? -1
-    }),
-  )
+  const indexes = indexesFor(messages)
+  const revision = indexes.maxRevision
   if (event.revision !== undefined && event.revision < revision) return messages
   let turn = turnFromConversationEvent(event)
   if (event.turnPatch?.length && event.turnId) {
-    const previous = messages.find(function target(turn) {
-      return turn.id === event.turnId
-    })
+    const previousIndex = lookupTurnIndex(indexes, event.turnId, 'id')
+    const previous =
+      typeof previousIndex === 'number' ? messages[previousIndex] : undefined
     if (!previous) return messages
     const patched = applyTurnPatch(previous, event.turnPatch)
     if (!patched) return messages
@@ -44,16 +104,99 @@ export function applyConversationEvent(
     }
   }
   if (!turn) return messages
-  const index = messages.findIndex(function sameTurn(previous) {
-    return (
-      previous.id === turn.id ||
-      Boolean(turn.clientId && turn.clientId === previous.clientId)
-    )
-  })
-  if (index < 0) return [...messages, turn]
+  const idIndex =
+    typeof turn.id === 'string'
+      ? lookupTurnIndex(indexes, turn.id, 'id')
+      : undefined
+  const clientIndex =
+    typeof turn.clientId === 'string'
+      ? lookupTurnIndex(indexes, turn.clientId, 'clientId')
+      : undefined
+  const index =
+    typeof idIndex === 'number' && typeof clientIndex === 'number'
+      ? Math.min(idIndex, clientIndex)
+      : (idIndex ?? clientIndex ?? -1)
   const next = [...messages]
+  if (index < 0) {
+    next.push(turn)
+    indexUpdatedArray(next, indexes, undefined, turn, next.length - 1)
+    return next
+  }
+  const prior = messages[index]
   next[index] = turn
+  indexUpdatedArray(next, indexes, prior, turn, index)
   return next
+}
+
+function indexUpdatedArray(
+  next: Array<ConversationTurn>,
+  indexes: TurnIndexes,
+  prior: ConversationTurn | undefined,
+  turn: ConversationTurn,
+  turnIndex: number,
+) {
+  const maxRevision =
+    (prior?.revision ?? -1) >= indexes.maxRevision &&
+    (turn.revision ?? -1) < indexes.maxRevision
+      ? next.reduce(function findMaximum(maximum, candidate) {
+          return Math.max(maximum, candidate.revision ?? -1)
+        }, -1)
+      : Math.max(indexes.maxRevision, turn.revision ?? -1)
+  if (indexes.depth + 1 >= MAX_TURN_INDEX_DEPTH) {
+    const compacted = indexesForUncached(next, maxRevision)
+    turnIndexesByArray.set(next, compacted)
+    return
+  }
+  const changedIds = new Map<string, number | null>()
+  const changedClientIds = new Map<string, number | null>()
+  if (
+    typeof prior?.id === 'string' &&
+    lookupTurnIndex(indexes, prior.id, 'id') === turnIndex
+  ) {
+    changedIds.set(prior.id, null)
+  }
+  if (
+    typeof prior?.clientId === 'string' &&
+    lookupTurnIndex(indexes, prior.clientId, 'clientId') === turnIndex
+  ) {
+    changedClientIds.set(prior.clientId, null)
+  }
+  if (typeof turn.id === 'string') changedIds.set(turn.id, turnIndex)
+  if (typeof turn.clientId === 'string') {
+    changedClientIds.set(turn.clientId, turnIndex)
+  }
+  turnIndexesByArray.set(next, {
+    maxRevision,
+    changedIds,
+    changedClientIds,
+    parent: indexes,
+    depth: indexes.depth + 1,
+  })
+}
+
+function indexesForUncached(
+  messages: Array<ConversationTurn>,
+  maxRevision: number,
+): TurnIndexes {
+  const indexes: TurnIndexes = {
+    maxRevision,
+    byId: new Map(),
+    byClientId: new Map(),
+    depth: 0,
+  }
+  for (let index = 0; index < messages.length; index += 1) {
+    const turn = messages[index]
+    if (typeof turn.id === 'string' && !indexes.byId!.has(turn.id)) {
+      indexes.byId!.set(turn.id, index)
+    }
+    if (
+      typeof turn.clientId === 'string' &&
+      !indexes.byClientId!.has(turn.clientId)
+    ) {
+      indexes.byClientId!.set(turn.clientId, index)
+    }
+  }
+  return indexes
 }
 
 // Throwaway chats have one request-bound stream. A local transport abort freezes
