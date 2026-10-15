@@ -179,7 +179,11 @@ function MessageItemComponent({
           {images.map((img, idx) => (
             <img
               key={idx}
-              src={`data:${img.source.media_type};base64,${img.source.data}`}
+              src={
+                img.source.type === 'asset'
+                  ? `/api/assets/${encodeURIComponent(img.source.assetId)}`
+                  : `data:${img.source.media_type};base64,${img.source.data}`
+              }
               alt={`Attachment ${idx + 1}`}
               className="max-w-[300px] max-h-[300px] rounded-lg object-cover"
             />

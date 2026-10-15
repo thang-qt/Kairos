@@ -131,11 +131,21 @@ func (service *ConversationService) commitConversationImportWithProgress(ctx con
 	// conversation and its deduplication marker commit together, making retry safe.
 	service.commandMu.Lock()
 	defer service.commandMu.Unlock()
+	defer service.assets.cleanupUser(userID)
 	err := adapter.Walk(ctx, inlineImportImageStore{}, func(conversation importConversation) error {
 		sourceID := conversation.SourceID
 		exists, err := service.importExists(ctx, userID, adapter.Source(), sourceID)
 		if err != nil || exists {
 			return err
+		}
+		// Write objects before opening SQLite's single-connection transaction.
+		for index := range conversation.Messages {
+			message := &conversation.Messages[index]
+			mapped := map[string]any{"content": contentPartsToMaps(message.Content)}
+			if err := service.assets.storeMessage(ctx, userID, mapped); err != nil {
+				return err
+			}
+			message.Content = contentPartsFromAny(mapped["content"])
 		}
 		tx, err := service.db.BeginTx(ctx, nil)
 		if err != nil {

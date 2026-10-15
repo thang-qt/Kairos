@@ -472,8 +472,13 @@ export function thinkingFromMessage(msg: ConversationTurn): string | null {
 export function isRenderableImagePart(
   part: MessageContentPart,
 ): part is ImageContent {
+  if (part.type !== 'image' || !part.source) return false
+  if (part.source.type === 'asset') {
+    return (
+      typeof part.source.assetId === 'string' && part.source.assetId.length > 0
+    )
+  }
   return (
-    part.type === 'image' &&
     part.source.type === 'base64' &&
     typeof part.source.media_type === 'string' &&
     typeof part.source.data === 'string' &&

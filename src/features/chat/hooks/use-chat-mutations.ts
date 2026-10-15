@@ -1027,7 +1027,7 @@ function attachmentFilesFromMessage(
 ): Array<AttachmentFile> {
   if (!Array.isArray(message.content)) return []
   return message.content.flatMap(function mapAttachment(part) {
-    if (part.type !== 'image') return []
+    if (part.type !== 'image' || part.source.type !== 'base64') return []
     const mimeType = part.source?.media_type?.trim()
     const base64 = part.source?.data?.trim()
     if (!mimeType || !base64) return []

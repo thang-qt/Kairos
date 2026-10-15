@@ -43,6 +43,44 @@ Common settings:
 
 See [.env.example](.env.example) for the full list.
 
+## Image storage
+
+Images use inline base64 storage by default, preserving existing installations.
+Set `ASSET_STORAGE=local` to write new images under `ASSET_LOCAL_DIR` (default
+`./tmp/assets`), or use a private S3 bucket:
+
+```dotenv
+ASSET_STORAGE=s3
+S3_BUCKET=your-private-bucket
+S3_REGION=us-east-1
+S3_PREFIX=kairos/assets
+```
+
+The server uses the standard AWS credential chain, including `AWS_ACCESS_KEY_ID`
+and `AWS_SECRET_ACCESS_KEY`, shared AWS configuration, and IAM roles. Grant
+`s3:PutObject`, `s3:GetObject`, and `s3:DeleteObject` for the configured prefix.
+Kairos does not create buckets or make objects public. For an S3-compatible
+service, set `S3_ENDPOINT` and, if needed, `S3_FORCE_PATH_STYLE=true`.
+
+Chat attachments and imported images use the selected backend. Messages retain
+stable asset IDs; authenticated `/api/assets/{assetId}` requests serve images
+only to their owner. Provider requests resolve stored images to bytes on the
+server, so providers do not need access to the bucket. Throwaway chats keep new
+images inline and do not persist them to asset storage.
+
+Changing `ASSET_STORAGE` affects new images only. Existing inline images remain
+readable, and local and S3 readers can coexist. Keep the original local directory
+and S3 bucket, endpoint, and prefix configured while those assets are in use;
+changing these locations does not migrate existing objects. Back up SQLite and
+asset storage together. There is no bulk migration of existing inline images.
+
+Unused assets are collected after chat writes, imports, edits, and deletions;
+assets referenced by cloned conversations are retained. Failed object deletions
+are logged and retried on the next mutation for that user. After an interrupted
+upload, an object written before its metadata committed can remain orphaned and
+require storage-level reconciliation. Run a single Kairos server per database
+for asset cleanup coordination.
+
 ## Production Build
 
 ```bash

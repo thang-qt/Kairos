@@ -36,6 +36,7 @@ type chatMessageContentPart struct {
 }
 
 type chatMessageContentSource struct {
+	AssetID   string
 	Type      string
 	MediaType string
 	Data      string
@@ -149,6 +150,10 @@ func contentPartsToMaps(parts []chatMessageContentPart) []map[string]any {
 			if part.Source == nil {
 				continue
 			}
+			if part.Source.Type == "asset" && part.Source.AssetID != "" {
+				values = append(values, map[string]any{"type": "image", "source": map[string]any{"type": "asset", "media_type": part.Source.MediaType, "assetId": part.Source.AssetID}})
+				continue
+			}
 			mimeType := strings.TrimSpace(part.Source.MediaType)
 			data := strings.TrimSpace(part.Source.Data)
 			if strings.TrimSpace(part.Source.Type) != "base64" || mimeType == "" || data == "" {
@@ -228,6 +233,12 @@ func contentPartsFromMaps(items []map[string]any) []chatMessageContentPart {
 			}
 		case "image":
 			source, ok := item["source"].(map[string]any)
+			if ok && stringValueFromMap(source, "type") == "asset" {
+				if id := stringValueFromMap(source, "assetId"); id != "" {
+					parts = append(parts, newAssetContentPart(stringValueFromMap(source, "media_type"), id))
+				}
+				continue
+			}
 			if !ok || strings.TrimSpace(stringValueFromMap(source, "type")) != "base64" {
 				continue
 			}

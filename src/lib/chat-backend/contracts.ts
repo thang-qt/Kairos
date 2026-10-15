@@ -33,11 +33,9 @@ export type ThinkingContent = {
 
 export type ImageContent = {
   type: 'image'
-  source: {
-    type: 'base64'
-    media_type: string
-    data: string
-  }
+  source:
+    | { type: 'base64'; media_type: string; data: string }
+    | { type: 'asset'; media_type: string; assetId: string }
 }
 
 export type MessageContent =

@@ -8,6 +8,23 @@ Kairos is one Go process, one SQLite database and an embedded React frontend, wi
 
 `chat_messages` retains completed provider transcripts. `chat_run_steps` checkpoints individual steps. `chat_runs.turn_json` is the visible projection of those checkpoints. The projection and corresponding `chat_events` record commit in the same short transaction. Transactions never span network or tool execution. Historical run/round lineage is projected into the same turn shape; standalone legacy messages remain readable.
 
+Image content supports both legacy `{type: "base64", media_type, data}` sources
+and stored `{type: "asset", media_type, assetId}` sources. `chat_assets` records
+ownership, storage backend, object key, MIME type, and byte size. New uploads and
+imports use `ASSET_STORAGE` (`inline`, `local`, or `s3`); existing references keep
+their backend. Object writes finish before message transactions open. Accepted
+jobs use the persisted user message and do not duplicate attachment bytes in
+`chat_runs.request_json`.
+
+The browser loads stored images through authenticated `/api/assets/{assetId}`
+requests. Generation resolves owned asset IDs into base64 image parts before
+provider mapping. Ephemeral inputs never grant access to another user's assets.
+Edits retain image references, and clones share them. Cleanup runs under the
+conversation command mutex after transactions finish and deletes only assets
+with no remaining message references. Failed deletions remain available for a
+later cleanup attempt. See [image storage configuration](../README.md#image-storage)
+for deployment and backup requirements.
+
 ## Lifecycle and scheduling
 
 `queued → preparing → running → completed | error | aborted | interrupted`

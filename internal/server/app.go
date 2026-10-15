@@ -81,6 +81,12 @@ func NewApp(config Config) (*App, error) {
 		return nil, err
 	}
 	conversations := NewConversationService(db)
+	assets, err := newAssetService(config, db)
+	if err != nil {
+		db.Close()
+		return nil, err
+	}
+	conversations.assets = assets
 	providers := NewProviderService(db, config)
 	webTools := NewWebToolSettingsService(db, config)
 	mcp := NewMCPService(db, config)
@@ -137,6 +143,7 @@ func (app *App) Handler() http.Handler {
 		mux.HandleFunc(route, app.handleMCP)
 	}
 
+	mux.HandleFunc("GET /api/assets/{assetId}", app.handleGetAsset)
 	mux.HandleFunc("GET /api/health", app.handleHealth)
 	mux.HandleFunc("GET /api/app/capabilities", app.handleCapabilities)
 	mux.HandleFunc("POST /api/auth/signup", app.handleSignup)

@@ -68,8 +68,12 @@ func (service *AgentRuntime) executeGeneration(
 		input.Request.ClientTime,
 		input.Request.ClientTimeZone,
 	)
+	resolvedHistory, err := service.conversations.assets.resolveHistory(ctx, input.UserID, input.History)
+	if err != nil {
+		return err
+	}
 	providerMessages := buildProviderMessages(
-		input.History,
+		resolvedHistory,
 		effectiveSystemPrompt,
 	)
 	tools := buildRuntimeTools(

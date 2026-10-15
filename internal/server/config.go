@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -11,6 +12,13 @@ import (
 )
 
 type Config struct {
+	AssetStorage                  string
+	AssetLocalDir                 string
+	S3Bucket                      string
+	S3Region                      string
+	S3Endpoint                    string
+	S3Prefix                      string
+	S3ForcePathStyle              bool
 	AppEnv                        string
 	HTTPAddr                      string
 	DBPath                        string
@@ -54,6 +62,13 @@ func LoadConfig() (Config, error) {
 	}
 
 	config := Config{
+		AssetStorage:                  getEnv("ASSET_STORAGE", "inline"),
+		AssetLocalDir:                 getEnv("ASSET_LOCAL_DIR", "./tmp/assets"),
+		S3Bucket:                      strings.TrimSpace(os.Getenv("S3_BUCKET")),
+		S3Region:                      getEnv("S3_REGION", getEnv("AWS_REGION", "us-east-1")),
+		S3Endpoint:                    strings.TrimSpace(os.Getenv("S3_ENDPOINT")),
+		S3Prefix:                      getEnv("S3_PREFIX", "kairos/assets"),
+		S3ForcePathStyle:              getEnvBool("S3_FORCE_PATH_STYLE", false),
 		AppEnv:                        getEnv("APP_ENV", "development"),
 		HTTPAddr:                      getEnv("HTTP_ADDR", ":8080"),
 		DBPath:                        getEnv("KAIROS_DB_PATH", "./tmp/kairos.db"),
@@ -121,6 +136,9 @@ func LoadConfig() (Config, error) {
 		config.ProviderEncryptionSecretKey = "kairos-dev-provider-secret"
 	}
 
+	if err := validateAssetConfig(config); err != nil {
+		return Config{}, err
+	}
 	return config, nil
 }
 
@@ -182,4 +200,22 @@ func splitCSVEnv(key string) []string {
 
 func (config Config) ProviderEncryptionKey() [32]byte {
 	return sha256.Sum256([]byte(config.ProviderEncryptionSecretKey))
+}
+
+func validateAssetConfig(config Config) error {
+	switch config.AssetStorage {
+	case "", "inline", "local", "s3":
+	default:
+		return errors.New("ASSET_STORAGE must be inline, local, or s3")
+	}
+	if config.AssetStorage == "s3" && strings.TrimSpace(config.S3Bucket) == "" {
+		return errors.New("S3_BUCKET is required when ASSET_STORAGE is s3")
+	}
+	if config.S3Endpoint != "" {
+		endpoint, err := url.Parse(config.S3Endpoint)
+		if err != nil || endpoint.Host == "" || (endpoint.Scheme != "http" && endpoint.Scheme != "https") || endpoint.User != nil || endpoint.RawQuery != "" || endpoint.Fragment != "" {
+			return errors.New("S3_ENDPOINT must be an HTTP or HTTPS URL without credentials, query, or fragment")
+		}
+	}
+	return nil
 }

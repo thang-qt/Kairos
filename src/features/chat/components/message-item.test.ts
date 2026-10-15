@@ -214,6 +214,31 @@ describe('modelFromMessage', function () {
 })
 
 describe('MessageItem', function () {
+  it('renders stored assets through the authenticated API and keeps inline images', function () {
+    const message: ConversationTurn = {
+      role: 'user',
+      content: [
+        {
+          type: 'image',
+          source: {
+            type: 'asset',
+            media_type: 'image/png',
+            assetId: 'asset-id',
+          },
+        },
+        {
+          type: 'image',
+          source: { type: 'base64', media_type: 'image/png', data: 'abc' },
+        },
+      ],
+    }
+    const html = renderToStaticMarkup(
+      React.createElement(MessageItem, { message, modelLabelById }),
+    )
+    expect(html).toContain('src="/api/assets/asset-id"')
+    expect(html).toContain('src="data:image/png;base64,abc"')
+  })
+
   it('moves active tool work into the activity sidebar', function () {
     const message: ConversationTurn = {
       role: 'assistant',

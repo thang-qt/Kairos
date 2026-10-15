@@ -141,6 +141,7 @@ func (service *AgentRuntime) StartRun(
 	acceptanceStarted := time.Now()
 	service.conversations.commandMu.Lock()
 	defer service.conversations.commandMu.Unlock()
+	defer service.conversations.assets.cleanupUser(userID)
 	var session sessionRecord
 	var err error
 	creating := input.NewConversation != nil
@@ -210,11 +211,16 @@ func (service *AgentRuntime) StartRun(
 		}
 	}
 
-	userMessage, _, err := buildUserMessage(input.Message, input.Attachments, input.ClientID)
-	if err != nil {
-		return SubmitTurnResult{}, err
+	userMessage := make(map[string]any)
+	if input.EditMessageID == "" {
+		userMessage, _, err = buildUserMessage(input.Message, input.Attachments, input.ClientID)
+		if err != nil {
+			return SubmitTurnResult{}, err
+		}
+		if err := service.conversations.assets.storeMessage(ctx, userID, userMessage); err != nil {
+			return SubmitTurnResult{}, err
+		}
 	}
-
 	now := time.Now().UnixMilli()
 	userMessage["timestamp"] = now
 	runID := newID()
@@ -268,11 +274,19 @@ func (service *AgentRuntime) StartRun(
 		if index < 0 || records[index].Role != "user" {
 			return SubmitTurnResult{}, errConversationConflict
 		}
-		input.Attachments = extractAttachmentPayloads(records[index].Message)
-		userMessage, _, err = buildUserMessage(input.Message, input.Attachments, input.ClientID)
-		if err != nil {
-			return SubmitTurnResult{}, err
+		preserved := make([]chatMessageContentPart, 0)
+		for _, part := range contentPartsFromAny(records[index].Message["content"]) {
+			if part.Type == "image" {
+				preserved = append(preserved, part)
+			}
 		}
+		if strings.TrimSpace(input.Message) != "" {
+			preserved = append(preserved, newTextContentPart(input.Message))
+		}
+		if len(preserved) == 0 {
+			return SubmitTurnResult{}, fmt.Errorf("message must not be empty")
+		}
+		userMessage = (chatMessage{ID: input.EditMessageID, Role: "user", ClientID: input.ClientID, Content: preserved}).toMap()
 		userMessage["id"] = input.EditMessageID
 		userMessage["timestamp"] = now
 		session.CommandChanges, err = collectCommandChanges(ctx, transaction, session.ID, records[index].Timestamp, input.EditMessageID)
@@ -462,6 +476,8 @@ func (service *AgentRuntime) insertRunExec(
 	if turnTimestamp == 0 {
 		turnTimestamp = now + 1
 	}
+	// Attachments are persisted in the user message, never duplicate bytes in the job.
+	input.Attachments = nil
 	requestJSON, err := json.Marshal(input)
 	if err != nil {
 		return fmt.Errorf("encode run request: %w", err)
