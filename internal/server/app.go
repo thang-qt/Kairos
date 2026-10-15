@@ -121,14 +121,16 @@ func NewApp(config Config) (*App, error) {
 		},
 	}
 
+	assets.startCleanup(&conversations.commandMu)
 	runtime.StartWorkers()
 	return app, nil
 }
 
-func (app *App) Stop() { app.runtime.Close(); app.mcp.Close() }
+func (app *App) Stop() { app.runtime.Close(); app.conversations.assets.closeCleanup(); app.mcp.Close() }
 
 func (app *App) Close() error {
 	app.runtime.Close()
+	app.conversations.assets.closeCleanup()
 	app.mcp.Close()
 	return app.db.Close()
 }

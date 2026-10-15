@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"path/filepath"
-	"strings"
 	"testing"
 )
 
@@ -24,7 +23,7 @@ func TestRuntimeMigrationPreservesLegacyTurnsAndProviderSecrets(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, entry := range entries {
-		if strings.HasPrefix(entry.Name(), "002") {
+		if entry.Name() >= "0020" {
 			continue
 		}
 		data, err := migrationFiles.ReadFile("migrations/" + entry.Name())

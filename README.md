@@ -81,12 +81,15 @@ and S3 bucket, endpoint, and prefix configured while those assets are in use;
 changing these locations does not migrate existing objects. Back up SQLite and
 asset storage together. There is no bulk migration of existing inline images.
 
-Unused assets are collected after chat writes, imports, edits, and deletions;
-assets referenced by cloned conversations are retained. Failed object deletions
-are logged and retried on the next mutation for that user. After an interrupted
-upload, an object written before its metadata committed can remain orphaned and
-require storage-level reconciliation. Run a single Kairos server per database
-for asset cleanup coordination.
+Unused assets are collected by a background worker using durable SQLite jobs
+and indexed message references. Cleanup does not scan conversation JSON on sends
+or hold the conversation command lock during object deletion. Assets referenced
+by cloned conversations are retained. Failed object deletions are logged and
+retried after one minute, including after a restart; physical deletion is
+asynchronous. The first startup after upgrading backfills references for existing
+messages. After an interrupted upload, an object written before its metadata
+committed can remain orphaned and require storage-level reconciliation. Run a
+single Kairos server per database for asset cleanup coordination.
 
 ## Production Build
 

@@ -131,7 +131,6 @@ func (service *ConversationService) commitConversationImportWithProgress(ctx con
 	// conversation and its deduplication marker commit together, making retry safe.
 	service.commandMu.Lock()
 	defer service.commandMu.Unlock()
-	defer service.assets.cleanupUser(userID)
 	err := adapter.Walk(ctx, inlineImportImageStore{}, func(conversation importConversation) error {
 		sourceID := conversation.SourceID
 		exists, err := service.importExists(ctx, userID, adapter.Source(), sourceID)

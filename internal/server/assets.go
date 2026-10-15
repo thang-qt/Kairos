@@ -8,13 +8,17 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"sync"
 	"time"
 )
 
 type assetService struct {
-	db     *sql.DB
-	active string
-	stores map[string]assetStorage
+	db            *sql.DB
+	active        string
+	stores        map[string]assetStorage
+	cleanupCancel context.CancelFunc
+	cleanupWG     sync.WaitGroup
+	cleanupOnce   sync.Once
 }
 
 type assetRecord struct {
@@ -159,48 +163,4 @@ func (service *assetService) resolveHistory(ctx context.Context, userID string, 
 		resolved = append(resolved, copy)
 	}
 	return resolved, nil
-}
-
-// Call while holding ConversationService.commandMu, after transactions finish.
-// Shared assets survive clones; failed writes and truncated turns are collected.
-func (service *assetService) cleanupUser(userID string) {
-	if service == nil {
-		return
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-	rows, err := service.db.QueryContext(ctx, `SELECT a.id,a.backend,a.object_key FROM chat_assets a WHERE a.user_id=? AND NOT EXISTS (
- SELECT 1 FROM chat_messages m JOIN chat_sessions s ON s.id=m.session_id, json_each(m.content_json) p
- WHERE s.user_id=a.user_id AND json_extract(p.value,'$.source.assetId')=a.id)`, userID)
-	if err != nil {
-		log.Printf("kairos: list unused assets: %v", err)
-		return
-	}
-	var unused []assetRecord
-	for rows.Next() {
-		var record assetRecord
-		if err = rows.Scan(&record.ID, &record.Backend, &record.Key); err != nil {
-			break
-		}
-		unused = append(unused, record)
-	}
-	iterationErr := rows.Err()
-	rows.Close()
-	if err != nil || iterationErr != nil {
-		log.Printf("kairos: scan unused assets: %v %v", err, iterationErr)
-		return
-	}
-	for _, record := range unused {
-		store := service.stores[record.Backend]
-		if store == nil {
-			continue
-		}
-		if err := store.Delete(ctx, record.Key); err != nil {
-			log.Printf("kairos: delete unused asset: %v", err)
-			continue
-		}
-		if _, err := service.db.ExecContext(ctx, `DELETE FROM chat_assets WHERE id=?`, record.ID); err != nil {
-			log.Printf("kairos: delete unused asset metadata: %v", err)
-		}
-	}
 }

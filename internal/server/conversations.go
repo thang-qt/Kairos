@@ -310,7 +310,6 @@ func (service *ConversationService) DeleteSession(
 ) error {
 	service.commandMu.Lock()
 	defer service.commandMu.Unlock()
-	defer service.assets.cleanupUser(userID)
 	result, err := service.db.ExecContext(ctx, `
 		DELETE FROM chat_sessions
 		WHERE user_id = ? AND friendly_id = ?
@@ -399,7 +398,6 @@ func (service *ConversationService) DeleteUserMessageAtRevision(
 ) (SessionSummary, error) {
 	service.commandMu.Lock()
 	defer service.commandMu.Unlock()
-	defer service.assets.cleanupUser(userID)
 	source, err := service.findSessionByFriendlyID(ctx, userID, friendlyID)
 	if err != nil {
 		return SessionSummary{}, err

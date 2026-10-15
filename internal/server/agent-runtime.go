@@ -141,7 +141,6 @@ func (service *AgentRuntime) StartRun(
 	acceptanceStarted := time.Now()
 	service.conversations.commandMu.Lock()
 	defer service.conversations.commandMu.Unlock()
-	defer service.conversations.assets.cleanupUser(userID)
 	var session sessionRecord
 	var err error
 	creating := input.NewConversation != nil

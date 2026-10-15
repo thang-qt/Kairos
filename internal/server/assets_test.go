@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 func TestAssetStorageLifecycle(t *testing.T) {
@@ -170,9 +171,11 @@ func TestAssetStorageLifecycle(t *testing.T) {
 			if err := app.app.conversations.DeleteSession(ctx, userID, clone.FriendlyID); err != nil {
 				t.Fatal(err)
 			}
+			waitForAssetCleanup(t, app.app)
 			response = performJSONRequest(t, app.handler, http.MethodGet, assetURL, nil, []*http.Cookie{ownerCookie})
 			assertStatusCode(t, response, http.StatusNotFound)
 			if backend == "local" {
+				waitForAssetCleanup(t, app.app)
 				files, err := os.ReadDir(directory)
 				if err != nil || len(files) != 0 {
 					t.Fatalf("local objects remain: %v %v", files, err)
@@ -220,6 +223,7 @@ func TestAssetUploadFailureAndValidation(t *testing.T) {
 	if err == nil {
 		t.Fatal("accepted invalid image")
 	}
+	waitForAssetCleanup(t, app.app)
 	files, err := os.ReadDir(directory)
 	if err != nil || len(files) != 1 {
 		t.Fatalf("partial upload leaked: %v %v", files, err)
@@ -227,6 +231,7 @@ func TestAssetUploadFailureAndValidation(t *testing.T) {
 	if _, err := app.app.conversations.DeleteUserMessage(ctx, userID, result.FriendlyID, result.UserTurnID); err != nil {
 		t.Fatal(err)
 	}
+	waitForAssetCleanup(t, app.app)
 	files, err = os.ReadDir(directory)
 	if err != nil || len(files) != 0 {
 		t.Fatalf("deleted image remains: %v %v", files, err)
@@ -246,4 +251,20 @@ func TestAssetConfigValidation(t *testing.T) {
 			t.Fatalf("accepted invalid config: %+v", config)
 		}
 	}
+}
+
+func waitForAssetCleanup(t *testing.T, app *App) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		var pending int
+		if err := app.db.QueryRow(`SELECT COUNT(*) FROM asset_cleanup_jobs`).Scan(&pending); err != nil {
+			t.Fatal(err)
+		}
+		if pending == 0 {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("asset cleanup did not finish")
 }
