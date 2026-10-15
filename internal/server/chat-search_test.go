@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 func TestSessionSearchIndexesVisibleTextAndSessionLifecycle(t *testing.T) {
@@ -175,6 +176,44 @@ func TestSessionSearchIndexesVisibleTextAndSessionLifecycle(t *testing.T) {
 	}
 	if !strings.Contains(strings.ToLower(searchPayload.Sessions[0].Snippet), "ledger") {
 		t.Fatalf("renamed title snippet = %q, want matching title metadata", searchPayload.Sessions[0].Snippet)
+	}
+}
+
+func TestSessionSearchReturnsBoundedFTSSnippets(t *testing.T) {
+	testServer := newTestApp(t, nil)
+	ownerCookie := signupAndRequireCookie(t, testServer, "bounded-search@example.com")
+	createResponse := performJSONRequest(t, testServer.handler, http.MethodPost, "/api/sessions", createSessionRequest{
+		Label: "Bounded search",
+	}, []*http.Cookie{ownerCookie})
+	assertStatusCode(t, createResponse, http.StatusCreated)
+	var created sessionMutationResponse
+	decodeResponseJSON(t, createResponse, &created)
+
+	content := strings.Repeat("preceding ", 100) + "needle " + strings.Repeat("following ", 100)
+	seedSessionMessages(t, testServer, created.SessionKey, []map[string]any{{
+		"id":   newID(),
+		"role": "user",
+		"content": []map[string]any{
+			{"type": "text", "text": content},
+		},
+	}})
+
+	user, err := testServer.app.auth.CurrentUser(t.Context(), ownerCookie.Value)
+	if err != nil {
+		t.Fatalf("load search owner: %v", err)
+	}
+	results, err := testServer.app.conversations.SearchSessions(t.Context(), user.ID, "needle")
+	if err != nil {
+		t.Fatalf("search long message: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("long message results = %d, want 1", len(results))
+	}
+	if !strings.Contains(results[0].Snippet, "needle") {
+		t.Fatalf("snippet = %q, want matching term", results[0].Snippet)
+	}
+	if got := utf8.RuneCountInString(results[0].Snippet); got > maxSessionSearchSnippet+2 {
+		t.Fatalf("snippet rune count = %d, want at most %d", got, maxSessionSearchSnippet+2)
 	}
 }
 

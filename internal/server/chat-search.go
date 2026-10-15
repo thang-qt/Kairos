@@ -61,7 +61,10 @@ func (service *ConversationService) SearchSessions(
 				chat_session_search.message_id
 			),
 			chat_session_search.document_kind,
-			chat_session_search.content
+			CASE
+				WHEN chat_session_search.document_kind = 'title' THEN ''
+				ELSE substr(snippet(chat_session_search, 5, '', '', '…', 32), 1, ?)
+			END
 		FROM chat_session_search
 		JOIN chat_sessions ON chat_sessions.id = chat_session_search.session_id
 		LEFT JOIN chat_messages ON chat_messages.id = chat_session_search.message_id
@@ -70,7 +73,7 @@ func (service *ConversationService) SearchSessions(
 			chat_session_search MATCH ?
 		ORDER BY bm25(chat_session_search, 0.0, 0.0, 0.0, 0.0, 8.0, 1.0), chat_sessions.updated_at DESC, chat_sessions.id DESC
 		LIMIT ?
-	`, userID, sessionSearchFTSQuery(tokens), maxSessionSearchResults)
+	`, maxSessionSearchSnippet, userID, sessionSearchFTSQuery(tokens), maxSessionSearchResults)
 	if err != nil {
 		return nil, fmt.Errorf("search sessions: %w", err)
 	}
