@@ -5,35 +5,6 @@ import { createHighlighterCore } from 'shiki/core'
 import { createJavaScriptRegexEngine } from 'shiki/engine/javascript'
 import vitesseDark from '@shikijs/themes/vitesse-dark'
 import vitesseLight from '@shikijs/themes/vitesse-light'
-import langBash from '@shikijs/langs/bash'
-import langC from '@shikijs/langs/c'
-import langCpp from '@shikijs/langs/cpp'
-import langCsharp from '@shikijs/langs/csharp'
-import langCss from '@shikijs/langs/css'
-import langDiff from '@shikijs/langs/diff'
-import langDockerfile from '@shikijs/langs/dockerfile'
-import langGo from '@shikijs/langs/go'
-import langGraphql from '@shikijs/langs/graphql'
-import langHtml from '@shikijs/langs/html'
-import langJava from '@shikijs/langs/java'
-import langJavascript from '@shikijs/langs/javascript'
-import langJson from '@shikijs/langs/json'
-import langJsx from '@shikijs/langs/jsx'
-import langKotlin from '@shikijs/langs/kotlin'
-import langMarkdown from '@shikijs/langs/markdown'
-import langPhp from '@shikijs/langs/php'
-import langPython from '@shikijs/langs/python'
-import langRegexp from '@shikijs/langs/regexp'
-import langRuby from '@shikijs/langs/ruby'
-import langRust from '@shikijs/langs/rust'
-import langShell from '@shikijs/langs/shell'
-import langSql from '@shikijs/langs/sql'
-import langSwift from '@shikijs/langs/swift'
-import langToml from '@shikijs/langs/toml'
-import langTypescript from '@shikijs/langs/typescript'
-import langTsx from '@shikijs/langs/tsx'
-import langXml from '@shikijs/langs/xml'
-import langYaml from '@shikijs/langs/yaml'
 import { formatLanguageName, normalizeLanguage, resolveLanguage } from './utils'
 import type { HighlighterCore } from 'shiki/core'
 import { useResolvedTheme } from '@/app/preferences/app-preferences'
@@ -45,49 +16,181 @@ type CodeBlockProps = {
   ariaLabel?: string
   language?: string
   className?: string
+  streaming?: boolean
 }
 
 let highlighterPromise: Promise<HighlighterCore> | null = null
+const languagePromises = new Map<string, Promise<void>>()
 
 function getHighlighter() {
   if (!highlighterPromise) {
     highlighterPromise = createHighlighterCore({
       themes: [vitesseLight, vitesseDark],
-      langs: [
-        langJavascript,
-        langTypescript,
-        langTsx,
-        langJsx,
-        langPython,
-        langBash,
-        langShell,
-        langJson,
-        langYaml,
-        langToml,
-        langMarkdown,
-        langHtml,
-        langCss,
-        langSql,
-        langRust,
-        langGo,
-        langJava,
-        langKotlin,
-        langSwift,
-        langRuby,
-        langPhp,
-        langC,
-        langCpp,
-        langCsharp,
-        langDockerfile,
-        langDiff,
-        langGraphql,
-        langRegexp,
-        langXml,
-      ],
+      langs: [],
       engine: createJavaScriptRegexEngine(),
     })
   }
   return highlighterPromise
+}
+
+async function loadLanguage(highlighter: HighlighterCore, language: string) {
+  let pending = languagePromises.get(language)
+  if (!pending) {
+    pending = (async function loadGrammar() {
+      switch (language) {
+        case 'bash':
+          await highlighter.loadLanguage(
+            (await import('@shikijs/langs/bash')).default,
+          )
+          break
+        case 'c':
+          await highlighter.loadLanguage(
+            (await import('@shikijs/langs/c')).default,
+          )
+          break
+        case 'cpp':
+          await highlighter.loadLanguage(
+            (await import('@shikijs/langs/cpp')).default,
+          )
+          break
+        case 'csharp':
+          await highlighter.loadLanguage(
+            (await import('@shikijs/langs/csharp')).default,
+          )
+          break
+        case 'css':
+          await highlighter.loadLanguage(
+            (await import('@shikijs/langs/css')).default,
+          )
+          break
+        case 'diff':
+          await highlighter.loadLanguage(
+            (await import('@shikijs/langs/diff')).default,
+          )
+          break
+        case 'dockerfile':
+          await highlighter.loadLanguage(
+            (await import('@shikijs/langs/dockerfile')).default,
+          )
+          break
+        case 'go':
+          await highlighter.loadLanguage(
+            (await import('@shikijs/langs/go')).default,
+          )
+          break
+        case 'graphql':
+          await highlighter.loadLanguage(
+            (await import('@shikijs/langs/graphql')).default,
+          )
+          break
+        case 'html':
+          await highlighter.loadLanguage(
+            (await import('@shikijs/langs/html')).default,
+          )
+          break
+        case 'java':
+          await highlighter.loadLanguage(
+            (await import('@shikijs/langs/java')).default,
+          )
+          break
+        case 'javascript':
+          await highlighter.loadLanguage(
+            (await import('@shikijs/langs/javascript')).default,
+          )
+          break
+        case 'json':
+          await highlighter.loadLanguage(
+            (await import('@shikijs/langs/json')).default,
+          )
+          break
+        case 'jsx':
+          await highlighter.loadLanguage(
+            (await import('@shikijs/langs/jsx')).default,
+          )
+          break
+        case 'kotlin':
+          await highlighter.loadLanguage(
+            (await import('@shikijs/langs/kotlin')).default,
+          )
+          break
+        case 'markdown':
+          await highlighter.loadLanguage(
+            (await import('@shikijs/langs/markdown')).default,
+          )
+          break
+        case 'php':
+          await highlighter.loadLanguage(
+            (await import('@shikijs/langs/php')).default,
+          )
+          break
+        case 'python':
+          await highlighter.loadLanguage(
+            (await import('@shikijs/langs/python')).default,
+          )
+          break
+        case 'regexp':
+          await highlighter.loadLanguage(
+            (await import('@shikijs/langs/regexp')).default,
+          )
+          break
+        case 'ruby':
+          await highlighter.loadLanguage(
+            (await import('@shikijs/langs/ruby')).default,
+          )
+          break
+        case 'rust':
+          await highlighter.loadLanguage(
+            (await import('@shikijs/langs/rust')).default,
+          )
+          break
+        case 'shell':
+          await highlighter.loadLanguage(
+            (await import('@shikijs/langs/shell')).default,
+          )
+          break
+        case 'sql':
+          await highlighter.loadLanguage(
+            (await import('@shikijs/langs/sql')).default,
+          )
+          break
+        case 'swift':
+          await highlighter.loadLanguage(
+            (await import('@shikijs/langs/swift')).default,
+          )
+          break
+        case 'toml':
+          await highlighter.loadLanguage(
+            (await import('@shikijs/langs/toml')).default,
+          )
+          break
+        case 'typescript':
+          await highlighter.loadLanguage(
+            (await import('@shikijs/langs/typescript')).default,
+          )
+          break
+        case 'tsx':
+          await highlighter.loadLanguage(
+            (await import('@shikijs/langs/tsx')).default,
+          )
+          break
+        case 'xml':
+          await highlighter.loadLanguage(
+            (await import('@shikijs/langs/xml')).default,
+          )
+          break
+        case 'yaml':
+          await highlighter.loadLanguage(
+            (await import('@shikijs/langs/yaml')).default,
+          )
+          break
+      }
+    })()
+    languagePromises.set(language, pending)
+    pending.catch(function clearFailedLanguage() {
+      languagePromises.delete(language)
+    })
+  }
+  return pending
 }
 
 export function CodeBlock({
@@ -95,6 +198,7 @@ export function CodeBlock({
   ariaLabel,
   language = 'text',
   className,
+  streaming = false,
 }: CodeBlockProps) {
   const resolvedTheme = useResolvedTheme()
   const [copied, setCopied] = useState(false)
@@ -111,27 +215,35 @@ export function CodeBlock({
 
   useEffect(() => {
     let active = true
-    getHighlighter()
-      .then((highlighter) => {
-        const lang = resolveLanguage(normalizedLanguage)
-        const highlighted = highlighter.codeToHtml(content, {
-          lang,
-          theme: themeName,
-        })
-        if (active) {
-          setResolvedLanguage(lang)
-          setHtml(highlighted)
-          const theme = highlighter.getTheme(themeName)
-          setHeaderBg(theme.bg)
-        }
-      })
-      .catch(() => {
-        if (active) setHtml(null)
-      })
+    const timeout = window.setTimeout(
+      () => {
+        getHighlighter()
+          .then(async (highlighter) => {
+            const lang = resolveLanguage(normalizedLanguage)
+            if (lang !== 'text') await loadLanguage(highlighter, lang)
+            if (!active) return
+            const highlighted = highlighter.codeToHtml(content, {
+              lang,
+              theme: themeName,
+            })
+            if (active) {
+              setResolvedLanguage(lang)
+              setHtml(highlighted)
+              const theme = highlighter.getTheme(themeName)
+              setHeaderBg(theme.bg)
+            }
+          })
+          .catch(() => {
+            if (active) setHtml(null)
+          })
+      },
+      streaming ? 450 : 80,
+    )
     return () => {
       active = false
+      window.clearTimeout(timeout)
     }
-  }, [content, normalizedLanguage, themeName])
+  }, [content, normalizedLanguage, streaming, themeName])
 
   async function handleCopy() {
     try {

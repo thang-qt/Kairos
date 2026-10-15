@@ -55,6 +55,7 @@ export function ActivityPart({
       <TimelineStep isLast={isLast}>
         <LazyMarkdown
           blockRemoteImages={Boolean(message.details?.importSource)}
+          streaming={streaming}
           className="text-pretty text-sm leading-6 text-primary-700 [&_p]:text-primary-700"
         >
           {String(part.text ?? '')}

@@ -289,6 +289,7 @@ function MessageItemComponent({
                 <MessageContent
                   markdown
                   blockRemoteImages={Boolean(message.details?.importSource)}
+                  streaming={assistantIsStreaming}
                   className="text-primary-900 bg-transparent w-full"
                 >
                   {String(part.text ?? '')}

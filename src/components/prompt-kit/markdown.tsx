@@ -1,4 +1,4 @@
-import { Children, isValidElement, memo } from 'react'
+import { Children, isValidElement, memo, useMemo } from 'react'
 import { createMathPlugin } from '@streamdown/math'
 import 'katex/dist/katex.min.css'
 import { Streamdown } from 'streamdown'
@@ -12,6 +12,7 @@ export type MarkdownProps = {
   className?: string
   components?: Record<string, React.ComponentType<any>>
   blockRemoteImages?: boolean
+  streaming?: boolean
 }
 
 function extractLanguage(className?: string): string {
@@ -131,18 +132,6 @@ const INITIAL_COMPONENTS: Record<string, React.ComponentType<any>> = {
       <code className="rounded border border-primary-200 bg-primary-100 px-1.5 py-1 font-mono text-sm text-primary-900">
         {children}
       </code>
-    )
-  },
-  pre: function PreComponent({ children }) {
-    const codeProps = codePropsFromPreChildren(children)
-    if (!codeProps) return <pre>{children}</pre>
-
-    return (
-      <CodeBlock
-        content={textFromNode(codeProps.children)}
-        language={extractLanguage(codeProps.className)}
-        className="w-full"
-      />
     )
   },
   h1: function H1Component({ children }) {
@@ -267,11 +256,34 @@ function MarkdownComponent({
   className,
   components = INITIAL_COMPONENTS,
   blockRemoteImages = false,
+  streaming = false,
 }: MarkdownProps) {
+  const markdownComponents = useMemo(() => {
+    const defaultPre: React.ComponentType<any> = function PreComponent({
+      children,
+    }) {
+      const codeProps = codePropsFromPreChildren(children)
+      if (!codeProps) return <pre>{children}</pre>
+
+      return (
+        <CodeBlock
+          content={textFromNode(codeProps.children)}
+          language={extractLanguage(codeProps.className)}
+          className="w-full"
+          streaming={streaming}
+        />
+      )
+    }
+    return {
+      ...(blockRemoteImages ? IMPORTED_COMPONENTS : components),
+      pre: components.pre ?? defaultPre,
+    }
+  }, [blockRemoteImages, components, streaming])
+
   return (
     <Streamdown
       className={cn('flex flex-col gap-2', className)}
-      components={blockRemoteImages ? IMPORTED_COMPONENTS : components}
+      components={markdownComponents}
       plugins={STREAMDOWN_PLUGINS}
     >
       {normalizeLatexMathDelimiters(children)}
