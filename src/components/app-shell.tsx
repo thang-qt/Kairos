@@ -124,9 +124,8 @@ export function AppShell({
   const rightInset = desktopChrome && rightOpen ? rightWidth : 0
   const leftMaximum = Math.min(480, Math.max(0, available - rightInset))
   const rightMaximum = Math.min(560, Math.max(0, available - leftInset))
-  // While any sidebar is open the main column floats as a rounded card inside
-  // the sidebar-colored frame, so the sidebars read as surrounding it.
-  const insetMain = leftInset > 0 || rightInset > 0
+  // Keep the desktop main column inset even when both sidebars are closed.
+  const insetMain = desktopChrome
 
   return (
     <div
