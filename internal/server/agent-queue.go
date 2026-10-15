@@ -20,18 +20,29 @@ func (service *AgentRuntime) StartWorkers() {
 		service.workerWG.Add(1)
 		go func() {
 			defer service.workerWG.Done()
-			ticker := time.NewTicker(100 * time.Millisecond)
-			defer ticker.Stop()
+			timer := time.NewTimer(0)
+			defer timer.Stop()
 			for {
-				if err := service.dispatchJobs(ctx); err != nil && ctx.Err() == nil {
-					log.Printf("kairos: queue: %v", err)
-				}
 				select {
 				case <-ctx.Done():
 					return
 				case <-service.wake:
-				case <-ticker.C:
+				case <-timer.C:
 				}
+				if err := service.dispatchJobs(ctx); err != nil && ctx.Err() == nil {
+					log.Printf("kairos: queue: %v", err)
+				}
+				delay, err := service.nextDispatchDelay(ctx)
+				if err != nil {
+					delay = time.Second
+				}
+				if !timer.Stop() {
+					select {
+					case <-timer.C:
+					default:
+					}
+				}
+				timer.Reset(delay)
 			}
 		}()
 	})
@@ -156,7 +167,7 @@ func (service *AgentRuntime) dispatchJobs(ctx context.Context) error {
 	}
 	var record executionRecord
 	var requestJSON, friendlyID string
-	err = tx.QueryRowContext(ctx, `SELECT r.id,r.user_id,r.session_id,r.model,COALESCE(r.assistant_message_id,r.id),r.revision,COALESCE(r.request_json,''),s.friendly_id,r.created_at FROM chat_jobs j JOIN chat_runs r ON r.id=j.run_id JOIN chat_sessions s ON s.id=r.session_id WHERE r.status='queued' AND r.invalidated=0 AND r.revision=s.revision AND j.available_at<=? ORDER BY j.available_at,r.created_at LIMIT 1`, now).Scan(&record.ID, &record.UserID, &record.SessionID, &record.Model, &record.AssistantTurnID, &record.Revision, &requestJSON, &friendlyID, &record.AcceptedAt)
+	err = tx.QueryRowContext(ctx, `SELECT r.id,r.user_id,r.session_id,r.model,COALESCE(r.assistant_message_id,r.id),r.revision,COALESCE(r.request_json,''),s.friendly_id,r.created_at FROM chat_jobs j INDEXED BY idx_chat_jobs_available CROSS JOIN chat_runs r ON r.id=j.run_id JOIN chat_sessions s ON s.id=r.session_id WHERE r.status='queued' AND r.invalidated=0 AND r.revision=s.revision AND j.available_at<=? ORDER BY j.available_at,j.run_id LIMIT 1`, now).Scan(&record.ID, &record.UserID, &record.SessionID, &record.Model, &record.AssistantTurnID, &record.Revision, &requestJSON, &friendlyID, &record.AcceptedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return tx.Commit()
 	}
@@ -207,6 +218,7 @@ func (service *AgentRuntime) dispatchJobs(ctx context.Context) error {
 	log.Printf("kairos: stage=worker_claim run=%s revision=%d queue_ms=%d", record.ID, record.Revision, time.Now().UnixMilli()-record.AcceptedAt)
 	service.runAsync(record, session, history.Messages, input)
 	launched = true
+	service.notifyQueue() // Fill remaining slots without waiting for a timer.
 	return nil
 }
 
@@ -237,4 +249,35 @@ func (service *AgentRuntime) releaseUnstartedClaim(record executionRecord) {
 		}
 	}
 	_ = tx.Commit()
+}
+
+// Idle servers only check for externally inserted work every thirty seconds.
+// Future jobs and lease deadlines get their own timer; local changes wake it.
+func (service *AgentRuntime) nextDispatchDelay(ctx context.Context) (time.Duration, error) {
+	deadline := time.Now().Add(30 * time.Second).UnixMilli()
+	var lease sql.NullInt64
+	if err := service.db.QueryRowContext(ctx, `SELECT MIN(lease_until) FROM chat_runs WHERE status IN ('preparing','running')`).Scan(&lease); err != nil {
+		return 0, err
+	}
+	if lease.Valid && lease.Int64 < deadline {
+		deadline = lease.Int64
+	}
+	service.runMu.Lock()
+	capacity := len(service.runControls) < 4
+	service.runMu.Unlock()
+	if capacity {
+		var available int64
+		err := service.db.QueryRowContext(ctx, `SELECT j.available_at FROM chat_jobs j INDEXED BY idx_chat_jobs_available CROSS JOIN chat_runs r ON r.id=j.run_id JOIN chat_sessions s ON s.id=r.session_id WHERE r.status='queued' AND r.invalidated=0 AND r.revision=s.revision ORDER BY j.available_at,j.run_id LIMIT 1`).Scan(&available)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return 0, err
+		}
+		if err == nil && available < deadline {
+			deadline = available
+		}
+	}
+	delay := time.Until(time.UnixMilli(deadline))
+	if delay < 10*time.Millisecond {
+		delay = 10 * time.Millisecond
+	}
+	return delay, nil
 }

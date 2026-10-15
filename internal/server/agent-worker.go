@@ -258,6 +258,7 @@ func (service *AgentRuntime) unregisterRunCancel(record executionRecord) {
 	defer service.runMu.Unlock()
 	if control, ok := service.runControls[record.ID]; ok && control.LeaseToken == record.LeaseToken {
 		delete(service.runControls, record.ID)
+		service.notifyQueue()
 	}
 
 }
