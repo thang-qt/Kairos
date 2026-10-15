@@ -7,7 +7,7 @@
   "scripts": {
     "build": "tsc",
     "build:web": "pnpm --dir .. build && node scripts/copy-web-build.mjs",
-    "test": "pnpm build && node --test dist/bundle-path-check.js dist/server-check.js dist/desktop-entry-check.js",
+    "test": "pnpm build && node --test dist/bundle-path-check.js dist/server-check.js dist/desktop-entry-check.js dist/hotkey-policy-check.js",
     "dev": "pnpm build && electron .",
     "start": "electron .",
     "typecheck": "tsc --noEmit",

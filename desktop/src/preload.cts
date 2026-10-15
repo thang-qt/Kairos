@@ -19,6 +19,24 @@ contextBridge.exposeInMainWorld('kairosDesktop', {
   setServer: function setServer(url: string) {
     return ipcRenderer.invoke('kairos:set-server', url)
   },
+  settings: {
+    get: function getSettings() {
+      return ipcRenderer.invoke('kairos:desktop-settings')
+    },
+    setHotkeyAction: function setHotkeyAction(action: string) {
+      return ipcRenderer.invoke('kairos:set-hotkey-action', action)
+    },
+  },
+  // Returns an unsubscribe function. The listener gets no IPC event object.
+  onNewChat: function onNewChat(listener: () => void) {
+    function handleNewChat() {
+      listener()
+    }
+    ipcRenderer.on('kairos:new-chat', handleNewChat)
+    return function unsubscribe() {
+      ipcRenderer.removeListener('kairos:new-chat', handleNewChat)
+    }
+  },
 })
 
 // Sandboxed preloads cannot require another local module; keep this allowlist

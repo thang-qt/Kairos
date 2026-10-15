@@ -6,6 +6,7 @@ import { SettingsScreen } from '@/features/settings/settings-screen'
 const SETTINGS_TABS = new Set<SettingsTab>([
   'account',
   'appearance',
+  'desktop',
   'providers',
   'models',
   'chat',

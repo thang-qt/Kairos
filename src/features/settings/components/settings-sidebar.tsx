@@ -4,6 +4,7 @@ import {
   ArrowLeft01Icon,
   BubbleChatIcon,
   CloudServerIcon,
+  ComputerIcon,
   CpuIcon,
   Globe02Icon,
   PaintBoardIcon,
@@ -29,6 +30,7 @@ type SettingsNavItem = {
   id: SettingsTab
   label: string
   icon: IconSvgElement
+  desktopOnly?: boolean
 }
 
 const SETTINGS_GROUPS: Array<{ label: string; items: Array<SettingsNavItem> }> =
@@ -38,6 +40,12 @@ const SETTINGS_GROUPS: Array<{ label: string; items: Array<SettingsNavItem> }> =
       items: [
         { id: 'account', label: 'Account', icon: UserCircleIcon },
         { id: 'appearance', label: 'Appearance', icon: PaintBoardIcon },
+        {
+          id: 'desktop',
+          label: 'Desktop app',
+          icon: ComputerIcon,
+          desktopOnly: true,
+        },
       ],
     },
     {
@@ -86,7 +94,8 @@ export function SettingsSidebar({
 
   // The desktop title bar already shows the Kairos identity, so the main
   // window drops the logo row and the first action row takes its place.
-  const providesIdentity = getShell().providesIdentity
+  const shell = getShell()
+  const providesIdentity = shell.providesIdentity
   const collapseToggle = (
     <Button
       size="icon-sm"
@@ -146,6 +155,7 @@ export function SettingsSidebar({
                 {group.label}
               </div>
               {group.items.map((item) => {
+                if (item.desktopOnly && !shell.canConfigureDesktop) return null
                 const active = activeTab === item.id
                 return (
                   <button

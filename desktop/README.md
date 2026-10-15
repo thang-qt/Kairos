@@ -56,6 +56,7 @@ its own login.
 ## Everyday use
 
 - **Control+Alt+Space** shows Kairos, or hides it if it's already in front.
+  To have it open a new chat instead, use **Settings → Desktop app**.
 - Closing the window hides it to the tray; quit with **Ctrl+Q** or the tray's
   **Quit**.
 - **Start at login** in the tray menu opens Kairos when you sign in. On Nix,
@@ -77,13 +78,18 @@ Settings are stored in `~/.config/Kairos/config.json`:
 ```json
 {
   "url": "https://kairos.example.com",
-  "hotkey": "Control+Alt+Space"
+  "hotkey": "Control+Alt+Space",
+  "hotkeyAction": "show"
 }
 ```
 
-`hotkey` uses
-[Electron's accelerator format](https://www.electronjs.org/docs/latest/api/accelerator).
-Restart Kairos after editing the file. Setting `"bundled": false` loads the
+The server and what the shortcut opens are easier to change in the app. To
+change the shortcut itself, edit the file: `hotkey` uses
+[Electron's accelerator format](https://www.electronjs.org/docs/latest/api/accelerator),
+`hotkeyAction` is `show` or `new-chat`, and you need to restart Kairos
+afterwards. On Wayland, combine Ctrl, Alt or Super with a letter, number,
+Space, arrow, comma or period; other keys reach your desktop without a key
+assigned. Setting `"bundled": false` loads the
 interface from the server instead of the copy shipped with the app, which you
 may want if your server runs a newer Kairos than the app.
 

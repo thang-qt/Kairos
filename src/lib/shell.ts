@@ -7,11 +7,22 @@ export type ServerError =
 export type ServerResult =
   | { ok: true; origin: string; insecure: boolean; overriddenByEnv?: boolean }
   | { ok: false; error: ServerError }
+export type HotkeyAction = 'show' | 'new-chat'
+export type DesktopSettings = {
+  hotkey: string
+  hotkeyAction: HotkeyAction
+}
 export type KairosDesktop = {
   platform: 'linux'
   isDesktop: true
   server: string | null
   setServer: (url: string) => Promise<ServerResult>
+  // Missing in desktop builds older than the Desktop settings tab.
+  settings?: {
+    get: () => Promise<DesktopSettings>
+    setHotkeyAction: (action: HotkeyAction) => Promise<DesktopSettings>
+  }
+  onNewChat?: (listener: () => void) => () => void
 }
 declare global {
   var kairosDesktop: KairosDesktop | undefined
@@ -22,6 +33,7 @@ export type Shell = {
   providesWindowControls: boolean
   server: string | null
   canChangeServer: boolean
+  canConfigureDesktop: boolean
 }
 
 export function getDesktopBridge(): KairosDesktop | undefined {
@@ -36,5 +48,6 @@ export function getShell(): Shell {
     providesWindowControls: isDesktop,
     server: isDesktop ? bridge.server : null,
     canChangeServer: isDesktop && typeof bridge.setServer === 'function',
+    canConfigureDesktop: isDesktop && bridge.settings !== undefined,
   }
 }

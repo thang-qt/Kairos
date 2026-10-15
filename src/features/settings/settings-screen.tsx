@@ -9,6 +9,7 @@ import { WebToolsSettingsPanel } from './components/web-tools-settings-panel'
 import { MCPServersPanel } from './components/mcp-servers-panel'
 import { ChatSettingsPanel } from './components/chat-settings-panel'
 import { ConversationImportPanel } from './components/conversation-import-panel'
+import { DesktopSettingsPanel } from './components/desktop-settings-panel'
 import {
   SettingsSidebar,
   getSettingsTabLabel,
@@ -16,6 +17,7 @@ import {
 import { AppShell } from '@/components/app-shell'
 import { GlobalShortcuts } from '@/components/global-shortcuts'
 import { Button } from '@/components/ui/button'
+import { getShell } from '@/lib/shell'
 import { useAppMobile } from '@/app/layout/use-app-mobile'
 import {
   appShellUiQueryKey,
@@ -26,6 +28,7 @@ import {
 export type SettingsTab =
   | 'account'
   | 'appearance'
+  | 'desktop'
   | 'providers'
   | 'models'
   | 'chat'
@@ -45,6 +48,12 @@ function renderTabPanel(
   switch (activeTab) {
     case 'appearance':
       return <AppearanceSettingsPanel />
+    case 'desktop':
+      return getShell().canConfigureDesktop ? (
+        <DesktopSettingsPanel />
+      ) : (
+        <AccountSettingsPanel />
+      )
     case 'providers':
       return (
         <ProvidersSettingsPanel onOpenModels={() => onTabChange('models')} />

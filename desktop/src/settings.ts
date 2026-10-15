@@ -9,10 +9,13 @@ import { dirname } from 'node:path'
 import { app, screen } from 'electron'
 import { mkdir, writeFile, rename } from 'node:fs/promises'
 import { normalizeServer } from './server-policy.js'
+import { defaultHotkey, isHotkeyAction } from './hotkey-policy.js'
+import type { HotkeyAction } from './hotkey-policy.js'
 
 export type Config = {
   url?: string
   hotkey: string
+  hotkeyAction: HotkeyAction
   bundled: boolean
 }
 
@@ -48,8 +51,11 @@ export function readConfig(bundleDirectory: string): Config {
     throw new Error(`Invalid configured server: ${parsed.error}`)
   return {
     url: parsed?.ok ? parsed.origin : undefined,
-    hotkey:
-      typeof config.hotkey === 'string' ? config.hotkey : 'Control+Alt+Space',
+    // Hand-edited hotkeys are passed to Electron as written.
+    hotkey: typeof config.hotkey === 'string' ? config.hotkey : defaultHotkey,
+    hotkeyAction: isHotkeyAction(config.hotkeyAction)
+      ? config.hotkeyAction
+      : 'show',
     bundled:
       typeof config.bundled === 'boolean'
         ? config.bundled
@@ -57,14 +63,17 @@ export function readConfig(bundleDirectory: string): Config {
   }
 }
 
-export async function saveServerUrl(url: string): Promise<void> {
+// Writes only the given fields, keeping everything else in config.json.
+export async function saveConfig(
+  fields: Partial<Pick<Config, 'url' | 'hotkey' | 'hotkeyAction'>>,
+): Promise<void> {
   const path = `${app.getPath('userData')}/config.json`
   const existing = readJson(path)
   const config = isRecord(existing) ? existing : {}
   await mkdir(dirname(path), { recursive: true })
   await writeFile(
     `${path}.tmp`,
-    `${JSON.stringify({ ...config, url }, null, 2)}\n`,
+    `${JSON.stringify({ ...config, ...fields }, null, 2)}\n`,
     { mode: 0o600 },
   )
   await rename(`${path}.tmp`, path)

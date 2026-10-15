@@ -1,9 +1,11 @@
+import { useEffect } from 'react'
 import {
   Outlet,
   createRootRouteWithContext,
   redirect,
+  useRouter,
 } from '@tanstack/react-router'
-import { getShell } from '@/lib/shell'
+import { getDesktopBridge, getShell } from '@/lib/shell'
 
 import { appQueryClient } from '@/lib/query-client'
 import { AppQueryProvider } from '@/lib/app-query-provider'
@@ -28,6 +30,17 @@ export const Route = createRootRouteWithContext<RouterContext>()({
 })
 
 function RootLayout() {
+  const router = useRouter()
+  // The desktop global shortcut can be set to open a new chat.
+  useEffect(
+    function listenForDesktopNewChat() {
+      return getDesktopBridge()?.onNewChat?.(function openNewChat() {
+        void router.navigate({ to: '/new' })
+      })
+    },
+    [router],
+  )
+
   return (
     <AppQueryProvider>
       <div className="root">

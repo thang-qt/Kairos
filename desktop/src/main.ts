@@ -25,7 +25,7 @@ import {
   readConfig,
   readWindowState,
   writeJson,
-  saveServerUrl,
+  saveConfig,
 } from './settings.js'
 import type { Config } from './settings.js'
 import { fallbackTheme, validateTheme } from './titlebar-state.js'
@@ -41,6 +41,7 @@ import {
 } from './server-state.js'
 import { probeServer } from './server-policy.js'
 import type { ServerResult } from './server-policy.js'
+import { isHotkeyAction } from './hotkey-policy.js'
 
 const directory = dirname(dirname(fileURLToPath(import.meta.url)))
 const offlineFile = join(directory, 'offline.html')
@@ -174,6 +175,23 @@ async function start(): Promise<void> {
     },
   )
   ipcMain.handle('kairos:set-server', changeServer)
+  ipcMain.handle(
+    'kairos:desktop-settings',
+    function readDesktopSettings(event) {
+      validateSender(event)
+      return desktopSettings()
+    },
+  )
+  ipcMain.handle(
+    'kairos:set-hotkey-action',
+    async function changeHotkeyAction(event, action: unknown) {
+      validateSender(event)
+      if (!isHotkeyAction(action)) throw new Error('Unknown hotkey action')
+      config.hotkeyAction = action
+      await saveConfig({ hotkeyAction: action })
+      return desktopSettings()
+    },
+  )
   ipcMain.on('kairos:theme', function receiveTheme(event, payload: unknown) {
     try {
       validateSender(event)
@@ -453,11 +471,17 @@ function openMain(): void {
   mainView?.webContents.focus()
 }
 
+// The hotkey and `--toggle`. Showing can also start a new chat, depending on
+// the Desktop settings; the tray and a plain relaunch only show the window.
 function toggleMain(): void {
   if (mainWindow?.isVisible() && mainWindow.isFocused()) {
     wantMain = false
     mainWindow.hide()
-  } else openMain()
+    return
+  }
+  openMain()
+  if (config.hotkeyAction === 'new-chat' && getCurrentServer() !== null)
+    mainView?.webContents.send('kairos:new-chat')
 }
 
 function saveWindowState(): void {
@@ -548,6 +572,10 @@ function installedLauncher(): string | undefined {
     process.env.KAIROS_DESKTOP_LAUNCHER ||
     (app.isPackaged ? process.execPath : undefined)
   )
+}
+
+function desktopSettings() {
+  return { hotkey: config.hotkey, hotkeyAction: config.hotkeyAction }
 }
 
 function activeContents(): WebContents | undefined {
@@ -711,7 +739,7 @@ async function changeServer(
     })
     if (!result.ok) return result
     validateSender(event)
-    await saveServerUrl(result.origin)
+    await saveConfig({ url: result.origin })
     const overriddenByEnv = Boolean(process.env.KAIROS_URL?.trim())
     const effective = overriddenByEnv ? previous : result.origin
     setCurrentServer(effective)

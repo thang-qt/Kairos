@@ -12,6 +12,7 @@ it('describes the web shell without desktop capabilities', function web() {
     providesWindowControls: false,
     server: null,
     canChangeServer: false,
+    canConfigureDesktop: false,
   })
 })
 it('reads desktop capabilities fresh on every call, including setup', function desktop() {
@@ -27,9 +28,15 @@ it('reads desktop capabilities fresh on every call, including setup', function d
     providesWindowControls: true,
     server: null,
     canChangeServer: true,
+    canConfigureDesktop: false,
   })
   window.kairosDesktop.server = 'https://kairos.example.com'
   expect(getShell().server).toBe('https://kairos.example.com')
+  window.kairosDesktop.settings = {
+    get: vi.fn(),
+    setHotkeyAction: vi.fn(),
+  }
+  expect(getShell().canConfigureDesktop).toBe(true)
   Reflect.deleteProperty(window, 'kairosDesktop')
   expect(getShell().providesIdentity).toBe(false)
 })
