@@ -38,6 +38,7 @@ Common settings:
 - `MAX_TOOL_CALLS` for the default maximum tool-call rounds per response (users can override it in **Web tools** settings)
 - `AUTH_ENABLED` to enable authentication
 - `ALLOW_SIGNUP` to allow or block self-service signup
+- `ALLOW_REMOTE_IMPORT` to enable conversation imports from remote clients (default: `false`, localhost only)
 - `PROVIDER_SECRET_KEY` for encrypting stored provider credentials
 - `BOOTSTRAP_ADMIN`, `ADMIN_EMAIL`, and `ADMIN_PASSWORD` for first admin setup
 

@@ -1,10 +1,10 @@
 import { useRef, useState } from 'react'
-import { useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import { Select } from '@/components/ui/select'
 import {
   importConversationWithProgress,
-  isLocalChatImportHost,
+  getConversationImportSettings,
 } from '@/lib/chat-backend/http-chat-backend'
 import type {
   ConversationImportReport,
@@ -40,7 +40,11 @@ export function ConversationImportPanel() {
   const [error, setError] = useState('')
   const controller = useRef<AbortController | null>(null)
   const queryClient = useQueryClient()
-  const local = isLocalChatImportHost(window.location.hostname)
+  const settings = useQuery({
+    queryKey: ['conversation-import-settings'],
+    queryFn: getConversationImportSettings,
+  })
+  const enabled = settings.data?.enabled === true
   async function run() {
     if (!file || phase !== 'idle') return
     const active = new AbortController()
@@ -86,23 +90,32 @@ export function ConversationImportPanel() {
   return (
     <SettingsPage
       title="Import conversations"
-      description="Bring your conversation history into Kairos from an exported archive."
+      description="Choose an archive to import your conversations."
     >
-      <SettingsSection title="Export" description={format.description}>
+      <SettingsSection>
         <div className="flex flex-col gap-4 p-4">
-          <p className="text-pretty text-sm text-primary-600">
-            Choose the original {format.label} {format.fileLabel} (up to 512
-            MiB). The archive is uploaded only to your local Kairos server.
-            Import makes no model calls. Images stay in the local database.
-            Continuing a chat later sends its history to your selected provider.
-          </p>
-          {!local ? (
+          {settings.data && !enabled ? (
             <SettingsNotice tone="error">
-              Open Kairos on localhost to import. Remote uploads are disabled.
+              Import is limited to localhost. To enable remote imports, set
+              ALLOW_REMOTE_IMPORT=true on the server.
+            </SettingsNotice>
+          ) : null}
+          {settings.isError ? (
+            <SettingsNotice tone="error">
+              Unable to check import availability.{' '}
+              <button
+                type="button"
+                className="underline"
+                onClick={function retry() {
+                  void settings.refetch()
+                }}
+              >
+                Retry
+              </button>
             </SettingsNotice>
           ) : null}
           <div className="flex flex-col gap-1 text-sm text-primary-700">
-            <label htmlFor="conversation-import-format">Export format</label>
+            <label htmlFor="conversation-import-format">Source</label>
             <Select
               id="conversation-import-format"
               value={source}
@@ -122,7 +135,7 @@ export function ConversationImportPanel() {
             type="file"
             accept={format.accept}
             aria-label={`${format.label} ${format.fileLabel}`}
-            disabled={!local || phase !== 'idle'}
+            disabled={!enabled || phase !== 'idle'}
             className="min-w-0 text-sm text-primary-700 file:mr-3 file:rounded-md file:border file:border-primary-200 file:bg-primary-100 file:px-3 file:py-2 file:text-primary-900"
             onChange={function selectArchive(event) {
               setFile(event.target.files?.[0] ?? null)
@@ -131,9 +144,12 @@ export function ConversationImportPanel() {
               setError('')
             }}
           />
+          <p className="text-pretty text-xs text-primary-500">
+            {format.fileLabel} · Maximum 512 MiB
+          </p>
           <div className="flex flex-wrap gap-2">
             <Button
-              disabled={!local || !file || phase !== 'idle' || finished}
+              disabled={!enabled || !file || phase !== 'idle' || finished}
               onClick={function startImport() {
                 void run()
               }}
@@ -170,10 +186,6 @@ export function ConversationImportPanel() {
                 or unsupported images · {report.skippedAttachments} skipped
                 attachment references · {report.skippedMessages} skipped
                 messages · {report.alternateNodes} alternate nodes excluded.
-              </p>
-              <p>
-                Limits: {format.limits} External Markdown images are blocked in
-                imported messages.
               </p>
             </div>
           ) : null}

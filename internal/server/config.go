@@ -12,6 +12,7 @@ import (
 )
 
 type Config struct {
+	AllowRemoteImport             bool
 	AssetStorage                  string
 	AssetLocalDir                 string
 	S3Bucket                      string
@@ -62,6 +63,7 @@ func LoadConfig() (Config, error) {
 	}
 
 	config := Config{
+		AllowRemoteImport:             getEnvBool("ALLOW_REMOTE_IMPORT", false),
 		AssetStorage:                  getEnv("ASSET_STORAGE", "inline"),
 		AssetLocalDir:                 getEnv("ASSET_LOCAL_DIR", "./tmp/assets"),
 		S3Bucket:                      strings.TrimSpace(os.Getenv("S3_BUCKET")),

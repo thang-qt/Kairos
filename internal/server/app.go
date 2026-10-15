@@ -172,6 +172,7 @@ func (app *App) Handler() http.Handler {
 	mux.HandleFunc("GET /api/sessions/search", app.handleSearchSessions)
 	mux.HandleFunc("GET /api/sessions/{friendlyId}", app.handleGetSession)
 	mux.HandleFunc("POST /api/sessions", app.handleCreateSession)
+	mux.HandleFunc("GET /api/imports", app.handleConversationImportSettings)
 	mux.HandleFunc("POST /api/imports/{source}", app.handleConversationImport)
 	mux.HandleFunc("PATCH /api/sessions/{friendlyId}/settings", app.handleUpdateConversationSettings)
 	mux.HandleFunc("PATCH /api/sessions/{friendlyId}", app.handleRenameSession)

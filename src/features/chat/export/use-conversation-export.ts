@@ -100,7 +100,10 @@ function modelLabel(message: ConversationTurn): string | null {
   return null
 }
 
-function toMarkdown(messages: Array<ConversationTurn>, title: string): string {
+export function toMarkdown(
+  messages: Array<ConversationTurn>,
+  title: string,
+): string {
   const lines: Array<string> = []
   lines.push('# ' + title)
   lines.push('')
@@ -152,7 +155,10 @@ function toJSON(messages: Array<ConversationTurn>, title: string): string {
   )
 }
 
-function toPlainText(messages: Array<ConversationTurn>, title: string): string {
+export function toPlainText(
+  messages: Array<ConversationTurn>,
+  title: string,
+): string {
   const lines: Array<string> = []
   lines.push(title)
   lines.push('Exported on ' + new Date().toLocaleString('en-GB'))
@@ -172,7 +178,7 @@ function toPlainText(messages: Array<ConversationTurn>, title: string): string {
   return lines.join('\n')
 }
 
-function sanitizeFilename(name: string): string {
+export function sanitizeFilename(name: string): string {
   return (
     name
       .replace(/[^a-zA-Z0-9 _-]/g, '')
@@ -182,12 +188,15 @@ function sanitizeFilename(name: string): string {
   )
 }
 
-function downloadFile(
-  content: string,
+export function downloadFile(
+  content: string | Blob,
   filename: string,
   mimeType: string,
 ): void {
-  const blob = new Blob([content], { type: mimeType + ';charset=utf-8' })
+  const blob =
+    typeof content === 'string'
+      ? new Blob([content], { type: mimeType + ';charset=utf-8' })
+      : content
   const url = URL.createObjectURL(blob)
   const anchor = document.createElement('a')
   anchor.href = url

@@ -128,6 +128,12 @@ describe('live import progress', function () {
       location: { hostname: 'remote.example.invalid' },
     })
     const request = fakeImportRequest()
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValue(new Response(JSON.stringify({ enabled: false }))),
+    )
     await expect(
       importConversationWithProgress(
         'chatgpt',
@@ -160,7 +166,9 @@ describe('conversation import transport', function () {
   })
 
   it('refuses remote origins before sending data', async function () {
-    const request = vi.fn()
+    const request = vi
+      .fn()
+      .mockResolvedValue(new Response(JSON.stringify({ enabled: false })))
     vi.stubGlobal('fetch', request)
     vi.stubGlobal('window', {
       location: { hostname: 'remote.example.invalid' },
@@ -173,7 +181,32 @@ describe('conversation import transport', function () {
         new AbortController().signal,
       ),
     ).rejects.toThrow('localhost')
-    expect(request).not.toHaveBeenCalled()
+    expect(request).toHaveBeenCalledOnce()
+    expect(request).toHaveBeenCalledWith('/api/imports', expect.anything())
+  })
+
+  it('allows remote uploads when enabled by the server', async function () {
+    const request = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ enabled: true })))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ imported: 1 })))
+    vi.stubGlobal('fetch', request)
+    vi.stubGlobal('window', {
+      location: { hostname: 'remote.example.invalid' },
+    })
+    const file = new File(['synthetic'], 'export.zip')
+    await expect(
+      importConversationArchive(
+        'chatgpt',
+        file,
+        'import',
+        new AbortController().signal,
+      ),
+    ).resolves.toEqual({ imported: 1 })
+    expect(request).toHaveBeenLastCalledWith(
+      '/api/imports/chatgpt?mode=import',
+      expect.objectContaining({ body: file }),
+    )
   })
 
   it('rejects oversized files before sending data', async function () {

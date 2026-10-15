@@ -32,6 +32,13 @@ export function isLocalChatImportHost(hostname: string): boolean {
   return ['localhost', '127.0.0.1', '[::1]', '::1'].includes(hostname)
 }
 
+export async function getConversationImportSettings(): Promise<{
+  enabled: boolean
+}> {
+  const response = await fetch('/api/imports', { credentials: 'include' })
+  return parseJSON<{ enabled: boolean }>(response)
+}
+
 export type ConversationImportProgress =
   | { stage: 'uploading'; loaded: number; total: number }
   | { stage: 'validating' }
@@ -54,7 +61,11 @@ export async function importConversationWithProgress(
   onProgress: (progress: ConversationImportProgress) => void,
 ): Promise<ConversationImportReport> {
   if (!isLocalChatImportHost(window.location.hostname)) {
-    throw new Error('Conversation import is available only on localhost.')
+    const settings = await getConversationImportSettings()
+    if (!settings.enabled)
+      throw new Error(
+        'Conversation import is available only on localhost. Set ALLOW_REMOTE_IMPORT=true on the server to enable remote imports.',
+      )
   }
   if (file.size > 512 * 1024 * 1024)
     throw new Error('Archive exceeds the 512 MiB upload limit.')
@@ -193,7 +204,11 @@ export async function importConversationArchive(
   signal: AbortSignal,
 ): Promise<ConversationImportReport> {
   if (!isLocalChatImportHost(window.location.hostname)) {
-    throw new Error('Conversation import is available only on localhost.')
+    const settings = await getConversationImportSettings()
+    if (!settings.enabled)
+      throw new Error(
+        'Conversation import is available only on localhost. Set ALLOW_REMOTE_IMPORT=true on the server to enable remote imports.',
+      )
   }
   if (file.size > 512 * 1024 * 1024) {
     throw new Error('Archive exceeds the 512 MiB upload limit.')
@@ -382,6 +397,7 @@ export function createHTTPChatBackend(): ChatBackend {
         `/api/sessions/${encodeURIComponent(input.friendlyId)}/history`,
         {
           credentials: 'include',
+          signal: input.signal,
         },
       )
       return parseJSON<HistoryResponse>(response)

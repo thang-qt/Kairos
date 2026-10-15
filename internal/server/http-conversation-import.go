@@ -39,18 +39,9 @@ func (app *App) handleConversationImport(writer http.ResponseWriter, request *ht
 	if !ok {
 		return
 	}
-	// This first version deliberately accepts local deployments only. Do not use
-	// forwarded headers to relax this check: the archive may contain private data.
-	if !localImportHost(request.Host) || !localImportHost(request.RemoteAddr) {
-		writeError(writer, http.StatusForbidden, "Conversation import is available only on localhost.")
+	if !app.conversationImportAllowed(request) {
+		writeError(writer, http.StatusForbidden, "Conversation import is available only on localhost. Set ALLOW_REMOTE_IMPORT=true on the server to enable remote imports.")
 		return
-	}
-	if origin := request.Header.Get("Origin"); origin != "" {
-		parsed, err := url.Parse(origin)
-		if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || !localImportHost(parsed.Host) {
-			writeError(writer, http.StatusForbidden, "Conversation import requires a local browser origin.")
-			return
-		}
 	}
 	factory, exists := conversationImporters[request.PathValue("source")]
 	if !exists {
@@ -130,4 +121,25 @@ func (app *App) handleConversationImport(writer http.ResponseWriter, request *ht
 		report = app.conversations.commitConversationImport(request.Context(), user.ID, archive, report)
 	}
 	writeJSON(writer, http.StatusOK, report)
+}
+
+func (app *App) conversationImportAllowed(request *http.Request) bool {
+	if app.config.AllowRemoteImport {
+		return true
+	}
+	if !localImportHost(request.Host) || !localImportHost(request.RemoteAddr) {
+		return false
+	}
+	if origin := request.Header.Get("Origin"); origin != "" {
+		parsed, err := url.Parse(origin)
+		return err == nil && (parsed.Scheme == "http" || parsed.Scheme == "https") && localImportHost(parsed.Host)
+	}
+	return true
+}
+
+func (app *App) handleConversationImportSettings(writer http.ResponseWriter, request *http.Request) {
+	if _, ok := app.requireAuthenticatedUser(writer, request); !ok {
+		return
+	}
+	writeJSON(writer, http.StatusOK, map[string]bool{"enabled": app.conversationImportAllowed(request)})
 }

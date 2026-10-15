@@ -23,6 +23,7 @@ export type ChatStatus = {
 }
 
 export type ChatHistoryInput = {
+  signal?: AbortSignal
   sessionKey: string
   friendlyId: string
 }

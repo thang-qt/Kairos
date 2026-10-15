@@ -382,3 +382,42 @@ func TestChatGPTImportDoesNotFallbackFromAmbiguousImageName(t *testing.T) {
 		t.Fatal("unambiguous image was skipped")
 	}
 }
+
+func TestConversationImportRemoteOptIn(t *testing.T) {
+	for _, enabled := range []bool{false, true} {
+		app := newTestApp(t, func(config *Config) { config.AllowRemoteImport = enabled })
+		cookie := signupAndRequireCookie(t, app, "remote-import@example.invalid")
+		archive := importFixtureArchive(t, importFixtureConversation("remote-source"))
+		for _, method := range []string{http.MethodGet, http.MethodPost} {
+			path := "/api/imports"
+			if method == http.MethodPost {
+				path += "/chatgpt?mode=import"
+			}
+			request := httptest.NewRequest(method, "https://remote.example.invalid"+path, bytes.NewReader(archive))
+			request.RemoteAddr = "192.0.2.1:1234"
+			request.Header.Set("Origin", "https://remote.example.invalid")
+			response := httptest.NewRecorder()
+			app.handler.ServeHTTP(response, request)
+			assertStatusCode(t, response, http.StatusUnauthorized)
+			request.AddCookie(cookie)
+			response = httptest.NewRecorder()
+			app.handler.ServeHTTP(response, request)
+			if method == http.MethodGet {
+				assertStatusCode(t, response, http.StatusOK)
+				var settings struct {
+					Enabled bool `json:"enabled"`
+				}
+				if err := json.Unmarshal(response.Body.Bytes(), &settings); err != nil {
+					t.Fatal(err)
+				}
+				if settings.Enabled != enabled {
+					t.Fatalf("enabled = %v, want %v", settings.Enabled, enabled)
+				}
+			} else if enabled {
+				assertStatusCode(t, response, http.StatusOK)
+			} else {
+				assertStatusCode(t, response, http.StatusForbidden)
+			}
+		}
+	}
+}

@@ -10,8 +10,11 @@ imported again. Reimporting an updated source conversation does not merge it.
 
 ## Privacy and storage
 
-The browser and server require localhost/loopback access. Files are sent directly
-to the local backend. The server spools uploads into
+By default, the server requires localhost/loopback access. Set
+`ALLOW_REMOTE_IMPORT=true` in the server environment and restart it to enable
+imports from remote clients. Authentication and upload limits still apply.
+The page reads availability from authenticated `GET /api/imports`.
+Files are sent directly to your Kairos backend. The server spools uploads into
 owner-only temporary files and removes them when the request finishes. An abrupt
 process or machine crash can leave a temporary file behind in the OS temporary
 directory. Archive members are never extracted to filesystem paths.

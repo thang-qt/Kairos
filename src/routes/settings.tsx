@@ -13,6 +13,7 @@ const SETTINGS_TABS = new Set<SettingsTab>([
   'web-tools',
   'mcp',
   'import',
+  'export',
 ])
 
 export const Route = createFileRoute('/settings')({

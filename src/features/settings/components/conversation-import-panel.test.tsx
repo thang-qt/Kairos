@@ -18,8 +18,8 @@ const { upload } = vi.hoisted(function mocks() {
 vi.mock('@/lib/chat-backend/http-chat-backend', function backend() {
   return {
     importConversationWithProgress: upload,
-    isLocalChatImportHost: function local() {
-      return true
+    getConversationImportSettings: async function settings() {
+      return { enabled: true }
     },
   }
 })
@@ -43,7 +43,7 @@ const counts = {
   failed: false,
 }
 
-function mount() {
+async function mount() {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   })
@@ -52,6 +52,11 @@ function mount() {
       <ConversationImportPanel />
     </QueryClientProvider>,
   )
+  await waitFor(function available() {
+    expect(
+      screen.getByLabelText('ChatGPT export ZIP').hasAttribute('disabled'),
+    ).toBe(false)
+  })
   fireEvent.change(screen.getByLabelText('ChatGPT export ZIP'), {
     target: { files: [new File(['synthetic'], 'export.zip')] },
   })
@@ -60,7 +65,7 @@ function mount() {
 describe('ConversationImportPanel', function () {
   it('imports directly and reports completion', async function () {
     upload.mockResolvedValueOnce({ ...counts, imported: 1 })
-    mount()
+    await mount()
     expect(screen.queryByRole('button', { name: 'Preview archive' })).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'Import' }))
     await screen.findByText('Imported 1 conversations.')
@@ -76,7 +81,7 @@ describe('ConversationImportPanel', function () {
         return new Promise(function wait() {})
       },
     )
-    mount()
+    await mount()
     fireEvent.click(screen.getByRole('button', { name: 'Import' }))
     act(function uploading() {
       progress({ stage: 'uploading', loaded: 50, total: 100 })
@@ -118,7 +123,7 @@ describe('ConversationImportPanel', function () {
         })
       })
     })
-    mount()
+    await mount()
     fireEvent.click(screen.getByRole('button', { name: 'Import' }))
     await act(async function cancel() {
       fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
