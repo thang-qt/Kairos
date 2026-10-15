@@ -34,10 +34,6 @@ func seedSessionMessages(t *testing.T, testServer *testApp, sessionKey string, m
 		if err != nil {
 			t.Fatalf("marshal message %d: %v", index, err)
 		}
-		contentJSON, err := encodeMessageContent(message["content"])
-		if err != nil {
-			t.Fatalf("encode message content %d: %v", index, err)
-		}
 		timestamp := int64(1710000000000 + index)
 		message["timestamp"] = timestamp
 		messageJSON, err = json.Marshal(message)
@@ -49,13 +45,12 @@ func seedSessionMessages(t *testing.T, testServer *testApp, sessionKey string, m
 				id,
 				session_id,
 				role,
-				content_json,
 				timestamp,
 				message_json,
 				created_at
 			)
-			VALUES (?, ?, ?, ?, ?, ?, ?)
-		`, newID(), sessionKey, stringValueFromMap(message, "role"), contentJSON, timestamp, string(messageJSON), time.Now().UnixMilli()+int64(index)); err != nil {
+			VALUES (?, ?, ?, ?, ?, ?)
+		`, newID(), sessionKey, stringValueFromMap(message, "role"), timestamp, string(messageJSON), time.Now().UnixMilli()+int64(index)); err != nil {
 			t.Fatalf("insert message %d error = %v", index, err)
 		}
 

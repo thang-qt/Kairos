@@ -198,15 +198,11 @@ func (service *ConversationService) commitConversationImportWithProgress(ctx con
 			if err != nil {
 				return err
 			}
-			encoded, err := encodeMessageContent(mapped["content"])
+			_, err = tx.ExecContext(ctx, `INSERT INTO chat_messages(id,session_id,role,model,model_name,message_json,timestamp,created_at,run_id) VALUES(?,?,?,?,?,?,?,?,?)`, messageIDFromMap(mapped), sessionID, message.Role, model, modelName, string(body), orderTime, int64(index), nullableString(assistantGroup))
 			if err != nil {
 				return err
 			}
-			_, err = tx.ExecContext(ctx, `INSERT INTO chat_messages(id,session_id,role,model,model_name,content_json,message_json,timestamp,created_at,run_id) VALUES(?,?,?,?,?,?,?,?,?,?)`, messageIDFromMap(mapped), sessionID, message.Role, model, modelName, encoded, string(body), orderTime, int64(index), nullableString(assistantGroup))
-			if err != nil {
-				return err
-			}
-			last = string(body)
+			last = compactLastMessage(mapped)
 			tokens += approximateMessageTokens(mapped)
 		}
 		if _, err = tx.ExecContext(ctx, `UPDATE chat_sessions SET last_message_json=?,total_tokens=? WHERE id=?`, last, tokens, sessionID); err != nil {

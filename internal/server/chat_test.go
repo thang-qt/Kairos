@@ -95,13 +95,12 @@ func TestCreateListAndLoadSessionHistory(t *testing.T) {
 			id,
 			session_id,
 			role,
-			content_json,
 			message_json,
 			timestamp,
 			created_at
 		)
-		VALUES (?, ?, 'user', ?, ?, ?, ?)
-	`, newID(), created.SessionKey, `[{"type":"text","text":"hello kairos"}]`, `{"id":"msg-1","role":"user","timestamp":1710000000000,"content":[{"type":"text","text":"hello kairos"}]}`, 1710000000000, time.Now().UnixMilli()); err != nil {
+		VALUES (?, ?, 'user', ?, ?, ?)
+	`, newID(), created.SessionKey, `{"id":"msg-1","role":"user","timestamp":1710000000000,"content":[{"type":"text","text":"hello kairos"}]}`, 1710000000000, time.Now().UnixMilli()); err != nil {
 		t.Fatalf("insert message error = %v", err)
 	}
 

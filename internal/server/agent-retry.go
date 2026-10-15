@@ -75,11 +75,11 @@ func (service *AgentRuntime) RetryRun(ctx context.Context, userID, friendlyID, r
 	if err != nil {
 		return result, err
 	}
-	var lastMessage any
+	var lastMessage map[string]any
 	if len(remaining) > 0 {
 		lastMessage = remaining[len(remaining)-1].Message
 	}
-	if _, err := tx.ExecContext(ctx, `UPDATE chat_sessions SET total_tokens=?,last_message_json=? WHERE id=?`, countMessageRecordTokens(remaining), nullableJSONObject(lastMessage), session.ID); err != nil {
+	if _, err := tx.ExecContext(ctx, `UPDATE chat_sessions SET total_tokens=?,last_message_json=? WHERE id=?`, countMessageRecordTokens(remaining), compactLastMessage(lastMessage), session.ID); err != nil {
 		return result, err
 	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM chat_run_steps WHERE run_id=?`, runID); err != nil {

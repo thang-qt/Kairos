@@ -90,7 +90,6 @@ type messageRecord struct {
 	StorageID    string
 	MessageID    string
 	Role         string
-	ContentJSON  string
 	MessageJSON  string
 	Timestamp    int64
 	CreatedAt    int64
@@ -247,7 +246,7 @@ func (service *ConversationService) GetSessionSummary(
 	userID string,
 	friendlyID string,
 ) (SessionSummary, error) {
-	record, err := service.findSessionByFriendlyID(ctx, userID, friendlyID)
+	record, err := service.findSessionExec(ctx, service.db, userID, "friendly_id", strings.TrimSpace(friendlyID), false)
 	if err != nil {
 		return SessionSummary{}, err
 	}
@@ -373,11 +372,7 @@ func (service *ConversationService) CloneSession(
 		if err != nil {
 			return SessionSummary{}, err
 		}
-		content, err := encodeMessageContent(turn["content"])
-		if err != nil {
-			return SessionSummary{}, err
-		}
-		records = append(records, messageRecord{MessageID: messageIDFromMap(turn), Role: stringValueFromMap(turn, "role"), Message: turn, MessageJSON: string(encoded), ContentJSON: content, Timestamp: int64Value(turn["timestamp"]), RunID: nullableString(stringValueFromMap(turn, "runId"))})
+		records = append(records, messageRecord{MessageID: messageIDFromMap(turn), Role: stringValueFromMap(turn, "role"), Message: turn, MessageJSON: string(encoded), Timestamp: int64Value(turn["timestamp"]), RunID: nullableString(stringValueFromMap(turn, "runId"))})
 		if messageIDFromMap(turn) == messageID {
 			found = true
 			break
@@ -455,7 +450,7 @@ func (service *ConversationService) truncateSessionMessagesExec(ctx context.Cont
 	totalTokens := countMessageRecordTokens(remainingRecords)
 	var lastMessageJSON sql.NullString
 	if len(remainingRecords) > 0 {
-		lastMessageJSON = nullableString(remainingRecords[len(remainingRecords)-1].MessageJSON)
+		lastMessageJSON = compactLastMessage(remainingRecords[len(remainingRecords)-1].Message)
 	}
 	if _, err := exec.ExecContext(ctx, `UPDATE chat_sessions SET revision=revision+1 WHERE id=?`, session.ID); err != nil {
 		return err
@@ -563,7 +558,7 @@ func (service *ConversationService) appendMessagesWithOptions(
 		if err != nil {
 			return SessionSummary{}, err
 		}
-		current.LastMessageJSON = nullableJSONObject(message)
+		current.LastMessageJSON = compactLastMessage(message)
 		current.UpdatedAt = summary.UpdatedAt
 		current.TotalTokens = summary.TotalTokens
 		if summary.DerivedTitle != "" {
@@ -589,11 +584,6 @@ func (service *ConversationService) appendMessageWithOptionsExec(
 		return SessionSummary{}, fmt.Errorf("encode message: %w", err)
 	}
 
-	contentJSON, err := encodeMessageContent(message["content"])
-	if err != nil {
-		return SessionSummary{}, err
-	}
-
 	now := time.Now().UnixMilli()
 	totalTokens := session.TotalTokens + approximateMessageTokens(message)
 	derivedTitle := nullStringValue(session.DerivedTitle)
@@ -609,7 +599,6 @@ func (service *ConversationService) appendMessageWithOptionsExec(
 			model,
 			model_name,
 			model_description,
-			content_json,
 			tool_call_id,
 			tool_name,
 			details_json,
@@ -621,8 +610,8 @@ func (service *ConversationService) appendMessageWithOptionsExec(
 			message_json,
 			created_at
 		)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, messageIDFromMap(message), session.ID, stringValueFromMap(message, "role"), stringValueFromMap(message, "model"), stringValueFromMap(message, "modelName"), stringValueFromMap(message, "modelDescription"), contentJSON, stringValueFromMap(message, "toolCallId"), stringValueFromMap(message, "toolName"), nullableJSONObject(message["details"]), boolAsInt(boolValueFromMap(message, "isError")), timestamp, nullableString(stringValueFromMap(message, "runId")), nullableInt64FromMap(message, "roundIndex"), nullableInt64FromMap(message, "messageIndex"), string(messageJSON), now); err != nil {
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, messageIDFromMap(message), session.ID, stringValueFromMap(message, "role"), stringValueFromMap(message, "model"), stringValueFromMap(message, "modelName"), stringValueFromMap(message, "modelDescription"), stringValueFromMap(message, "toolCallId"), stringValueFromMap(message, "toolName"), nullableJSONObject(message["details"]), boolAsInt(boolValueFromMap(message, "isError")), timestamp, nullableString(stringValueFromMap(message, "runId")), nullableInt64FromMap(message, "roundIndex"), nullableInt64FromMap(message, "messageIndex"), string(messageJSON), now); err != nil {
 		return SessionSummary{}, fmt.Errorf("insert chat message: %w", err)
 	}
 
@@ -634,11 +623,11 @@ func (service *ConversationService) appendMessageWithOptionsExec(
 			derived_title = COALESCE(NULLIF(derived_title, ''), ?),
 			total_tokens = ?
 		WHERE id = ? AND user_id = ?
-	`, string(messageJSON), timestamp, nullableString(derivedTitle), totalTokens, session.ID, session.UserID); err != nil {
+	`, compactLastMessage(message), timestamp, nullableString(derivedTitle), totalTokens, session.ID, session.UserID); err != nil {
 		return SessionSummary{}, fmt.Errorf("update session after message: %w", err)
 	}
 
-	session.LastMessageJSON = nullableString(string(messageJSON))
+	session.LastMessageJSON = compactLastMessage(message)
 	session.UpdatedAt = timestamp
 	session.TotalTokens = totalTokens
 	if derivedTitle != "" {
@@ -735,7 +724,6 @@ func (service *ConversationService) listMessageRecordsExec(ctx context.Context, 
 		SELECT
 			id,
 			role,
-			content_json,
 			message_json,
 			timestamp,
 			created_at,
@@ -757,7 +745,6 @@ func (service *ConversationService) listMessageRecordsExec(ctx context.Context, 
 		if err := rows.Scan(
 			&record.StorageID,
 			&record.Role,
-			&record.ContentJSON,
 			&record.MessageJSON,
 			&record.Timestamp,
 			&record.CreatedAt,
@@ -796,7 +783,7 @@ func (service *ConversationService) createClonedSession(
 	totalTokens := countMessageRecordTokens(messageRecords)
 	var lastMessageJSON sql.NullString
 	if len(messageRecords) > 0 {
-		lastMessageJSON = nullableString(messageRecords[len(messageRecords)-1].MessageJSON)
+		lastMessageJSON = compactLastMessage(messageRecords[len(messageRecords)-1].Message)
 	}
 
 	transaction, err := service.beginEventTx(ctx, nil)
@@ -832,7 +819,6 @@ func (service *ConversationService) createClonedSession(
 				id,
 				session_id,
 				role,
-				content_json,
 				timestamp,
 				run_id,
 				round_index,
@@ -840,8 +826,8 @@ func (service *ConversationService) createClonedSession(
 				message_json,
 				created_at
 			)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-		`, newID(), sessionID, messageRecord.Role, messageRecord.ContentJSON, messageRecord.Timestamp, messageRecord.RunID, messageRecord.RoundIndex, messageRecord.MessageIndex, messageRecord.MessageJSON, now); err != nil {
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+		`, newID(), sessionID, messageRecord.Role, messageRecord.Timestamp, messageRecord.RunID, messageRecord.RoundIndex, messageRecord.MessageIndex, messageRecord.MessageJSON, now); err != nil {
 			return SessionSummary{}, fmt.Errorf("copy clone message: %w", err)
 		}
 	}
@@ -888,7 +874,11 @@ func (service *ConversationService) findSession(
 ) (sessionRecord, error) {
 	return service.findSessionExec(ctx, service.db, userID, field, value)
 }
-func (service *ConversationService) findSessionExec(ctx context.Context, exec sqlExecutor, userID, field, value string) (sessionRecord, error) {
+func (service *ConversationService) findSessionExec(ctx context.Context, exec sqlExecutor, userID, field, value string, includeLastMessage ...bool) (sessionRecord, error) {
+	lastMessageColumn := "last_message_json"
+	if len(includeLastMessage) > 0 && !includeLastMessage[0] {
+		lastMessageColumn = "NULL"
+	}
 	var record sessionRecord
 	err := exec.QueryRowContext(ctx, `
 		SELECT
@@ -900,7 +890,7 @@ func (service *ConversationService) findSessionExec(ctx context.Context, exec sq
 			label,
 			is_pinned,
 			updated_at,
-			last_message_json,
+			`+lastMessageColumn+`,
 			total_tokens,
 			context_tokens,
 			conversation_settings_json,revision
@@ -1293,4 +1283,18 @@ func max(left int, right int) int {
 
 func (service *ConversationService) DeleteUserMessage(ctx context.Context, userID, friendlyID, messageID string) (SessionSummary, error) {
 	return service.DeleteUserMessageAtRevision(ctx, userID, friendlyID, messageID, nil)
+}
+
+// Session summaries do not need a duplicate of message bodies or tool outputs.
+func compactLastMessage(message map[string]any) sql.NullString {
+	if message == nil {
+		return sql.NullString{}
+	}
+	metadata := make(map[string]any)
+	for _, key := range []string{"id", "role", "timestamp", "runId", "model"} {
+		if value, ok := message[key]; ok {
+			metadata[key] = value
+		}
+	}
+	return nullableJSONObject(metadata)
 }

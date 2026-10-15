@@ -343,7 +343,7 @@ func TestSessionSearchMigrationPurgesPreviouslyIndexedToolCallMessages(t *testin
 
 	if _, err := db.Exec(`
 		UPDATE chat_messages
-		SET content_json = '[{"type":"text","text":"Text-only assistant content"}]'
+		SET message_json = json_set(message_json,'$.content',json('[{"type":"text","text":"Text-only assistant content"}]'))
 		WHERE id = 'message-1'
 	`); err != nil {
 		t.Fatalf("update to text-only assistant: %v", err)
@@ -358,7 +358,7 @@ func TestSessionSearchMigrationPurgesPreviouslyIndexedToolCallMessages(t *testin
 
 	if _, err := db.Exec(`
 		UPDATE chat_messages
-		SET content_json = '[{"type":"text","text":"Tool-call content again"},{"type":"toolCall","id":"call-2","name":"search"}]'
+		SET message_json = json_set(message_json,'$.content',json('[{"type":"text","text":"Tool-call content again"},{"type":"toolCall","id":"call-2","name":"search"}]'))
 		WHERE id = 'message-1'
 	`); err != nil {
 		t.Fatalf("update to tool-call assistant: %v", err)

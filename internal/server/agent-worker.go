@@ -208,7 +208,7 @@ func (service *AgentRuntime) commitRunMessages(ctx context.Context, record execu
 			return summary, false, err
 		}
 		session.TotalTokens = summary.TotalTokens
-		session.LastMessageJSON = nullableJSONObject(message)
+		session.LastMessageJSON = compactLastMessage(message)
 		if err := checkpointStepExec(ctx, tx, record.ID, message); err != nil {
 			return summary, false, err
 		}
