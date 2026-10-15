@@ -7,6 +7,8 @@
     "vite.config.ts"
   ],
 
+  "exclude": ["desktop", "node_modules", "bower_components", "jspm_packages"],
+
   "compilerOptions": {
     "target": "ES2022",
     "jsx": "react-jsx",

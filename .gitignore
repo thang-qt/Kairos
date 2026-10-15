@@ -3,6 +3,7 @@ node_modules
 .DS_Store
 dist
 dist-ssr
+desktop/app-dist/
 internal/server/static/*
 !internal/server/static/placeholder.txt
 *.local
@@ -19,3 +20,8 @@ tmp/
 
 # Generated desktop frontend bundle
 desktop/app-dist/
+
+# Linux release artifacts
+desktop/release/
+result
+result-*

@@ -130,6 +130,7 @@ export function AppShell({
 
   return (
     <div
+      data-shell-top={insetMain ? 'frame' : 'surface'}
       style={
         {
           '--left-sidebar-width': `${leftWidth}px`,

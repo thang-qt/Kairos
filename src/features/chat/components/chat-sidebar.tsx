@@ -24,6 +24,7 @@ import {
 import { cn } from '@/lib/utils'
 import { ShortcutHint } from '@/components/shortcut-hint'
 import { shortcutTooltip } from '@/lib/shortcuts'
+import { getShell } from '@/lib/shell'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { KairosIconBig } from '@/components/icons/kairos-icon-big'
 
@@ -80,62 +81,76 @@ function ChatSidebarComponent({
     onActiveSessionDelete,
   })
 
+  // The desktop title bar already shows the Kairos identity, so the main
+  // window drops the logo row and the first action row takes its place.
+  const providesIdentity = getShell().providesIdentity
+  const collapseToggle = (
+    <TooltipProvider>
+      <TooltipRoot>
+        <TooltipTrigger
+          onClick={onToggleCollapse}
+          render={
+            <Button size="icon-sm" variant="ghost" className="shrink-0">
+              <HugeiconsIcon
+                icon={SidebarLeft01Icon}
+                size={20}
+                strokeWidth={1.5}
+              />
+            </Button>
+          }
+        />
+        <TooltipContent side="right">
+          {shortcutTooltip('Close Sidebar', 'sidebar')}
+        </TooltipContent>
+      </TooltipRoot>
+    </TooltipProvider>
+  )
+
   return (
     <aside className="flex h-full w-full flex-col overflow-hidden bg-primary-100">
-      <div className="flex items-center h-12 px-2 justify-between">
-        <Link
-          to="/new"
-          onClick={beginFreshNewChat}
-          className={cn(
-            buttonVariants({ variant: 'ghost', size: 'sm' }),
-            'pl-1.5 justify-start',
-          )}
-        >
-          <KairosIconBig className="size-5 rounded-sm" />
-          Kairos
-        </Link>
-        <TooltipProvider>
-          <TooltipRoot>
-            <TooltipTrigger
-              onClick={onToggleCollapse}
-              render={
-                <Button size="icon-sm" variant="ghost">
-                  <HugeiconsIcon
-                    icon={SidebarLeft01Icon}
-                    size={20}
-                    strokeWidth={1.5}
-                  />
-                </Button>
-              }
-            />
-            <TooltipContent side="right">
-              {shortcutTooltip('Close Sidebar', 'sidebar')}
-            </TooltipContent>
-          </TooltipRoot>
-        </TooltipProvider>
-      </div>
+      {providesIdentity ? null : (
+        <div className="flex shrink-0 items-center h-12 px-2 justify-between">
+          <Link
+            to="/new"
+            onClick={beginFreshNewChat}
+            className={cn(
+              buttonVariants({ variant: 'ghost', size: 'sm' }),
+              'pl-1.5 justify-start',
+            )}
+          >
+            <KairosIconBig className="size-5 rounded-sm" />
+            Kairos
+          </Link>
+          {collapseToggle}
+        </div>
+      )}
 
-      <div className="px-2 mb-4 gap-px flex flex-col">
-        <Button
-          disabled={creatingSession}
-          variant="ghost"
-          size="sm"
-          onClick={onCreateSession}
-          onMouseUp={onSelectSession}
-          className="group w-full pl-1.5 justify-start transition-colors duration-0"
-        >
-          <HugeiconsIcon
-            icon={PencilEdit02Icon}
-            size={20}
-            strokeWidth={1.5}
-            className="min-w-5"
-          />
-          <span className="overflow-hidden whitespace-nowrap">New Session</span>
-          <ShortcutHint
-            id="newSession"
-            className="ms-auto opacity-0 group-hover:opacity-100"
-          />
-        </Button>
+      <div className={cn('px-2 mb-4 gap-px flex flex-col desktop:pt-4')}>
+        <div className="flex items-center gap-1">
+          <Button
+            disabled={creatingSession}
+            variant="ghost"
+            size="sm"
+            onClick={onCreateSession}
+            onMouseUp={onSelectSession}
+            className="group min-w-0 flex-1 pl-1.5 justify-start transition-colors duration-0"
+          >
+            <HugeiconsIcon
+              icon={PencilEdit02Icon}
+              size={20}
+              strokeWidth={1.5}
+              className="min-w-5"
+            />
+            <span className="overflow-hidden whitespace-nowrap">
+              New Session
+            </span>
+            <ShortcutHint
+              id="newSession"
+              className="ms-auto opacity-0 group-hover:opacity-100"
+            />
+          </Button>
+          {providesIdentity ? collapseToggle : null}
+        </div>
         <Button
           variant="ghost"
           size="sm"

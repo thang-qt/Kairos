@@ -6,6 +6,7 @@ import { useState } from 'react'
 
 import { AuthFormCard } from './components/auth-form-card'
 import { AuthShell } from './components/auth-shell'
+import { ServerIdentity } from './components/server-identity'
 import {
   appQueryKeys,
   login,
@@ -13,6 +14,7 @@ import {
   useCapabilitiesQuery,
 } from '@/lib/app-api'
 import { FullScreenMessage } from '@/components/full-screen-message'
+import { getShell } from '@/lib/shell'
 
 type AuthScreenProps = {
   mode?: 'login' | 'signup'
@@ -20,7 +22,9 @@ type AuthScreenProps = {
 
 function AuthLoadingScreen() {
   return (
-    <AuthShell>
+    <AuthShell
+      footer={getShell().canChangeServer ? <ServerIdentity /> : undefined}
+    >
       <div className="flex min-h-[26rem] items-center justify-center">
         <div className="flex size-12 items-center justify-center rounded-full border border-primary-200 bg-primary-50/80 text-primary-700 shadow-sm backdrop-blur-sm">
           <HugeiconsIcon
@@ -88,7 +92,9 @@ export function AuthScreen({ mode = 'login' }: AuthScreenProps) {
   }
 
   return (
-    <AuthShell>
+    <AuthShell
+      footer={getShell().canChangeServer ? <ServerIdentity /> : undefined}
+    >
       <AuthFormCard
         email={email}
         errorMessage={formError}

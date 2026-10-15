@@ -17,6 +17,7 @@ import type { SettingsTab } from '../settings-screen'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { KairosIconBig } from '@/components/icons/kairos-icon-big'
 import { cn } from '@/lib/utils'
+import { getShell } from '@/lib/shell'
 
 type SettingsSidebarProps = {
   activeTab: SettingsTab
@@ -83,37 +84,46 @@ export function SettingsSidebar({
     void navigate({ to: '/new' })
   }
 
+  // The desktop title bar already shows the Kairos identity, so the main
+  // window drops the logo row and the first action row takes its place.
+  const providesIdentity = getShell().providesIdentity
+  const collapseToggle = (
+    <Button
+      size="icon-sm"
+      variant="ghost"
+      onClick={onToggleCollapse}
+      aria-label="Collapse sidebar"
+      className="shrink-0"
+    >
+      <HugeiconsIcon icon={SidebarLeft01Icon} size={20} strokeWidth={1.5} />
+    </Button>
+  )
+
   return (
     <aside className="flex h-full w-full flex-col overflow-hidden bg-primary-100">
-      <div className="flex h-12 items-center justify-between px-2">
-        <Link
-          to="/new"
-          className={cn(
-            buttonVariants({ variant: 'ghost', size: 'sm' }),
-            'justify-start pl-1.5',
-          )}
-        >
-          <KairosIconBig className="size-5 rounded-sm" />
-          Kairos
-        </Link>
-
-        <Button
-          size="icon-sm"
-          variant="ghost"
-          onClick={onToggleCollapse}
-          aria-label="Collapse sidebar"
-        >
-          <HugeiconsIcon icon={SidebarLeft01Icon} size={20} strokeWidth={1.5} />
-        </Button>
-      </div>
+      {providesIdentity ? null : (
+        <div className="flex shrink-0 h-12 items-center justify-between px-2">
+          <Link
+            to="/new"
+            className={cn(
+              buttonVariants({ variant: 'ghost', size: 'sm' }),
+              'justify-start pl-1.5',
+            )}
+          >
+            <KairosIconBig className="size-5 rounded-sm" />
+            Kairos
+          </Link>
+          {collapseToggle}
+        </div>
+      )}
 
       <div className="flex min-h-0 flex-1 flex-col">
-        <div className="px-2 pb-2">
+        <div className={cn('flex items-center gap-1 px-2 pb-2 desktop:pt-4')}>
           <Button
             variant="ghost"
             size="sm"
             onClick={handleBackToChat}
-            className="w-full justify-start pl-1.5"
+            className="min-w-0 flex-1 justify-start pl-1.5"
           >
             <HugeiconsIcon
               icon={ArrowLeft01Icon}
@@ -123,6 +133,7 @@ export function SettingsSidebar({
             />
             Back to chat
           </Button>
+          {providesIdentity ? collapseToggle : null}
         </div>
 
         <nav

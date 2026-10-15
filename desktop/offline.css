@@ -1,0 +1,57 @@
+:root {
+  color-scheme: light dark;
+  --color-surface: Canvas;
+  --color-ink: CanvasText;
+  --color-primary-100: oklch(0.9821 0 89.88);
+  --color-primary-200: oklch(0.9461 0 89.88);
+  --color-primary-700: oklch(0.56 0.006 80);
+  --color-primary-900: oklch(0.35 0.004 80);
+  font-family: system-ui, sans-serif;
+  background: var(--color-surface);
+  color: var(--color-primary-900);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-primary-100: oklch(0.1584 0 89.88);
+    --color-primary-200: oklch(0.2078 0 89.88);
+    --color-primary-700: oklch(0.73 0.006 80);
+    --color-primary-900: oklch(0.895 0.004 80);
+  }
+}
+body {
+  margin: 0;
+}
+main {
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+}
+section {
+  max-width: 28rem;
+  padding: 2rem;
+  text-align: center;
+}
+h1 {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 500;
+  text-wrap: balance;
+}
+p {
+  color: var(--color-primary-700);
+  line-height: 1.6;
+  text-wrap: pretty;
+}
+button {
+  font: inherit;
+  color: var(--color-primary-900);
+  background: var(--color-primary-100);
+  border: 1px solid var(--color-primary-200);
+  border-radius: 0.75rem;
+  padding: 0.6rem 1.3rem;
+  cursor: pointer;
+}
+button:focus-visible {
+  outline: 2px solid var(--color-primary-700);
+  outline-offset: 3px;
+}
