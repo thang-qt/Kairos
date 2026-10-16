@@ -934,7 +934,7 @@ func TestSendMessagePassesModelSettingsToProvider(t *testing.T) {
 	if capturedRequest.Model != "test-model" {
 		t.Fatalf("request model = %q, want test-model", capturedRequest.Model)
 	}
-	if !strings.HasPrefix(capturedRequest.SystemPrompt, "You are terse and precise.\n\nRuntime context:\n- Current time: ") {
+	if !strings.HasPrefix(capturedRequest.SystemPrompt, "You are an AI assistant in Kairos, a lightweight AI chat client.\n\nYou are terse and precise.\n\nRuntime context:\n- Current time: ") {
 		t.Fatalf("request system prompt = %q, want configured system prompt with runtime context", capturedRequest.SystemPrompt)
 	}
 	if len(capturedRequest.Tools) == 0 {

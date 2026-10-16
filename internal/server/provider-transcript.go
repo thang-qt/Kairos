@@ -8,7 +8,7 @@ import (
 
 func buildEffectiveSystemPrompt(
 	systemPrompt string,
-	history []map[string]any,
+	modelName string,
 	now time.Time,
 	clientTime string,
 	clientTimeZone string,
@@ -18,21 +18,14 @@ func buildEffectiveSystemPrompt(
 		"Runtime context:",
 		fmt.Sprintf("- Current time: %s.", currentTime),
 	}
-	if idleGap := previousMessageIdleGap(history); idleGap >= 24*time.Hour {
-		runtimeLines = append(
-			runtimeLines,
-			fmt.Sprintf(
-				"- The previous message in this chat was %s ago. If relevant, gently account for the time gap without overemphasizing it.",
-				formatApproximateDuration(idleGap),
-			),
-		)
-	}
+	runtimeLines = append(runtimeLines, fmt.Sprintf("- Current model: %s.", strings.TrimSpace(modelName)))
 
-	runtimeContext := strings.Join(runtimeLines, "\n")
+	promptSections := []string{"You are an AI assistant in Kairos, a lightweight AI chat client."}
 	if normalizedSystemPrompt := strings.TrimSpace(systemPrompt); normalizedSystemPrompt != "" {
-		return normalizedSystemPrompt + "\n\n" + runtimeContext
+		promptSections = append(promptSections, normalizedSystemPrompt)
 	}
-	return runtimeContext
+	promptSections = append(promptSections, strings.Join(runtimeLines, "\n"))
+	return strings.Join(promptSections, "\n\n")
 }
 
 func buildProviderMessages(
@@ -139,31 +132,4 @@ func formatRuntimeCurrentTime(now time.Time, clientTime string, clientTimeZone s
 		return parsedClientTime.UTC().Format("2006-01-02 15:04:05 MST") + " (from the user's browser)"
 	}
 	return now.UTC().Format("2006-01-02 15:04:05 MST") + " (server fallback)"
-}
-
-func previousMessageIdleGap(messages []map[string]any) time.Duration {
-	if len(messages) < 2 {
-		return 0
-	}
-	currentTimestamp := int64Value(messages[len(messages)-1]["timestamp"])
-	previousTimestamp := int64Value(messages[len(messages)-2]["timestamp"])
-	if currentTimestamp <= 0 || previousTimestamp <= 0 || currentTimestamp <= previousTimestamp {
-		return 0
-	}
-	return time.Duration(currentTimestamp-previousTimestamp) * time.Millisecond
-}
-
-func formatApproximateDuration(duration time.Duration) string {
-	days := int(duration.Hours() / 24)
-	if days >= 2 {
-		return fmt.Sprintf("about %d days", days)
-	}
-	if days == 1 {
-		return "about 1 day"
-	}
-	hours := int(duration.Hours())
-	if hours >= 2 {
-		return fmt.Sprintf("about %d hours", hours)
-	}
-	return "about 1 hour"
 }

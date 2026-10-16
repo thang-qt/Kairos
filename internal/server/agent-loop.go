@@ -63,7 +63,7 @@ func (service *AgentRuntime) executeGeneration(
 
 	effectiveSystemPrompt := buildEffectiveSystemPrompt(
 		input.Request.SystemPrompt,
-		input.History,
+		firstNonEmpty(model.Name, model.ID),
 		time.Now(),
 		input.Request.ClientTime,
 		input.Request.ClientTimeZone,
