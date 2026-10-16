@@ -117,7 +117,7 @@ class EventStream(private val api: KairosApi) {
                                         "Invalid event stream."
                                     }
                                     val parser = SseParser { frame ->
-                                        frame.id?.toLongOrNull()?.let { resume = it }
+                                        val nextCursor = frame.id?.toLongOrNull()
                                         frame.retryMillis?.let {
                                             serverDelay = it.coerceIn(500, 30000)
                                         }
@@ -132,7 +132,11 @@ class EventStream(private val api: KairosApi) {
                                                 StreamUpdate.Connection(ConnectionState.Connected)
                                             )
                                         }
+                                        // Only advance the replay cursor AFTER the event was
+                                        // queued. If a bounded queue overflows, reconnect
+                                        // must replay the frame instead of skipping it.
                                         trySend(StreamUpdate.Event(event)).getOrThrow()
+                                        if (nextCursor != null) resume = nextCursor
                                     }
                                     response.body!!.charStream().use { reader ->
                                         val buffer = CharArray(8192)
@@ -165,7 +169,7 @@ class EventStream(private val api: KairosApi) {
                     worker.cancel()
                 }
             }
-            .buffer(kotlinx.coroutines.channels.Channel.UNLIMITED)
+            .buffer(256)
 }
 
 /**
@@ -235,4 +239,4 @@ fun sessionListEvents(api: KairosApi): Flow<Unit> =
             worker.cancel()
         }
     }
-            .buffer(kotlinx.coroutines.channels.Channel.UNLIMITED)
+            .conflate()
