@@ -6,6 +6,7 @@ import (
 	"log"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 func shouldAutoGenerateSessionTitle(session sessionRecord) bool {
@@ -188,7 +189,11 @@ func normalizeGeneratedSessionTitle(value string) string {
 	normalized = strings.TrimRight(normalized, ".!?:;")
 	normalized = strings.Join(strings.Fields(normalized), " ")
 	if len(normalized) > 80 {
-		normalized = strings.TrimSpace(normalized[:80])
+		cut := 80
+		for cut > 0 && !utf8.RuneStart(normalized[cut]) {
+			cut--
+		}
+		normalized = strings.TrimSpace(normalized[:cut])
 	}
 	return normalized
 }
