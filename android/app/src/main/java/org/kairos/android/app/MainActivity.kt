@@ -6,7 +6,6 @@ import android.util.Log
 import android.view.ViewTreeObserver
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
-import androidx.activity.compose.PredictiveBackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -41,8 +40,8 @@ class MainActivity : ComponentActivity() {
                     }
                 },
             )[ChatViewModel::class.java]
-        if (savedInstanceState != null) chat.openIntent(savedInstanceState.getString(SESSION_EXTRA))
-        else if (intent.hasExtra(SESSION_EXTRA))
+        // Navigation Compose restores its own back stack. Only fresh intents override it.
+        if (savedInstanceState == null && intent.hasExtra(SESSION_EXTRA))
             chat.openIntent(intent.getStringExtra(SESSION_EXTRA))
         val bridge = app.bridge
         bridge.webView.setBackgroundColor(app.preferences.colors.surface.toArgb())
@@ -89,19 +88,8 @@ class MainActivity : ComponentActivity() {
                     )
                 )
             }
-            PredictiveBackHandler(
-                enabled = chat.screen == Screen.SignIn || chat.screen == Screen.Settings
-            ) { events ->
-                events.collect {}
-                chat.back()
-            }
             KairosTheme(colors, dark) {
-                when (chat.screen) {
-                    Screen.Connect,
-                    Screen.SignIn -> AuthScreen(chat)
-                    Screen.Chat -> ChatScreen(chat, bridge, ::copy)
-                    Screen.Settings -> SettingsScreen(chat)
-                }
+                KairosNavigation(chat, bridge, ::copy)
             }
         }
     }
@@ -109,12 +97,8 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        chat.openIntent(intent.getStringExtra(SESSION_EXTRA))
-    }
-
-    override fun onSaveInstanceState(outState: Bundle) {
-        outState.putString(SESSION_EXTRA, chat.sessionId)
-        super.onSaveInstanceState(outState)
+        if (intent.hasExtra(SESSION_EXTRA))
+            chat.openIntent(intent.getStringExtra(SESSION_EXTRA))
     }
 
     override fun onStart() {
