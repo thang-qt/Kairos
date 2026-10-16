@@ -33,6 +33,7 @@ dependencies {
     implementation(libs.activity.compose)
     implementation(libs.webkit)
     implementation(libs.lifecycle.runtime.ktx)
+    implementation(libs.lifecycle.runtime.compose)
     implementation(libs.lifecycle.viewmodel)
     implementation(libs.savedstate)
     implementation(libs.navigation.compose)
