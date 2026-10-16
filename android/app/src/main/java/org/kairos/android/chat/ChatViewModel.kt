@@ -32,7 +32,7 @@ class ChatViewModel(val app: AppContainer, private val savedState: SavedStateHan
     )
         private set
 
-    private fun setNewChatSettings(settings: ConversationSettings?) {
+    private fun updateNewChatDraftSettings(settings: ConversationSettings?) {
         newChatSettings = settings
         savedState["newChatSettings"] = settings?.let { wireJson.encodeToString(it) }
     }
@@ -318,7 +318,7 @@ class ChatViewModel(val app: AppContainer, private val savedState: SavedStateHan
         val generation = selectionGeneration
         val settings =
             (activeSession?.settings ?: newChatSettings ?: app.models.defaults(key)).copy(model = key)
-        if (sessionId == null) setNewChatSettings(settings) else conversation.settings(settings)
+        if (sessionId == null) updateNewChatDraftSettings(settings) else conversation.settings(settings)
         if (generation == selectionGeneration) model = key
     }
 
@@ -350,7 +350,7 @@ class ChatViewModel(val app: AppContainer, private val savedState: SavedStateHan
                     editing = null
                     offline = false
                     if (wasNewConversation && next != null) {
-                        setNewChatSettings(null)
+                        updateNewChatDraftSettings(null)
                         navigate(NavigationRequest.Chat(next, replaceCurrent = true))
                     }
                 }
@@ -444,7 +444,7 @@ class ChatViewModel(val app: AppContainer, private val savedState: SavedStateHan
     fun saveConversationSettings(settings: ConversationSettings) = task {
         val target = conversationSettingsTarget
         if (target == null && sessionId == null) {
-            setNewChatSettings(settings)
+            updateNewChatDraftSettings(settings)
             model = settings.model
         } else if (target == null || target == sessionId) {
             conversation.settings(settings)
