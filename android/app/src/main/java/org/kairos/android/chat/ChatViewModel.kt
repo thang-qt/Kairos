@@ -264,11 +264,14 @@ class ChatViewModel(val app: AppContainer, private val savedState: SavedStateHan
         conversationSettingsOpen = false
         conversationSettingsTarget = null
         model =
-            sessions.value
-                .find { it.friendlyId == id }
-                ?.settings
-                ?.model
-                ?.ifBlank { app.models.defaultModel() } ?: app.models.defaultModel()
+            if (id == null) {
+                newChatSettings?.model?.ifBlank { app.models.defaultModel() }
+                    ?: app.models.defaultModel()
+            } else {
+                sessions.value.find { it.friendlyId == id }?.settings?.model
+                    ?.ifBlank { app.models.defaultModel() }
+                    ?: app.models.defaultModel()
+            }
         // Sessions outside the loaded pages (deep links, older than the first page) resolve
         // their summary in the background instead of falling back to default settings.
         if (id != null && sessions.value.none { it.friendlyId == id }) {
