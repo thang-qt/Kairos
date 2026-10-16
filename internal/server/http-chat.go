@@ -18,20 +18,20 @@ type sessionSearchResponse struct {
 }
 
 type createSessionRequest struct {
-	Label          string                `json:"label"`
-	Message        string                `json:"message"`
-	Model          string                `json:"model"`
-	SystemPrompt   string                `json:"systemPrompt"`
-	WebSearch      bool                  `json:"webSearch"`
-	MathTools      bool                  `json:"mathTools"`
-	Advanced       *ChatAdvancedOptions  `json:"advanced"`
-	IdempotencyKey string                `json:"idempotencyKey"`
-	ClientID       string                `json:"clientId"`
-	ClientTime     string                `json:"clientTime"`
-	ClientTimeZone string                `json:"clientTimeZone"`
-	Attachments    []AttachmentPayload   `json:"attachments"`
-	Settings       *ConversationSettings `json:"settings"`
-	UseConversationSettings bool `json:"useConversationSettings,omitempty"`
+	Label                   string                `json:"label"`
+	Message                 string                `json:"message"`
+	Model                   string                `json:"model"`
+	SystemPrompt            string                `json:"systemPrompt"`
+	WebSearch               bool                  `json:"webSearch"`
+	MathTools               bool                  `json:"mathTools"`
+	Advanced                *ChatAdvancedOptions  `json:"advanced"`
+	IdempotencyKey          string                `json:"idempotencyKey"`
+	ClientID                string                `json:"clientId"`
+	ClientTime              string                `json:"clientTime"`
+	ClientTimeZone          string                `json:"clientTimeZone"`
+	Attachments             []AttachmentPayload   `json:"attachments"`
+	Settings                *ConversationSettings `json:"settings"`
+	UseConversationSettings bool                  `json:"useConversationSettings,omitempty"`
 }
 
 type updateConversationSettingsRequest struct {
@@ -39,19 +39,19 @@ type updateConversationSettingsRequest struct {
 }
 
 type sendMessageRequest struct {
-	ExpectedRevision *int64               `json:"expectedRevision,omitempty"`
-	UseConversationSettings bool `json:"useConversationSettings,omitempty"`
-	Message          string               `json:"message"`
-	Model            string               `json:"model"`
-	SystemPrompt     string               `json:"systemPrompt"`
-	WebSearch        bool                 `json:"webSearch"`
-	MathTools        bool                 `json:"mathTools"`
-	Advanced         *ChatAdvancedOptions `json:"advanced"`
-	IdempotencyKey   string               `json:"idempotencyKey"`
-	ClientID         string               `json:"clientId"`
-	ClientTime       string               `json:"clientTime"`
-	ClientTimeZone   string               `json:"clientTimeZone"`
-	Attachments      []AttachmentPayload  `json:"attachments"`
+	ExpectedRevision        *int64               `json:"expectedRevision,omitempty"`
+	UseConversationSettings bool                 `json:"useConversationSettings,omitempty"`
+	Message                 string               `json:"message"`
+	Model                   string               `json:"model"`
+	SystemPrompt            string               `json:"systemPrompt"`
+	WebSearch               bool                 `json:"webSearch"`
+	MathTools               bool                 `json:"mathTools"`
+	Advanced                *ChatAdvancedOptions `json:"advanced"`
+	IdempotencyKey          string               `json:"idempotencyKey"`
+	ClientID                string               `json:"clientId"`
+	ClientTime              string               `json:"clientTime"`
+	ClientTimeZone          string               `json:"clientTimeZone"`
+	Attachments             []AttachmentPayload  `json:"attachments"`
 }
 
 type ephemeralMessageRequest struct {
@@ -353,20 +353,20 @@ func (app *App) handleSendMessage(writer http.ResponseWriter, request *http.Requ
 	}
 
 	result, err := app.runtime.StartRun(request.Context(), user.ID, SubmitTurnInput{
-		ExpectedRevision: payload.ExpectedRevision,
-		UseConversationSettings: payload.UseConversationSettings,
-		FriendlyID:       request.PathValue("friendlyId"),
-		Message:          payload.Message,
-		Model:            payload.Model,
-		SystemPrompt:     payload.SystemPrompt,
-		WebSearch:        payload.WebSearch,
-		MathTools:        payload.MathTools,
-		Advanced:         payload.Advanced,
-		IdempotencyKey:   payload.IdempotencyKey,
-		ClientID:         payload.ClientID,
-		ClientTime:       payload.ClientTime,
-		ClientTimeZone:   payload.ClientTimeZone,
-		Attachments:      payload.Attachments,
+		ExpectedRevision:         payload.ExpectedRevision,
+		UseConversationSettings:  payload.UseConversationSettings,
+		FriendlyID:               request.PathValue("friendlyId"),
+		Message:                  payload.Message,
+		Model:                    payload.Model,
+		SystemPrompt:             payload.SystemPrompt,
+		WebSearch:                payload.WebSearch,
+		MathTools:                payload.MathTools,
+		Advanced:                 payload.Advanced,
+		IdempotencyKey:           payload.IdempotencyKey,
+		ClientID:                 payload.ClientID,
+		ClientTime:               payload.ClientTime,
+		ClientTimeZone:           payload.ClientTimeZone,
+		Attachments:              payload.Attachments,
 	})
 	if err != nil {
 		switch {
