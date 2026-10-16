@@ -195,6 +195,15 @@ func (service *AgentRuntime) executeGeneration(
 			},
 		)
 		if generationErr != nil {
+			message := buildAssistantMessageWithLineage(assistantMessageID, displayModel, assistantTimestamp, buildAssistantContent(textBuffer.thinking.String(), textBuffer.text.String(), accumulatedToolCalls, textBuffer.snapshotSegments()...), input.RunID, roundIndex)
+			message["details"] = buildGenerationDetails(result)
+			if flush, ok := sink.(interface{ FlushDelta(map[string]any) error }); ok {
+				if err := flush.FlushDelta(message); err != nil {
+					return err
+				}
+			} else if err := sink.Delta(message); err != nil {
+				return err
+			}
 			return generationErr
 		}
 

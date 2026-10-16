@@ -90,10 +90,20 @@ func (driver *OpenAICompatibleDriver) GenerateChatStream(
 	if err := stream.Err(); err != nil {
 		return ChatGenerationResult{}, fmt.Errorf("stream OpenAI-compatible chat completion: %w", normalizeProviderHTTPError(err))
 	}
-	if !accumulator.finished {
-		return ChatGenerationResult{}, fmt.Errorf("Chat Completions stream ended before completion")
+	result := accumulator.result(provider.Record.Label, request.Model)
+	result.Details = map[string]any{"finishReason": accumulator.finishReason}
+	switch accumulator.finishReason {
+	case "stop", "tool_calls":
+		return result, nil
+	case "length":
+		return result, fmt.Errorf("Response truncated: the provider reached its output-token limit (finish_reason: length)")
+	case "content_filter":
+		return result, fmt.Errorf("Response incomplete: the provider stopped generation due to content filtering (finish_reason: content_filter)")
+	case "":
+		return result, fmt.Errorf("Chat Completions stream ended before completion")
+	default:
+		return result, fmt.Errorf("Response incomplete: unexpected provider finish_reason %q", accumulator.finishReason)
 	}
-	return accumulator.result(provider.Record.Label, request.Model), nil
 }
 
 func (driver *OpenAICompatibleDriver) client(provider resolvedProvider) (*openai.Client, *http.Client) {
@@ -296,7 +306,7 @@ func openAIFunctionParameters(value any) shared.FunctionParameters {
 }
 
 type openAIStreamAccumulator struct {
-	finished         bool
+	finishReason     string
 	model            string
 	text             strings.Builder
 	thinking         strings.Builder
@@ -319,7 +329,7 @@ func (accumulator *openAIStreamAccumulator) addChunk(chunk openai.ChatCompletion
 	var delta ChatGenerationDelta
 	for _, choice := range chunk.Choices {
 		if choice.FinishReason != "" {
-			accumulator.finished = true
+			accumulator.finishReason = choice.FinishReason
 		}
 		for _, key := range []string{"reasoning_content", "reasoning"} {
 			if field, ok := choice.Delta.JSON.ExtraFields[key]; ok {

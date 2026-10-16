@@ -175,3 +175,98 @@ func BenchmarkIncrementalTurnWithToolOutput(b *testing.B) {
 		})
 	}
 }
+
+func TestProviderErrorFlushPreservesFinalPartialOutput(t *testing.T) {
+	app, user, session := runtimeFixture(t)
+	runtime := app.app.runtime
+	runtime.Close()
+	ctx := context.Background()
+	record := executionRecord{ID: newID(), UserID: user, SessionID: session.Key, AssistantTurnID: newID(), Status: "running", Model: "test-model"}
+	if err := runtime.insertRun(ctx, record, SubmitTurnInput{Message: "checkpoint"}, time.Now().UnixMilli()); err != nil {
+		t.Fatal(err)
+	}
+	sessionRecord, err := app.app.conversations.findSessionByFriendlyID(ctx, user, session.FriendlyID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sink := persistedGenerationSink{service: runtime, record: record, session: &sessionRecord}
+	message := map[string]any{"id": "model-step", "role": "assistant", "content": []any{map[string]any{"type": "text", "text": "first"}}}
+	if err := sink.Delta(message); err != nil {
+		t.Fatal(err)
+	}
+	// Simulate termination while the next normal checkpoint is throttled.
+	sink.lastCheckpoint = time.Now()
+	message["content"] = []any{map[string]any{"type": "text", "text": "first final fragment"}}
+	message["details"] = map[string]any{"finishReason": "length"}
+	if err := sink.FlushDelta(message); err != nil {
+		t.Fatal(err)
+	}
+	runtime.finishOwnedRun(record, "error", fmt.Errorf("Response truncated"))
+	history, err := app.app.conversations.GetHistory(ctx, user, session.FriendlyID)
+	if err != nil || len(history.Messages) != 1 {
+		t.Fatalf("history: %+v %v", history, err)
+	}
+	turn := history.Messages[0]
+	encoded, _ := json.Marshal(turn)
+	if turn["status"] != "error" || turn["error"] != "Response truncated" || !strings.Contains(string(encoded), "first final fragment") || !strings.Contains(string(encoded), `"finishReason":"length"`) {
+		t.Fatalf("incomplete turn lost output or diagnostics: %s", encoded)
+	}
+}
+
+func TestRunBoundaryPreservesCompleteMessageAfterDirtyCheckpoint(t *testing.T) {
+	for _, final := range []bool{true, false} {
+		t.Run(fmt.Sprintf("final=%t", final), func(t *testing.T) {
+			app, user, session := runtimeFixture(t)
+			runtime := app.app.runtime
+			runtime.Close()
+			ctx := context.Background()
+			record := executionRecord{ID: newID(), UserID: user, SessionID: session.Key, AssistantTurnID: newID(), Status: "running", Model: "test-model"}
+			if err := runtime.insertRun(ctx, record, SubmitTurnInput{Message: "checkpoint"}, time.Now().UnixMilli()); err != nil {
+				t.Fatal(err)
+			}
+			sessionRecord, err := app.app.conversations.findSessionByFriendlyID(ctx, user, session.FriendlyID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			sink := persistedGenerationSink{service: runtime, record: record, session: &sessionRecord}
+			message := map[string]any{"id": "model-step", "role": "assistant", "runId": record.ID, "roundIndex": 0, "timestamp": time.Now().UnixMilli(), "content": []any{map[string]any{"type": "text", "text": "first"}}}
+			if err := sink.Delta(message); err != nil {
+				t.Fatal(err)
+			}
+			sink.lastCheckpoint = time.Time{}
+			message["content"] = []any{map[string]any{"type": "text", "text": "first second"}}
+			if err := sink.Delta(message); err != nil {
+				t.Fatal(err)
+			}
+			var dirty bool
+			if err := app.app.db.QueryRow(`SELECT turn_dirty FROM chat_runs WHERE id=?`, record.ID).Scan(&dirty); err != nil || !dirty {
+				t.Fatalf("expected dirty incremental checkpoint: %t %v", dirty, err)
+			}
+			message["content"] = []any{map[string]any{"type": "text", "text": "first second final fragment"}}
+			message["details"] = map[string]any{"usage": map[string]any{"totalTokens": 42}}
+			if final {
+				err = sink.Final(message, 42)
+			} else {
+				err = sink.ToolRound([]map[string]any{message}, 42)
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			history, err := app.app.conversations.GetHistory(ctx, user, session.FriendlyID)
+			if err != nil || len(history.Messages) != 1 {
+				t.Fatalf("history: %+v %v", history, err)
+			}
+			encoded, _ := json.Marshal(history.Messages[0])
+			if !strings.Contains(string(encoded), "first second final fragment") || !strings.Contains(string(encoded), `"totalTokens":42`) {
+				t.Fatalf("boundary reverted complete message to checkpoint: %s", encoded)
+			}
+			var raw string
+			if err := app.app.db.QueryRow(`SELECT event_json FROM chat_events WHERE session_id=? ORDER BY sequence DESC LIMIT 1`, session.Key).Scan(&raw); err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(raw, "final fragment") {
+				t.Fatalf("boundary event lost final output: %s", raw)
+			}
+		})
+	}
+}

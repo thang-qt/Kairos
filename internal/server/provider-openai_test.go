@@ -146,3 +146,42 @@ func TestChatCompletionsStreamWithoutFinishFails(t *testing.T) {
 		t.Fatalf("truncated stream: output=%q error=%v", observed, err)
 	}
 }
+
+func TestChatCompletionsFinishReasons(t *testing.T) {
+	for _, scenario := range []struct {
+		reason    string
+		errorText string
+	}{
+		{reason: "stop"},
+		{reason: "tool_calls"},
+		{reason: "length", errorText: "Response truncated"},
+		{reason: "content_filter", errorText: "content filtering"},
+		{reason: "", errorText: "stream ended before completion"},
+		{reason: "unexpected", errorText: "unexpected provider finish_reason"},
+	} {
+		t.Run(scenario.reason, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+				writer.Header().Set("Content-Type", "text/event-stream")
+				fmt.Fprint(writer, `data: {"object":"chat.completion.chunk","model":"test-model","choices":[{"index":0,"delta":{"content":"partial"}}]}`+"\n\n")
+				fmt.Fprintf(writer, `data: {"object":"chat.completion.chunk","choices":[{"index":0,"delta":{},"finish_reason":%q}]}`+"\n\n", scenario.reason)
+				// A trailing usage-only chunk must not erase the finish reason.
+				fmt.Fprint(writer, `data: {"object":"chat.completion.chunk","choices":[],"usage":{"prompt_tokens":2,"completion_tokens":3,"total_tokens":5}}`+"\n\n")
+				fmt.Fprint(writer, "data: [DONE]\n\n")
+			}))
+			defer server.Close()
+			driver := &OpenAICompatibleDriver{httpClient: server.Client()}
+			observed := ""
+			result, err := driver.GenerateChatStream(context.Background(), resolvedProvider{BaseURL: server.URL}, ChatGenerationRequest{Model: "test-model"}, func(delta ChatGenerationDelta) error { observed += delta.Text; return nil })
+			if scenario.errorText == "" {
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+			} else if err == nil || !strings.Contains(err.Error(), scenario.errorText) {
+				t.Fatalf("error = %v, want %q", err, scenario.errorText)
+			}
+			if observed != "partial" || result.OutputText != "partial" || result.TotalTokens != 5 {
+				t.Fatalf("output=%q result=%+v, want preserved partial response and usage", observed, result)
+			}
+		})
+	}
+}

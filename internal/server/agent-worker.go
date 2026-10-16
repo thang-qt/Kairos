@@ -127,6 +127,13 @@ func (sink *persistedGenerationSink) ModelStarted() error {
 	return nil
 }
 
+// FlushDelta preserves the final accepted output before a provider error.
+func (sink *persistedGenerationSink) FlushDelta(message map[string]any) error {
+	sink.lastCheckpoint = time.Time{}
+	sink.forceSnapshot = true
+	return sink.Delta(message)
+}
+
 func (sink *persistedGenerationSink) CheckpointDue() bool {
 	return sink.lastCheckpoint.IsZero() || time.Since(sink.lastCheckpoint) >= 100*time.Millisecond
 }
@@ -244,6 +251,11 @@ func (service *AgentRuntime) commitRunMessages(ctx context.Context, record execu
 	defer tx.Rollback()
 	valid, err := service.guardRunExec(ctx, tx, record)
 	if err != nil || !valid {
+		return SessionSummary{}, false, err
+	}
+	// Replay accepted stream patches before writing authoritative boundary messages.
+	// Replaying afterward would overwrite the final text with an older checkpoint.
+	if err := service.materializeRunCheckpoint(ctx, tx, record.ID); err != nil {
 		return SessionSummary{}, false, err
 	}
 	summary, err := sessionRecordToSummary(session)
