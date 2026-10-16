@@ -21,7 +21,8 @@ const config = defineConfig({
     proxy: {
       '/api': {
         target: 'http://127.0.0.1:8080',
-        changeOrigin: true,
+        // Preserve the browser host for the backend same-origin check.
+        changeOrigin: false,
       },
     },
   },
