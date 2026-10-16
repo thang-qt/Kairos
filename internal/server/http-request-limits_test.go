@@ -78,6 +78,7 @@ func TestChatEndpointsRejectOversizedBodiesBeforeSideEffects(t *testing.T) {
 				io.LimitReader(repeatingRequestByteReader{}, int64(test.limit)),
 				strings.NewReader(`"}`),
 			))
+			request.Header.Set("Content-Type", "application/json")
 			request.AddCookie(cookie)
 			response := httptest.NewRecorder()
 			app.handler.ServeHTTP(response, request)
