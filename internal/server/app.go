@@ -8,9 +8,7 @@ import (
 	"fmt"
 	"io/fs"
 	"net/http"
-	"os"
 	"path"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -42,8 +40,8 @@ type App struct {
 }
 
 func NewApp(config Config) (*App, error) {
-	if err := os.MkdirAll(filepath.Dir(config.DBPath), 0o755); err != nil {
-		return nil, fmt.Errorf("create db directory: %w", err)
+	if err := prepareDatabaseFiles(config.DBPath); err != nil {
+		return nil, err
 	}
 
 	db, err := sql.Open("sqlite", config.DBPath)
