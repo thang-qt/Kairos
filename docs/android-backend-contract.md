@@ -52,4 +52,3 @@ same saved-conversation command endpoints as the full Android app.
 
 Go, React and Kotlin share the JSON wire protocol, but only Go is authoritative
 for persisted behavior. The new opt-in does not alter existing web callers.
-
