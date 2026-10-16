@@ -5,10 +5,30 @@ import (
     "strings"
 )
 
+// Canonicalize settings at the persistence boundary. Web and Android receive the
+// same persisted numeric limits and reasoning-effort value after a server mutation.
+func canonicalConversationSettings(settings ConversationSettings) ConversationSettings {
+    settings.Model = strings.TrimSpace(settings.Model)
+    settings.Advanced.ReasoningEffort = strings.ToLower(strings.TrimSpace(settings.Advanced.ReasoningEffort))
+    switch settings.Advanced.ReasoningEffort {
+    case "none", "minimal", "low", "medium", "high", "xhigh", "max":
+    default:
+        settings.Advanced.ReasoningEffort = "medium"
+    }
+    settings.Advanced.Temperature = clampConversationNumber(settings.Advanced.Temperature, 0, 2)
+    settings.Advanced.TopP = clampConversationNumber(settings.Advanced.TopP, 0, 1)
+    settings.Advanced.TopK = math.Floor(clampConversationNumber(settings.Advanced.TopK, 0, 1000))
+    settings.Advanced.FrequencyPenalty = clampConversationNumber(settings.Advanced.FrequencyPenalty, -2, 2)
+    settings.Advanced.PresencePenalty = clampConversationNumber(settings.Advanced.PresencePenalty, -2, 2)
+    settings.Advanced.MaxTokensValue = math.Floor(clampConversationNumber(settings.Advanced.MaxTokensValue, 1, 200000))
+    return settings
+}
+
 // Effective generation options are resolved in Go for thin clients. The normal
 // web request continues to send explicit per-turn overrides unchanged.
 func applySavedConversationGenerationSettings(input *SubmitTurnInput, settings ConversationSettings) {
-    input.Model = strings.TrimSpace(settings.Model)
+    settings = canonicalConversationSettings(settings)
+    input.Model = settings.Model
     input.SystemPrompt = settings.SystemPrompt
     input.WebSearch = settings.WebSearch
     input.MathTools = settings.MathTools
