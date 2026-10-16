@@ -453,7 +453,7 @@ class ConversationRepository(
         val fingerprint = pendingSends?.fingerprint(id, editId, text, settings, attachments)
         val clientId =
             if (fingerprint != null) {
-                pendingSends.acquire(fingerprint)
+                checkNotNull(pendingSends).acquire(fingerprint)
             } else if (
                 prior != null &&
                     prior.sessionId == id &&
