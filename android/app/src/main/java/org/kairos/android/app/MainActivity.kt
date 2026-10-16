@@ -13,6 +13,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.graphics.toArgb
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.createSavedStateHandle
+import androidx.lifecycle.viewmodel.CreationExtras
 import org.kairos.android.assistant.openBrowser
 import org.kairos.android.chat.ChatViewModel
 import org.kairos.android.transcript.TranscriptTheme
@@ -34,9 +36,12 @@ class MainActivity : ComponentActivity() {
             ViewModelProvider(
                 this,
                 object : ViewModelProvider.Factory {
-                    override fun <T : ViewModel> create(modelClass: Class<T>): T {
+                    override fun <T : ViewModel> create(
+                        modelClass: Class<T>,
+                        extras: CreationExtras,
+                    ): T {
                         @Suppress("UNCHECKED_CAST")
-                        return ChatViewModel(app) as T
+                        return ChatViewModel(app, extras.createSavedStateHandle()) as T
                     }
                 },
             )[ChatViewModel::class.java]
