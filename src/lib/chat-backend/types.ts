@@ -208,6 +208,10 @@ export type ChatBackend = {
     cursor: string | null,
     signal?: AbortSignal,
   ) => Promise<SessionPage>
+  listRecentConversationPage?: (
+    cursor: string | null,
+    signal?: AbortSignal,
+  ) => Promise<SessionPage>
   getConversation?: (
     friendlyId: string,
     signal?: AbortSignal,

@@ -373,6 +373,19 @@ export function createHTTPChatBackend(): ChatBackend {
         nextCursor: payload.nextCursor ?? null,
       }
     },
+    async listRecentConversationPage(cursor, signal) {
+      const query = new URLSearchParams({ limit: '50', order: 'recent' })
+      if (cursor) query.set('cursor', cursor)
+      const response = await fetch(`/api/sessions?${query}`, {
+        credentials: 'include',
+        signal,
+      })
+      const payload = await parseJSON<SessionsPayload>(response)
+      return {
+        sessions: payload.sessions,
+        nextCursor: payload.nextCursor ?? null,
+      }
+    },
     async getConversation(friendlyId, signal) {
       const response = await fetch(
         `/api/sessions/${encodeURIComponent(friendlyId)}`,

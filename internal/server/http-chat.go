@@ -106,7 +106,16 @@ func (app *App) handleListSessions(writer http.ResponseWriter, request *http.Req
 		}
 		limit = parsed
 	}
-	page, err := app.conversations.ListSessionPage(request.Context(), user.ID, limit, request.URL.Query().Get("cursor"))
+	var page sessionsResponse
+	var err error
+	if request.URL.Query().Get("order") == "recent" {
+		page, err = app.conversations.ListRecentSessionPage(request.Context(), user.ID, limit, request.URL.Query().Get("cursor"))
+	} else if request.URL.Query().Get("order") == "" || request.URL.Query().Get("order") == "pinned" {
+		page, err = app.conversations.ListSessionPage(request.Context(), user.ID, limit, request.URL.Query().Get("cursor"))
+	} else {
+		writeError(writer, http.StatusBadRequest, "Invalid session pagination.")
+		return
+	}
 	if err != nil {
 		if errors.Is(err, errInvalidSessionPage) {
 			writeError(writer, http.StatusBadRequest, "Invalid session pagination.")
