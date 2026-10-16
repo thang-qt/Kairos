@@ -318,6 +318,15 @@ func (service *MCPService) connect(ctx context.Context, s MCPServer, token strin
 	if transport, ok := client.Transport.(*mcpSafeTransport); ok {
 		go func() { _ = session.Wait(); transport.CloseIdleConnections() }()
 	}
+	// The database discovery cache survives session expiry, but the SDK's tool
+	// schemas do not. Load every page on each new modern session so CallTool can
+	// mirror x-mcp-header parameters without changing stored tool permissions.
+	if initialized := session.InitializeResult(); initialized != nil && initialized.ProtocolVersion >= "2026-07-28" {
+		if _, err := listMCPSessionTools(ctx, session); err != nil {
+			_ = session.Close()
+			return nil, err
+		}
+	}
 	return session, nil
 }
 func mcpAlias(server, name string) string {
@@ -350,6 +359,45 @@ func validateMCPSchema(value any, depth int) bool {
 	}
 	return true
 }
+
+// listMCPSessionTools also populates the SDK's session-local schema cache.
+// Modern MCP transports need it to generate schema-defined parameter headers.
+func listMCPSessionTools(ctx context.Context, session *mcp.ClientSession) ([]*mcp.Tool, error) {
+	tools := []*mcp.Tool{}
+
+	cursor := ""
+	seenCursors := map[string]bool{}
+	seenNames := map[string]bool{}
+	for page := 0; ; page++ {
+		if page >= 16 {
+			return nil, errors.New("MCP discovery exceeded pagination limits")
+		}
+		list, err := session.ListTools(ctx, &mcp.ListToolsParams{Cursor: cursor})
+		if err != nil || list == nil {
+			return nil, errMCPRemote
+		}
+		for _, tool := range list.Tools {
+			if tool == nil || seenNames[tool.Name] {
+				return nil, errors.New("MCP discovery returned duplicate or invalid tools")
+			}
+			seenNames[tool.Name] = true
+			tools = append(tools, tool)
+		}
+		if len(tools) > mcpMaxTools {
+			return nil, errors.New("MCP discovery exceeded 256 tools")
+		}
+		if list.NextCursor == "" {
+			break
+		}
+		if seenCursors[list.NextCursor] {
+			return nil, errors.New("MCP discovery repeated a cursor")
+		}
+		seenCursors[list.NextCursor] = true
+		cursor = list.NextCursor
+	}
+	return tools, nil
+}
+
 func (service *MCPService) Refresh(ctx context.Context, user, id string) (result []MCPTool, returnErr error) {
 	ctx, cancel := service.scope(ctx, 30*time.Second)
 	defer cancel()
@@ -384,37 +432,9 @@ func (service *MCPService) Refresh(ctx context.Context, user, id string) (result
 		return nil, err
 	}
 	defer func() { release(returnErr == nil && ctx.Err() == nil) }()
-	tools := []*mcp.Tool{}
-
-	cursor := ""
-	seenCursors := map[string]bool{}
-	seenNames := map[string]bool{}
-	for page := 0; ; page++ {
-		if page >= 16 {
-			return nil, errors.New("MCP discovery exceeded pagination limits")
-		}
-		list, err := session.ListTools(ctx, &mcp.ListToolsParams{Cursor: cursor})
-		if err != nil || list == nil {
-			return nil, errMCPRemote
-		}
-		for _, tool := range list.Tools {
-			if tool == nil || seenNames[tool.Name] {
-				return nil, errors.New("MCP discovery returned duplicate or invalid tools")
-			}
-			seenNames[tool.Name] = true
-			tools = append(tools, tool)
-		}
-		if len(tools) > mcpMaxTools {
-			return nil, errors.New("MCP discovery exceeded 256 tools")
-		}
-		if list.NextCursor == "" {
-			break
-		}
-		if seenCursors[list.NextCursor] {
-			return nil, errors.New("MCP discovery repeated a cursor")
-		}
-		seenCursors[list.NextCursor] = true
-		cursor = list.NextCursor
+	tools, err := listMCPSessionTools(ctx, session)
+	if err != nil {
+		return nil, err
 	}
 	type cached struct{ name, description, schema, annotations string }
 	normalized := []cached{}
