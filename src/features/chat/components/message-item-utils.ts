@@ -379,6 +379,7 @@ export function activityLabel({
     return `Used ${toolCount} ${toolCount === 1 ? 'tool' : 'tools'}`
   }
   if (hasThinking && durationMs > 0) {
+    if (durationMs < 5000) return 'Thought briefly'
     return `Thought for ${formatActivityDuration(durationMs)}`
   }
   return hasThinking ? 'Thought' : 'Activity'
