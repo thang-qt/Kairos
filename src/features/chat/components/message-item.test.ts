@@ -12,6 +12,8 @@ import {
   splitAssistantActivity,
   mapToolCallToToolPart,
   showsLiveActivity,
+  workingDurationMs,
+  activityLabel,
 } from './message-item-utils'
 import { LiveActivity } from './live-activity'
 import { ActivitySidebar } from './activity-sidebar'
@@ -610,5 +612,32 @@ describe('assistant message phases', function () {
       text: 'A sufficiently clear\nmultiline answer',
     }
     expect(routed({ ...message, status: 'running' }).answer).toEqual([2])
+  })
+})
+
+describe('workingDurationMs', function () {
+  it('uses completion time for a thought-only response', function () {
+    const timestamp = 1_800_000_000_000
+    const durationMs = workingDurationMs({
+      role: 'assistant',
+      timestamp,
+      completedAt: timestamp + 7000,
+      steps: [
+        {
+          role: 'assistant',
+          timestamp: timestamp + 3,
+          content: [{ type: 'thinking', thinking: 'Considering the question' }],
+        },
+      ],
+    })
+    expect(durationMs).toBe(7000)
+    expect(
+      activityLabel({
+        streaming: false,
+        toolCount: 0,
+        hasThinking: true,
+        durationMs,
+      }),
+    ).toBe('Thought for 7.0s')
   })
 })

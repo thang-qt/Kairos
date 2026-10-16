@@ -60,6 +60,7 @@ export type ConversationTurn = {
   toolName?: string
   details?: Record<string, unknown>
   isError?: boolean
+  completedAt?: number
   timestamp?: number
   runId?: string
   roundIndex?: number

@@ -329,12 +329,12 @@ function looksLikeAnswer(
   return trimmed.length > ANSWER_HOLD_MAX_CHARS || trimmed.includes('\n')
 }
 
-// Wall-clock time from the start of the turn to its last recorded step,
+// Wall-clock time from the start of the turn to completion or its last recorded step,
 // falling back to summed tool durations when step timestamps are missing.
 export function workingDurationMs(message: ConversationTurn): number {
   const steps = message.steps ?? []
   const startedAt = normalizeMessageTimestamp(message.timestamp)
-  let endedAt: number | null = null
+  let endedAt = normalizeMessageTimestamp(message.completedAt)
   for (const step of steps) {
     const timestamp = normalizeMessageTimestamp(step.timestamp)
     if (timestamp !== null && (endedAt === null || timestamp > endedAt)) {

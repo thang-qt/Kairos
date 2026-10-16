@@ -23,9 +23,9 @@ type runProjection struct {
 // Load full state at boundaries and for recovery, never for each text checkpoint.
 func (service *AgentRuntime) loadRunProjection(ctx context.Context, exec sqlExecutor, runID string) (*runProjection, error) {
 	var sessionID, turnID, status, errorMessage, previousJSON string
-	var revision, started int64
+	var revision, started, completed int64
 	var invalidated, hasRequest int
-	if err := exec.QueryRowContext(ctx, `SELECT session_id,COALESCE(assistant_message_id,id),status,COALESCE(error_message,''),revision,started_at,invalidated,(request_json IS NOT NULL AND request_json!=''),COALESCE(turn_json,'') FROM chat_runs WHERE id=?`, runID).Scan(&sessionID, &turnID, &status, &errorMessage, &revision, &started, &invalidated, &hasRequest, &previousJSON); err != nil {
+	if err := exec.QueryRowContext(ctx, `SELECT session_id,COALESCE(assistant_message_id,id),status,COALESCE(error_message,''),revision,started_at,COALESCE(completed_at,0),invalidated,(request_json IS NOT NULL AND request_json!=''),COALESCE(turn_json,'') FROM chat_runs WHERE id=?`, runID).Scan(&sessionID, &turnID, &status, &errorMessage, &revision, &started, &completed, &invalidated, &hasRequest, &previousJSON); err != nil {
 		return nil, err
 	}
 	if invalidated != 0 {
@@ -76,6 +76,9 @@ func (service *AgentRuntime) loadRunProjection(ctx context.Context, exec sqlExec
 		}
 	}
 	turn := map[string]any{"id": turnID, "role": "assistant", "runId": runID, "status": status, "revision": revision, "timestamp": started, "content": content, "steps": steps}
+	if completed > 0 {
+		turn["completedAt"] = completed
+	}
 	canRetry := hasRequest != 0 && (status == "error" || status == "aborted" || status == "interrupted")
 	if canRetry {
 		var newer int
@@ -231,7 +234,7 @@ func (service *ConversationService) GetHistory(ctx context.Context, userID, frie
 			legacyUserTimes[record.Timestamp] = true
 		}
 	}
-	rows, err := tx.QueryContext(ctx, `SELECT id,COALESCE(turn_json,''),status,COALESCE(assistant_message_id,id),started_at,(request_json IS NOT NULL AND request_json!=''),COALESCE(error_message,''),turn_dirty FROM chat_runs WHERE session_id=? AND invalidated=0 ORDER BY started_at,id`, session.ID)
+	rows, err := tx.QueryContext(ctx, `SELECT id,COALESCE(turn_json,''),status,COALESCE(assistant_message_id,id),started_at,(request_json IS NOT NULL AND request_json!=''),COALESCE(error_message,''),turn_dirty,COALESCE(completed_at,0) FROM chat_runs WHERE session_id=? AND invalidated=0 ORDER BY started_at,id`, session.ID)
 	if err != nil {
 		return history, err
 	}
@@ -241,8 +244,8 @@ func (service *ConversationService) GetHistory(ctx context.Context, userID, frie
 	for rows.Next() {
 		var id, encoded, status, turnID, errorMessage string
 		var hasRequest, dirty int
-		var started int64
-		if err := rows.Scan(&id, &encoded, &status, &turnID, &started, &hasRequest, &errorMessage, &dirty); err != nil {
+		var started, completed int64
+		if err := rows.Scan(&id, &encoded, &status, &turnID, &started, &hasRequest, &errorMessage, &dirty, &completed); err != nil {
 			rows.Close()
 			return history, err
 		}
@@ -270,6 +273,9 @@ func (service *ConversationService) GetHistory(ctx context.Context, userID, frie
 			turns[id] = turn
 		} else {
 			turns[id] = map[string]any{"id": turnID, "role": "assistant", "runId": id, "status": status, "timestamp": started, "content": []any{}, "steps": []any{}}
+		}
+		if completed > 0 {
+			turns[id]["completedAt"] = completed
 		}
 		if hasRequest == 0 {
 			turns[id]["canRetry"] = false
