@@ -2,6 +2,7 @@ package org.kairos.android.chat
 
 import androidx.compose.runtime.*
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
@@ -9,7 +10,18 @@ import kotlinx.serialization.json.JsonObject
 import org.kairos.android.app.*
 import org.kairos.android.data.*
 
-class ChatViewModel(val app: AppContainer) : ViewModel() {
+class ChatViewModel(val app: AppContainer, private val savedState: SavedStateHandle) : ViewModel() {
+    private val drafts: MutableMap<String, String> =
+        savedState.get<HashMap<String, String>>("conversationDrafts")?.toMutableMap()
+            ?: mutableMapOf()
+
+    private fun draftKey(id: String?): String = id ?: "__new_chat__"
+
+    fun saveDraft(text: String) {
+        val key = draftKey(sessionId)
+        if (text.isEmpty()) drafts.remove(key) else drafts[key] = text
+        savedState["conversationDrafts"] = HashMap(drafts)
+    }
     val conversation = app.conversation()
     private val ephemeral = EphemeralConversation(app.api)
     private val navigationEvents = MutableSharedFlow<NavigationRequest>(extraBufferCapacity = 16)
@@ -26,7 +38,7 @@ class ChatViewModel(val app: AppContainer) : ViewModel() {
         searchOpen = search
         when (destination) {
             Screen.Chat -> {
-                if (!search && sessionId != id) select(id, notifyNavigation = false)
+                if (!search && conversation.sessionId != id) select(id, notifyNavigation = false)
                 else if (previous == Screen.Settings) conversation.resume()
             }
             Screen.Settings -> conversation.pause()
@@ -50,7 +62,7 @@ class ChatViewModel(val app: AppContainer) : ViewModel() {
         )
         private set
 
-    var sessionId by mutableStateOf<String?>(null)
+    var sessionId by mutableStateOf(savedState.get<String>("selectedConversation"))
         private set
 
     var model by mutableStateOf("")
@@ -223,6 +235,7 @@ class ChatViewModel(val app: AppContainer) : ViewModel() {
     fun select(id: String?, notifyNavigation: Boolean = true) {
         selectionGeneration++
         sessionId = id
+        savedState["selectedConversation"] = id
         ephemeralMode = false
         ephemeral.reset()
         // Clear the previous chat before opening the requested conversation.
@@ -230,8 +243,9 @@ class ChatViewModel(val app: AppContainer) : ViewModel() {
         mergedHistory.value = History()
         conversation.open(id)
         editing = null
-        composerSeed = ""
+        composerSeed = drafts[draftKey(id)].orEmpty()
         composerGeneration++
+        composerFocusGeneration = 0
         error = null
         conversationSettingsOpen = false
         conversationSettingsTarget = null
@@ -311,10 +325,12 @@ class ChatViewModel(val app: AppContainer) : ViewModel() {
             } else {
                 val next = conversation.send(text, selected, attachments, editing?.id)
                 if (generation == selectionGeneration) {
+                    val wasNewConversation = sessionId == null
                     sessionId = next
+                    savedState["selectedConversation"] = next
                     editing = null
                     offline = false
-                    if (next != null && next != activeSession?.friendlyId) {
+                    if (wasNewConversation && next != null) {
                         navigate(NavigationRequest.Chat(next, replaceCurrent = true))
                     }
                 }
@@ -343,6 +359,7 @@ class ChatViewModel(val app: AppContainer) : ViewModel() {
     }
 
     fun seed(text: String) {
+        saveDraft(text)
         composerSeed = text
         composerGeneration++
     }
