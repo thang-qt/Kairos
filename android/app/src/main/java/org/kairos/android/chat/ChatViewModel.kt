@@ -76,7 +76,10 @@ class ChatViewModel(val app: AppContainer, private val savedState: SavedStateHan
         )
         private set
 
-    var sessionId by mutableStateOf(savedState.get<String>("selectedConversation"))
+    var sessionId by mutableStateOf(
+        savedState.get<String>("selectedConversation")
+            ?: if (app.tokens.signedIn.value) app.lastSession.initial else null
+    )
         private set
 
     var model by mutableStateOf("")
@@ -250,6 +253,7 @@ class ChatViewModel(val app: AppContainer, private val savedState: SavedStateHan
         selectionGeneration++
         sessionId = id
         savedState["selectedConversation"] = id
+        app.lastSession.save(id)
         ephemeralMode = false
         ephemeral.reset()
         // Clear the previous chat before opening the requested conversation.
@@ -347,6 +351,7 @@ class ChatViewModel(val app: AppContainer, private val savedState: SavedStateHan
                     val wasNewConversation = sessionId == null
                     sessionId = next
                     savedState["selectedConversation"] = next
+                    app.lastSession.save(next)
                     editing = null
                     offline = false
                     if (wasNewConversation && next != null) {
