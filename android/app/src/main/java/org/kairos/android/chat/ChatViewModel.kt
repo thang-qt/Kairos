@@ -92,6 +92,9 @@ class ChatViewModel(val app: AppContainer) : ViewModel() {
     var conversationSettingsOpen by mutableStateOf(false)
         private set
 
+    var conversationSettingsTarget by mutableStateOf<String?>(null)
+        private set
+
     private var selectionGeneration = 0
     private var pendingSession: String? = null
     val activeSession
@@ -231,6 +234,7 @@ class ChatViewModel(val app: AppContainer) : ViewModel() {
         composerGeneration++
         error = null
         conversationSettingsOpen = false
+        conversationSettingsTarget = null
         model =
             sessions.value
                 .find { it.friendlyId == id }
@@ -401,7 +405,17 @@ class ChatViewModel(val app: AppContainer) : ViewModel() {
     }
 
     fun saveConversationSettings(settings: ConversationSettings) = task {
-        conversation.settings(settings)
+        val target = conversationSettingsTarget
+        if (target == null || target == sessionId) {
+            conversation.settings(settings)
+        } else {
+            val updated = app.api.write<SessionSummary, SettingsRequest>(
+                app.api.sessionPath(target) + "/settings",
+                "PATCH",
+                SettingsRequest(settings),
+            )
+            app.sessions.upsert(updated)
+        }
     }
 
     fun openSearch() {
@@ -415,13 +429,15 @@ class ChatViewModel(val app: AppContainer) : ViewModel() {
         if (navigateBack) navigate(NavigationRequest.Back)
     }
 
-    fun openConversationSettings() {
+    fun openConversationSettings(target: String? = sessionId) {
         error = null
+        conversationSettingsTarget = target
         conversationSettingsOpen = true
     }
 
     fun closeConversationSettings() {
         conversationSettingsOpen = false
+        conversationSettingsTarget = null
     }
 
     fun deleteSession(session: SessionSummary) = task {
