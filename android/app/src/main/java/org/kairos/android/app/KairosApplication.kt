@@ -47,6 +47,7 @@ class AppContainer(context: Context) {
         DiskCache(File(cacheRoot, "history"), maxBytes = 8L * 1024 * 1024)
     val api = KairosApi(server, tokens)
     val pendingSends = PendingSendStore(cache)
+    val lastSession = LastSessionStore(cache)
     val sessions = SessionsRepository(api, cache, tokens)
     val models = ModelsRepository(api, cache)
     // The assistant never constructs a WebView. Only the full application asks for this lazy
