@@ -46,6 +46,11 @@ The backend is a Go HTTP server under `internal/server`, with the entrypoint in 
 
 ### Backend & API Flow
 
+- The Go backend is the authoritative source of truth for application behavior and durable state, including permissions, approval policies and grants, validation, tool execution, and chat run lifecycle transitions. Enforce these rules on the backend for every request, regardless of frontend state.
+- The frontend owns presentation and interaction: rendering backend state, collecting user intent, and managing local UI state such as drafts, open panels, and scroll position. Client validation and disabled controls help users but do not enforce permissions or business rules.
+- Derive behavior-dependent UI from explicit backend responses, events, and snapshots. Do not infer approval requirements, execution eligibility, or lifecycle transitions from tool names, message content, cached settings, or timers.
+- Deliver live state changes through the existing conversation event stream when applicable. Persist durable state changes and their events in the same transaction, and include the corresponding state in reconnect snapshots with a consistent cursor. Avoid frontend polling to discover state already owned by the stream.
+- Frontend caches and optimistic updates are temporary projections of backend state. Reconcile them with authoritative responses and snapshots; backend operations must remain correct across reloads, multiple tabs, and clients that bypass the UI.
 - Frontend chat requests go through `src/lib/chat-backend/http-chat-backend.ts`.
 - Go HTTP handlers live in `internal/server/http-*.go`; chat handlers are in `internal/server/http-chat.go`.
 - Chat run lifecycle lives in `internal/server/agent-runtime.go` and `internal/server/agent-worker.go`.
