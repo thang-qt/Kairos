@@ -194,6 +194,7 @@ data class SendRequest(
     val message: String,
     val model: String,
     val clientId: String,
+    val useConversationSettings: Boolean = true,
     val idempotencyKey: String = clientId,
     val clientTime: String,
     val clientTimeZone: String,
