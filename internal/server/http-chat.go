@@ -31,6 +31,7 @@ type createSessionRequest struct {
 	ClientTimeZone string                `json:"clientTimeZone"`
 	Attachments    []AttachmentPayload   `json:"attachments"`
 	Settings       *ConversationSettings `json:"settings"`
+	UseConversationSettings bool `json:"useConversationSettings,omitempty"`
 }
 
 type updateConversationSettingsRequest struct {
@@ -39,6 +40,7 @@ type updateConversationSettingsRequest struct {
 
 type sendMessageRequest struct {
 	ExpectedRevision *int64               `json:"expectedRevision,omitempty"`
+	UseConversationSettings bool `json:"useConversationSettings,omitempty"`
 	Message          string               `json:"message"`
 	Model            string               `json:"model"`
 	SystemPrompt     string               `json:"systemPrompt"`
@@ -184,7 +186,7 @@ func (app *App) handleCreateSession(writer http.ResponseWriter, request *http.Re
 	}
 	var response sessionMutationResponse
 	if strings.TrimSpace(payload.Message) != "" || len(payload.Attachments) > 0 {
-		result, err := app.runtime.StartRun(request.Context(), user.ID, SubmitTurnInput{NewConversation: &newConversationInput{Label: payload.Label, Settings: settings}, Message: payload.Message, Model: payload.Model, SystemPrompt: payload.SystemPrompt, WebSearch: payload.WebSearch, MathTools: payload.MathTools, Advanced: payload.Advanced, IdempotencyKey: payload.IdempotencyKey, ClientID: payload.ClientID, ClientTime: payload.ClientTime, ClientTimeZone: payload.ClientTimeZone, Attachments: payload.Attachments})
+		result, err := app.runtime.StartRun(request.Context(), user.ID, SubmitTurnInput{UseConversationSettings: payload.UseConversationSettings, NewConversation: &newConversationInput{Label: payload.Label, Settings: settings}, Message: payload.Message, Model: payload.Model, SystemPrompt: payload.SystemPrompt, WebSearch: payload.WebSearch, MathTools: payload.MathTools, Advanced: payload.Advanced, IdempotencyKey: payload.IdempotencyKey, ClientID: payload.ClientID, ClientTime: payload.ClientTime, ClientTimeZone: payload.ClientTimeZone, Attachments: payload.Attachments})
 		if err != nil {
 			if errors.Is(err, errConversationConflict) {
 				writeError(writer, http.StatusConflict, err.Error())
@@ -352,6 +354,7 @@ func (app *App) handleSendMessage(writer http.ResponseWriter, request *http.Requ
 
 	result, err := app.runtime.StartRun(request.Context(), user.ID, SubmitTurnInput{
 		ExpectedRevision: payload.ExpectedRevision,
+		UseConversationSettings: payload.UseConversationSettings,
 		FriendlyID:       request.PathValue("friendlyId"),
 		Message:          payload.Message,
 		Model:            payload.Model,
@@ -493,7 +496,7 @@ func (app *App) handleEditUserMessage(writer http.ResponseWriter, request *http.
 	}
 
 	result, err := app.runtime.StartRun(request.Context(), user.ID, SubmitTurnInput{
-		FriendlyID: request.PathValue("friendlyId"), EditMessageID: request.PathValue("messageId"), ExpectedRevision: payload.ExpectedRevision,
+		FriendlyID: request.PathValue("friendlyId"), EditMessageID: request.PathValue("messageId"), ExpectedRevision: payload.ExpectedRevision, UseConversationSettings: payload.UseConversationSettings,
 		Message: payload.Message, Model: payload.Model, SystemPrompt: payload.SystemPrompt, WebSearch: payload.WebSearch, MathTools: payload.MathTools, Advanced: payload.Advanced, IdempotencyKey: payload.IdempotencyKey, ClientID: payload.ClientID, ClientTime: payload.ClientTime, ClientTimeZone: payload.ClientTimeZone,
 	})
 	if err != nil {
