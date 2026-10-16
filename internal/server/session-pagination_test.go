@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -193,4 +194,44 @@ func TestRecentSessionCursorPaginationUsesUpdatedAtAndAscendingID(t *testing.T) 
 	}
 	response = performJSONRequest(t, app.handler, http.MethodGet, "/api/sessions?order=unknown", nil, []*http.Cookie{cookie})
 	assertStatusCode(t, response, http.StatusBadRequest)
+}
+
+func TestLegacySessionCursorKeepsPinnedOrdering(t *testing.T) {
+	app := newTestApp(t, nil)
+	cookie := signupAndRequireCookie(t, app, "legacy-pages@example.invalid")
+	_ = cookie
+	var userID string
+	if err := app.app.db.QueryRow(`SELECT id FROM users WHERE email=?`, "legacy-pages@example.invalid").Scan(&userID); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 3; i++ {
+		if _, err := app.app.conversations.CreateSession(context.Background(), userID, fmt.Sprint(i)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	page, err := app.app.conversations.ListSessionPage(context.Background(), userID, 2, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := base64.RawURLEncoding.DecodeString(page.NextCursor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fields map[string]any
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		t.Fatal(err)
+	}
+	delete(fields, "o")
+	raw, err = json.Marshal(fields)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cursor := base64.RawURLEncoding.EncodeToString(raw)
+	last, err := app.app.conversations.ListSessionPage(context.Background(), userID, 2, cursor)
+	if err != nil || len(last.Sessions) != 1 {
+		t.Fatalf("legacy page: %+v, %v", last, err)
+	}
+	if _, err := app.app.conversations.ListRecentSessionPage(context.Background(), userID, 2, cursor); !errors.Is(err, errInvalidSessionPage) {
+		t.Fatalf("recent accepted legacy cursor: %v", err)
+	}
 }

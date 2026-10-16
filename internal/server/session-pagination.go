@@ -45,7 +45,13 @@ func (service *ConversationService) listSessionPage(ctx context.Context, userID 
 		var boundary sessionPageCursor
 		decoder := json.NewDecoder(bytes.NewReader(raw))
 		decoder.DisallowUnknownFields()
-		if decoder.Decode(&boundary) != nil || boundary.ID == "" || boundary.Order != order || (boundary.Pinned != 0 && boundary.Pinned != 1) {
+		if decoder.Decode(&boundary) != nil {
+			return result, errInvalidSessionPage
+		}
+		if boundary.Order == "" {
+			boundary.Order = "pinned"
+		}
+		if boundary.ID == "" || boundary.Order != order || (boundary.Pinned != 0 && boundary.Pinned != 1) {
 			return result, errInvalidSessionPage
 		}
 		if order == "recent" {
