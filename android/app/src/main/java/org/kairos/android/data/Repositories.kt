@@ -264,6 +264,7 @@ class ConversationRepository(
     private val api: KairosApi,
     private val sessions: SessionsRepository,
     private val historyCache: DiskCache,
+    private val pendingSends: PendingSendStore? = null,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var stream: Job? = null
