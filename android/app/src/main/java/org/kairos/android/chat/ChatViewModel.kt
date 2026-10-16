@@ -186,7 +186,9 @@ class ChatViewModel(val app: AppContainer) : ViewModel() {
         sessionId = id
         ephemeralMode = false
         ephemeral.reset()
-        mergedHistory.value = conversation.history.value
+        // Clear the previous chat before opening the requested conversation.
+        // The repository will hydrate that conversation's cached snapshot.
+        mergedHistory.value = History()
         conversation.open(id)
         editing = null
         composerSeed = ""
@@ -426,5 +428,6 @@ class ChatViewModel(val app: AppContainer) : ViewModel() {
 
     override fun onCleared() {
         conversation.close()
+        ephemeral.close()
     }
 }
