@@ -173,8 +173,8 @@ func (app *App) handleCreateSession(writer http.ResponseWriter, request *http.Re
 	}
 
 	var payload createSessionRequest
-	if err := decodeJSON(request, &payload); err != nil {
-		writeError(writer, http.StatusBadRequest, err.Error())
+	if err := decodeJSONWithLimit(writer, request, &payload, maxChatJSONRequestBytes); err != nil {
+		writeJSONDecodeError(writer, err)
 		return
 	}
 
@@ -345,8 +345,8 @@ func (app *App) handleSendMessage(writer http.ResponseWriter, request *http.Requ
 	}
 
 	var payload sendMessageRequest
-	if err := decodeJSON(request, &payload); err != nil {
-		writeError(writer, http.StatusBadRequest, err.Error())
+	if err := decodeJSONWithLimit(writer, request, &payload, maxChatJSONRequestBytes); err != nil {
+		writeJSONDecodeError(writer, err)
 		return
 	}
 
@@ -391,8 +391,8 @@ func (app *App) handleEphemeralMessage(writer http.ResponseWriter, request *http
 	}
 
 	var payload ephemeralMessageRequest
-	if err := decodeJSON(request, &payload); err != nil {
-		writeError(writer, http.StatusBadRequest, err.Error())
+	if err := decodeJSONWithLimit(writer, request, &payload, maxEphemeralJSONRequestBytes); err != nil {
+		writeJSONDecodeError(writer, err)
 		return
 	}
 	if len(payload.History) > 200 {
@@ -485,8 +485,8 @@ func (app *App) handleEditUserMessage(writer http.ResponseWriter, request *http.
 	}
 
 	var payload sendMessageRequest
-	if err := decodeJSON(request, &payload); err != nil {
-		writeError(writer, http.StatusBadRequest, err.Error())
+	if err := decodeJSONWithLimit(writer, request, &payload, maxChatJSONRequestBytes); err != nil {
+		writeJSONDecodeError(writer, err)
 		return
 	}
 
