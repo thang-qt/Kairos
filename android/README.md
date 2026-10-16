@@ -7,14 +7,12 @@ The Compose app connects to the real Kairos HTTP backend. Sign-in, saved convers
 From the repository root, with the Android devShell (`nix develop .#android`) or the supplied toolchain:
 
 ```sh
-source /tmp/claude-1001/-home-thang-Dev-Kairos/08da1aca-2512-4303-8005-c1c8f6785fad/scratchpad/android-env.sh
-export ANDROID_USER_HOME="$PWD/android/.gradle-home/android-user-home"
-pnpm build:transcript
+pnpm install --frozen-lockfile
 cd android
-./gradlew assembleDebug testDebugUnitTest
+./gradlew assembleDebug testDebugUnitTest lintDebug
 ```
 
-Source that environment **from the repository root**: it sets `GRADLE_USER_HOME` relative to the current directory. `ANDROID_USER_HOME` keeps Android preferences and the debug keystore in the writable cache. In restricted environments where the Kotlin daemon cannot write to the home directory, add `-Pkotlin.compiler.execution.strategy=in-process` to the Gradle command. No dependency versions need changing for that workaround.
+Use Android Studio or a standard Android SDK installation with JDK 17 and Node.js 22 + pnpm available on PATH. The Gradle build automatically runs `pnpm build:transcript` before packaging the APK; it must never ship a stale or missing transcript. In restricted environments where the Kotlin daemon cannot write to the home directory, add `-Pkotlin.compiler.execution.strategy=in-process` to the Gradle command.
 
 Install `app/build/outputs/apk/debug/app-debug.apk` on the phone. No emulator or device is needed for the build or JVM tests. From a normal Android devShell, `pnpm android:apk` builds the transcript and APK.
 
