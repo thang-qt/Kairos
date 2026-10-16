@@ -55,6 +55,8 @@ type Config struct {
 }
 
 func LoadConfig() (Config, error) {
+	appEnv := getEnv("APP_ENV", "development")
+	production := strings.EqualFold(appEnv, "production")
 	sessionTTLHours, err := getEnvInt("SESSION_TTL_HOURS", 24*30)
 	if err != nil {
 		return Config{}, err
@@ -73,20 +75,20 @@ func LoadConfig() (Config, error) {
 		S3Endpoint:                    strings.TrimSpace(os.Getenv("S3_ENDPOINT")),
 		S3Prefix:                      getEnv("S3_PREFIX", "kairos/assets"),
 		S3ForcePathStyle:              getEnvBool("S3_FORCE_PATH_STYLE", false),
-		AppEnv:                        getEnv("APP_ENV", "development"),
+		AppEnv:                        appEnv,
 		HTTPAddr:                      getEnv("HTTP_ADDR", ":8080"),
 		DBPath:                        getEnv("KAIROS_DB_PATH", "./tmp/kairos.db"),
 		CookieName:                    getEnv("SESSION_COOKIE_NAME", "kairos_session"),
-		CookieSecure:                  getEnvBool("SESSION_COOKIE_SECURE", false),
+		CookieSecure:                  getEnvBool("SESSION_COOKIE_SECURE", production),
 		SessionTTL:                    time.Duration(sessionTTLHours) * time.Hour,
 		AuthEnabled:                   getEnvBool("AUTH_ENABLED", true),
-		AllowSignup:                   getEnvBool("ALLOW_SIGNUP", true),
+		AllowSignup:                   getEnvBool("ALLOW_SIGNUP", !production),
 		BootstrapAdmin:                getEnvBool("BOOTSTRAP_ADMIN", false),
 		AdminEmail:                    strings.TrimSpace(os.Getenv("ADMIN_EMAIL")),
 		AdminPassword:                 os.Getenv("ADMIN_PASSWORD"),
 		AdminPasswordHash:             strings.TrimSpace(os.Getenv("ADMIN_PASSWORD_HASH")),
 		UserProvidersEnabled:          getEnvBool("ENABLE_USER_PROVIDERS", true),
-		AllowUserCustomProviderURL:    getEnvBool("ALLOW_USER_CUSTOM_BASE_URL", true),
+		AllowUserCustomProviderURL:    getEnvBool("ALLOW_USER_CUSTOM_BASE_URL", !production),
 		AllowUserDisableSystem:        getEnvBool("ALLOW_USER_DISABLE_SYSTEM_PROVIDER", true),
 		AllowUserModelSync:            getEnvBool("ALLOW_USER_MODEL_SYNC", true),
 		DefaultChatModel:              strings.TrimSpace(os.Getenv("DEFAULT_CHAT_MODEL")),

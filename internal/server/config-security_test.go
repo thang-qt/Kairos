@@ -37,3 +37,29 @@ func TestLoadConfigUsesDevelopmentProviderEncryptionKeyFallback(t *testing.T) {
 		t.Fatalf("provider encryption key = %q, want development fallback", config.ProviderEncryptionSecretKey)
 	}
 }
+
+func TestLoadConfigUsesSafeProductionDefaults(t *testing.T) {
+	t.Setenv("APP_ENV", "production")
+	t.Setenv("PROVIDER_SECRET_KEY", "0123456789abcdef0123456789abcdef")
+	t.Setenv("SESSION_COOKIE_SECURE", "")
+	t.Setenv("AUTH_ENABLED", "")
+	t.Setenv("ALLOW_SIGNUP", "")
+	t.Setenv("ALLOW_USER_CUSTOM_BASE_URL", "")
+
+	config, err := LoadConfig()
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	if !config.AuthEnabled {
+		t.Fatal("production auth default = false, want true")
+	}
+	if !config.CookieSecure {
+		t.Fatal("production secure-cookie default = false, want true")
+	}
+	if config.AllowSignup {
+		t.Fatal("production signup default = true, want false")
+	}
+	if config.AllowUserCustomProviderURL {
+		t.Fatal("production custom-provider-URL default = true, want false")
+	}
+}
