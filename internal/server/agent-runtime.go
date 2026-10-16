@@ -20,6 +20,7 @@ type newConversationInput struct {
 type SubmitTurnInput struct {
 	ExecutionID      string                `json:"-"`
 	NewConversation  *newConversationInput `json:"-"`
+	UseConversationSettings bool `json:"useConversationSettings,omitempty"`
 	EditMessageID    string                `json:"-"`
 	ExpectedRevision *int64                `json:"expectedRevision,omitempty"`
 	FriendlyID       string                `json:"-"`
@@ -191,6 +192,21 @@ func (service *AgentRuntime) StartRun(
 				ClientID:        strings.TrimSpace(input.ClientID),
 			}, nil
 		}
+	}
+	// New mobile clients can submit only user intent. Resolve the effective
+	// per-turn configuration from server-persisted settings rather than trusting
+	// independent frontend defaults or advanced-option conversions.
+	if input.UseConversationSettings {
+		var settings ConversationSettings
+		if input.NewConversation != nil {
+			settings = input.NewConversation.Settings
+		} else {
+			settings, err = decodeConversationSettings(session.ConversationSettingsJSON)
+			if err != nil {
+				return SubmitTurnResult{}, err
+			}
+		}
+		applySavedConversationGenerationSettings(&input, settings)
 	}
 	shouldGenerateTitle := shouldAutoGenerateSessionTitle(session)
 	titlePreferences := UserPreferences{}
