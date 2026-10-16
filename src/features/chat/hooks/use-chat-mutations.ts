@@ -268,7 +268,6 @@ export function useChatMutations({
           setStreamError(
             err instanceof Error ? err.message : 'The model request failed.',
           )
-          throw err
         })
         .finally(() => {
           setSending(false)

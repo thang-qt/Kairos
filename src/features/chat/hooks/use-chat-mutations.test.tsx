@@ -42,6 +42,33 @@ function createInput() {
 }
 
 describe('useChatMutations', function () {
+  it('handles a failed send without leaving a rejected fire-and-forget promise', async function () {
+    setChatBackend({
+      sendMessage: vi.fn().mockRejectedValue(new Error('Network unavailable')),
+    } as unknown as ChatBackend)
+    const queryClient = new QueryClient()
+
+    function Wrapper({ children }: { children: ReactNode }) {
+      return (
+        <QueryClientProvider client={queryClient}>
+          {children}
+        </QueryClientProvider>
+      )
+    }
+
+    const { result } = renderHook(() => useChatMutations(createInput()), {
+      wrapper: Wrapper,
+    })
+
+    await act(async function sendAndWait() {
+      result.current.sendMessage('session-key', 'friendly-id', 'hello')
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(result.current.streamError).toBe('Network unavailable')
+  })
+
   it('shows a conversation creation failure and restores the draft', async function () {
     const createConversation = vi
       .fn()
