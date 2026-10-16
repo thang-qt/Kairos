@@ -1,5 +1,7 @@
 package org.kairos.android.ui
 
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -106,7 +108,7 @@ fun SearchOverlay(
             when {
                 currentError != null -> Column(Modifier.padding(16.dp)) { ErrorBox(currentError) }
                 query.isBlank() ->
-                    RecentSessions(chat.sessions.collectAsState().value, onSelect)
+                    RecentSessions(chat.sessions.collectAsStateWithLifecycle().value, onSelect)
                 results == null -> LoadingState("Searching…")
                 results!!.isEmpty() ->
                     EmptyState(
