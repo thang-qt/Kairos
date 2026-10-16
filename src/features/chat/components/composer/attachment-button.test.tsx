@@ -145,6 +145,56 @@ it('uses the MIME type of the actual canvas output', async function () {
   })
 })
 
+it('keeps WebP compression output labeled as JPEG', async function () {
+  class TestImage {
+    width = 800
+    height = 600
+    onload: (() => void) | null = null
+    onerror: (() => void) | null = null
+    set src(_value: string) {
+      this.onload?.()
+    }
+  }
+
+  const toBlob = vi.spyOn(HTMLCanvasElement.prototype, 'toBlob')
+  vi.stubGlobal('Image', TestImage)
+  vi.stubGlobal('URL', {
+    createObjectURL: vi.fn(function createObjectURL() {
+      return 'blob:webp-image'
+    }),
+    revokeObjectURL: vi.fn(function revokeObjectURL() {}),
+  })
+  vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({
+    drawImage: vi.fn(),
+  } as unknown as CanvasRenderingContext2D)
+  toBlob.mockImplementation(function encode(callback) {
+    callback(new Blob(['encoded-webp'], { type: 'image/jpeg' }))
+  })
+
+  const onFileSelect = vi.fn()
+  const view = render(<AttachmentButton onFileSelect={onFileSelect} />)
+  const input = view.container.querySelector('input[type="file"]')
+  if (!input) throw new Error('Attachment file input was not rendered')
+  fireEvent.change(input, {
+    target: {
+      files: [new File(['input'], 'photo.webp', { type: 'image/webp' })],
+    },
+  })
+
+  await waitFor(function selectedImage() {
+    expect(onFileSelect).toHaveBeenCalledWith(
+      expect.objectContaining({
+        file: expect.objectContaining({
+          name: 'photo.webp',
+          type: 'image/jpeg',
+        }),
+        base64: btoa('encoded-webp'),
+      }),
+    )
+  })
+  expect(toBlob).toHaveBeenCalledWith(expect.any(Function), 'image/jpeg', 0.75)
+})
+
 it('discards a compression result after the composer generation changes', async function () {
   class TestImage {
     width = 800
