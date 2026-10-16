@@ -77,7 +77,11 @@ describe('useChatMutations', function () {
     })
 
     await act(async function sendAndWait() {
-      result.current.sendMessage('session-key', 'friendly-id', 'hello')
+      result.current.sendMessage({
+        sessionKey: 'session-key',
+        friendlyId: 'friendly-id',
+        message: 'hello',
+      })
       await Promise.resolve()
       await Promise.resolve()
     })

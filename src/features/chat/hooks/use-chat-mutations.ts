@@ -1,40 +1,39 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 
 import { createOptimisticMessage } from '../chat-screen-utils'
 import {
-  applyConversationEvent,
-  cancelEphemeralTurns,
-} from '../conversation-event-reducer'
-import {
   chatQueryKeys,
   acceptConversationCommand,
-  appendHistoryMessage,
   clearHistoryMessages,
   invalidateChatSessionQueries,
-  moveHistoryMessages,
-  removeHistoryMessageByClientId,
   updateHistoryMessageByClientId,
   updateHistoryMessages,
-  updateSessionLastMessage,
-  upsertSessionSummary,
 } from '../chat-queries'
 import { getTurnId } from '../utils'
-import { setRecentSession } from '../pending-send'
+import { resolveConversationSessionKey } from '../conversation-identity'
+import { sendPersistedMessage } from './persisted-message-command'
+import {
+  attachmentFilesFromCreateRequest,
+  useChatConversationCreation,
+} from './use-chat-conversation-creation'
+import type {
+  PersistedMessageCommand,
+  RetryableNetworkSend,
+} from './persisted-message-command'
+import { useChatEphemeralGeneration } from './use-chat-ephemeral-generation'
 import {
   beginFreshNewChat,
   useConversationSettingsStore,
 } from '../conversation-settings'
 import { getChatBackend } from '@/lib/chat-backend'
-import { ApiError } from '@/lib/api-client'
 import { randomUUID } from '@/lib/utils'
 
 import type { CloneMessagePayload } from '../components/chat-message-list'
 import type { QueryClient } from '@tanstack/react-query'
 import type { AttachmentFile } from '@/features/chat/components/composer/attachment-button'
 import type { ChatComposerHelpers } from '../components/chat-composer'
-import type { ChatCreateConversationInput } from '@/lib/chat-backend/types'
 import type {
   ChatRequestAdvancedSettings,
   ConversationTurn,
@@ -46,28 +45,6 @@ type UserTurnDeleteState = {
   messageId: string
   currentText: string
 } | null
-
-type RetryableNetworkSend = {
-  sessionKey: string
-  friendlyId: string
-  message: string
-  model: string
-  systemPrompt: string
-  webSearch: boolean
-  mathTools: boolean
-  advanced?: ChatRequestAdvancedSettings
-  attachments?: Array<AttachmentFile>
-  clientId?: string
-  idempotencyKey: string
-}
-
-type RetryableNewConversation = {
-  message: string
-  clientId: string
-  generation: number
-  reuseKey: boolean
-  request: ChatCreateConversationInput
-}
 
 type UseChatMutationsInput = {
   activeFriendlyId: string
@@ -134,13 +111,8 @@ export function useChatMutations({
   const [streamError, setStreamError] = useState<string | null>(null)
   const [retryableNetworkSend, setRetryableNetworkSend] =
     useState<RetryableNetworkSend | null>(null)
-  const retryableNewConversationRef = useRef<RetryableNewConversation | null>(
-    null,
-  )
-  const conversationCreationAttemptRef = useRef(0)
   const [deletingUserTurn, setDeletingUserTurn] =
     useState<UserTurnDeleteState>(null)
-  const ephemeralAbortRef = useRef<AbortController | null>(null)
 
   if (creationStateGeneration !== newChatGeneration) {
     setCreationStateGeneration(newChatGeneration)
@@ -150,155 +122,64 @@ export function useChatMutations({
 
   const hasAvailableModel = resolvedConversationModel.trim().length > 0
 
-  useEffect(
-    function cancelEphemeralOnScopeChange() {
-      return function cancelEphemeralRequest() {
-        ephemeralAbortRef.current?.abort()
-        ephemeralAbortRef.current = null
-      }
-    },
-    [activeFriendlyId, isNewChat, throwawayMode],
-  )
+  const { sendEphemeralMessage, stopEphemeralGeneration } =
+    useChatEphemeralGeneration({
+      activeFriendlyId,
+      isNewChat,
+      throwawayMode,
+      queryClient,
+      displayMessages,
+      resolvedConversationModel,
+      resolvedSystemPrompt,
+      resolvedWebSearch,
+      resolvedMathTools,
+      resolvedAdvancedSettings,
+      beginGeneration,
+      finishGeneration,
+      setSending,
+      setStreamError,
+      setPinToTop,
+    })
+  const {
+    createConversation: createNewConversation,
+    getRetryableNewConversation,
+  } = useChatConversationCreation({
+    queryClient,
+    newChatGeneration,
+    conversationSettings,
+    resolvedConversationModel,
+    resolvedSystemPrompt,
+    resolvedWebSearch,
+    resolvedMathTools,
+    resolvedAdvancedSettings,
+    beginGeneration,
+    finishGeneration,
+    startRun,
+    setSending,
+    setCreatingSession,
+    setStreamError,
+    setPinToTop,
+    onSessionResolved,
+  })
 
   const sendMessage = useCallback(
-    function sendMessage(
-      sessionKey: string,
-      friendlyId: string,
-      body: string,
-      skipOptimistic = false,
-      modelOverride?: string,
-      systemPromptOverride?: string,
-      webSearchOverride?: boolean,
-      mathToolsOverride?: boolean,
-      advancedOverride?: ChatRequestAdvancedSettings,
-      attachments?: Array<AttachmentFile>,
-      clientIdOverride?: string,
-      idempotencyKeyOverride?: string,
-    ) {
-      if (!skipOptimistic) {
-        setRetryableNetworkSend(null)
-      }
-      let optimisticClientId = ''
-      if (!skipOptimistic) {
-        const { clientId, optimisticMessage } = createOptimisticMessage(
-          body,
-          attachments,
-        )
-        optimisticClientId = clientId
-        appendHistoryMessage(
-          queryClient,
-          friendlyId,
-          sessionKey,
-          optimisticMessage,
-        )
-        updateSessionLastMessage(
-          queryClient,
-          sessionKey,
-          friendlyId,
-          optimisticMessage,
-        )
-      }
-
-      beginGeneration()
-      setSending(true)
-      setStreamError(null)
-      setPinToTop(true)
-
-      const attachmentsPayload = attachments
-        ?.filter((attachment) => Boolean(attachment.base64))
-        .map((attachment) => ({
-          mimeType: attachment.file.type,
-          content: attachment.base64 as string,
-        }))
-
-      const backend = getChatBackend()
-      const model = modelOverride?.trim() || resolvedConversationModel
-      const systemPrompt =
-        systemPromptOverride !== undefined
-          ? systemPromptOverride
-          : resolvedSystemPrompt
-      const webSearch =
-        webSearchOverride !== undefined ? webSearchOverride : resolvedWebSearch
-      const mathTools =
-        mathToolsOverride !== undefined ? mathToolsOverride : resolvedMathTools
-      const advanced =
-        advancedOverride !== undefined
-          ? advancedOverride
-          : resolvedAdvancedSettings
-      const clientId = clientIdOverride || optimisticClientId || undefined
-      const idempotencyKey = idempotencyKeyOverride || clientId || randomUUID()
-      void backend
-        .sendMessage({
-          expectedRevision: queryClient.getQueryData<HistoryResponse>(
-            chatQueryKeys.history(friendlyId, sessionKey),
-          )?.revision,
-          sessionKey,
-          friendlyId,
-          message: body,
-          model,
-          systemPrompt,
-          webSearch,
-          mathTools,
-          advanced,
-          idempotencyKey,
-          clientId,
-          attachments: attachmentsPayload,
-        })
-        .then((payload) => {
-          acceptConversationCommand(
-            queryClient,
-            friendlyId,
-            sessionKey,
-            payload,
-          )
-          setRetryableNetworkSend(function clearMatchingRetryableSend(current) {
-            return current?.idempotencyKey === idempotencyKey ? null : current
-          })
-          if (
-            typeof payload.runId === 'string' &&
-            payload.runId.trim().length > 0
-          ) {
-            startRun(payload.runId.trim())
-          }
-          refreshHistory()
-          void invalidateChatSessionQueries(queryClient)
-        })
-        .catch((err) => {
-          if (!(err instanceof ApiError)) {
-            setRetryableNetworkSend({
-              sessionKey,
-              friendlyId,
-              message: body,
-              model,
-              systemPrompt,
-              webSearch,
-              mathTools,
-              advanced,
-              attachments,
-              clientId,
-              idempotencyKey,
-            })
-          }
-          if (optimisticClientId) {
-            updateHistoryMessageByClientId(
-              queryClient,
-              friendlyId,
-              sessionKey,
-              optimisticClientId,
-              function markFailed(message) {
-                return { ...message, status: 'error' }
-              },
-            )
-          }
-          finishGeneration()
-          setPinToTop(false)
-          setStreamError(
-            err instanceof Error ? err.message : 'The model request failed.',
-          )
-        })
-        .finally(() => {
-          setSending(false)
-        })
+    function sendMessage(command: PersistedMessageCommand) {
+      sendPersistedMessage(command, {
+        queryClient,
+        resolvedConversationModel,
+        resolvedSystemPrompt,
+        resolvedWebSearch,
+        resolvedMathTools,
+        resolvedAdvancedSettings,
+        beginGeneration,
+        finishGeneration,
+        startRun,
+        refreshHistory,
+        setPinToTop,
+        setSending,
+        setStreamError,
+        setRetryableNetworkSend,
+      })
     },
     [
       beginGeneration,
@@ -331,350 +212,41 @@ export function useChatMutations({
       helpers.reset()
 
       if (isNewChat && throwawayMode) {
-        const { clientId, optimisticId, optimisticMessage } =
-          createOptimisticMessage(body, attachments)
-        appendHistoryMessage(queryClient, 'new', 'new', optimisticMessage)
-        beginGeneration()
-        setSending(true)
-        setStreamError(null)
-        setPinToTop(true)
-
-        const attachmentsPayload = attachments
-          ?.filter((attachment) => Boolean(attachment.base64))
-          .map((attachment) => ({
-            mimeType: attachment.file.type,
-            content: attachment.base64 as string,
-          }))
-
-        const abortController = new AbortController()
-        ephemeralAbortRef.current = abortController
-        let receivedStreamEvent = false
-        getChatBackend()
-          .streamEphemeralMessage(
-            {
-              history: displayMessages,
-              message: body,
-              model: resolvedConversationModel,
-              systemPrompt: resolvedSystemPrompt,
-              webSearch: resolvedWebSearch,
-              mathTools: resolvedMathTools,
-              advanced: resolvedAdvancedSettings,
-              clientId,
-              attachments: attachmentsPayload,
-              signal: abortController.signal,
-            },
-            function handleEphemeralEvent(event) {
-              receivedStreamEvent = true
-              updateHistoryMessageByClientId(
-                queryClient,
-                'new',
-                'new',
-                clientId,
-                function markAccepted(message) {
-                  return { ...message, status: undefined }
-                },
-              )
-              updateHistoryMessages(
-                queryClient,
-                'new',
-                'new',
-                function reduceEphemeralEvent(messages) {
-                  return applyConversationEvent(messages, event)
-                },
-              )
-              if (event.state === 'error') {
-                setStreamError(
-                  event.error?.trim() || 'The model request failed.',
-                )
-              }
-            },
-          )
-          .then(() => {
-            updateHistoryMessageByClientId(
-              queryClient,
-              'new',
-              'new',
-              clientId,
-              function markSent(message) {
-                return { ...message, status: undefined }
-              },
-            )
-            finishGeneration()
-          })
-          .catch((error) => {
-            const aborted =
-              error instanceof DOMException && error.name === 'AbortError'
-            if (aborted) {
-              updateHistoryMessages(
-                queryClient,
-                'new',
-                'new',
-                cancelEphemeralTurns,
-              )
-              updateHistoryMessageByClientId(
-                queryClient,
-                'new',
-                'new',
-                clientId,
-                function markStopped(message) {
-                  return { ...message, status: undefined }
-                },
-              )
-            } else if (!receivedStreamEvent) {
-              removeHistoryMessageByClientId(
-                queryClient,
-                'new',
-                'new',
-                clientId,
-                optimisticId,
-              )
-              helpers.setValue(body)
-            } else {
-              updateHistoryMessageByClientId(
-                queryClient,
-                'new',
-                'new',
-                clientId,
-                function markAccepted(message) {
-                  return { ...message, status: undefined }
-                },
-              )
-            }
-            finishGeneration()
-            setPinToTop(false)
-            if (aborted) return
-            setStreamError(
-              error instanceof Error
-                ? error.message
-                : 'The model request failed.',
-            )
-          })
-          .finally(() => {
-            if (ephemeralAbortRef.current === abortController) {
-              ephemeralAbortRef.current = null
-            }
-            setSending(false)
-          })
+        sendEphemeralMessage(body, helpers)
         return
       }
 
       if (isNewChat) {
-        const attachmentsPayload = attachments
-          ?.filter((attachment) => Boolean(attachment.base64))
-          .map((attachment) => ({
-            mimeType: attachment.file.type,
-            content: attachment.base64 as string,
-          }))
-        const currentRequest: ChatCreateConversationInput = {
-          message: body,
-          model: resolvedConversationModel,
-          systemPrompt: resolvedSystemPrompt,
-          webSearch: resolvedWebSearch,
-          mathTools: resolvedMathTools,
-          advanced: resolvedAdvancedSettings,
-          settings: {
-            ...conversationSettings,
-            model: resolvedConversationModel,
-          },
-          attachments: attachmentsPayload,
-        }
-        const pendingCreation = retryableNewConversationRef.current
-        const retryableNewConversation =
-          pendingCreation &&
-          (retryCreation ||
-            (pendingCreation.reuseKey &&
-              matchesRetryableNewConversation(
-                pendingCreation,
-                currentRequest,
-                newChatGeneration,
-                attachmentsPayload,
-              )))
-            ? pendingCreation
-            : null
-        retryableNewConversationRef.current = retryableNewConversation
-        const optimisticAttachments = retryableNewConversation
-          ? attachmentFilesFromCreateRequest(retryableNewConversation.request)
-          : attachments
-        const optimistic = createOptimisticMessage(body, optimisticAttachments)
-        const clientId = retryableNewConversation?.reuseKey
-          ? retryableNewConversation.clientId
-          : optimistic.clientId
-        const optimisticId = optimistic.optimisticId
-        const optimisticMessage =
-          clientId === optimistic.clientId
-            ? optimistic.optimisticMessage
-            : { ...optimistic.optimisticMessage, clientId }
-        appendHistoryMessage(queryClient, 'new', 'new', optimisticMessage)
-        beginGeneration()
-        setSending(true)
-        setCreatingSession(true)
-        setStreamError(null)
-        setPinToTop(true)
-
-        const createRequest = retryableNewConversation
-          ? {
-              ...retryableNewConversation.request,
-              idempotencyKey: clientId,
-              clientId,
-            }
-          : { ...currentRequest, idempotencyKey: clientId, clientId }
-        const creationGeneration = newChatGeneration
-        const creationAttempt = ++conversationCreationAttemptRef.current
-
-        function isCurrentCreation(): boolean {
-          return (
-            creationAttempt === conversationCreationAttemptRef.current &&
-            creationGeneration ===
-              useConversationSettingsStore.getState().generation
-          )
-        }
-
-        getChatBackend()
-          .createConversation(createRequest)
-          .then((result) => {
-            if (!isCurrentCreation()) {
-              void invalidateChatSessionQueries(queryClient)
-              return
-            }
-            retryableNewConversationRef.current = null
-            const sessionKey = result.sessionKey || result.key
-            const friendlyId = result.friendlyId
-            if (!sessionKey || !friendlyId) {
-              throw new Error('Invalid conversation response')
-            }
-            beginFreshNewChat()
-            setRecentSession(friendlyId)
-            upsertSessionSummary(queryClient, {
-              ...result,
-              key: sessionKey,
-              friendlyId,
-            })
-            void invalidateChatSessionQueries(queryClient)
-            moveHistoryMessages(
-              queryClient,
-              'new',
-              'new',
-              friendlyId,
-              sessionKey,
-              true,
-            )
-            acceptConversationCommand(
-              queryClient,
-              friendlyId,
-              sessionKey,
-              result,
-            )
-            updateHistoryMessageByClientId(
-              queryClient,
-              friendlyId,
-              sessionKey,
-              clientId,
-              function markSent(message) {
-                return {
-                  ...message,
-                  id: result.userTurnId || message.id,
-                  status: undefined,
-                }
-              },
-            )
-            if (result.runId) {
-              startRun(result.runId)
-            }
-            if (onSessionResolved) {
-              onSessionResolved({ sessionKey, friendlyId })
-              return
-            }
-            void navigate({
-              to: '/chat/$sessionKey',
-              params: { sessionKey: friendlyId },
-              replace: true,
-            }).then(function releaseDraftHistory() {
-              queryClient.removeQueries({
-                queryKey: chatQueryKeys.history('new', 'new'),
-                exact: true,
-                type: 'inactive',
-              })
-            })
-          })
-          .catch((error) => {
-            if (!isCurrentCreation()) return
-            const uncertain =
-              !(error instanceof ApiError) ||
-              error.status === 408 ||
-              error.status >= 500
-            retryableNewConversationRef.current = {
-              message: body,
-              clientId,
-              generation: newChatGeneration,
-              reuseKey: uncertain,
-              request: createRequest,
-            }
-            removeHistoryMessageByClientId(
-              queryClient,
-              'new',
-              'new',
-              clientId,
-              optimisticId,
-            )
-            helpers.setValue(body)
-            finishGeneration()
-            setPinToTop(false)
-            setStreamError(
-              error instanceof Error
-                ? error.message
-                : 'Unable to create the conversation.',
-            )
-          })
-          .finally(() => {
-            if (!isCurrentCreation()) return
-            setSending(false)
-            setCreatingSession(false)
-          })
+        createNewConversation(body, attachments, helpers, retryCreation)
         return
       }
 
-      const sessionKeyForSend =
-        forcedSessionKey ||
-        resolvedSessionKey ||
-        activeSessionKey ||
-        activeFriendlyId
-      sendMessage(
-        sessionKeyForSend,
+      const sessionKeyForSend = resolveConversationSessionKey({
         activeFriendlyId,
-        body,
-        false,
-        resolvedConversationModel,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
+        activeSessionKey,
+        forcedSessionKey,
+        resolvedSessionKey,
+      })
+      sendMessage({
+        sessionKey: sessionKeyForSend,
+        friendlyId: activeFriendlyId,
+        message: body,
+        model: resolvedConversationModel,
         attachments,
-      )
+      })
     },
     [
       activeFriendlyId,
       activeSessionKey,
-      conversationSettings,
       forcedSessionKey,
       hasAvailableModel,
       isNewChat,
-      navigate,
-      newChatGeneration,
-      onSessionResolved,
-      queryClient,
       resolvedSessionKey,
       resolvedConversationModel,
-      resolvedSystemPrompt,
-      resolvedWebSearch,
-      resolvedMathTools,
-      resolvedAdvancedSettings,
       sendMessage,
-      beginGeneration,
-      finishGeneration,
-      setPinToTop,
-      startRun,
       throwawayMode,
-      displayMessages,
+      createNewConversation,
+      sendEphemeralMessage,
     ],
   )
 
@@ -704,11 +276,9 @@ export function useChatMutations({
         return
       }
 
-      if (
-        isNewChat &&
-        retryableNewConversationRef.current?.generation === newChatGeneration
-      ) {
-        const request = retryableNewConversationRef.current.request
+      const retryableNewConversation = getRetryableNewConversation()
+      if (isNewChat && retryableNewConversation) {
+        const request = retryableNewConversation.request
         setStreamError(null)
         send(
           request.message ?? '',
@@ -727,20 +297,20 @@ export function useChatMutations({
         retryableNetworkSend.friendlyId === activeFriendlyId
       ) {
         setStreamError(null)
-        sendMessage(
-          retryableNetworkSend.sessionKey,
-          retryableNetworkSend.friendlyId,
-          retryableNetworkSend.message,
-          true,
-          retryableNetworkSend.model,
-          retryableNetworkSend.systemPrompt,
-          retryableNetworkSend.webSearch,
-          retryableNetworkSend.mathTools,
-          retryableNetworkSend.advanced,
-          retryableNetworkSend.attachments,
-          retryableNetworkSend.clientId,
-          retryableNetworkSend.idempotencyKey,
-        )
+        sendMessage({
+          sessionKey: retryableNetworkSend.sessionKey,
+          friendlyId: retryableNetworkSend.friendlyId,
+          message: retryableNetworkSend.message,
+          skipOptimistic: true,
+          model: retryableNetworkSend.model,
+          systemPrompt: retryableNetworkSend.systemPrompt,
+          webSearch: retryableNetworkSend.webSearch,
+          mathTools: retryableNetworkSend.mathTools,
+          advanced: retryableNetworkSend.advanced,
+          attachments: retryableNetworkSend.attachments,
+          clientId: retryableNetworkSend.clientId,
+          idempotencyKey: retryableNetworkSend.idempotencyKey,
+        })
         return
       }
 
@@ -786,10 +356,8 @@ export function useChatMutations({
       displayMessages,
       isNewChat,
       queryClient,
-      newChatGeneration,
+      getRetryableNewConversation,
       retryableNetworkSend,
-      resolvedConversationModel,
-      resolvedMathTools,
       send,
       sendMessage,
       throwawayMode,
@@ -803,15 +371,16 @@ export function useChatMutations({
   const handleStopGeneration = useCallback(
     async function handleStopGeneration() {
       if (isNewChat && throwawayMode) {
-        ephemeralAbortRef.current?.abort()
+        stopEphemeralGeneration()
         return
       }
       if (isNewChat) return
-      const sessionKeyForStop =
-        forcedSessionKey ||
-        resolvedSessionKey ||
-        activeSessionKey ||
-        activeFriendlyId
+      const sessionKeyForStop = resolveConversationSessionKey({
+        activeFriendlyId,
+        activeSessionKey,
+        forcedSessionKey,
+        resolvedSessionKey,
+      })
       if (!sessionKeyForStop) return
 
       const runId =
@@ -843,6 +412,7 @@ export function useChatMutations({
       forcedSessionKey,
       isNewChat,
       resolvedSessionKey,
+      stopEphemeralGeneration,
       throwawayMode,
     ],
   )
@@ -1070,22 +640,20 @@ export function useChatMutations({
 
   const sendProgrammaticMessage = useCallback(
     function sendProgrammaticMessage(body: string) {
-      const sessionKeyForSend =
-        forcedSessionKey ||
-        resolvedSessionKey ||
-        activeSessionKey ||
-        activeFriendlyId
-      if (!hasAvailableModel || isNewChat || body.trim().length === 0) return
-      sendMessage(
-        sessionKeyForSend,
+      const sessionKeyForSend = resolveConversationSessionKey({
         activeFriendlyId,
-        body,
-        false,
-        resolvedConversationModel,
-        undefined,
-        undefined,
-        resolvedMathTools,
-      )
+        activeSessionKey,
+        forcedSessionKey,
+        resolvedSessionKey,
+      })
+      if (!hasAvailableModel || isNewChat || body.trim().length === 0) return
+      sendMessage({
+        sessionKey: sessionKeyForSend,
+        friendlyId: activeFriendlyId,
+        message: body,
+        model: resolvedConversationModel,
+        mathTools: resolvedMathTools,
+      })
     },
     [
       activeFriendlyId,
@@ -1162,50 +730,6 @@ function attachmentFilesFromMessage(
       },
     ]
   })
-}
-
-function attachmentFilesFromCreateRequest(
-  request: ChatCreateConversationInput,
-): Array<AttachmentFile> {
-  return (request.attachments ?? []).map(
-    function mapAttachment(attachment, index) {
-      return {
-        id: `retry-${index}`,
-        file: new File([], 'retry-attachment', { type: attachment.mimeType }),
-        preview: `data:${attachment.mimeType};base64,${attachment.content}`,
-        type: 'image' as const,
-        base64: attachment.content,
-      }
-    },
-  )
-}
-
-function matchesRetryableNewConversation(
-  pending: RetryableNewConversation,
-  current: ChatCreateConversationInput,
-  generation: number,
-  currentAttachments?: ChatCreateConversationInput['attachments'],
-): boolean {
-  if (
-    pending.generation !== generation ||
-    pending.message !== current.message ||
-    pending.request.model !== current.model ||
-    pending.request.systemPrompt !== current.systemPrompt ||
-    pending.request.webSearch !== current.webSearch ||
-    pending.request.mathTools !== current.mathTools ||
-    JSON.stringify(pending.request.advanced) !==
-      JSON.stringify(current.advanced) ||
-    JSON.stringify(pending.request.settings) !==
-      JSON.stringify(current.settings)
-  ) {
-    return false
-  }
-
-  return (
-    !currentAttachments?.length ||
-    JSON.stringify(pending.request.attachments) ===
-      JSON.stringify(currentAttachments)
-  )
 }
 
 function replaceTurnFromUserMessage(
