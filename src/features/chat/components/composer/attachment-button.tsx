@@ -39,7 +39,7 @@ const ACCEPTED_EXTENSIONS = '.png,.jpg,.jpeg,.gif,.webp'
 export type AttachmentFile = {
   /** Unique identifier for the attachment */
   id: string
-  /** Original file reference */
+  /** File containing the same encoded image data as base64 */
   file: File
   /** Object URL for image preview */
   preview: string | null
@@ -81,7 +81,23 @@ function isCanvasSupported(): boolean {
  * @returns Base64-encoded compressed image (without data URL prefix)
  * @throws Error if canvas is unavailable or image fails to load
  */
-async function compressImage(file: File, signal: AbortSignal): Promise<string> {
+type EncodedImage = {
+  file: File
+  base64: string
+}
+
+async function compressImage(
+  file: File,
+  signal: AbortSignal,
+): Promise<EncodedImage> {
+  // Canvas only exposes a still frame, so preserve animated GIF bytes.
+  if (file.type === 'image/gif') {
+    const dataUrl = await blobToDataUrl(file, signal)
+    const base64 = dataUrl.split(',')[1]
+    if (!base64) throw new Error('Failed to encode image')
+    return { file, base64 }
+  }
+
   if (!isCanvasSupported()) {
     throw new Error('Image compression not available in this browser')
   }
@@ -175,7 +191,10 @@ async function compressImage(file: File, signal: AbortSignal): Promise<string> {
         }
         settled = true
         cleanup()
-        resolve(base64)
+        resolve({
+          file: new File([blob], file.name, { type: blob.type }),
+          base64,
+        })
       } catch (err) {
         finishWithError(
           err instanceof Error ? err : new Error('Image compression failed'),
@@ -361,16 +380,16 @@ export function AttachmentButton({
       const controller = new AbortController()
       processingRef.current = controller
       try {
-        const base64 = await compressImage(file, controller.signal)
+        const encoded = await compressImage(file, controller.signal)
         if (controller.signal.aborted) return
-        const preview = URL.createObjectURL(file)
+        const preview = URL.createObjectURL(encoded.file)
 
         onFileSelect({
           id,
-          file,
+          file: encoded.file,
           preview,
           type: 'image',
-          base64,
+          base64: encoded.base64,
         })
       } catch (err) {
         if (controller.signal.aborted) return

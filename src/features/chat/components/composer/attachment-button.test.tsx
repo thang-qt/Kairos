@@ -71,3 +71,76 @@ it('uses asynchronous JPEG encoding and lowers quality until the image fits', as
     0.65,
   )
 })
+
+it('preserves animated GIF bytes and their MIME type', async function () {
+  const toBlob = vi.spyOn(HTMLCanvasElement.prototype, 'toBlob')
+  vi.stubGlobal('URL', {
+    createObjectURL: vi.fn(function createObjectURL() {
+      return 'blob:animated-gif'
+    }),
+    revokeObjectURL: vi.fn(function revokeObjectURL() {}),
+  })
+  const onFileSelect = vi.fn()
+  const view = render(<AttachmentButton onFileSelect={onFileSelect} />)
+  const input = view.container.querySelector('input[type="file"]')
+  if (!input) throw new Error('Attachment file input was not rendered')
+  const gif = new File(['animated-gif'], 'animation.gif', { type: 'image/gif' })
+  fireEvent.change(input, { target: { files: [gif] } })
+
+  await waitFor(function selectedGif() {
+    expect(onFileSelect).toHaveBeenCalledWith(
+      expect.objectContaining({
+        file: gif,
+        base64: btoa('animated-gif'),
+      }),
+    )
+  })
+  expect(toBlob).not.toHaveBeenCalled()
+})
+
+it('uses the MIME type of the actual canvas output', async function () {
+  class TestImage {
+    width = 800
+    height = 600
+    onload: (() => void) | null = null
+    onerror: (() => void) | null = null
+    set src(_value: string) {
+      this.onload?.()
+    }
+  }
+
+  vi.stubGlobal('Image', TestImage)
+  vi.stubGlobal('URL', {
+    createObjectURL: vi.fn(function createObjectURL() {
+      return 'blob:test-image'
+    }),
+    revokeObjectURL: vi.fn(function revokeObjectURL() {}),
+  })
+  vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({
+    drawImage: vi.fn(),
+  } as unknown as CanvasRenderingContext2D)
+  vi.spyOn(HTMLCanvasElement.prototype, 'toBlob').mockImplementation(
+    function encode(callback) {
+      callback(new Blob(['encoded'], { type: 'image/png' }))
+    },
+  )
+
+  const onFileSelect = vi.fn()
+  const view = render(<AttachmentButton onFileSelect={onFileSelect} />)
+  const input = view.container.querySelector('input[type="file"]')
+  if (!input) throw new Error('Attachment file input was not rendered')
+  fireEvent.change(input, {
+    target: {
+      files: [new File(['input'], 'photo.jpg', { type: 'image/jpeg' })],
+    },
+  })
+
+  await waitFor(function selectedImage() {
+    expect(onFileSelect).toHaveBeenCalledWith(
+      expect.objectContaining({
+        file: expect.objectContaining({ type: 'image/png' }),
+        base64: btoa('encoded'),
+      }),
+    )
+  })
+})
