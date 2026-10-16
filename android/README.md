@@ -59,6 +59,8 @@ Cold starts render warm, not blank. All caches live under `filesDir/kairos-data`
 
 Persistence is plain JSON with atomic writes (temp file plus rename); writes happen on IO dispatchers and never block the UI thread. Cache contents are trusted as floor values only: server history, revisions and cursors remain authoritative.
 
+A single identity-scoped pending-send journal stores only a SHA-256 digest of the exact command inputs and its idempotency key, not the message or image bytes. If the app is killed after an uncertain network response, submitting the identical command reuses that key; definitive acceptance or client rejection clears it. The last selected saved conversation is cached per identity and re-opened after a cold start. Full offline sending is intentionally not implemented.
+
 The SSE connection is cancelled when its surface leaves. Reconnect uses backoff and `Last-Event-ID`; every connection replaces state from the authoritative reconcile snapshot, subject to the web's revision/cursor gates. Full turns reconcile by id or clientId; compact patches copy only their modified JSON paths. Command acknowledgements remove invalidated turns and fence old events. Streaming sends only changed assistant turns to the WebView, at most once per message per display frame. Snapshot identity/order changes use init; theme and insets update independently.
 
 JVM fixtures under `app/src/test/resources` mirror Go JSON tags and exercise the same reducer cases in Kotlin and Vitest. Root checks are `pnpm check` and `pnpm backend:check`.
