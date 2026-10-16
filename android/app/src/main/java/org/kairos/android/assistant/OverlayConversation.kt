@@ -17,6 +17,9 @@ class OverlayConversation(private val app: AppContainer, private val label: Stri
     var messages by mutableStateOf<List<JsonObject>>(emptyList())
         private set
 
+    var pendingApprovals by mutableStateOf<List<McpApproval>>(emptyList())
+        private set
+
     var streaming by mutableStateOf(false)
         private set
 
@@ -36,6 +39,7 @@ class OverlayConversation(private val app: AppContainer, private val label: Stri
         scope.launch {
             repository.history.collect { history ->
                 messages = history.messages
+                pendingApprovals = history.pendingMcpApprovals.filter { it.state == "pending" }
                 streaming = sendJob?.isActive == true || activeRunId(history) != null
             }
         }
@@ -45,6 +49,7 @@ class OverlayConversation(private val app: AppContainer, private val label: Stri
                     sendJob?.cancel()
                     repository.open(null)
                     messages = emptyList()
+                    pendingApprovals = emptyList()
                     streaming = false
                 }
             }
@@ -55,6 +60,7 @@ class OverlayConversation(private val app: AppContainer, private val label: Stri
         repository.open(null)
         sendJob?.cancel()
         messages = emptyList()
+        pendingApprovals = emptyList()
         streaming = false
         error = null
         generation++
@@ -113,6 +119,18 @@ class OverlayConversation(private val app: AppContainer, private val label: Stri
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
                 error = e.message
+            }
+        }
+    }
+
+    fun decide(approval: McpApproval, decision: String, decisionScope: String? = null) {
+        scope.launch {
+            try {
+                app.api.decideApproval(approval, decision, decisionScope)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                error = e.message ?: "Can't reach server."
             }
         }
     }

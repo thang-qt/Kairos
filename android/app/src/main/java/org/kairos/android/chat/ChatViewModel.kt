@@ -71,7 +71,6 @@ class ChatViewModel(val app: AppContainer) : ViewModel() {
     var conversationSettingsOpen by mutableStateOf(false)
         private set
 
-    val pendingApprovals = app.mcp.pending
     private var selectionGeneration = 0
     private var pendingSession: String? = null
     val activeSession
@@ -112,14 +111,6 @@ class ChatViewModel(val app: AppContainer) : ViewModel() {
                     app.clearUserData()
                     screen = if (app.server.url.isBlank()) Screen.Connect else Screen.SignIn
                 }
-            }
-        }
-        // Poll MCP approvals only while the newest assistant turn is a live remote tool call.
-        viewModelScope.launch {
-            while (isActive) {
-                val needsPolling = approvalRunId(history.value.messages) != null
-                if (needsPolling) app.mcp.refresh()
-                delay(if (needsPolling) 1000 else 2000)
             }
         }
         if (app.tokens.signedIn.value) bootstrap()
@@ -202,7 +193,6 @@ class ChatViewModel(val app: AppContainer) : ViewModel() {
         composerGeneration++
         error = null
         conversationSettingsOpen = false
-        app.mcp.clear()
         model =
             sessions.value
                 .find { it.friendlyId == id }
@@ -365,7 +355,7 @@ class ChatViewModel(val app: AppContainer) : ViewModel() {
     fun setDefaultModel(key: String) = task { app.models.setDefault(key) }
 
     fun decideApproval(approval: McpApproval, decision: String, scope: String? = null) = task {
-        app.mcp.decide(approval, decision, scope)
+        app.api.decideApproval(approval, decision, scope)
     }
 
     fun saveConversationSettings(settings: ConversationSettings) = task {
@@ -405,7 +395,6 @@ class ChatViewModel(val app: AppContainer) : ViewModel() {
         select(null)
         app.sessions.clear()
         app.models.clear()
-        app.mcp.clear()
         ephemeral.reset()
     }
 
