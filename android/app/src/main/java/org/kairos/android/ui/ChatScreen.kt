@@ -5,6 +5,8 @@
 
 package org.kairos.android.ui
 
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+
 import android.view.HapticFeedbackConstants
 import android.view.ViewGroup
 import androidx.activity.compose.PredictiveBackHandler
@@ -73,8 +75,8 @@ fun ChatScreen(chat: ChatViewModel, bridge: TranscriptBridge, onCopy: (String) -
     val decay = rememberSplineBasedDecay<Float>()
     var animationJob by remember { mutableStateOf<Job?>(null) }
     var width by remember { mutableFloatStateOf(1f) }
-    val history by chat.history.collectAsState()
-    val connection by chat.connection.collectAsState()
+    val history by chat.history.collectAsStateWithLifecycle()
+    val connection by chat.connection.collectAsStateWithLifecycle()
     var bannerHeight by remember { mutableFloatStateOf(0f) }
     val banner =
         chat.error
