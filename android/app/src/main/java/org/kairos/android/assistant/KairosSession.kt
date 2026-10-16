@@ -141,6 +141,8 @@ class KairosSession(context: Context) : VoiceInteractionSession(context) {
             if (conversation.visible && attachment != null) {
                 screenCapture.receiveAttachment(attachment)
                 LibraryAttachment.clear(context)
+            } else if (attachment == null) {
+                LibraryAttachment.clear(context)
             }
         }
     }
