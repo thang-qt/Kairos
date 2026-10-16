@@ -12,6 +12,27 @@ import org.kairos.android.data.*
 class ChatViewModel(val app: AppContainer) : ViewModel() {
     val conversation = app.conversation()
     private val ephemeral = EphemeralConversation(app.api)
+    private val navigationEvents = MutableSharedFlow<NavigationRequest>(extraBufferCapacity = 16)
+    val navigation = navigationEvents.asSharedFlow()
+
+    private fun navigate(request: NavigationRequest) {
+        navigationEvents.tryEmit(request)
+    }
+
+    /** Invoked by NavHost on process restoration and system Back. */
+    fun enterRoute(destination: Screen, id: String? = null, search: Boolean = false) {
+        val previous = screen
+        screen = destination
+        searchOpen = search
+        when (destination) {
+            Screen.Chat -> {
+                if (!search && sessionId != id) select(id, notifyNavigation = false)
+                else if (previous == Screen.Settings) conversation.resume()
+            }
+            Screen.Settings -> conversation.pause()
+            else -> Unit
+        }
+    }
 
     // Saved sessions stream from the repository; throwaway mode swaps in its local history.
     private val mergedHistory = MutableStateFlow(History())
@@ -110,6 +131,7 @@ class ChatViewModel(val app: AppContainer) : ViewModel() {
                     mergedHistory.value = History()
                     app.clearUserData()
                     screen = if (app.server.url.isBlank()) Screen.Connect else Screen.SignIn
+                    navigate(if (screen == Screen.Connect) NavigationRequest.Connect else NavigationRequest.SignIn)
                 }
             }
         }
@@ -152,6 +174,7 @@ class ChatViewModel(val app: AppContainer) : ViewModel() {
         app.clearUserData()
         app.server.save(normalized)
         screen = Screen.SignIn
+        navigate(NavigationRequest.SignIn)
     }
 
     fun signIn(email: String, password: String) = task {
@@ -169,26 +192,32 @@ class ChatViewModel(val app: AppContainer) : ViewModel() {
         app.tokens.clear()
         app.clearUserData()
         screen = Screen.Connect
+        navigate(NavigationRequest.Connect)
     }
 
     fun settings() {
         screen = Screen.Settings
         conversation.pause()
+        navigate(NavigationRequest.Settings)
     }
 
     fun back() {
         error = null
         when (screen) {
-            Screen.SignIn -> screen = Screen.Connect
+            Screen.SignIn -> {
+                screen = Screen.Connect
+                navigate(NavigationRequest.Connect)
+            }
             Screen.Settings -> {
                 screen = Screen.Chat
                 conversation.resume()
+                navigate(NavigationRequest.Back)
             }
             else -> Unit
         }
     }
 
-    fun select(id: String?) {
+    fun select(id: String?, notifyNavigation: Boolean = true) {
         selectionGeneration++
         sessionId = id
         ephemeralMode = false
@@ -224,6 +253,7 @@ class ChatViewModel(val app: AppContainer) : ViewModel() {
                 }
             }
         }
+        if (notifyNavigation) navigate(NavigationRequest.Chat(id))
     }
 
     fun openIntent(id: String?) {
@@ -280,6 +310,9 @@ class ChatViewModel(val app: AppContainer) : ViewModel() {
                     sessionId = next
                     editing = null
                     offline = false
+                    if (next != null && next != activeSession?.friendlyId) {
+                        navigate(NavigationRequest.Chat(next, replaceCurrent = true))
+                    }
                 }
             }
         } catch (e: Exception) {
@@ -374,10 +407,12 @@ class ChatViewModel(val app: AppContainer) : ViewModel() {
     fun openSearch() {
         error = null
         searchOpen = true
+        navigate(NavigationRequest.Search)
     }
 
-    fun closeSearch() {
+    fun closeSearch(navigateBack: Boolean = true) {
         searchOpen = false
+        if (navigateBack) navigate(NavigationRequest.Back)
     }
 
     fun openConversationSettings() {
@@ -410,6 +445,7 @@ class ChatViewModel(val app: AppContainer) : ViewModel() {
             ephemeral.reset()
             if (changeServer) app.server.clear()
             screen = if (changeServer) Screen.Connect else Screen.SignIn
+            navigate(if (changeServer) NavigationRequest.Connect else NavigationRequest.SignIn)
         }
     }
 
