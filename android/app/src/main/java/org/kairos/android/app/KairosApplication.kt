@@ -32,6 +32,7 @@ class AppContainer(context: Context) {
     // Disk history is a UI cache, never account state. A startup with a different
     // server or bearer token must not expose the last identity's cached transcript.
     init {
+        if (!tokens.signedIn.value) LibraryAttachment.clear(appContext)
         val expected = cacheIdentity()
         val marker = File(cacheRoot, ".identity")
         if (marker.takeIf { it.isFile }?.readText() != expected) {
