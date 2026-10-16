@@ -49,6 +49,7 @@ type ConversationSettingsDraft = Omit<
 
 type NewConversationSettingsState = {
   settings: ConversationSettingsDraft
+  generation: number
   updateSettings: (updates: Partial<ConversationSettings>) => void
   reset: () => void
 }
@@ -56,6 +57,7 @@ type NewConversationSettingsState = {
 export const useConversationSettingsStore =
   create<NewConversationSettingsState>((set) => ({
     settings: {},
+    generation: 0,
     updateSettings: (updates) =>
       set((state) => ({
         settings: {
@@ -64,7 +66,11 @@ export const useConversationSettingsStore =
           advanced: { ...state.settings.advanced, ...updates.advanced },
         },
       })),
-    reset: () => set({ settings: {} }),
+    reset: () =>
+      set((state) => ({
+        settings: {},
+        generation: state.generation + 1,
+      })),
   }))
 
 type UseConversationSettingsInput = {

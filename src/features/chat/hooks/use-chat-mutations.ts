@@ -22,7 +22,10 @@ import {
 } from '../chat-queries'
 import { getTurnId } from '../utils'
 import { setRecentSession } from '../pending-send'
-import { beginFreshNewChat } from '../conversation-settings'
+import {
+  beginFreshNewChat,
+  useConversationSettingsStore,
+} from '../conversation-settings'
 import { getChatBackend } from '@/lib/chat-backend'
 import { ApiError } from '@/lib/api-client'
 import { randomUUID } from '@/lib/utils'
@@ -31,6 +34,7 @@ import type { CloneMessagePayload } from '../components/chat-message-list'
 import type { QueryClient } from '@tanstack/react-query'
 import type { AttachmentFile } from '@/features/chat/components/composer/attachment-button'
 import type { ChatComposerHelpers } from '../components/chat-composer'
+import type { ChatCreateConversationInput } from '@/lib/chat-backend/types'
 import type {
   ChatRequestAdvancedSettings,
   ConversationTurn,
@@ -55,6 +59,14 @@ type RetryableNetworkSend = {
   attachments?: Array<AttachmentFile>
   clientId?: string
   idempotencyKey: string
+}
+
+type RetryableNewConversation = {
+  message: string
+  clientId: string
+  generation: number
+  reuseKey: boolean
+  request: ChatCreateConversationInput
 }
 
 type UseChatMutationsInput = {
@@ -111,15 +123,30 @@ export function useChatMutations({
 }: UseChatMutationsInput) {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
+  const newChatGeneration = useConversationSettingsStore(
+    (state) => state.generation,
+  )
 
   const [sending, setSending] = useState(false)
   const [creatingSession, setCreatingSession] = useState(false)
+  const [creationStateGeneration, setCreationStateGeneration] =
+    useState(newChatGeneration)
   const [streamError, setStreamError] = useState<string | null>(null)
   const [retryableNetworkSend, setRetryableNetworkSend] =
     useState<RetryableNetworkSend | null>(null)
+  const retryableNewConversationRef = useRef<RetryableNewConversation | null>(
+    null,
+  )
+  const conversationCreationAttemptRef = useRef(0)
   const [deletingUserTurn, setDeletingUserTurn] =
     useState<UserTurnDeleteState>(null)
   const ephemeralAbortRef = useRef<AbortController | null>(null)
+
+  if (creationStateGeneration !== newChatGeneration) {
+    setCreationStateGeneration(newChatGeneration)
+    setSending(false)
+    setCreatingSession(false)
+  }
 
   const hasAvailableModel = resolvedConversationModel.trim().length > 0
 
@@ -289,7 +316,11 @@ export function useChatMutations({
   )
 
   const send = useCallback(
-    function send(body: string, helpers: ChatComposerHelpers) {
+    function send(
+      body: string,
+      helpers: ChatComposerHelpers,
+      retryCreation = false,
+    ) {
       const attachments = helpers.attachments
       if (!hasAvailableModel) {
         return
@@ -428,8 +459,51 @@ export function useChatMutations({
       }
 
       if (isNewChat) {
-        const { clientId, optimisticId, optimisticMessage } =
-          createOptimisticMessage(body, attachments)
+        const attachmentsPayload = attachments
+          ?.filter((attachment) => Boolean(attachment.base64))
+          .map((attachment) => ({
+            mimeType: attachment.file.type,
+            content: attachment.base64 as string,
+          }))
+        const currentRequest: ChatCreateConversationInput = {
+          message: body,
+          model: resolvedConversationModel,
+          systemPrompt: resolvedSystemPrompt,
+          webSearch: resolvedWebSearch,
+          mathTools: resolvedMathTools,
+          advanced: resolvedAdvancedSettings,
+          settings: {
+            ...conversationSettings,
+            model: resolvedConversationModel,
+          },
+          attachments: attachmentsPayload,
+        }
+        const pendingCreation = retryableNewConversationRef.current
+        const retryableNewConversation =
+          pendingCreation &&
+          (retryCreation ||
+            (pendingCreation.reuseKey &&
+              matchesRetryableNewConversation(
+                pendingCreation,
+                currentRequest,
+                newChatGeneration,
+                attachmentsPayload,
+              )))
+            ? pendingCreation
+            : null
+        retryableNewConversationRef.current = retryableNewConversation
+        const optimisticAttachments = retryableNewConversation
+          ? attachmentFilesFromCreateRequest(retryableNewConversation.request)
+          : attachments
+        const optimistic = createOptimisticMessage(body, optimisticAttachments)
+        const clientId = retryableNewConversation?.reuseKey
+          ? retryableNewConversation.clientId
+          : optimistic.clientId
+        const optimisticId = optimistic.optimisticId
+        const optimisticMessage =
+          clientId === optimistic.clientId
+            ? optimistic.optimisticMessage
+            : { ...optimistic.optimisticMessage, clientId }
         appendHistoryMessage(queryClient, 'new', 'new', optimisticMessage)
         beginGeneration()
         setSending(true)
@@ -437,30 +511,32 @@ export function useChatMutations({
         setStreamError(null)
         setPinToTop(true)
 
-        const attachmentsPayload = attachments
-          ?.filter((attachment) => Boolean(attachment.base64))
-          .map((attachment) => ({
-            mimeType: attachment.file.type,
-            content: attachment.base64 as string,
-          }))
+        const createRequest = retryableNewConversation
+          ? {
+              ...retryableNewConversation.request,
+              idempotencyKey: clientId,
+              clientId,
+            }
+          : { ...currentRequest, idempotencyKey: clientId, clientId }
+        const creationGeneration = newChatGeneration
+        const creationAttempt = ++conversationCreationAttemptRef.current
+
+        function isCurrentCreation(): boolean {
+          return (
+            creationAttempt === conversationCreationAttemptRef.current &&
+            creationGeneration ===
+              useConversationSettingsStore.getState().generation
+          )
+        }
 
         getChatBackend()
-          .createConversation({
-            message: body,
-            model: resolvedConversationModel,
-            systemPrompt: resolvedSystemPrompt,
-            webSearch: resolvedWebSearch,
-            mathTools: resolvedMathTools,
-            advanced: resolvedAdvancedSettings,
-            settings: {
-              ...conversationSettings,
-              model: resolvedConversationModel,
-            },
-            idempotencyKey: clientId,
-            clientId,
-            attachments: attachmentsPayload,
-          })
+          .createConversation(createRequest)
           .then((result) => {
+            if (!isCurrentCreation()) {
+              void invalidateChatSessionQueries(queryClient)
+              return
+            }
+            retryableNewConversationRef.current = null
             const sessionKey = result.sessionKey || result.key
             const friendlyId = result.friendlyId
             if (!sessionKey || !friendlyId) {
@@ -521,6 +597,18 @@ export function useChatMutations({
             })
           })
           .catch((error) => {
+            if (!isCurrentCreation()) return
+            const uncertain =
+              !(error instanceof ApiError) ||
+              error.status === 408 ||
+              error.status >= 500
+            retryableNewConversationRef.current = {
+              message: body,
+              clientId,
+              generation: newChatGeneration,
+              reuseKey: uncertain,
+              request: createRequest,
+            }
             removeHistoryMessageByClientId(
               queryClient,
               'new',
@@ -538,6 +626,7 @@ export function useChatMutations({
             )
           })
           .finally(() => {
+            if (!isCurrentCreation()) return
             setSending(false)
             setCreatingSession(false)
           })
@@ -565,10 +654,12 @@ export function useChatMutations({
     [
       activeFriendlyId,
       activeSessionKey,
+      conversationSettings,
       forcedSessionKey,
       hasAvailableModel,
       isNewChat,
       navigate,
+      newChatGeneration,
       onSessionResolved,
       queryClient,
       resolvedSessionKey,
@@ -610,6 +701,24 @@ export function useChatMutations({
           reset: function resetRetryComposer() {},
           setValue: function restoreRetryComposer() {},
         })
+        return
+      }
+
+      if (
+        isNewChat &&
+        retryableNewConversationRef.current?.generation === newChatGeneration
+      ) {
+        const request = retryableNewConversationRef.current.request
+        setStreamError(null)
+        send(
+          request.message ?? '',
+          {
+            attachments: attachmentFilesFromCreateRequest(request),
+            reset: function resetRetryComposer() {},
+            setValue: function restoreRetryComposer() {},
+          },
+          true,
+        )
         return
       }
 
@@ -677,6 +786,7 @@ export function useChatMutations({
       displayMessages,
       isNewChat,
       queryClient,
+      newChatGeneration,
       retryableNetworkSend,
       resolvedConversationModel,
       resolvedMathTools,
@@ -1052,6 +1162,50 @@ function attachmentFilesFromMessage(
       },
     ]
   })
+}
+
+function attachmentFilesFromCreateRequest(
+  request: ChatCreateConversationInput,
+): Array<AttachmentFile> {
+  return (request.attachments ?? []).map(
+    function mapAttachment(attachment, index) {
+      return {
+        id: `retry-${index}`,
+        file: new File([], 'retry-attachment', { type: attachment.mimeType }),
+        preview: `data:${attachment.mimeType};base64,${attachment.content}`,
+        type: 'image' as const,
+        base64: attachment.content,
+      }
+    },
+  )
+}
+
+function matchesRetryableNewConversation(
+  pending: RetryableNewConversation,
+  current: ChatCreateConversationInput,
+  generation: number,
+  currentAttachments?: ChatCreateConversationInput['attachments'],
+): boolean {
+  if (
+    pending.generation !== generation ||
+    pending.message !== current.message ||
+    pending.request.model !== current.model ||
+    pending.request.systemPrompt !== current.systemPrompt ||
+    pending.request.webSearch !== current.webSearch ||
+    pending.request.mathTools !== current.mathTools ||
+    JSON.stringify(pending.request.advanced) !==
+      JSON.stringify(current.advanced) ||
+    JSON.stringify(pending.request.settings) !==
+      JSON.stringify(current.settings)
+  ) {
+    return false
+  }
+
+  return (
+    !currentAttachments?.length ||
+    JSON.stringify(pending.request.attachments) ===
+      JSON.stringify(currentAttachments)
+  )
 }
 
 function replaceTurnFromUserMessage(
