@@ -42,3 +42,20 @@ jobs:
       # The server embeds internal/server/static, which is the frontend build.
       - run: pnpm build
       - run: pnpm backend:check
+
+  android:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - run: pnpm install --frozen-lockfile
+      - run: cd android && ./gradlew --no-daemon assembleDebug testDebugUnitTest lintDebug
