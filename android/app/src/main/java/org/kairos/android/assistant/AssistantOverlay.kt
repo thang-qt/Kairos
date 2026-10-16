@@ -49,6 +49,7 @@ import org.kairos.android.data.modelName
 import org.kairos.android.data.role
 import org.kairos.android.data.status
 import org.kairos.android.markdown.OverlayMarkdown
+import org.kairos.android.ui.GhostIconButton
 import org.kairos.android.ui.KIcon
 import org.kairos.android.ui.KairosMark
 import org.kairos.android.ui.ModelLabel
@@ -67,12 +68,15 @@ fun AssistantOverlay(
     screenCapture: ScreenCaptureState,
     onDismiss: () -> Unit,
     onOpenApp: (String?) -> Unit,
+    onPickImage: () -> Unit = {},
 ) {
     KairosTheme(app.theme.colors, app.theme.dark) {
         val colors = LocalKairosColors.current
         val context = LocalContext.current
         val view = LocalView.current
         val density = LocalDensity.current
+        val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
+        val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
         val generation = conversation.generation
         val imeVisible = WindowInsets.ime.getBottom(density) > 0
         val signedIn by app.container.tokens.signedIn.collectAsState()
@@ -164,7 +168,7 @@ fun AssistantOverlay(
                 progress,
                 Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top = 24.dp),
             )
-            val maxCardHeight = maxHeight * 0.60f
+            val maxCardHeight = maxHeight * 0.48f
             // Same working inset chain moves replies and composer together, with no painted
             // container.
             Column(
@@ -176,6 +180,11 @@ fun AssistantOverlay(
                     .graphicsLayer {
                         translationY = -swipe.offset
                         alpha = swipe.alpha
+                        // The card lifts off from its bottom edge as the handoff begins.
+                        val scale = 1f - 0.06f * swipe.progress.coerceIn(0f, 1f)
+                        scaleX = scale
+                        scaleY = scale
+                        transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0.5f, 1f)
                     }
             ) {
                 AnimatedVisibility(
@@ -219,6 +228,7 @@ fun AssistantOverlay(
                             }
                             OverlayActions(
                                 conversation,
+                                screenCapture,
                                 onOpenApp,
                                 Modifier.padding(horizontal = 8.dp),
                             )
@@ -326,6 +336,7 @@ fun AssistantOverlay(
                 if (signedIn && conversation.messages.isEmpty()) {
                     OverlayActions(
                         conversation,
+                        screenCapture,
                         onOpenApp,
                         swipeDrag.padding(bottom = 8.dp),
                         floating = true,
@@ -357,12 +368,17 @@ fun AssistantOverlay(
                         NativeComposer(
                             conversation.streaming,
                             onSend = { text ->
+                                // Free the IME right away so the reply card has room.
+                                keyboard?.hide()
+                                focusManager.clearFocus()
                                 conversation.send(text, screenCapture.takeAttachment())
                             },
                             onStop = conversation::stop,
                             focusRequestKey = generation,
+                            focusKey = generation,
                             modifier = swipeDrag,
                             screenCapture = screenCapture,
+                            onPickImage = onPickImage,
                             floating = true,
                             onScreenSettingsOpened = onDismiss,
                             contentPadding =
@@ -379,6 +395,7 @@ fun AssistantOverlay(
 @Composable
 private fun OverlayActions(
     conversation: OverlayConversation,
+    screenCapture: ScreenCaptureState,
     onOpenApp: (String?) -> Unit,
     modifier: Modifier = Modifier,
     floating: Boolean = false,
@@ -391,17 +408,7 @@ private fun OverlayActions(
             Modifier.shadow(6.dp, pill).background(colors.surface.copy(alpha = 0.96f), pill)
         else Modifier
     Row(modifier.fillMaxWidth().height(40.dp), verticalAlignment = Alignment.CenterVertically) {
-        Row(
-            lift
-                .height(32.dp)
-                .pressable(pill) { conversation.requestOpen(onOpenApp) }
-                .padding(start = 8.dp, end = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            KairosMark()
-            Text("Kairos", fontWeight = FontWeight.Medium, color = colors.p(900))
-        }
+        ScreenshotControl(screenCapture, lift)
         Spacer(Modifier.weight(1f))
         Row(
             lift
@@ -418,5 +425,54 @@ private fun OverlayActions(
             )
             KIcon(KairosIcons.ArrowUpRight01, colors.p(600), size = 20.dp)
         }
+    }
+}
+
+/** Screenshot attachment control where the brand mark used to be. */
+@Composable
+private fun ScreenshotControl(screenCapture: ScreenCaptureState, modifier: Modifier = Modifier) {
+    val colors = LocalKairosColors.current
+    when (val attached = screenCapture.attached) {
+        null ->
+            Row(
+                modifier
+                    .height(32.dp)
+                    .pressable(RoundedCornerShape(16.dp)) { screenCapture.attach() }
+                    .padding(start = 8.dp, end = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                KIcon(
+                    KairosIcons.SmartPhone01,
+                    if (screenCapture.available) colors.p(900) else colors.p(500),
+                )
+                Text(
+                    if (screenCapture.available) "Attach screen" else "Screen unavailable",
+                    color = if (screenCapture.available) colors.p(900) else colors.p(500),
+                    fontWeight = FontWeight.Medium,
+                )
+            }
+        else ->
+            Row(
+                modifier
+                    .height(32.dp)
+                    .background(colors.p(100), RoundedCornerShape(16.dp))
+                    .padding(start = 4.dp, end = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                ScreenThumbnail(
+                    attached,
+                    Modifier.size(24.dp).clip(RoundedCornerShape(6.dp)),
+                    crop = true,
+                )
+                GhostIconButton(
+                    KairosIcons.Cancel01,
+                    "Remove screenshot",
+                    screenCapture::remove,
+                    tint = colors.p(700),
+                    size = 24.dp,
+                )
+            }
     }
 }

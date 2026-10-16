@@ -54,6 +54,7 @@ type MessageItemProps = {
   isLastUser?: boolean
   showAssistantModel?: boolean
   showAssistantActions?: boolean
+  showTimestamp?: boolean
   wrapperRef?: React.RefObject<HTMLDivElement | null>
   wrapperClassName?: string
   wrapperScrollMarginTop?: number
@@ -79,6 +80,7 @@ function MessageItemComponent({
   isLastUser = false,
   showAssistantModel = true,
   showAssistantActions = true,
+  showTimestamp = true,
   wrapperRef,
   wrapperClassName,
   wrapperScrollMarginTop,
@@ -315,6 +317,7 @@ function MessageItemComponent({
         <MessageActionsBar
           text={text}
           timestamp={timestamp}
+          showTimestamp={showTimestamp}
           align="start"
           forceVisible={forceActionsVisible}
           available={!assistantIsStreaming}
@@ -330,6 +333,7 @@ function MessageItemComponent({
         <MessageActionsBar
           text={text}
           timestamp={timestamp}
+          showTimestamp={showTimestamp}
           align="end"
           editShortcut={isLastUser}
           forceVisible={forceActionsVisible && !editing}

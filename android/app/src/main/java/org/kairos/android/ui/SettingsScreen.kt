@@ -1,6 +1,5 @@
 package org.kairos.android.ui
 
-import android.content.Intent
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -17,7 +16,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import org.kairos.android.BuildConfig
-import org.kairos.android.assistant.*
+import org.kairos.android.assistant.defaultAssistantRoleIntent
+import org.kairos.android.assistant.isDefaultAssistant
+import org.kairos.android.assistant.openAssistantSettings
 import org.kairos.android.chat.ChatViewModel
 import org.kairos.android.data.*
 import org.kairos.android.ui.icons.KairosIcons
@@ -140,16 +141,21 @@ fun SettingsScreen(chat: ChatViewModel) {
                     lifecycle?.addObserver(observer)
                     onDispose { lifecycle?.removeObserver(observer) }
                 }
+                // Best practice: ask through the system's own role dialog (API 29+), verify on
+                // result, and fall back to the default-apps settings only when the role prompt
+                // is unavailable on this device.
+                val roleRequest =
+                    androidx.activity.compose.rememberLauncherForActivityResult(
+                        androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult()
+                    ) {
+                        held = isDefaultAssistant(context)
+                    }
                 SettingsRow(
                     "Default assistant",
                     if (held) "Kairos" else "Set up",
-                    onClick = { openAssistantSettings(context) },
-                )
-                SettingsRow(
-                    "Preview overlay",
-                    divider = false,
                     onClick = {
-                        context.startActivity(Intent(context, OverlayPreviewActivity::class.java))
+                        val intent = defaultAssistantRoleIntent(context)
+                        if (intent != null) roleRequest.launch(intent) else openAssistantSettings(context)
                     },
                 )
             }

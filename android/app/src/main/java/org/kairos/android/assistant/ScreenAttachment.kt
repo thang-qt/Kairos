@@ -161,6 +161,12 @@ class ScreenCaptureState {
 
     fun takeAttachment(): ScreenAttachment? = attached.also { attached = null }
 
+    fun receiveAttachment(attachment: ScreenAttachment) {
+        if (!accepting) return // Same retention rules as system screenshots.
+        attached = attachment
+        showSettingsHint = false
+    }
+
     fun clear() {
         accepting = false
         source = null // Callback bitmap ownership is unspecified; let GC release it, not recycle.

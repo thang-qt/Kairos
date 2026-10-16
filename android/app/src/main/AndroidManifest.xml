@@ -7,7 +7,13 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
-        <activity android:name=".assistant.OverlayPreviewActivity" android:exported="false" android:theme="@style/Theme.Kairos.Overlay" android:windowSoftInputMode="adjustResize" />
+        <activity
+            android:name=".assistant.PickerTrampolineActivity"
+            android:exported="false"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+        />
         <service android:name=".assistant.KairosVoiceInteractionService" android:exported="true" android:permission="android.permission.BIND_VOICE_INTERACTION">
             <intent-filter><action android:name="android.service.voice.VoiceInteractionService" /></intent-filter>
             <meta-data android:name="android.voice_interaction" android:resource="@xml/voice_interaction_service" />
