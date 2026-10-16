@@ -145,4 +145,20 @@ class KairosApi(val server: ServerStore, val tokens: TokenStore) {
             .build()
             .encodedQuery
             .orEmpty()
+
+    fun parameter(name: String, value: String): String =
+        "https://localhost/"
+            .toHttpUrl()
+            .newBuilder()
+            .addQueryParameter(name, value)
+            .build()
+            .encodedQuery
+            .orEmpty()
+
+    /**
+     * Live response for an asset download. The caller owns the response body; used by the
+     * transcript bridge to proxy authorized asset URLs into the offline WebView.
+     */
+    fun asset(assetId: String): okhttp3.Response =
+        client.newCall(request("/api/assets/" + encodePath(assetId))).execute()
 }

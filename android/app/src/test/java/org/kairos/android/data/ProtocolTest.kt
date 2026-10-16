@@ -79,6 +79,19 @@ class ProtocolTest {
     }
 
     @Test
+    fun pagedSessionListCarriesCursor() {
+        val payload =
+            objectFrom(
+                """{"sessions":[{"friendlyId":"s1","revision":3,"updatedAt":5}],"nextCursor":"abc"}"""
+            )
+        val response = wireJson.decodeFromJsonElement<SessionsResponse>(payload)
+        assertEquals("abc", response.nextCursor)
+        assertEquals("s1", response.sessions.single().friendlyId)
+        // Legacy unpaged payloads and omitted cursors stay compatible.
+        assertEquals(null, wireJson.decodeFromString<SessionsResponse>("{\"sessions\":[]}").nextCursor)
+    }
+
+    @Test
     fun sseFramingHandlesChunkBoundariesCommentsCRLFBomAndMultilineData() {
         val frames = mutableListOf<SseFrame>()
         val parser = SseParser(frames::add)

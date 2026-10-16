@@ -75,7 +75,7 @@ data class SessionSummary(
             }
 }
 
-@Serializable data class SessionsResponse(val sessions: List<SessionSummary> = emptyList())
+@Serializable data class SessionsResponse(val sessions: List<SessionSummary> = emptyList(), val nextCursor: String? = null)
 
 @Serializable
 data class SearchResult(

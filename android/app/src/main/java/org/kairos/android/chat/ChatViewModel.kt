@@ -155,6 +155,22 @@ class ChatViewModel(val app: AppContainer) : ViewModel() {
                 ?.settings
                 ?.model
                 ?.ifBlank { app.models.defaultModel() } ?: app.models.defaultModel()
+        // Sessions outside the loaded pages (deep links, older than the first page) resolve
+        // their summary in the background instead of falling back to default settings.
+        if (id != null && sessions.value.none { it.friendlyId == id }) {
+            val generation = selectionGeneration
+            viewModelScope.launch {
+                try {
+                    val session = app.sessions.fetch(id)
+                    if (selectionGeneration == generation && sessionId == id)
+                        model = session.settings.model.ifBlank { model }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (_: Exception) {
+                    // Deep-linked sessions missing from the pages stay on default settings.
+                }
+            }
+        }
     }
 
     fun openIntent(id: String?) {

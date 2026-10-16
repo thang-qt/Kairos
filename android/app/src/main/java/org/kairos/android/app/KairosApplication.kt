@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.MutableContextWrapper
 import org.kairos.android.data.*
 import org.kairos.android.transcript.TranscriptBridge
+import java.io.File
 
 class KairosApplication : Application() {
     lateinit var container: AppContainer
@@ -23,22 +24,27 @@ class AppContainer(context: Context) {
     val server = ServerStore(context)
     val tokens = TokenStore(context)
     val preferences = PreferencesStore(context)
+    private val cache = DiskCache(File(context.filesDir, "kairos-data"))
+    private val historyCache =
+        DiskCache(File(context.filesDir, "kairos-data/history"), maxBytes = 8L * 1024 * 1024)
     val api = KairosApi(server, tokens)
-    val sessions = SessionsRepository(api)
-    val models = ModelsRepository(api)
+    val sessions = SessionsRepository(api, cache, tokens)
+    val models = ModelsRepository(api, cache)
     // The assistant never constructs a WebView. Only the full application asks for this lazy
     // singleton.
-    private val transcript = lazy { TranscriptBridge(MutableContextWrapper(context)) }
+    private val transcript = lazy { TranscriptBridge(api, MutableContextWrapper(context)) }
     val bridge
         get() = transcript.value
 
     fun clearUserData() {
         sessions.clear()
         models.clear()
+        cache.clear()
+        historyCache.clear()
         if (transcript.isInitialized()) transcript.value.render(null, emptyList())
     }
 
-    fun conversation() = ConversationRepository(api, sessions)
+    fun conversation() = ConversationRepository(api, sessions, historyCache)
 }
 
 sealed interface Screen {
