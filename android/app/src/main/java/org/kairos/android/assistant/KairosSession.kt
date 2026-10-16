@@ -18,6 +18,7 @@ import androidx.core.view.WindowCompat
 import androidx.lifecycle.setViewTreeLifecycleOwner
 import androidx.lifecycle.setViewTreeViewModelStoreOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
+import kotlinx.coroutines.*
 import org.kairos.android.R
 import org.kairos.android.app.KairosApplication
 import org.kairos.android.markdown.MathRenderer
@@ -27,6 +28,8 @@ class KairosSession(context: Context) : VoiceInteractionSession(context) {
     private val owner = SessionViewOwner()
     private val conversation = OverlayConversation(app.container, "Assistant")
     private val screenCapture = ScreenCaptureState()
+    private val pickerScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private var pickerJob: Job? = null
     private var content: ComposeView? = null
     private val backCallback =
         if (Build.VERSION.SDK_INT >= 33) android.window.OnBackInvokedCallback { hide() } else null
@@ -128,9 +131,18 @@ class KairosSession(context: Context) : VoiceInteractionSession(context) {
 
     /** Applies a photo-library attachment picked through the trampoline activity. */
     private fun consumeLibraryAttachment() {
-        val pending = LibraryAttachment.pending ?: return
-        LibraryAttachment.pending = null
-        screenCapture.receiveAttachment(pending)
+        val uri = LibraryAttachment.peek(context) ?: return
+        pickerJob?.cancel()
+        pickerJob = pickerScope.launch {
+            // Decoding can be expensive; never block the assistant's first frame.
+            val attachment = withContext(Dispatchers.IO) {
+                runCatching { ScreenAttachment.fromUri(context, uri) }.getOrNull()
+            }
+            if (conversation.visible && attachment != null) {
+                screenCapture.receiveAttachment(attachment)
+                LibraryAttachment.clear(context)
+            }
+        }
     }
 
     fun pickLibraryImage() {
@@ -144,6 +156,7 @@ class KairosSession(context: Context) : VoiceInteractionSession(context) {
     }
 
     override fun onHide() {
+        pickerJob?.cancel()
         conversation.hide()
         screenCapture.clear()
         // Release remembered thumbnails too; a stopped lifecycle alone retains composition state.
@@ -177,6 +190,7 @@ class KairosSession(context: Context) : VoiceInteractionSession(context) {
     }
 
     override fun onDestroy() {
+        pickerScope.cancel()
         screenCapture.clear()
         conversation.destroy()
         owner.destroy()
