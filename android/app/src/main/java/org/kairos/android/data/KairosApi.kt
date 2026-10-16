@@ -5,6 +5,8 @@ import java.util.concurrent.TimeUnit
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
@@ -161,4 +163,45 @@ class KairosApi(val server: ServerStore, val tokens: TokenStore) {
      */
     fun asset(assetId: String): okhttp3.Response =
         client.newCall(request("/api/assets/" + encodePath(assetId))).execute()
+
+    /**
+     * One-shot SSE request (throwaway messages). The read loop runs on the IO dispatcher and
+     * reacts to cancellation by killing the connection, like the event stream does.
+     */
+    suspend fun postStream(
+        path: String,
+        body: String,
+        onFrame: (SseFrame) -> Unit,
+    ): Unit =
+        withContext(Dispatchers.IO) {
+            val call = client.newCall(request(path, "POST", body))
+            val job = coroutineContext[Job]
+            val handle = job?.invokeOnCompletion { cause -> if (cause != null) call.cancel() }
+            try {
+                call.execute().use { response ->
+                    if (!response.isSuccessful)
+                        throw error(response.code, response.body?.string().orEmpty())
+                    check(
+                        response
+                            .header("Content-Type")
+                            .orEmpty()
+                            .startsWith("text/event-stream")
+                    ) {
+                        "Invalid throwaway response stream."
+                    }
+                    val parser = SseParser(onFrame)
+                    response.body!!.charStream().use { reader ->
+                        val buffer = CharArray(8192)
+                        while (true) {
+                            ensureActive()
+                            val count = reader.read(buffer)
+                            if (count < 0) break
+                            parser.feed(String(buffer, 0, count))
+                        }
+                    }
+                }
+            } finally {
+                handle?.dispose()
+            }
+        }
 }

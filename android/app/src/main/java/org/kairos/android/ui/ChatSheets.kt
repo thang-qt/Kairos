@@ -127,6 +127,7 @@ fun MessageActionsSheet(
     chat: ChatViewModel,
     onDismiss: () -> Unit,
     onCopy: (String) -> Unit,
+    ephemeral: Boolean = false,
 ) {
     var delete by remember { mutableStateOf(false) }
     KairosSheet(onDismiss) {
@@ -134,6 +135,8 @@ fun MessageActionsSheet(
             onCopy(message.copyText())
             onDismiss()
         }
+        // Throwaway turns are memory-only: copy stays, mutations are meaningless.
+        if (ephemeral) return@KairosSheet
         if (message.role == "user")
             SheetAction(KairosIcons.PencilEdit02, "Edit") {
                 chat.edit(message)
