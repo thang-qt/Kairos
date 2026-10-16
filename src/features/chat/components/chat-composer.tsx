@@ -60,6 +60,8 @@ function ChatComposerComponent({
 }: ChatComposerProps) {
   const awaitingApproval = Boolean(approvals && approvals.length > 0)
   const [attachments, setAttachments] = useState<Array<AttachmentFile>>([])
+  const [attachmentGeneration, setAttachmentGeneration] = useState(0)
+  const attachmentGenerationRef = useRef(0)
   const promptRef = useRef<HTMLTextAreaElement | null>(null)
   useComposerShortcuts(promptRef, canStop, onStop)
   const valueRef = useRef('')
@@ -71,6 +73,8 @@ function ChatComposerComponent({
     })
   }, [])
   const reset = useCallback(() => {
+    attachmentGenerationRef.current += 1
+    setAttachmentGeneration(attachmentGenerationRef.current)
     if (setValueRef.current) {
       setValueRef.current('')
     }
@@ -84,6 +88,9 @@ function ChatComposerComponent({
     })
     focusPrompt()
   }, [focusPrompt])
+  function isCurrentAttachmentGeneration(generation: number): boolean {
+    return generation === attachmentGenerationRef.current
+  }
   const handleFileSelect = useCallback((file: AttachmentFile) => {
     setAttachments((prev) => [...prev, file])
   }, [])
@@ -179,7 +186,10 @@ function ChatComposerComponent({
                 tooltip="Attach image"
                 render={(triggerProps) => (
                   <AttachmentButton
+                    key={attachmentGeneration}
                     onFileSelect={handleFileSelect}
+                    selectionGeneration={attachmentGeneration}
+                    isSelectionCurrent={isCurrentAttachmentGeneration}
                     disabled={disabled}
                     buttonProps={{
                       ...triggerProps,

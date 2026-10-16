@@ -55,6 +55,12 @@ type AttachmentButtonProps = {
   onFileSelect: (file: AttachmentFile) => void
   disabled?: boolean
   buttonProps?: React.ComponentProps<typeof Button>
+  selectionGeneration?: number
+  isSelectionCurrent?: (generation: number) => boolean
+}
+
+function isCurrentSelectionGeneration(): boolean {
+  return true
 }
 
 /**
@@ -326,6 +332,8 @@ export function AttachmentButton({
   onFileSelect,
   disabled = false,
   buttonProps,
+  selectionGeneration = 0,
+  isSelectionCurrent = isCurrentSelectionGeneration,
 }: AttachmentButtonProps) {
   const inputRef = useRef<HTMLInputElement>(null)
   const processingRef = useRef<AbortController | null>(null)
@@ -379,9 +387,10 @@ export function AttachmentButton({
 
       const controller = new AbortController()
       processingRef.current = controller
+      const generation = selectionGeneration
       try {
         const encoded = await compressImage(file, controller.signal)
-        if (controller.signal.aborted) return
+        if (controller.signal.aborted || !isSelectionCurrent(generation)) return
         const preview = URL.createObjectURL(encoded.file)
 
         onFileSelect({
@@ -392,7 +401,7 @@ export function AttachmentButton({
           base64: encoded.base64,
         })
       } catch (err) {
-        if (controller.signal.aborted) return
+        if (controller.signal.aborted || !isSelectionCurrent(generation)) return
         onFileSelect({
           id,
           file,
@@ -405,7 +414,7 @@ export function AttachmentButton({
         if (processingRef.current === controller) processingRef.current = null
       }
     },
-    [onFileSelect],
+    [isSelectionCurrent, onFileSelect, selectionGeneration],
   )
 
   return (
