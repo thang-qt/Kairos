@@ -249,7 +249,7 @@ function ImportedImage({ alt }: { alt?: string }) {
   )
 }
 
-const IMPORTED_COMPONENTS = { ...INITIAL_COMPONENTS, img: ImportedImage }
+const SAFE_COMPONENTS = { ...INITIAL_COMPONENTS, img: ImportedImage }
 
 function MarkdownComponent({
   children,
@@ -275,7 +275,11 @@ function MarkdownComponent({
       )
     }
     return {
-      ...(blockRemoteImages ? IMPORTED_COMPONENTS : components),
+      // Markdown can contain generated or imported URLs. Keep images on the
+      // dedicated attachment path so rendering text never starts a request.
+      ...(blockRemoteImages
+        ? SAFE_COMPONENTS
+        : { ...components, img: ImportedImage }),
       pre: components.pre ?? defaultPre,
     }
   }, [blockRemoteImages, components, streaming])

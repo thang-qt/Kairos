@@ -3,6 +3,21 @@ import { describe, expect, it } from 'vitest'
 import { Markdown } from './markdown'
 
 describe('Markdown', function () {
+  it('blocks generated Markdown and HTML images without creating image requests', function () {
+    const html = renderToStaticMarkup(
+      <Markdown>
+        {
+          '![Generated](https://example.invalid/generated-image.png)\n\n<img src="https://example.invalid/generated-html.png" alt="HTML image" />'
+        }
+      </Markdown>,
+    )
+
+    expect(html).not.toContain('<img')
+    expect(html).not.toContain('https://example.invalid')
+    expect(html).not.toContain('rel="preload"')
+    expect(html).toContain('External image blocked')
+  })
+
   it('blocks imported Markdown and HTML images without creating image requests', function () {
     const html = renderToStaticMarkup(
       <Markdown blockRemoteImages>
