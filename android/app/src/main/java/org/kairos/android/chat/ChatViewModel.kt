@@ -56,6 +56,10 @@ class ChatViewModel(val app: AppContainer) : ViewModel() {
     var composerGeneration by mutableIntStateOf(0)
         private set
 
+    /** Focus pops only when the draft is intentionally pre-filled (edit, fork), never on open. */
+    var composerFocusGeneration by mutableIntStateOf(0)
+        private set
+
     var ephemeralMode by mutableStateOf(false)
         private set
 
@@ -294,6 +298,7 @@ class ChatViewModel(val app: AppContainer) : ViewModel() {
     fun edit(message: JsonObject) {
         editing = message
         seed(message.copyText())
+        composerFocusGeneration++
     }
 
     fun cancelEdit() {
@@ -334,7 +339,10 @@ class ChatViewModel(val app: AppContainer) : ViewModel() {
                 turns.take(turns.indexOf(point)).lastOrNull { it.role != "toolResult" }
             else point
         if (previous == null) select(null) else select(conversation.fork(previous.id))
-        if (point?.role == "user") seed(point.copyText())
+        if (point?.role == "user") {
+            seed(point.copyText())
+            composerFocusGeneration++
+        }
     }
 
     fun rename(session: SessionSummary, title: String) = task {

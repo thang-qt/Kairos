@@ -11,24 +11,47 @@ import android.os.Bundle
 import android.provider.Settings
 import android.service.voice.VoiceInteractionService
 import android.widget.Toast
-import androidx.compose.foundation.layout.*
-import androidx.compose.runtime.*
 import org.kairos.android.R
 import org.kairos.android.app.MainActivity
 
-fun isDefaultAssistant(context: Context): Boolean =
-    if (Build.VERSION.SDK_INT >= 29) {
-        val roles = context.getSystemService(RoleManager::class.java)
-        roles?.isRoleAvailable(RoleManager.ROLE_ASSISTANT) == true &&
-            roles.isRoleHeld(RoleManager.ROLE_ASSISTANT)
-    } else
-        VoiceInteractionService.isActiveService(
+/**
+ * Production assistant-role flow. API 29+ requests ROLE_VOICE_INTERACTION with the system's
+ * own dialog (RoleManager.createRequestRoleIntent); ROLE_ASSISTANT is only used as a read
+ * probe because AOSP marks it non-requestable. Devices without the role fall back to the
+ * system default-apps settings.
+ */
+fun isDefaultAssistant(context: Context): Boolean {
+    if (Build.VERSION.SDK_INT < 29)
+        return VoiceInteractionService.isActiveService(
             context,
             ComponentName(context, KairosVoiceInteractionService::class.java),
         )
+    val roles = context.getSystemService(RoleManager::class.java) ?: return false
+    return roles.isRoleAvailable(RoleManager.ROLE_ASSISTANT) &&
+        roles.isRoleHeld(RoleManager.ROLE_ASSISTANT)
+}
 
+/**
+ * The system's role-request intent when this platform allows requesting the assistant role
+ * (some OEM builds do; AOSP marks ASSISTANT non-requestable). Launch it with an
+ * activity-result launcher and re-check [isDefaultAssistant] afterwards; null means fall back
+ * to [openAssistantSettings].
+ */
+fun defaultAssistantRoleIntent(context: Context): Intent? {
+    if (Build.VERSION.SDK_INT < 29) return null
+    val roles = context.getSystemService(RoleManager::class.java) ?: return null
+    if (!roles.isRoleAvailable(RoleManager.ROLE_ASSISTANT)) return null
+    return try {
+        roles.createRequestRoleIntent(RoleManager.ROLE_ASSISTANT)
+    } catch (_: IllegalArgumentException) {
+        null
+    } catch (_: SecurityException) {
+        null
+    }
+}
+
+/** Last-resort deep link into the system assistant settings. */
 fun openAssistantSettings(context: Context) {
-    // ASSISTANT is requestable=false in AOSP; never create a role-request prompt.
     for (action in
         listOf(
             Settings.ACTION_VOICE_INPUT_SETTINGS,

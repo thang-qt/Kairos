@@ -107,12 +107,14 @@ fun ChatHeader(chat: ChatViewModel, onOpenSidebar: () -> Unit) {
                         selected = chat.ephemeralMode,
                         enabled = ephemeralAvailable,
                     )
-                GhostIconButton(
-                    KairosIcons.MoreVertical,
-                    "Conversation actions",
-                    { if (chat.activeSession != null) more = true },
-                    tint = colors.p(700),
-                )
+                // A conversation that does not exist yet has no actions to offer.
+                if (chat.activeSession != null)
+                    GhostIconButton(
+                        KairosIcons.MoreVertical,
+                        "Conversation actions",
+                        { more = true },
+                        tint = colors.p(700),
+                    )
             }
         }
     }

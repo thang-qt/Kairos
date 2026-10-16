@@ -1,8 +1,11 @@
 import {
   memo,
   useCallback,
+  useEffect,
   useMemo,
   useLayoutEffect,
+  useRef,
+  useState,
   useSyncExternalStore,
 } from 'react'
 import { createRoot } from 'react-dom/client'
@@ -50,14 +53,42 @@ const MessageRow = memo(function MessageRow({
         modelLabelById={modelLabels}
         toolResultsByCallId={projection.toolResultsByCallId}
         showAssistantActions={false}
+        showTimestamp={false}
         onOpenActivity={openActivity}
       />
     </article>
   )
 })
 
+const WINDOW_SIZE = 30
+
 function Transcript() {
   const state = useSyncExternalStore(subscribe, getSnapshot)
+  // The web renders a sliding window that grows upward as the reader approaches
+  // the top; the offline transcript mirrors that so long conversations stay snappy.
+  const [visibleCount, setVisibleCount] = useState(WINDOW_SIZE)
+  const sessionChanged = useRef(state.sessionId)
+  useEffect(
+    function resetWindowOnSessionChange() {
+      if (sessionChanged.current === state.sessionId) return
+      sessionChanged.current = state.sessionId
+      setVisibleCount(WINDOW_SIZE)
+    },
+    [state.sessionId],
+  )
+  const rendered = useMemo(
+    function windowMessages() {
+      return state.messages.slice(
+        Math.max(0, state.messages.length - visibleCount),
+      )
+    },
+    [state.messages, visibleCount],
+  )
+  const loadOlder = useCallback(function expandWindow() {
+    setVisibleCount(function grow(count) {
+      return count + WINDOW_SIZE
+    })
+  }, [])
   useLayoutEffect(
     function followAndAcknowledge() {
       if (followBottom)
@@ -80,11 +111,48 @@ function Transcript() {
         paddingBottom: state.insets.bottom + 16,
       }}
     >
-      {state.messages.map(function renderMessage(message) {
+      {rendered.map(function renderMessage(message) {
         return <MessageRow key={message.id} message={message} />
       })}
+      {rendered.length < state.messages.length ? (
+        <LoadOlderSentinel onLoadOlder={loadOlder} />
+      ) : null}
     </main>
   )
+}
+
+/** Expands the window as the reader scrolls within one viewport of the top. */
+function LoadOlderSentinel({ onLoadOlder }: { onLoadOlder: () => void }) {
+  const ref = useRef<HTMLDivElement | null>(null)
+  const loadingRef = useRef(false)
+  useEffect(function observeSentinel() {
+    const node = ref.current
+    if (!node) return
+    const observer = new IntersectionObserver(
+      function reachTop(entries) {
+        if (!entries.some((entry) => entry.isIntersecting)) return
+        if (loadingRef.current) return
+        loadingRef.current = true
+        const previousHeight = document.documentElement.scrollHeight
+        const previousTop = window.scrollY
+        onLoadOlder()
+        requestAnimationFrame(function restorePosition() {
+          requestAnimationFrame(function settlePosition() {
+            const nextHeight = document.documentElement.scrollHeight
+            if (nextHeight > previousHeight)
+              window.scrollTo(0, previousTop + (nextHeight - previousHeight))
+            loadingRef.current = false
+          })
+        })
+      },
+      { rootMargin: '0px 0px 25% 0px' },
+    )
+    observer.observe(node)
+    return function disconnect() {
+      observer.disconnect()
+    }
+  })
+  return <div ref={ref} aria-hidden className="h-1" />
 }
 
 window.addEventListener('message', function nativeMessage(event) {

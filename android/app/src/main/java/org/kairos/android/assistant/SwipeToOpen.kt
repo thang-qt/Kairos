@@ -108,7 +108,7 @@ internal constructor(
                 animate(
                     offset,
                     threshold * 2f,
-                    animationSpec = tween(160, easing = FastOutLinearInEasing),
+                    animationSpec = tween(200, easing = FastOutLinearInEasing),
                 ) { value, _ ->
                     offset = value
                 }

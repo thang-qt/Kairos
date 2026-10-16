@@ -49,12 +49,14 @@ fun NativeComposer(
     onStop: () -> Unit,
     modifier: Modifier = Modifier,
     focusRequestKey: Int? = null,
+    focusKey: Int? = null,
     initialDraft: String = "",
     editing: Boolean = false,
     onCancelEdit: () -> Unit = {},
     attachments: List<ScreenAttachment> = emptyList(),
     onRemoveAttachment: (ScreenAttachment) -> Unit = {},
     onAttach: () -> Unit = {},
+    onPickImage: (() -> Unit)? = null,
     onBodyHeight: (Int) -> Unit = {},
     screenCapture: ScreenCaptureState? = null,
     floating: Boolean = false,
@@ -68,6 +70,13 @@ fun NativeComposer(
     var draft by remember(focusRequestKey) { mutableStateOf(initialDraft) }
     LaunchedEffect(focusRequestKey) {
         if (focusRequestKey != null) {
+            withFrameNanos {}
+            focusRequester.requestFocus()
+            keyboard?.show()
+        }
+    }
+    LaunchedEffect(focusKey) {
+        if (focusKey != null) {
             withFrameNanos {}
             focusRequester.requestFocus()
             keyboard?.show()
@@ -162,27 +171,50 @@ fun NativeComposer(
                 verticalAlignment = Alignment.Bottom,
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                if (screenCapture == null) {
-                    GhostIconButton(
-                        KairosIcons.PlusSign,
-                        "Attach image",
-                        { if (!editing) onAttach() },
-                        tint = colors.p(900),
-                        round = true,
-                    )
-                } else {
-                    // Unavailable looks disabled, but a tap still explains the system toggle.
-                    GhostIconButton(
-                        KairosIcons.SmartPhone01,
-                        "Attach screen",
-                        screenCapture::attach,
-                        Modifier.alpha(if (screenCapture.available) 1f else 0.5f).semantics {
-                            if (!screenCapture.available) disabled()
-                        },
-                        tint = colors.p(900),
-                        round = true,
-                    )
-                }
+        if (screenCapture == null) {
+            GhostIconButton(
+                KairosIcons.PlusSign,
+                "Attach image",
+                { if (!editing) onAttach() },
+                tint = colors.p(900),
+                round = true,
+            )
+        } else if (onPickImage != null) {
+            // Both sources exist here: system screenshot and the photo library.
+            var choosing by remember { mutableStateOf(false) }
+            GhostIconButton(
+                KairosIcons.PlusSign,
+                "Attach content",
+                { if (!editing) choosing = true },
+                tint = colors.p(900),
+                round = true,
+            )
+            if (choosing)
+                AttachmentChoiceSheet(
+                    screenCaptureAvailable = screenCapture.available,
+                    onScreen = {
+                        choosing = false
+                        screenCapture.attach()
+                    },
+                    onLibrary = {
+                        choosing = false
+                        onPickImage()
+                    },
+                    onDismiss = { choosing = false },
+                )
+        } else {
+            // Unavailable looks disabled, but a tap still explains the system toggle.
+            GhostIconButton(
+                KairosIcons.SmartPhone01,
+                "Attach screen",
+                screenCapture::attach,
+                Modifier.alpha(if (screenCapture.available) 1f else 0.5f).semantics {
+                    if (!screenCapture.available) disabled()
+                },
+                tint = colors.p(900),
+                round = true,
+            )
+        }
                 BasicTextField(
                     value = draft,
                     onValueChange = { draft = it },

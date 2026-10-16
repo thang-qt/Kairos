@@ -1,6 +1,7 @@
 package org.kairos.android.assistant
 
 import android.content.Context
+import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.drawable.ColorDrawable
@@ -114,6 +115,7 @@ class KairosSession(context: Context) : VoiceInteractionSession(context) {
         content?.let(::installContent)
         owner.show()
         content?.requestApplyInsets()
+        consumeLibraryAttachment()
         if (Build.VERSION.SDK_INT >= 33 && backCallback != null) {
             window.window
                 ?.onBackInvokedDispatcher
@@ -122,6 +124,23 @@ class KairosSession(context: Context) : VoiceInteractionSession(context) {
                     backCallback,
                 )
         }
+    }
+
+    /** Applies a photo-library attachment picked through the trampoline activity. */
+    private fun consumeLibraryAttachment() {
+        val pending = LibraryAttachment.pending ?: return
+        LibraryAttachment.pending = null
+        screenCapture.receiveAttachment(pending)
+    }
+
+    fun pickLibraryImage() {
+        try {
+            context
+                .startActivity(
+                    Intent(context, PickerTrampolineActivity::class.java)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                )
+        } catch (_: Exception) {}
     }
 
     override fun onHide() {

@@ -32,7 +32,9 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -66,6 +68,8 @@ fun ChatScreen(chat: ChatViewModel, bridge: TranscriptBridge, onCopy: (String) -
     val density = LocalDensity.current
     val layoutDirection = LocalLayoutDirection.current
     val scope = rememberCoroutineScope()
+    val keyboard = LocalSoftwareKeyboardController.current
+    val focusManager = LocalFocusManager.current
     val drawer = remember { AnchoredDraggableState(DrawerPosition.Closed) }
     val decay = rememberSplineBasedDecay<Float>()
     var animationJob by remember { mutableStateOf<Job?>(null) }
@@ -144,7 +148,12 @@ fun ChatScreen(chat: ChatViewModel, bridge: TranscriptBridge, onCopy: (String) -
             .collect { position ->
                 if (position != last) {
                     view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
-                    if (position == DrawerPosition.Open) chat.refreshSessions()
+                    if (position == DrawerPosition.Open) {
+                        chat.refreshSessions()
+                        // An open drawer and a focused composer fight for the IME.
+                        keyboard?.hide()
+                        focusManager.clearFocus()
+                    }
                 }
                 last = position
             }
@@ -170,7 +179,14 @@ fun ChatScreen(chat: ChatViewModel, bridge: TranscriptBridge, onCopy: (String) -
         animationJob = scope.launch { drawer.animateTo(DrawerPosition.Open) }
     }
 
-    PredictiveBackHandler(enabled = fraction > 0.001f) { events ->
+    PredictiveBackHandler(
+        enabled = fraction > 0.001f || chat.searchOpen,
+    ) { events ->
+        if (chat.searchOpen) {
+            events.collect {}
+            chat.closeSearch()
+            return@PredictiveBackHandler
+        }
         val initial = drawer.requireOffset()
         try {
             drawer.anchoredDrag {
@@ -366,7 +382,12 @@ fun ChatScreen(chat: ChatViewModel, bridge: TranscriptBridge, onCopy: (String) -
                     onSend = { text ->
                         scope.launch {
                             chat.send(text, attachments.map { it.payload() }).join()
-                            if (chat.error == null) attachments = emptyList()
+                            if (chat.error == null) {
+                                attachments = emptyList()
+                                // Reading the reply beats an always-up keyboard.
+                                keyboard?.hide()
+                                focusManager.clearFocus()
+                            }
                         }
                     },
                     onStop = { chat.stop() },

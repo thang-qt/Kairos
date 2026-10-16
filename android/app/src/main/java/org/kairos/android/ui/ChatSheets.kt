@@ -2,13 +2,23 @@
 
 package org.kairos.android.ui
 
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.composed
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -58,18 +68,46 @@ fun KairosSheet(
 }
 
 @Composable
-fun SheetAction(icon: ImageVector, label: String, onClick: () -> Unit) {
+fun SheetAction(
+    icon: ImageVector,
+    label: String,
+    enabled: Boolean = true,
+    onClick: () -> Unit,
+) {
     val colors = LocalKairosColors.current
     Row(
         Modifier.fillMaxWidth()
             .height(48.dp)
-            .pressable(pressedColor = colors.p(100), onClick = onClick)
+            .pressable(pressedColor = colors.p(100), enabled = enabled, onClick = onClick)
             .padding(horizontal = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        KIcon(icon, colors.p(900))
-        Text(label, color = colors.p(900))
+        KIcon(icon, if (enabled) colors.p(900) else colors.p(400))
+        Text(label, color = if (enabled) colors.p(900) else colors.p(400))
+    }
+}
+
+/** Chooses between the system screenshot and the photo library where both exist. */
+@Composable
+fun AttachmentChoiceSheet(
+    screenCaptureAvailable: Boolean,
+    onScreen: () -> Unit,
+    onLibrary: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    KairosSheet(onDismiss) {
+        Text("Attach", fontWeight = FontWeight.Medium)
+        Spacer(Modifier.height(8.dp))
+        SheetAction(KairosIcons.SmartPhone01, "Attach current screen", enabled = screenCaptureAvailable, onClick = onScreen)
+        SheetAction(KairosIcons.PlusSign, "Choose image from library", onClick = onLibrary)
+        if (!screenCaptureAvailable)
+            Text(
+                "Turn on 'Use screenshot' in the digital assistant settings to attach the current screen.",
+                color = LocalKairosColors.current.p(500),
+                fontSize = 12.sp,
+                lineHeight = 16.sp,
+            )
     }
 }
 
@@ -267,40 +305,192 @@ fun ModelsSheet(chat: ChatViewModel, onDismiss: () -> Unit) {
 @Composable
 fun ActivitySheet(turn: JsonObject, onDismiss: () -> Unit) {
     val colors = LocalKairosColors.current
-    val steps =
-        (turn["steps"] as? JsonArray)
-            ?.mapNotNull { it as? JsonObject }
-            .orEmpty()
-            .ifEmpty { listOf(turn) }
+    val split = remember(turn) { splitAssistantActivity(turn) }
+    val streaming = split.let { isAssistantStreaming(turn) }
+    val indexes = visibleActivityIndexes(turn, split.activityIndexes, streaming)
+    val steps = remember(indexes, turn) { activitySteps(turn, indexes) }
+    var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(streaming) {
+        while (streaming) {
+            now = System.currentTimeMillis()
+            kotlinx.coroutines.delay(1000)
+        }
+    }
     KairosSheet(onDismiss) {
-        Text("Activity", fontWeight = FontWeight.Medium, color = colors.p(900))
-        Column(
-            Modifier.heightIn(max = 520.dp)
-                .verticalScroll(rememberScrollState())
-                .padding(top = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+        Row(
+            Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            steps.forEach { step ->
-                if (step.role == "toolResult")
+            Text("Activity", fontWeight = FontWeight.Medium, color = colors.p(900))
+            Spacer(Modifier.weight(1f))
+            Text(
+                if (streaming)
+                    formatElapsed(split.durationMs + (now - (turn.timestampLong() ?: now)).coerceAtLeast(0))
+                else if (split.durationMs > 0) formatActivityDuration(split.durationMs)
+                else "",
+                color = colors.p(500),
+                fontSize = 12.sp,
+                style = TextStyle(fontFeatureSettings = "tnum"),
+            )
+        }
+        Column(
+            Modifier.heightIn(max = 440.dp)
+                .verticalScroll(rememberScrollState())
+                .padding(top = 14.dp),
+            verticalArrangement = Arrangement.spacedBy(0.dp),
+        ) {
+            if (steps.isEmpty())
+                Text(
+                    "This response has no thinking or tool activity to show.",
+                    color = colors.p(500),
+                    fontSize = 13.sp,
+                    lineHeight = 18.sp,
+                    modifier = Modifier.padding(vertical = 24.dp),
+                )
+            steps.forEachIndexed { order, step ->
+                ActivityRow(step, order < steps.lastIndex)
+            }
+        }
+    }
+}
+
+private fun JsonObject.timestampLong(): Long? = normalizeMessageTimestamp(this["timestamp"])
+
+private fun formatElapsed(elapsedMs: Long): String = formatActivityDuration(elapsedMs.coerceAtLeast(0))
+
+@Composable
+private fun ActivityRow(step: ActivityStep, hasConnector: Boolean) {
+    val colors = LocalKairosColors.current
+    Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
+        Column(Modifier.width(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Box(Modifier.height(24.dp), contentAlignment = Alignment.Center) {
+                when (step) {
+                    is ActivityStep.Thinking -> KIcon(KairosIcons.AiMagic, colors.p(500), size = 20.dp)
+                    is ActivityStep.Narration ->
+                        Box(Modifier.size(6.dp).background(colors.p(300), CircleShape))
+                    is ActivityStep.Tool ->
+                        KIcon(
+                            when {
+                                step.failed -> KairosIcons.AlertCircle
+                                step.web -> KairosIcons.Search01
+                                else -> KairosIcons.Settings02
+                            },
+                            if (step.running) colors.p(800) else colors.p(500),
+                            size = 20.dp,
+                        )
+                }
+            }
+            if (hasConnector)
+                Box(Modifier.width(1.dp).fillMaxHeight().background(colors.p(200)))
+        }
+        Column(Modifier.weight(1f).padding(start = 10.dp, bottom = 18.dp)) {
+            when (step) {
+                is ActivityStep.Thinking -> ThinkingStep(step)
+                is ActivityStep.Narration ->
+                    Text(step.text, color = colors.p(700), fontSize = 13.sp, lineHeight = 19.sp)
+                is ActivityStep.Tool -> {
                     Text(
-                        "${step.string("toolName") ?: "Tool"} · ${if ((step["isError"] as? JsonPrimitive)?.booleanOrNull == true) "Failed" else "Completed"}",
-                        color = colors.p(600),
-                        fontSize = 12.sp,
+                        step.title,
+                        color = colors.p(800),
+                        fontSize = 14.sp,
+                        lineHeight = 20.sp,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier =
+                            if (step.running)
+                                Modifier.pulsing()
+                            else Modifier,
                     )
-                step.parts().forEach { part ->
-                    when (part.string("type")) {
-                        "thinking" -> Text(part.string("thinking").orEmpty(), color = colors.p(700))
-                        "toolCall" ->
+                    if (step.meta.isNotEmpty())
+                        Text(
+                            step.meta,
+                            color = colors.p(500),
+                            fontSize = 12.sp,
+                            lineHeight = 16.sp,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                            style = TextStyle(fontFeatureSettings = "tnum"),
+                        )
+                    if (step.web && step.sources.isNotEmpty()) {
+                        Spacer(Modifier.height(4.dp))
+                        step.sources.take(3).forEach { source ->
                             Text(
-                                "${part.string("name") ?: "Tool"} · ${part.string("status") ?: "Running"}",
-                                color = colors.p(700),
+                                source.title,
+                                color = colors.p(500),
+                                fontSize = 12.sp,
+                                lineHeight = 16.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier =
+                                    Modifier.pressable(onClick = { openBrowserQuietly(source.url) })
+                                        .padding(vertical = 1.dp),
                             )
-                        "text" ->
-                            if (part.string("phase") == "commentary")
-                                Text(part.string("text").orEmpty(), color = colors.p(700))
+                        }
                     }
                 }
             }
         }
     }
+}
+
+@Composable
+private fun ThinkingStep(step: ActivityStep.Thinking) {
+    val colors = LocalKairosColors.current
+    var open by remember { mutableStateOf(step.streaming) }
+    Row(
+        Modifier.pressable(pressedColor = colors.p(200)) { open = !open }.padding(vertical = 1.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Text(
+            if (step.streaming) "Thinking…" else "Thought",
+            color = colors.p(800),
+            fontSize = 14.sp,
+            modifier = if (step.streaming) Modifier.pulsing() else Modifier,
+        )
+        KIcon(
+            KairosIcons.ArrowDown01,
+            colors.p(500),
+            Modifier.rotate(if (open) 180f else 0f),
+            size = 20.dp,
+        )
+    }
+    if (open)
+        Text(
+            step.content,
+            Modifier.padding(top = 2.dp),
+            color = colors.p(600),
+            fontSize = 13.sp,
+            lineHeight = 19.sp,
+        )
+    else
+        Text(
+            step.content
+                .replace(Regex("[`*_#>\\[\\]]"), "")
+                .replace(Regex("\\s+"), " ")
+                .trim(),
+            Modifier.padding(top = 2.dp),
+            color = colors.p(500),
+            fontSize = 13.sp,
+            lineHeight = 19.sp,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
+}
+
+private fun Modifier.pulsing(): Modifier = composed {
+    val transition = rememberInfiniteTransition(label = "pulse")
+    val alpha by
+        transition.animateFloat(
+            0.45f,
+            1f,
+            infiniteRepeatable(tween(900, easing = LinearEasing), RepeatMode.Reverse),
+            label = "pulse-alpha",
+        )
+    graphicsLayer { this.alpha = alpha }
+}
+
+private fun openBrowserQuietly(url: String) {
+    // Overlays open links through their own browser hook; the sheet keeps links inert here.
 }
