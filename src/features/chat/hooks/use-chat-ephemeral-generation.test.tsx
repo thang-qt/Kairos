@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { chatQueryKeys } from '../chat-queries'
 import { setChatBackend } from '@/lib/chat-backend'
+import { defaultConversationSettings } from '../conversation-settings'
 import { useChatEphemeralGeneration } from './use-chat-ephemeral-generation'
 
 import type { ChatBackend } from '@/lib/chat-backend'
@@ -22,10 +23,8 @@ function createInput(queryClient: QueryClient) {
     throwawayMode: true,
     queryClient,
     displayMessages: [],
-    resolvedConversationModel: 'test-model',
-    resolvedSystemPrompt: '',
-    resolvedWebSearch: false,
-    resolvedMathTools: false,
+    conversationSettings: defaultConversationSettings,
+
     beginGeneration: vi.fn(),
     finishGeneration: vi.fn(),
     setSending: vi.fn(),

@@ -12,9 +12,12 @@ import (
 )
 
 type chatContractFixture struct {
-	SendRequest json.RawMessage `json:"sendRequest"`
-	CommandAck  json.RawMessage `json:"commandAck"`
-	SSEFrame    string          `json:"sseFrame"`
+	DefaultSettings     ConversationSettings `json:"defaultSettings"`
+	MinimalSendRequest  json.RawMessage      `json:"minimalSendRequest"`
+	SettingsSendRequest json.RawMessage      `json:"settingsSendRequest"`
+	SendRequest         json.RawMessage      `json:"sendRequest"`
+	CommandAck          json.RawMessage      `json:"commandAck"`
+	SSEFrame            string               `json:"sseFrame"`
 }
 
 func TestSharedChatContractFixtureMatchesGoWireTypes(t *testing.T) {
@@ -27,6 +30,10 @@ func TestSharedChatContractFixtureMatchesGoWireTypes(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	if fixture.DefaultSettings != defaultConversationSettings() {
+		t.Fatal("shared settings defaults differ from Go defaults")
+	}
+
 	request := httptest.NewRequest(http.MethodPost, "/api/sessions/friendly-contract-1/messages", bytes.NewReader(fixture.SendRequest))
 	response := httptest.NewRecorder()
 	var decoded sendMessageRequest
@@ -37,6 +44,19 @@ func TestSharedChatContractFixtureMatchesGoWireTypes(t *testing.T) {
 		t.Fatalf("decoded request differs from fixture contract: %+v", decoded)
 	}
 
+	var minimal, draft sendMessageRequest
+	if err := json.Unmarshal(fixture.MinimalSendRequest, &minimal); err != nil {
+		t.Fatal(err)
+	}
+	if minimal.configurationFields["model"] || minimal.configurationFields["advanced"] {
+		t.Fatal("minimal client unexpectedly supplied effective configuration")
+	}
+	if err := json.Unmarshal(fixture.SettingsSendRequest, &draft); err != nil {
+		t.Fatal(err)
+	}
+	if draft.Settings == nil || !draft.Settings.Advanced.Reasoning || draft.Settings.Advanced.TopP != 1 {
+		t.Fatal("draft settings lost server defaults")
+	}
 	var ack SubmitTurnResult
 	if err := json.Unmarshal(fixture.CommandAck, &ack); err != nil {
 		t.Fatalf("decode command acknowledgement: %v", err)
@@ -98,4 +118,39 @@ func extractSSEData(frame string) string {
 		}
 	}
 	return ""
+}
+
+func TestChatConfigurationPresenceContract(t *testing.T) {
+	for _, test := range []struct {
+		raw      string
+		present  bool
+		disabled bool
+	}{
+		{`{"message":"hello"}`, false, false},
+		{`{"message":"hello","systemPrompt":"","webSearch":false,"mathTools":false,"advanced":{}}`, true, true},
+		{`{"message":"hello","advanced":null}`, true, true},
+	} {
+		var request sendMessageRequest
+		if err := json.Unmarshal([]byte(test.raw), &request); err != nil {
+			t.Fatal(err)
+		}
+		if request.configurationFields["advanced"] != test.present {
+			t.Fatalf("lost advanced presence: %s", test.raw)
+		}
+		if test.disabled && request.Advanced != nil && request.Advanced.Reasoning != nil {
+			t.Fatal("empty options enabled reasoning")
+		}
+	}
+	for _, raw := range []string{
+		`{"message":"hello","unknown":true}`,
+		`{"message":"hello","advanced":{"sampling":{"unknown":1}}}`,
+		`{"message":"hello","settings":{"advanced":{"unknown":1}}}`,
+		`{"message":"hello","webSearch":null}`,
+		`{"message":"hello","settings":{"advanced":{"temperature":"hot"}}}`,
+	} {
+		var request sendMessageRequest
+		if json.Unmarshal([]byte(raw), &request) == nil {
+			t.Fatalf("accepted malformed/unknown fields: %s", raw)
+		}
+	}
 }

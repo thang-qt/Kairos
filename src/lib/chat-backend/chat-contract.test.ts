@@ -1,3 +1,5 @@
+import { defaultConversationSettings } from '@/features/chat/conversation-settings'
+import type { ConversationSettings } from './contracts'
 import { readFileSync } from 'node:fs'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -16,6 +18,9 @@ import {
 } from '@/features/chat/conversation-event-reducer'
 
 type SharedChatContractFixture = {
+  defaultSettings: ConversationSettings
+  minimalSendRequest: ChatSendMessageInput
+  settingsSendRequest: ChatSendMessageInput
   sendRequest: ChatSendMessageInput
   commandAck: ChatSendMessageResult
   sseFrame: string
@@ -31,6 +36,10 @@ const fixture = JSON.parse(
 ) as SharedChatContractFixture
 
 describe('shared Go and TypeScript chat wire contract', function () {
+  it('keeps display defaults aligned with authoritative Go defaults', function () {
+    expect(defaultConversationSettings).toEqual(fixture.defaultSettings)
+  })
+
   it('accepts the command acknowledgement revision and identity fields', function () {
     expect(fixture.commandAck.revision).toBe(7)
     expect(fixture.commandAck.runId).toBe('run-contract-1')
@@ -56,6 +65,38 @@ describe('shared Go and TypeScript chat wire contract', function () {
 
     const init = fetchMock.mock.calls[0]?.[1]
     expect(JSON.parse(String(init?.body))).toEqual(fixture.sendRequest)
+  })
+
+  it('forwards thin-client requests and settings drafts without resolving policy', async function () {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(new Response(JSON.stringify(fixture.commandAck)))
+    vi.stubGlobal('fetch', fetchMock)
+    for (const request of [
+      fixture.minimalSendRequest,
+      fixture.settingsSendRequest,
+    ]) {
+      fetchMock.mockResolvedValueOnce(
+        new Response(JSON.stringify(fixture.commandAck)),
+      )
+      const result = await createHTTPChatBackend().sendMessage({
+        ...request,
+        sessionKey: 'session',
+        friendlyId: 'friendly',
+        clientTime: '2026-10-16T03:00:00Z',
+        clientTimeZone: 'UTC',
+      })
+      const body = JSON.parse(String(fetchMock.mock.lastCall?.[1]?.body))
+      expect(body).toEqual({
+        ...request,
+        clientTime: '2026-10-16T03:00:00Z',
+        clientTimeZone: 'UTC',
+      })
+      expect(body).not.toHaveProperty('advanced')
+      expect(result.effectiveConfiguration).toEqual(
+        fixture.commandAck.effectiveConfiguration,
+      )
+    }
   })
 
   it('consumes Go-shaped SSE patches and the terminal event', async function () {

@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
@@ -28,11 +29,18 @@ func (service *AgentRuntime) RetryRun(ctx context.Context, userID, friendlyID, r
 	var result SubmitTurnResult
 	result.RunID = runID
 	result.SessionKey = session.ID
-	var status string
+	var status, requestJSON string
 	var invalidated int
 	var revision int64
-	if err := tx.QueryRowContext(ctx, `SELECT status,COALESCE(assistant_message_id,id),COALESCE(user_message_id,''),invalidated,revision FROM chat_runs WHERE id=? AND session_id=? AND user_id=?`, runID, session.ID, userID).Scan(&status, &result.AssistantTurnID, &result.UserTurnID, &invalidated, &result.Revision); err != nil {
+	if err := tx.QueryRowContext(ctx, `SELECT status,COALESCE(assistant_message_id,id),COALESCE(user_message_id,''),invalidated,revision,COALESCE(request_json,'') FROM chat_runs WHERE id=? AND session_id=? AND user_id=?`, runID, session.ID, userID).Scan(&status, &result.AssistantTurnID, &result.UserTurnID, &invalidated, &result.Revision, &requestJSON); err != nil {
 		return result, errChatSessionNotFound
+	}
+	var input SubmitTurnInput
+	if requestJSON != "" {
+		if err := json.Unmarshal([]byte(requestJSON), &input); err != nil {
+			return result, err
+		}
+		result.EffectiveConfiguration = input.EffectiveConfiguration
 	}
 	var repeated int
 	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM chat_retry_commands WHERE run_id=? AND command_key=?`, runID, key).Scan(&repeated); err != nil {

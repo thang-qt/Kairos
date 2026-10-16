@@ -4,6 +4,7 @@ export type { SessionSearchResult } from './contracts'
 
 import type {
   ConversationTurn,
+  EffectiveChatConfiguration,
   HistoryResponse,
   SessionMeta,
   SessionSearchResult,
@@ -31,6 +32,7 @@ export type ChatHistoryInput = {
 }
 
 export type ChatSendMessageInput = {
+  settings?: ConversationSettings
   expectedRevision?: number
   sessionKey: string
   friendlyId: string
@@ -107,6 +109,7 @@ export type ChatCloneConversationInput = {
 }
 
 export type ChatEditUserMessageInput = {
+  settings?: ConversationSettings
   idempotencyKey?: string
   expectedRevision?: number
   sourceSessionKey: string
@@ -131,6 +134,7 @@ export type ChatDeleteUserMessageInput = {
 }
 
 export type ConversationCommandAck = {
+  effectiveConfiguration?: EffectiveChatConfiguration
   revision?: number
   userTurn?: ConversationTurn
   invalidatedRunIds?: Array<string>

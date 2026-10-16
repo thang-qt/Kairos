@@ -8,13 +8,11 @@ import {
 } from './chat-queries'
 import { getChatBackend } from '@/lib/chat-backend'
 import { providerModelKey } from '@/lib/model-utils'
-import { resolveReasoningEffort } from './reasoning-options'
 
 import type { ProviderModel } from '@/lib/app-api'
 import type {
   ConversationAdvancedSettings,
   ConversationSettings,
-  ChatRequestAdvancedSettings,
   SessionMeta,
 } from '@/lib/chat-backend/contracts'
 
@@ -189,7 +187,8 @@ function normalizeConversationSettings(
   return mergeConversationSettings(defaultConversationSettings, settings ?? {})
 }
 
-export function resolveConversationModelID(
+// Display-only fallback for the model picker. Commands send the settings draft.
+export function displayConversationModelID(
   preferredModelID: string,
   models: Array<ProviderModel>,
   defaultModelID?: string,
@@ -238,45 +237,6 @@ export function resolveConversationModelID(
 
   if (models.length > 0) return providerModelKey(models[0])
   return ''
-}
-
-export function buildChatRequestAdvancedSettings(
-  settings: ConversationAdvancedSettings,
-  model?: ProviderModel,
-): ChatRequestAdvancedSettings | undefined {
-  const advanced: ChatRequestAdvancedSettings = {}
-  const effort = resolveReasoningEffort(settings.reasoningEffort, model)
-  if (settings.reasoning && effort) advanced.reasoning = { effort }
-  if (settings.sampling) {
-    advanced.sampling = {
-      temperature: clampNumber(settings.temperature, 0, 2),
-      topP: clampNumber(settings.topP, 0, 1),
-    }
-    if (settings.topK > 0) {
-      advanced.sampling.topK = Math.floor(clampNumber(settings.topK, 0, 1000))
-    }
-  }
-  if (settings.penalties) {
-    advanced.penalties = {
-      frequencyPenalty: clampNumber(settings.frequencyPenalty, -2, 2),
-      presencePenalty: clampNumber(settings.presencePenalty, -2, 2),
-    }
-  }
-  if (settings.maxTokens) {
-    advanced.maxTokens = Math.floor(
-      clampNumber(settings.maxTokensValue, 1, 200000),
-    )
-  }
-  return Object.keys(advanced).length > 0 ? advanced : undefined
-}
-
-function clampNumber(value: number, min: number, max: number) {
-  if (!Number.isFinite(value)) return min
-  return Math.min(Math.max(value, min), max)
-}
-
-export function normalizeConversationTextSetting(value: string): string {
-  return normalizeConversationStringValue(value)
 }
 
 function normalizeConversationStringValue(

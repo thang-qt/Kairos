@@ -73,6 +73,10 @@ func (service *ProviderService) UpdateDefaultChatSettings(
 	if err := service.ensureUserPreferences(ctx, userID); err != nil {
 		return ChatSettingsPreferences{}, err
 	}
+	settings, err := service.NormalizeChatSettings(ctx, userID, settings)
+	if err != nil {
+		return ChatSettingsPreferences{}, err
+	}
 	settingsJSON, err := encodeConversationSettings(settings)
 	if err != nil {
 		return ChatSettingsPreferences{}, err
@@ -100,6 +104,15 @@ func (service *ProviderService) UpdateModelChatSettings(
 	if modelID == "" {
 		return ChatSettingsPreferences{}, fmt.Errorf("model id is required")
 	}
+	// The preset key identifies its target even when the settings model is
+	// empty (automatic selection in the defaults UI).
+	savedModel := strings.TrimSpace(settings.Model)
+	settings.Model = modelID
+	settings, err := service.NormalizeChatSettings(ctx, userID, settings)
+	if err != nil {
+		return ChatSettingsPreferences{}, err
+	}
+	settings.Model = savedModel
 	settingsJSON, err := encodeConversationSettings(settings)
 	if err != nil {
 		return ChatSettingsPreferences{}, err

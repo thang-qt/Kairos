@@ -25,7 +25,6 @@ import type { QueryClient } from '@tanstack/react-query'
 import type { AttachmentFile } from '@/features/chat/components/composer/attachment-button'
 import type { ChatComposerHelpers } from '../components/chat-composer'
 import type { ChatCreateConversationInput } from '@/lib/chat-backend/types'
-import type { ChatRequestAdvancedSettings } from '../types'
 import type { ConversationSettings } from '../conversation-settings'
 
 export type RetryableNewConversation = {
@@ -40,11 +39,6 @@ type UseChatConversationCreationInput = {
   queryClient: QueryClient
   newChatGeneration: number
   conversationSettings: ConversationSettings
-  resolvedConversationModel: string
-  resolvedSystemPrompt: string
-  resolvedWebSearch: boolean
-  resolvedMathTools: boolean
-  resolvedAdvancedSettings?: ChatRequestAdvancedSettings
   beginGeneration: () => void
   finishGeneration: () => void
   startRun: (runId: string) => void
@@ -62,11 +56,6 @@ export function useChatConversationCreation({
   queryClient,
   newChatGeneration,
   conversationSettings,
-  resolvedConversationModel,
-  resolvedSystemPrompt,
-  resolvedWebSearch,
-  resolvedMathTools,
-  resolvedAdvancedSettings,
   beginGeneration,
   finishGeneration,
   startRun,
@@ -95,15 +84,7 @@ export function useChatConversationCreation({
         }))
       const currentRequest: ChatCreateConversationInput = {
         message: body,
-        model: resolvedConversationModel,
-        systemPrompt: resolvedSystemPrompt,
-        webSearch: resolvedWebSearch,
-        mathTools: resolvedMathTools,
-        advanced: resolvedAdvancedSettings,
-        settings: {
-          ...conversationSettings,
-          model: resolvedConversationModel,
-        },
+        settings: conversationSettings,
         attachments: attachmentsPayload,
       }
       const pendingCreation = retryableConversationRef.current
@@ -262,11 +243,6 @@ export function useChatConversationCreation({
       newChatGeneration,
       onSessionResolved,
       queryClient,
-      resolvedAdvancedSettings,
-      resolvedConversationModel,
-      resolvedMathTools,
-      resolvedSystemPrompt,
-      resolvedWebSearch,
       setCreatingSession,
       setPinToTop,
       setSending,

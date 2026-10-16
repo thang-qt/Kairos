@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"strings"
 )
 
@@ -10,6 +11,10 @@ func (service *ProviderService) ResolveGenerationTarget(
 	userID string,
 	requestedModel string,
 ) (resolvedProvider, ProviderModel, UserPreferences, error) {
+	requestedModel = strings.TrimSpace(requestedModel)
+	if requestedModel == "" {
+		return service.resolveDefaultGenerationTarget(ctx, userID)
+	}
 	if requestedModel != "" {
 		visible, preferences, err := service.listVisibleResolvedProviders(ctx, userID)
 		if err != nil {
@@ -22,10 +27,16 @@ func (service *ProviderService) ResolveGenerationTarget(
 				break
 			}
 		}
+		if chosen == nil && (strings.HasPrefix(requestedModel, "system:") || strings.HasPrefix(requestedModel, "user:")) {
+			return resolvedProvider{}, ProviderModel{}, preferences, errModelNotAvailable
+		}
 		if chosen == nil && len(visible) == 1 {
 			chosen = &visible[0]
 		}
 		if chosen != nil {
+			if modelIDFromRequestedValue(requestedModel) == "" {
+				return resolvedProvider{}, ProviderModel{}, preferences, errModelNotAvailable
+			}
 			models, _, _, err := service.loadCachedModels(ctx, userID, visible)
 			if err != nil {
 				return resolvedProvider{}, ProviderModel{}, preferences, err
@@ -43,19 +54,7 @@ func (service *ProviderService) ResolveGenerationTarget(
 		return resolvedProvider{}, ProviderModel{}, UserPreferences{}, err
 	}
 
-	effectiveModel := strings.TrimSpace(requestedModel)
-	if effectiveModel == "" {
-		effectiveModel = strings.TrimSpace(preferences.DefaultModelID)
-	}
-	if effectiveModel == "" {
-		effectiveModel = strings.TrimSpace(service.config.DefaultChatModel)
-	}
-	if effectiveModel == "" && len(models) > 0 {
-		effectiveModel = strings.TrimSpace(models[0].ID)
-	}
-	if effectiveModel == "" {
-		return resolvedProvider{}, ProviderModel{}, preferences, errNoModelAvailable
-	}
+	effectiveModel := requestedModel
 
 	for _, model := range models {
 		if modelMatchesRequestedValue(model, effectiveModel) {
@@ -98,6 +97,37 @@ func (service *ProviderService) ResolveGenerationTarget(
 	}
 
 	return resolvedProvider{}, ProviderModel{}, preferences, errModelNotAvailable
+}
+
+// Automatic selection shares explicit provider resolution, so configured custom
+// targets work even before discovery and disabled provider references never win.
+func (service *ProviderService) resolveDefaultGenerationTarget(ctx context.Context, user string) (resolvedProvider, ProviderModel, UserPreferences, error) {
+	preferences, err := service.GetPreferences(ctx, user)
+	if err != nil {
+		return resolvedProvider{}, ProviderModel{}, preferences, err
+	}
+	for _, candidate := range []string{preferences.DefaultModelID, service.config.DefaultChatModel} {
+		if strings.TrimSpace(candidate) == "" {
+			continue
+		}
+		provider, model, _, err := service.ResolveGenerationTarget(ctx, user, candidate)
+		if err == nil {
+			return provider, model, preferences, nil
+		}
+		if !errors.Is(err, errModelNotAvailable) && !errors.Is(err, errNoModelAvailable) && !errors.Is(err, errNoProviderAvailable) {
+			return provider, model, preferences, err
+		}
+	}
+	models, preferences, err := service.ListModels(ctx, user)
+	if err != nil {
+		return resolvedProvider{}, ProviderModel{}, preferences, err
+	}
+	if len(models) == 0 {
+		return resolvedProvider{}, ProviderModel{}, preferences, errNoModelAvailable
+	}
+	model := models[0]
+	provider, err := service.resolveProvider(ctx, user, model.ProviderRef)
+	return provider, model, preferences, err
 }
 
 func (service *ProviderService) listVisibleResolvedProviders(

@@ -34,11 +34,7 @@ import type { CloneMessagePayload } from '../components/chat-message-list'
 import type { QueryClient } from '@tanstack/react-query'
 import type { AttachmentFile } from '@/features/chat/components/composer/attachment-button'
 import type { ChatComposerHelpers } from '../components/chat-composer'
-import type {
-  ChatRequestAdvancedSettings,
-  ConversationTurn,
-  HistoryResponse,
-} from '../types'
+import type { ConversationTurn, HistoryResponse } from '../types'
 import type { ConversationSettings } from '../conversation-settings'
 
 type UserTurnDeleteState = {
@@ -57,10 +53,6 @@ type UseChatMutationsInput = {
     friendlyId: string
   }) => void
   resolvedConversationModel: string
-  resolvedSystemPrompt: string
-  resolvedWebSearch: boolean
-  resolvedMathTools: boolean
-  resolvedAdvancedSettings?: ChatRequestAdvancedSettings
   conversationSettings: ConversationSettings
   beginGeneration: () => void
   finishGeneration: () => void
@@ -82,10 +74,6 @@ export function useChatMutations({
   activeSessionKey,
   onSessionResolved,
   resolvedConversationModel,
-  resolvedSystemPrompt,
-  resolvedWebSearch,
-  resolvedMathTools,
-  resolvedAdvancedSettings,
   conversationSettings,
   beginGeneration,
   finishGeneration,
@@ -129,11 +117,7 @@ export function useChatMutations({
       throwawayMode,
       queryClient,
       displayMessages,
-      resolvedConversationModel,
-      resolvedSystemPrompt,
-      resolvedWebSearch,
-      resolvedMathTools,
-      resolvedAdvancedSettings,
+      conversationSettings,
       beginGeneration,
       finishGeneration,
       setSending,
@@ -147,11 +131,6 @@ export function useChatMutations({
     queryClient,
     newChatGeneration,
     conversationSettings,
-    resolvedConversationModel,
-    resolvedSystemPrompt,
-    resolvedWebSearch,
-    resolvedMathTools,
-    resolvedAdvancedSettings,
     beginGeneration,
     finishGeneration,
     startRun,
@@ -166,11 +145,7 @@ export function useChatMutations({
     function sendMessage(command: PersistedMessageCommand) {
       sendPersistedMessage(command, {
         queryClient,
-        resolvedConversationModel,
-        resolvedSystemPrompt,
-        resolvedWebSearch,
-        resolvedMathTools,
-        resolvedAdvancedSettings,
+        conversationSettings,
         beginGeneration,
         finishGeneration,
         startRun,
@@ -187,10 +162,7 @@ export function useChatMutations({
       queryClient,
       refreshHistory,
       resolvedConversationModel,
-      resolvedSystemPrompt,
-      resolvedWebSearch,
-      resolvedMathTools,
-      resolvedAdvancedSettings,
+      conversationSettings,
       setPinToTop,
       startRun,
     ],
@@ -231,7 +203,6 @@ export function useChatMutations({
         sessionKey: sessionKeyForSend,
         friendlyId: activeFriendlyId,
         message: body,
-        model: resolvedConversationModel,
         attachments,
       })
     },
@@ -243,6 +214,7 @@ export function useChatMutations({
       isNewChat,
       resolvedSessionKey,
       resolvedConversationModel,
+      conversationSettings,
       sendMessage,
       throwawayMode,
       createNewConversation,
@@ -307,6 +279,7 @@ export function useChatMutations({
           webSearch: retryableNetworkSend.webSearch,
           mathTools: retryableNetworkSend.mathTools,
           advanced: retryableNetworkSend.advanced,
+          settings: retryableNetworkSend.settings,
           attachments: retryableNetworkSend.attachments,
           clientId: retryableNetworkSend.clientId,
           idempotencyKey: retryableNetworkSend.idempotencyKey,
@@ -518,11 +491,7 @@ export function useChatMutations({
           sourceFriendlyId: activeFriendlyId,
           messageId,
           message: normalizedMessage,
-          model: resolvedConversationModel,
-          systemPrompt: resolvedSystemPrompt,
-          webSearch: resolvedWebSearch,
-          mathTools: resolvedMathTools,
-          advanced: resolvedAdvancedSettings,
+          settings: conversationSettings,
           idempotencyKey: clientId,
           clientId,
         })
@@ -572,10 +541,7 @@ export function useChatMutations({
       refreshHistory,
       resolvedSessionKey,
       resolvedConversationModel,
-      resolvedSystemPrompt,
-      resolvedWebSearch,
-      resolvedMathTools,
-      resolvedAdvancedSettings,
+      conversationSettings,
       setPinToTop,
       startRun,
     ],
@@ -651,8 +617,6 @@ export function useChatMutations({
         sessionKey: sessionKeyForSend,
         friendlyId: activeFriendlyId,
         message: body,
-        model: resolvedConversationModel,
-        mathTools: resolvedMathTools,
       })
     },
     [
@@ -662,7 +626,7 @@ export function useChatMutations({
       hasAvailableModel,
       isNewChat,
       resolvedConversationModel,
-      resolvedMathTools,
+      conversationSettings,
       resolvedSessionKey,
       sendMessage,
     ],

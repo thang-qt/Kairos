@@ -50,10 +50,7 @@ describe('useChatConversationCreation', function () {
           queryClient,
           newChatGeneration,
           conversationSettings: defaultConversationSettings,
-          resolvedConversationModel: 'test-model',
-          resolvedSystemPrompt: '',
-          resolvedWebSearch: false,
-          resolvedMathTools: false,
+
           beginGeneration: vi.fn(),
           finishGeneration: vi.fn(),
           startRun: vi.fn(),
@@ -91,6 +88,9 @@ describe('useChatConversationCreation', function () {
 
     const firstRequest = createConversation.mock.calls[0]?.[0]
     const retriedRequest = createConversation.mock.calls[1]?.[0]
+    expect(firstRequest?.settings).toEqual(defaultConversationSettings)
+    expect(firstRequest?.model).toBeUndefined()
+    expect(firstRequest?.advanced).toBeUndefined()
     expect(retriedRequest?.idempotencyKey).toBe(firstRequest?.idempotencyKey)
     expect(retriedRequest?.clientId).toBe(firstRequest?.clientId)
     expect(retriedRequest?.attachments).toEqual([

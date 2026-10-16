@@ -18,19 +18,20 @@ type sessionSearchResponse struct {
 }
 
 type createSessionRequest struct {
-	Label          string                `json:"label"`
-	Message        string                `json:"message"`
-	Model          string                `json:"model"`
-	SystemPrompt   string                `json:"systemPrompt"`
-	WebSearch      bool                  `json:"webSearch"`
-	MathTools      bool                  `json:"mathTools"`
-	Advanced       *ChatAdvancedOptions  `json:"advanced"`
-	IdempotencyKey string                `json:"idempotencyKey"`
-	ClientID       string                `json:"clientId"`
-	ClientTime     string                `json:"clientTime"`
-	ClientTimeZone string                `json:"clientTimeZone"`
-	Attachments    []AttachmentPayload   `json:"attachments"`
-	Settings       *ConversationSettings `json:"settings"`
+	configurationFields map[string]bool
+	Label               string                `json:"label"`
+	Message             string                `json:"message"`
+	Model               string                `json:"model"`
+	SystemPrompt        string                `json:"systemPrompt"`
+	WebSearch           bool                  `json:"webSearch"`
+	MathTools           bool                  `json:"mathTools"`
+	Advanced            *ChatAdvancedOptions  `json:"advanced"`
+	IdempotencyKey      string                `json:"idempotencyKey"`
+	ClientID            string                `json:"clientId"`
+	ClientTime          string                `json:"clientTime"`
+	ClientTimeZone      string                `json:"clientTimeZone"`
+	Attachments         []AttachmentPayload   `json:"attachments"`
+	Settings            *ConversationSettings `json:"settings"`
 }
 
 type updateConversationSettingsRequest struct {
@@ -38,32 +39,36 @@ type updateConversationSettingsRequest struct {
 }
 
 type sendMessageRequest struct {
-	ExpectedRevision *int64               `json:"expectedRevision,omitempty"`
-	Message          string               `json:"message"`
-	Model            string               `json:"model"`
-	SystemPrompt     string               `json:"systemPrompt"`
-	WebSearch        bool                 `json:"webSearch"`
-	MathTools        bool                 `json:"mathTools"`
-	Advanced         *ChatAdvancedOptions `json:"advanced"`
-	IdempotencyKey   string               `json:"idempotencyKey"`
-	ClientID         string               `json:"clientId"`
-	ClientTime       string               `json:"clientTime"`
-	ClientTimeZone   string               `json:"clientTimeZone"`
-	Attachments      []AttachmentPayload  `json:"attachments"`
+	configurationFields map[string]bool
+	Settings            *ConversationSettings `json:"settings"`
+	ExpectedRevision    *int64                `json:"expectedRevision,omitempty"`
+	Message             string                `json:"message"`
+	Model               string                `json:"model"`
+	SystemPrompt        string                `json:"systemPrompt"`
+	WebSearch           bool                  `json:"webSearch"`
+	MathTools           bool                  `json:"mathTools"`
+	Advanced            *ChatAdvancedOptions  `json:"advanced"`
+	IdempotencyKey      string                `json:"idempotencyKey"`
+	ClientID            string                `json:"clientId"`
+	ClientTime          string                `json:"clientTime"`
+	ClientTimeZone      string                `json:"clientTimeZone"`
+	Attachments         []AttachmentPayload   `json:"attachments"`
 }
 
 type ephemeralMessageRequest struct {
-	History        []map[string]any     `json:"history"`
-	Message        string               `json:"message"`
-	Model          string               `json:"model"`
-	SystemPrompt   string               `json:"systemPrompt"`
-	WebSearch      bool                 `json:"webSearch"`
-	MathTools      bool                 `json:"mathTools"`
-	Advanced       *ChatAdvancedOptions `json:"advanced"`
-	ClientID       string               `json:"clientId"`
-	ClientTime     string               `json:"clientTime"`
-	ClientTimeZone string               `json:"clientTimeZone"`
-	Attachments    []AttachmentPayload  `json:"attachments"`
+	configurationFields map[string]bool
+	Settings            *ConversationSettings `json:"settings"`
+	History             []map[string]any      `json:"history"`
+	Message             string                `json:"message"`
+	Model               string                `json:"model"`
+	SystemPrompt        string                `json:"systemPrompt"`
+	WebSearch           bool                  `json:"webSearch"`
+	MathTools           bool                  `json:"mathTools"`
+	Advanced            *ChatAdvancedOptions  `json:"advanced"`
+	ClientID            string                `json:"clientId"`
+	ClientTime          string                `json:"clientTime"`
+	ClientTimeZone      string                `json:"clientTimeZone"`
+	Attachments         []AttachmentPayload   `json:"attachments"`
 }
 
 type cloneSessionRequest struct {
@@ -75,7 +80,8 @@ type pinSessionRequest struct {
 }
 
 type sessionMutationResponse struct {
-	UserTurn map[string]any `json:"userTurn,omitempty"`
+	EffectiveConfiguration *EffectiveChatConfiguration `json:"effectiveConfiguration,omitempty"`
+	UserTurn               map[string]any              `json:"userTurn,omitempty"`
 	SessionSummary
 	SessionKey      string `json:"sessionKey"`
 	RunID           string `json:"runId,omitempty"`
@@ -178,13 +184,17 @@ func (app *App) handleCreateSession(writer http.ResponseWriter, request *http.Re
 		return
 	}
 
-	settings := defaultConversationSettings()
+	settings, err := app.providers.InitialChatSettings(request.Context(), user.ID, payload.Model)
+	if err != nil {
+		writeError(writer, http.StatusBadRequest, err.Error())
+		return
+	}
 	if payload.Settings != nil {
 		settings = *payload.Settings
 	}
 	var response sessionMutationResponse
 	if strings.TrimSpace(payload.Message) != "" || len(payload.Attachments) > 0 {
-		result, err := app.runtime.StartRun(request.Context(), user.ID, SubmitTurnInput{NewConversation: &newConversationInput{Label: payload.Label, Settings: settings}, Message: payload.Message, Model: payload.Model, SystemPrompt: payload.SystemPrompt, WebSearch: payload.WebSearch, MathTools: payload.MathTools, Advanced: payload.Advanced, IdempotencyKey: payload.IdempotencyKey, ClientID: payload.ClientID, ClientTime: payload.ClientTime, ClientTimeZone: payload.ClientTimeZone, Attachments: payload.Attachments})
+		result, err := app.runtime.StartRun(request.Context(), user.ID, SubmitTurnInput{ConfigurationFields: payload.configurationFields, NewConversation: &newConversationInput{Label: payload.Label, Settings: settings}, Message: payload.Message, Model: payload.Model, SystemPrompt: payload.SystemPrompt, WebSearch: payload.WebSearch, MathTools: payload.MathTools, Advanced: payload.Advanced, IdempotencyKey: payload.IdempotencyKey, ClientID: payload.ClientID, ClientTime: payload.ClientTime, ClientTimeZone: payload.ClientTimeZone, Attachments: payload.Attachments})
 		if err != nil {
 			if errors.Is(err, errConversationConflict) {
 				writeError(writer, http.StatusConflict, err.Error())
@@ -199,6 +209,7 @@ func (app *App) handleCreateSession(writer http.ResponseWriter, request *http.Re
 			return
 		}
 		response = newSessionMutationResponse(session)
+		response.EffectiveConfiguration = result.EffectiveConfiguration
 		response.RunID = result.RunID
 		response.UserTurnID = result.UserTurnID
 		response.AssistantTurnID = result.AssistantTurnID
@@ -207,7 +218,7 @@ func (app *App) handleCreateSession(writer http.ResponseWriter, request *http.Re
 	} else {
 		session, err := app.conversations.CreateSessionWithSettings(request.Context(), user.ID, payload.Label, settings)
 		if err != nil {
-			writeError(writer, http.StatusInternalServerError, "failed to create session")
+			writeError(writer, http.StatusBadRequest, err.Error())
 			return
 		}
 		response = newSessionMutationResponse(session)
@@ -239,7 +250,7 @@ func (app *App) handleUpdateConversationSettings(writer http.ResponseWriter, req
 			writeError(writer, http.StatusNotFound, err.Error())
 			return
 		}
-		writeError(writer, http.StatusInternalServerError, "failed to update conversation settings")
+		writeError(writer, http.StatusBadRequest, err.Error())
 		return
 	}
 
@@ -351,6 +362,7 @@ func (app *App) handleSendMessage(writer http.ResponseWriter, request *http.Requ
 	}
 
 	result, err := app.runtime.StartRun(request.Context(), user.ID, SubmitTurnInput{
+		ConfigurationFields: payload.configurationFields, Settings: payload.Settings,
 		ExpectedRevision: payload.ExpectedRevision,
 		FriendlyID:       request.PathValue("friendlyId"),
 		Message:          payload.Message,
@@ -371,9 +383,9 @@ func (app *App) handleSendMessage(writer http.ResponseWriter, request *http.Requ
 			writeError(writer, http.StatusConflict, err.Error())
 		case errors.Is(err, errChatSessionNotFound):
 			writeError(writer, http.StatusNotFound, err.Error())
-		case errors.Is(err, errInvalidImageAttachment):
+		case errors.Is(err, errInvalidChatConfiguration), errors.Is(err, errInvalidImageAttachment):
 			writeError(writer, http.StatusBadRequest, err.Error())
-		case errors.Is(err, errNoProviderAvailable),
+		case errors.Is(err, errInvalidChatConfiguration), errors.Is(err, errNoProviderAvailable),
 			errors.Is(err, errNoModelAvailable),
 			errors.Is(err, errModelNotAvailable):
 			writeError(writer, http.StatusBadRequest, err.Error())
@@ -415,6 +427,7 @@ func (app *App) handleEphemeralMessage(writer http.ResponseWriter, request *http
 	flusher.Flush()
 
 	err := app.runtime.StreamEphemeral(request.Context(), user.ID, payload.History, SubmitTurnInput{
+		ConfigurationFields: payload.configurationFields, Settings: payload.Settings,
 		Message:        payload.Message,
 		Model:          payload.Model,
 		SystemPrompt:   payload.SystemPrompt,
@@ -493,6 +506,7 @@ func (app *App) handleEditUserMessage(writer http.ResponseWriter, request *http.
 	}
 
 	result, err := app.runtime.StartRun(request.Context(), user.ID, SubmitTurnInput{
+		ConfigurationFields: payload.configurationFields, Settings: payload.Settings,
 		FriendlyID: request.PathValue("friendlyId"), EditMessageID: request.PathValue("messageId"), ExpectedRevision: payload.ExpectedRevision,
 		Message: payload.Message, Model: payload.Model, SystemPrompt: payload.SystemPrompt, WebSearch: payload.WebSearch, MathTools: payload.MathTools, Advanced: payload.Advanced, IdempotencyKey: payload.IdempotencyKey, ClientID: payload.ClientID, ClientTime: payload.ClientTime, ClientTimeZone: payload.ClientTimeZone,
 	})
@@ -500,7 +514,7 @@ func (app *App) handleEditUserMessage(writer http.ResponseWriter, request *http.
 		switch {
 		case errors.Is(err, errConversationConflict):
 			writeError(writer, http.StatusConflict, err.Error())
-		case errors.Is(err, errNoProviderAvailable),
+		case errors.Is(err, errInvalidChatConfiguration), errors.Is(err, errNoProviderAvailable),
 			errors.Is(err, errNoModelAvailable),
 			errors.Is(err, errModelNotAvailable):
 			writeError(writer, http.StatusBadRequest, err.Error())
@@ -511,7 +525,7 @@ func (app *App) handleEditUserMessage(writer http.ResponseWriter, request *http.
 	}
 
 	writeJSON(writer, http.StatusOK, map[string]any{
-		"revision": result.Revision, "userTurn": result.UserTurn, "invalidatedRunIds": result.InvalidatedRunIDs, "removedTurnIds": result.RemovedTurnIDs,
+		"effectiveConfiguration": result.EffectiveConfiguration, "revision": result.Revision, "userTurn": result.UserTurn, "invalidatedRunIds": result.InvalidatedRunIDs, "removedTurnIds": result.RemovedTurnIDs,
 		"sessionKey":      result.SessionKey,
 		"key":             result.SessionKey,
 		"friendlyId":      request.PathValue("friendlyId"),

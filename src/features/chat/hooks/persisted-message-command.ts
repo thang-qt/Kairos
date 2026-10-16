@@ -14,17 +14,22 @@ import { randomUUID } from '@/lib/utils'
 import type { Dispatch, SetStateAction } from 'react'
 import type { QueryClient } from '@tanstack/react-query'
 import type { AttachmentFile } from '@/features/chat/components/composer/attachment-button'
-import type { ChatRequestAdvancedSettings, HistoryResponse } from '../types'
+import type {
+  ChatRequestAdvancedSettings,
+  ConversationSettings,
+  HistoryResponse,
+} from '../types'
 
 export type RetryableNetworkSend = {
   sessionKey: string
   friendlyId: string
   message: string
-  model: string
-  systemPrompt: string
-  webSearch: boolean
-  mathTools: boolean
+  model?: string
+  systemPrompt?: string
+  webSearch?: boolean
+  mathTools?: boolean
   advanced?: ChatRequestAdvancedSettings
+  settings?: ConversationSettings
   attachments?: Array<AttachmentFile>
   clientId?: string
   idempotencyKey: string
@@ -40,6 +45,7 @@ export type PersistedMessageCommand = {
   webSearch?: boolean
   mathTools?: boolean
   advanced?: ChatRequestAdvancedSettings
+  settings?: ConversationSettings
   attachments?: Array<AttachmentFile>
   clientId?: string
   idempotencyKey?: string
@@ -47,11 +53,7 @@ export type PersistedMessageCommand = {
 
 export type PersistedMessageCommandDependencies = {
   queryClient: QueryClient
-  resolvedConversationModel: string
-  resolvedSystemPrompt: string
-  resolvedWebSearch: boolean
-  resolvedMathTools: boolean
-  resolvedAdvancedSettings?: ChatRequestAdvancedSettings
+  conversationSettings: ConversationSettings
   beginGeneration: () => void
   finishGeneration: () => void
   startRun: (runId: string) => void
@@ -75,11 +77,7 @@ export function sendPersistedMessage(
   } = command
   const {
     queryClient,
-    resolvedConversationModel,
-    resolvedSystemPrompt,
-    resolvedWebSearch,
-    resolvedMathTools,
-    resolvedAdvancedSettings,
+    conversationSettings,
     beginGeneration,
     finishGeneration,
     startRun,
@@ -120,11 +118,8 @@ export function sendPersistedMessage(
       mimeType: attachment.file.type,
       content: attachment.base64 as string,
     }))
-  const model = command.model?.trim() || resolvedConversationModel
-  const systemPrompt = command.systemPrompt ?? resolvedSystemPrompt
-  const webSearch = command.webSearch ?? resolvedWebSearch
-  const mathTools = command.mathTools ?? resolvedMathTools
-  const advanced = command.advanced ?? resolvedAdvancedSettings
+  const { model, systemPrompt, webSearch, mathTools, advanced } = command
+  const settings = command.settings ?? conversationSettings
   const clientId = command.clientId || optimisticClientId || undefined
   const idempotencyKey = command.idempotencyKey || clientId || randomUUID()
 
@@ -141,6 +136,7 @@ export function sendPersistedMessage(
       webSearch,
       mathTools,
       advanced,
+      settings,
       idempotencyKey,
       clientId,
       attachments: attachmentsPayload,
@@ -170,6 +166,7 @@ export function sendPersistedMessage(
           webSearch,
           mathTools,
           advanced,
+          settings,
           attachments,
           clientId,
           idempotencyKey,

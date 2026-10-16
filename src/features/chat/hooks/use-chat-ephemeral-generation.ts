@@ -15,7 +15,7 @@ import { getChatBackend } from '@/lib/chat-backend'
 
 import type { QueryClient } from '@tanstack/react-query'
 import type { ChatComposerHelpers } from '../components/chat-composer'
-import type { ChatRequestAdvancedSettings, ConversationTurn } from '../types'
+import type { ConversationSettings, ConversationTurn } from '../types'
 
 type UseChatEphemeralGenerationInput = {
   activeFriendlyId: string
@@ -23,11 +23,7 @@ type UseChatEphemeralGenerationInput = {
   throwawayMode: boolean
   queryClient: QueryClient
   displayMessages: Array<ConversationTurn>
-  resolvedConversationModel: string
-  resolvedSystemPrompt: string
-  resolvedWebSearch: boolean
-  resolvedMathTools: boolean
-  resolvedAdvancedSettings?: ChatRequestAdvancedSettings
+  conversationSettings: ConversationSettings
   beginGeneration: () => void
   finishGeneration: () => void
   setSending: (sending: boolean) => void
@@ -41,11 +37,7 @@ export function useChatEphemeralGeneration({
   throwawayMode,
   queryClient,
   displayMessages,
-  resolvedConversationModel,
-  resolvedSystemPrompt,
-  resolvedWebSearch,
-  resolvedMathTools,
-  resolvedAdvancedSettings,
+  conversationSettings,
   beginGeneration,
   finishGeneration,
   setSending,
@@ -90,11 +82,7 @@ export function useChatEphemeralGeneration({
           {
             history: displayMessages,
             message: body,
-            model: resolvedConversationModel,
-            systemPrompt: resolvedSystemPrompt,
-            webSearch: resolvedWebSearch,
-            mathTools: resolvedMathTools,
-            advanced: resolvedAdvancedSettings,
+            settings: conversationSettings,
             clientId,
             attachments: attachmentsPayload,
             signal: abortController.signal,
@@ -195,11 +183,7 @@ export function useChatEphemeralGeneration({
       displayMessages,
       finishGeneration,
       queryClient,
-      resolvedAdvancedSettings,
-      resolvedConversationModel,
-      resolvedMathTools,
-      resolvedSystemPrompt,
-      resolvedWebSearch,
+      conversationSettings,
       setPinToTop,
       setSending,
       setStreamError,

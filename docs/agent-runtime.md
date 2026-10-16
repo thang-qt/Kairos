@@ -73,3 +73,22 @@ Tests use deterministic providers and tools, local HTTP protocol servers, expire
 Migration 0034 automatically removes events from older revisions when a conversation revision advances, in the same transaction as the command. Reconnecting clients receive an authoritative snapshot before replay, so they do not depend on the removed events. Current-revision events remain available for incremental checkpoint recovery and live subscribers; a long response can still grow that journal until the next revision. This retention removes delivery events, not conversation history. Operators should monitor database size. Complete projections are persisted at roughly one-second intervals and at boundaries; intermediate checkpoints append compact patches. `BenchmarkIncrementalTurnWithToolOutput` measures projection updates with small and large prior tool outputs; it does not measure full HTTP or database checkpoint latency. Current tools do not offer external transactional idempotency; explicit retries can repeat prior side effects.
 
 Optional AI title generation remains a best-effort task. Title writes are revision-fenced and commit their metadata event atomically; losing only that optional title request on process termination does not affect the durable assistant run.
+
+## Client behavior and effective configuration
+
+The cross-platform [chat API contract](chat-api-contract.md) defines field omission,
+settings normalization, model fallback, accepted configuration, retries, and
+recovery. HTTP commands can omit generation fields: Go resolves them from saved
+settings and captures `effectiveConfiguration` in the queued request and canonical
+assistant turn. A settings draft can be supplied without persisting it on a send.
+React only selects controls and submits intent; it no longer constructs effective
+advanced options. Display defaults are checked against the Go defaults by the
+shared contract fixture.
+
+Ephemeral history is intentionally client-owned. Its generation still uses the
+same Go configuration resolver and complete agent loop. This exception does not
+move any provider/tool execution policy into web or native clients.
+
+MCP approval changes use durable `mcp-approval` conversation events and
+`pendingMcpApprovals` in consistent reconnect snapshots. Clients submit decisions
+and render the stream rather than polling for approval requirements.
