@@ -46,8 +46,16 @@ Set `APP_ENV` to `development`, `test`, or `production`. Production requires an
 explicit `PROVIDER_SECRET_KEY` with at least 32 characters; authentication and
 secure session cookies are required. Self-service signup and user-defined
 provider base URLs default to disabled. Back up the key with the database:
-changing or losing it makes stored provider credentials unreadable, so users
-must enter those credentials again.
+changing or losing it makes stored provider, web-tool, and MCP credentials
+unreadable, so users must enter those credentials again. Use HTTPS through a
+reverse proxy that preserves the original `Host` header. Keep signup closed
+when providing a server-paid model; there are no per-user spending quotas.
+
+Settings → Chat defaults → Offline cache controls whether this browser saves
+recent conversations. Turning it off clears saved browser cache data for all
+users of this site and prevents further cache writes and restores. Server-side
+conversations remain available after signing in. On Unix, newly created database
+directories use `0700`; the database and SQLite sidecar files use `0600`.
 
 See [.env.example](.env.example) for the full list.
 
