@@ -4,22 +4,22 @@ import "testing"
 
 func TestCanonicalConversationSettingsForThinClients(t *testing.T) {
 	input := ConversationSettings{
-		Model: "  provider:model  ",
+		Model:        "  provider:model  ",
 		SystemPrompt: "Keep this instruction.",
-		WebSearch: false,
-		MathTools: true,
+		WebSearch:    false,
+		MathTools:    true,
 		Advanced: ConversationAdvancedSettings{
-			Reasoning: true,
-			ReasoningEffort: "INVALID",
-			Sampling: true,
-			Temperature: 9,
-			TopP: -1,
-			TopK: 1004.9,
-			Penalties: true,
+			Reasoning:        true,
+			ReasoningEffort:  "INVALID",
+			Sampling:         true,
+			Temperature:      9,
+			TopP:             -1,
+			TopK:             1004.9,
+			Penalties:        true,
 			FrequencyPenalty: -3,
-			PresencePenalty: 4,
-			MaxTokens: true,
-			MaxTokensValue: 200005.9,
+			PresencePenalty:  4,
+			MaxTokens:        true,
+			MaxTokensValue:   200005.9,
 		},
 	}
 	canonical := canonicalConversationSettings(input)
