@@ -44,3 +44,18 @@ dependencies {
     implementation(libs.highlights)
     testImplementation(libs.junit)
 }
+
+val generateTranscript by tasks.registering(Exec::class) {
+    description = "Build the shared offline transcript required by the Android APK"
+    group = "build"
+    workingDir = rootProject.projectDir.parentFile
+    val pnpm = if (System.getProperty("os.name").startsWith("Windows")) "pnpm.cmd" else "pnpm"
+    commandLine(pnpm, "build:transcript")
+    // The generated transcript imports web components, icons and styles. Always run
+    // the generator before an APK build rather than packaging a stale local asset.
+    outputs.dir(layout.projectDirectory.dir("src/main/assets/transcript"))
+}
+
+tasks.named("preBuild") {
+    dependsOn(generateTranscript)
+}
