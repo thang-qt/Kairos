@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { mcpRequest } from '@/lib/mcp-api'
-import type { MCPApproval, MCPServer, MCPTool } from '@/lib/mcp-api'
+import type { MCPServer, MCPTool } from '@/lib/mcp-api'
 
 const EMPTY_LABELS: ReadonlyMap<string, string> = new Map()
 
@@ -32,21 +32,6 @@ export function useMcpToolLabels(): ReadonlyMap<string, string> {
     },
   })
   return query.data ?? EMPTY_LABELS
-}
-
-// Approvals still waiting on the user for one run, polled while it runs.
-export function useMcpApprovals(runId: string | null) {
-  return useQuery({
-    queryKey: ['mcp', 'approvals', runId],
-    enabled: Boolean(runId),
-    refetchInterval: runId ? 1000 : false,
-    queryFn: async function loadApprovals() {
-      const { approvals } = await mcpRequest<{
-        approvals: Array<MCPApproval>
-      }>('approvals')
-      return approvals.filter((approval) => approval.runId === runId)
-    },
-  })
 }
 
 export function mcpToolLabel(serverName: string, toolName: string) {

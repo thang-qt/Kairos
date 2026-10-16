@@ -60,23 +60,25 @@ type MCPTool struct {
 	ApprovalPolicy    string          `json:"approvalPolicy"`
 }
 type MCPService struct {
-	sessionsMu     sync.Mutex
-	sessions       map[string]*mcpCachedSession
-	sessionOptions *mcp.ClientSessionOptions
-	ctx            context.Context
-	cancel         context.CancelFunc
-	db             *sql.DB
-	key            [32]byte
-	secureStorage  bool
-	mu             sync.Mutex
-	active         map[string]map[string]context.CancelFunc
-	clientFor      func(*urlMCPConfig) *http.Client
+	approvalChanges sessionListNotifications
+	conversations   *ConversationService
+	sessionsMu      sync.Mutex
+	sessions        map[string]*mcpCachedSession
+	sessionOptions  *mcp.ClientSessionOptions
+	ctx             context.Context
+	cancel          context.CancelFunc
+	db              *sql.DB
+	key             [32]byte
+	secureStorage   bool
+	mu              sync.Mutex
+	active          map[string]map[string]context.CancelFunc
+	clientFor       func(*urlMCPConfig) *http.Client
 }
 type urlMCPConfig struct{ Endpoint, Token string }
 
 func NewMCPService(db *sql.DB, config Config) *MCPService {
 	ctx, cancel := context.WithCancel(context.Background())
-	return &MCPService{ctx: ctx, cancel: cancel, db: db, key: config.ProviderEncryptionKey(), secureStorage: (config.AppEnv == "development" || config.AppEnv == "test") || (len(config.ProviderEncryptionSecretKey) >= 32 && config.ProviderEncryptionSecretKey != "kairos-dev-provider-secret"), sessions: map[string]*mcpCachedSession{}, active: map[string]map[string]context.CancelFunc{}}
+	return &MCPService{conversations: NewConversationService(db), ctx: ctx, cancel: cancel, db: db, key: config.ProviderEncryptionKey(), secureStorage: (config.AppEnv == "development" || config.AppEnv == "test") || (len(config.ProviderEncryptionSecretKey) >= 32 && config.ProviderEncryptionSecretKey != "kairos-dev-provider-secret"), sessions: map[string]*mcpCachedSession{}, active: map[string]map[string]context.CancelFunc{}}
 }
 
 func (service *MCPService) List(ctx context.Context, user string) ([]MCPServer, error) {
@@ -285,6 +287,7 @@ func (service *MCPService) SetTool(ctx context.Context, user, server, id string,
 	if err := tx.Commit(); err != nil {
 		return err
 	}
+	service.approvalChanges.publish(user)
 	if !enabled || policy == "always" {
 		service.cancelServer(server)
 	}

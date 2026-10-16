@@ -321,3 +321,79 @@ it('throttles sidebar message syncs during a stream and syncs at completion', fu
   unsubscribe()
   hook.unmount()
 })
+
+it('restores approvals from snapshots and applies decisions without fetching approvals', function () {
+  const client = new QueryClient()
+  const hook = mountStream(client, vi.fn())
+  const approval = {
+    id: 'approval',
+    runId: 'run',
+    serverId: 'server',
+    serverName: 'Server',
+    toolName: 'tool',
+    arguments: { value: 'input' },
+    state: 'pending' as const,
+    expiresAt: Date.now() + 60_000,
+    progress: {},
+  }
+  const key = chatQueryKeys.history('friendly', 'session')
+  act(function restore() {
+    transport.receive?.({
+      state: 'reconcile',
+      snapshot: {
+        sessionKey: 'session',
+        revision: 1,
+        cursor: 10,
+        messages: [],
+        pendingMcpApprovals: [approval],
+      },
+    })
+  })
+  expect(
+    client.getQueryData<HistoryResponse>(key)?.pendingMcpApprovals,
+  ).toEqual([approval])
+  act(function resolve() {
+    transport.receive?.({
+      state: 'mcp-approval',
+      revision: 1,
+      cursor: 11,
+      sessionKey: 'session',
+      mcpApproval: { ...approval, state: 'approved' },
+    })
+    transport.receive?.({
+      state: 'mcp-approval',
+      revision: 1,
+      cursor: 10,
+      sessionKey: 'session',
+      mcpApproval: approval,
+    })
+  })
+  expect(
+    client.getQueryData<HistoryResponse>(key)?.pendingMcpApprovals,
+  ).toEqual([])
+  expect(client.getQueryData<HistoryResponse>(key)?.cursor).toBe(11)
+  act(function request() {
+    transport.receive?.({
+      state: 'mcp-approval',
+      revision: 1,
+      cursor: 12,
+      sessionKey: 'session',
+      mcpApproval: { ...approval, id: 'next' },
+    })
+  })
+  expect(
+    client.getQueryData<HistoryResponse>(key)?.pendingMcpApprovals,
+  ).toHaveLength(1)
+  act(function cancel() {
+    transport.receive?.({
+      state: 'aborted',
+      runId: 'run',
+      revision: 1,
+      cursor: 13,
+    })
+  })
+  expect(
+    client.getQueryData<HistoryResponse>(key)?.pendingMcpApprovals,
+  ).toEqual([])
+  hook.unmount()
+})

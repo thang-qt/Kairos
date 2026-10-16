@@ -29,7 +29,7 @@ export function MCPApprovalDock({ approvals }: MCPApprovalDockProps) {
       })
     },
     onSuccess: async function refresh() {
-      await client.invalidateQueries({ queryKey: ['mcp'] })
+      await client.invalidateQueries({ queryKey: ['mcp', 'tools'] })
     },
   })
   const approval = approvals[0]

@@ -24,8 +24,12 @@ type MCPApproval struct {
 }
 
 func (service *MCPService) Approvals(ctx context.Context, user, friendly string) ([]MCPApproval, error) {
+	return readMCPApprovals(ctx, service.db, user, friendly)
+}
+
+func readMCPApprovals(ctx context.Context, exec sqlExecutor, user, friendly string) ([]MCPApproval, error) {
 	now := time.Now().UnixMilli()
-	rows, err := service.db.QueryContext(ctx, `SELECT a.id,a.run_id,a.server_id,a.server_name,a.tool_name,a.arguments_json,a.state,a.expires_at,a.progress_json FROM mcp_approvals a JOIN chat_runs r ON r.id=a.run_id JOIN chat_sessions s ON s.id=r.session_id WHERE a.user_id=? AND a.state IN ('pending','approved','executing') AND (a.state='executing' OR a.expires_at>?) AND r.user_id=a.user_id AND r.status='running' AND r.invalidated=0 AND r.lease_token=a.lease_token AND r.lease_until>? AND r.revision=s.revision AND (?='' OR s.friendly_id=?) ORDER BY a.created_at`, user, now, now, friendly, friendly)
+	rows, err := exec.QueryContext(ctx, `SELECT a.id,a.run_id,a.server_id,a.server_name,a.tool_name,a.arguments_json,a.state,a.expires_at,a.progress_json FROM mcp_approvals a JOIN chat_runs r ON r.id=a.run_id JOIN chat_sessions s ON s.id=r.session_id WHERE a.user_id=? AND a.state IN ('pending','approved','executing') AND (a.state='executing' OR a.expires_at>?) AND r.user_id=a.user_id AND r.status='running' AND r.invalidated=0 AND r.lease_token=a.lease_token AND r.lease_until>? AND r.revision=s.revision AND (?='' OR s.friendly_id=?) ORDER BY a.created_at`, user, now, now, friendly, friendly)
 	if err != nil {
 		return nil, err
 	}
@@ -56,7 +60,7 @@ func (service *MCPService) Decide(ctx context.Context, user, id, decision string
 	}
 	service.mu.Lock()
 	defer service.mu.Unlock()
-	tx, err := service.db.BeginTx(ctx, nil)
+	tx, err := service.conversations.beginEventTx(ctx, nil)
 	if err != nil {
 		return err
 	}
@@ -80,11 +84,18 @@ func (service *MCPService) Decide(ctx context.Context, user, id, decision string
 		if scope == "chat" {
 			target = session
 		}
-		if err = writeMCPGrant(ctx, tx, user, server, tool, target, revision, schema); err != nil {
+		if err = writeMCPGrant(ctx, tx.Tx, user, server, tool, target, revision, schema); err != nil {
 			return err
 		}
 	}
-	return tx.Commit()
+	if err := emitMCPApproval(ctx, tx, id); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	service.approvalChanges.publish(user)
+	return nil
 }
 func (service *MCPService) checkCall(ctx context.Context, user, run, alias string) (MCPServer, MCPTool, string, string, error) {
 	var t MCPTool
@@ -165,6 +176,8 @@ func (service *MCPService) Execute(ctx context.Context, user, run string, call P
 	if err != nil || resolved.Validate(args) != nil {
 		return result, errors.New("MCP arguments do not match the tool schema")
 	}
+	changed, unsubscribe := service.approvalChanges.subscribe(user)
+	defer unsubscribe()
 	allowed, err := service.grantMatches(ctx, user, run, server, tool)
 	if err != nil {
 		return result, err
@@ -175,9 +188,22 @@ func (service *MCPService) Execute(ctx context.Context, user, run string, call P
 	}
 	approvalID := newID()
 	expires := time.Now().Add(3 * time.Minute).UnixMilli()
-	_, err = service.db.ExecContext(ctx, `INSERT INTO mcp_approvals(id,user_id,server_id,tool_id,run_id,call_id,lease_token,server_revision,tool_schema,arguments_json,server_name,tool_name,state,created_at,expires_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, approvalID, user, server.ID, tool.ID, run, call.ID, lease, server.Revision, string(tool.Schema), string(encoded), server.Name, tool.Name, initialState, time.Now().UnixMilli(), expires)
+	tx, err := service.conversations.beginEventTx(ctx, nil)
+	if err != nil {
+		return result, err
+	}
+	defer tx.Rollback()
+	_, err = tx.ExecContext(ctx, `INSERT INTO mcp_approvals(id,user_id,server_id,tool_id,run_id,call_id,lease_token,server_revision,tool_schema,arguments_json,server_name,tool_name,state,created_at,expires_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, approvalID, user, server.ID, tool.ID, run, call.ID, lease, server.Revision, string(tool.Schema), string(encoded), server.Name, tool.Name, initialState, time.Now().UnixMilli(), expires)
 	if err != nil {
 		return result, errors.New("MCP call cannot reuse an existing approval")
+	}
+	if initialState == "pending" {
+		if err := emitMCPApproval(ctx, tx, approvalID); err != nil {
+			return result, err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return result, err
 	}
 	result.Details = map[string]any{"mcpServer": server.Name, "mcpTool": tool.Name, "approvalId": approvalID}
 	defer func() {
@@ -190,10 +216,18 @@ func (service *MCPService) Execute(ctx context.Context, user, run string, call P
 		}
 		cleanup, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		_, _ = service.db.ExecContext(cleanup, `UPDATE mcp_approvals SET state=? WHERE id=? AND user_id=? AND state IN ('pending','approved','executing')`, state, approvalID, user)
+		if initialState == "pending" {
+			_ = service.transitionApproval(cleanup, approvalID, user, state)
+		} else {
+			_, _ = service.db.ExecContext(cleanup, `UPDATE mcp_approvals SET state=? WHERE id=? AND user_id=? AND state IN ('approved','executing')`, state, approvalID, user)
+		}
 	}()
-	ticker := time.NewTicker(200 * time.Millisecond)
-	defer ticker.Stop()
+	expiry := time.NewTimer(time.Until(time.UnixMilli(expires)))
+	defer expiry.Stop()
+	// A decision may be committed by another server process. Local notifications
+	// are hints; periodically recover from the authoritative database as well.
+	fallback := time.NewTicker(time.Second)
+	defer fallback.Stop()
 	for {
 		if ctx.Err() != nil {
 			return result, ctx.Err()
@@ -213,7 +247,7 @@ func (service *MCPService) Execute(ctx context.Context, user, run string, call P
 			return result, errors.New("user denied this MCP tool call")
 		}
 		if time.Now().UnixMilli() >= expires || state == "expired" {
-			_, _ = service.db.ExecContext(ctx, `UPDATE mcp_approvals SET state='expired' WHERE id=?`, approvalID)
+			_ = service.transitionApproval(ctx, approvalID, user, "expired")
 			return result, errors.New("MCP approval expired without execution")
 		}
 		if state == "pending" {
@@ -223,7 +257,7 @@ func (service *MCPService) Execute(ctx context.Context, user, run string, call P
 			}
 			if granted {
 				allowed = true
-				_, err = service.db.ExecContext(ctx, `UPDATE mcp_approvals SET state='approved' WHERE id=? AND state='pending'`, approvalID)
+				err = service.transitionApproval(ctx, approvalID, user, "approved")
 				if err != nil {
 					return result, err
 				}
@@ -239,7 +273,9 @@ func (service *MCPService) Execute(ctx context.Context, user, run string, call P
 		select {
 		case <-ctx.Done():
 			return result, ctx.Err()
-		case <-ticker.C:
+		case <-changed:
+		case <-fallback.C:
+		case <-expiry.C:
 		}
 	}
 	// Consume the exact approval and recheck permissions/ownership atomically before network execution.
@@ -317,4 +353,37 @@ func (service *MCPService) Execute(ctx context.Context, user, run string, call P
 		return result, errors.New("remote MCP tool reported an error")
 	}
 	return result, nil
+}
+
+// The state change and its durable event commit together; subscribers wake after commit.
+func (service *MCPService) transitionApproval(ctx context.Context, id, user, state string) error {
+	tx, err := service.conversations.beginEventTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	result, err := tx.ExecContext(ctx, `UPDATE mcp_approvals SET state=? WHERE id=? AND user_id=? AND state IN ('pending','approved','executing') AND (?!='approved' OR state='pending')`, state, id, user, state)
+	if err != nil {
+		return err
+	}
+	count, err := result.RowsAffected()
+	if err != nil || count == 0 {
+		return err
+	}
+	if err := emitMCPApproval(ctx, tx, id); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func emitMCPApproval(ctx context.Context, tx *conversationTransaction, id string) error {
+	var a MCPApproval
+	var arguments, session string
+	var revision int64
+	err := tx.QueryRowContext(ctx, `SELECT a.id,a.run_id,a.server_id,a.server_name,a.tool_name,a.arguments_json,a.state,a.expires_at,r.session_id,r.revision FROM mcp_approvals a JOIN chat_runs r ON r.id=a.run_id WHERE a.id=?`, id).Scan(&a.ID, &a.RunID, &a.ServerID, &a.ServerName, &a.ToolName, &arguments, &a.State, &a.ExpiresAt, &session, &revision)
+	if err != nil {
+		return err
+	}
+	a.Arguments = json.RawMessage(arguments)
+	return insertChatEventExec(ctx, tx, ConversationEvent{State: "mcp-approval", SessionKey: session, RunID: a.RunID, Revision: revision, MCPApproval: &a})
 }

@@ -214,6 +214,16 @@ func (service *ConversationService) GetHistory(ctx context.Context, userID, frie
 	if err := tx.QueryRowContext(ctx, `SELECT COALESCE(MAX(sequence),0) FROM chat_events WHERE session_id=?`, session.ID).Scan(&history.Cursor); err != nil {
 		return history, err
 	}
+	approvals, err := readMCPApprovals(ctx, tx, userID, friendlyID)
+	if err != nil {
+		return history, err
+	}
+	history.PendingMCPApprovals = []MCPApproval{}
+	for _, approval := range approvals {
+		if approval.State == "pending" {
+			history.PendingMCPApprovals = append(history.PendingMCPApprovals, approval)
+		}
+	}
 	records, err := service.listMessageRecordsExec(ctx, tx, session.ID)
 	if err != nil {
 		return history, err

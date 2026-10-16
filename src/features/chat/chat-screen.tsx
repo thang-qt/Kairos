@@ -46,8 +46,7 @@ import {
   ACTIVITY_SIDEBAR_WIDTH,
   ActivitySidebar,
 } from './components/activity-sidebar'
-import { isAssistantStreaming } from './components/message-item-utils'
-import { useMcpApprovals, useMcpToolLabels } from './hooks/use-mcp'
+import { useMcpToolLabels } from './hooks/use-mcp'
 import { AppShell } from '@/components/app-shell'
 import { GlobalShortcuts } from '@/components/global-shortcuts'
 import { useConversationExport } from '@/features/chat/export/use-conversation-export'
@@ -55,7 +54,6 @@ import { useChatSettings } from '@/app/preferences/app-preferences'
 import { useChatSettingsPreferencesQuery, useModelsQuery } from '@/lib/app-api'
 import { providerModelKey } from '@/lib/model-utils'
 import type { MCPApproval } from '@/lib/mcp-api'
-import type { ConversationTurn } from './types'
 
 // The settings and activity panels share the right edge; only one is open.
 // The activity panel shows the turn whose chip opened it, and only within
@@ -65,19 +63,6 @@ type RightPanel =
   | { kind: 'activity'; key: string; conversationId: string }
 
 const EMPTY_APPROVALS: Array<MCPApproval> = []
-
-// The run to poll for remote tool approvals: the newest assistant turn while
-// it is still running and has called a remote MCP tool.
-function mcpApprovalRunId(messages: Array<ConversationTurn>): string | null {
-  const message = messages.findLast((turn) => turn.role === 'assistant')
-  if (!message?.runId || !isAssistantStreaming(message)) return null
-  const content = Array.isArray(message.content) ? message.content : []
-  return content.some(
-    (part) => part.type === 'toolCall' && part.name?.startsWith('mcp_'),
-  )
-    ? message.runId
-    : null
-}
 
 type ChatScreenProps = {
   activeFriendlyId: string
@@ -198,17 +183,8 @@ export function ChatScreen({
     queryClient,
   })
   const mcpToolLabels = useMcpToolLabels()
-  const approvalRunId = mcpApprovalRunId(displayMessages)
-  const approvalsQuery = useMcpApprovals(approvalRunId)
-  const pendingApprovals = useMemo(
-    () =>
-      approvalRunId
-        ? (approvalsQuery.data ?? []).filter(
-            (approval) => approval.state === 'pending',
-          )
-        : EMPTY_APPROVALS,
-    [approvalRunId, approvalsQuery.data],
-  )
+  const pendingApprovals =
+    historyQuery.data?.pendingMcpApprovals ?? EMPTY_APPROVALS
   const usedTokens =
     typeof activeSession?.totalTokens === 'number' &&
     activeSession.totalTokens > 0

@@ -29,7 +29,15 @@ export type MCPApproval = {
   serverName: string
   toolName: string
   arguments: Record<string, unknown>
-  state: 'pending' | 'approved' | 'executing'
+  state:
+    | 'pending'
+    | 'approved'
+    | 'executing'
+    | 'denied'
+    | 'expired'
+    | 'completed'
+    | 'error'
+    | 'cancelled'
   expiresAt: number
   progress: { message?: string; progress?: number; total?: number }
 }

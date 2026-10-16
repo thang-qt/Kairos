@@ -54,12 +54,13 @@ type SessionSummary struct {
 }
 
 type HistoryPayload struct {
-	SessionKey   string           `json:"sessionKey"`
-	SessionID    string           `json:"sessionId,omitempty"`
-	Revision     int64            `json:"revision"`
-	Cursor       int64            `json:"cursor"`
-	ActiveRunIDs []string         `json:"activeRunIds"`
-	Messages     []map[string]any `json:"messages"`
+	PendingMCPApprovals []MCPApproval    `json:"pendingMcpApprovals"`
+	SessionKey          string           `json:"sessionKey"`
+	SessionID           string           `json:"sessionId,omitempty"`
+	Revision            int64            `json:"revision"`
+	Cursor              int64            `json:"cursor"`
+	ActiveRunIDs        []string         `json:"activeRunIds"`
+	Messages            []map[string]any `json:"messages"`
 }
 
 type ConversationService struct {

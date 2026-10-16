@@ -95,6 +95,7 @@ func NewApp(config Config) (*App, error) {
 	providers := NewProviderService(db, config)
 	webTools := NewWebToolSettingsService(db, config)
 	mcp := NewMCPService(db, config)
+	mcp.conversations = conversations
 	runtime := NewAgentRuntime(db, conversations, providers, webTools)
 	runtime.mcp = mcp
 

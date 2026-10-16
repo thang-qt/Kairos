@@ -1,6 +1,7 @@
 package server
 
 type ConversationEvent struct {
+	MCPApproval  *MCPApproval         `json:"mcpApproval,omitempty"`
 	TurnPatch    []TurnPatchOperation `json:"turnPatch,omitempty"`
 	Snapshot     *HistoryPayload      `json:"snapshot,omitempty"`
 	Revision     int64                `json:"revision"`

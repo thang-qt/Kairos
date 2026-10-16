@@ -1,3 +1,5 @@
+import type { MCPApproval } from '@/lib/mcp-api'
+
 export type ToolCallContent = {
   type: 'toolCall'
   id?: string
@@ -118,6 +120,7 @@ export type SessionPage = {
 }
 
 export type HistoryResponse = {
+  pendingMcpApprovals?: Array<MCPApproval>
   revision?: number
   cursor?: number
   activeRunIds?: Array<string>

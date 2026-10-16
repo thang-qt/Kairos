@@ -1,3 +1,5 @@
+import type { MCPApproval } from '@/lib/mcp-api'
+
 export type { SessionSearchResult } from './contracts'
 
 import type {
@@ -164,6 +166,7 @@ export type TurnPatchOperation = {
 }
 
 export type ConversationEvent = {
+  mcpApproval?: MCPApproval
   turnPatch?: Array<TurnPatchOperation>
   snapshot?: HistoryResponse
   revision?: number
@@ -173,6 +176,7 @@ export type ConversationEvent = {
   sessionKey?: string
   friendlyId?: string
   state?:
+    | 'mcp-approval'
     | 'delta'
     | 'final'
     | 'error'

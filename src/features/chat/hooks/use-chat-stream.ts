@@ -77,6 +77,33 @@ export function useChatStream({
     if (hasNewRevision) {
       refreshHistoryRef.current()
     }
+    if (payload.mcpApproval) {
+      const approval = payload.mcpApproval
+      function applyApproval(
+        previous: HistoryResponse | undefined,
+      ): HistoryResponse {
+        const pending = (previous?.pendingMcpApprovals ?? []).filter(
+          (item) => item.id !== approval.id,
+        )
+        if (approval.state === 'pending') pending.push(approval)
+        return {
+          ...previous,
+          sessionKey: previous?.sessionKey ?? sessionKeyForHistory,
+          messages: previous?.messages ?? [],
+          pendingMcpApprovals: pending,
+          revision: payload.revision ?? previous?.revision,
+          cursor: payload.cursor ?? previous?.cursor,
+        }
+      }
+      queryClient.setQueryData<HistoryResponse>(key, applyApproval)
+      if (payload.sessionKey && payload.sessionKey !== sessionKeyForHistory) {
+        queryClient.setQueryData<HistoryResponse>(
+          chatQueryKeys.history(activeFriendlyId, payload.sessionKey),
+          applyApproval,
+        )
+      }
+      return
+    }
     onChatEvent?.(payload)
 
     const payloadState = typeof payload.state === 'string' ? payload.state : ''
@@ -115,6 +142,7 @@ export function useChatStream({
           return {
             ...previous,
             sessionKey: previous?.sessionKey ?? sessionKeyForHistory,
+            pendingMcpApprovals: remainingApprovals(previous, payload),
             messages: applyConversationEvent(messages, payload),
             revision: payload.revision ?? previous?.revision,
             cursor: payload.cursor ?? previous?.cursor,
@@ -135,6 +163,7 @@ export function useChatStream({
               return {
                 ...previous,
                 sessionKey: previous?.sessionKey ?? payloadSessionKey,
+                pendingMcpApprovals: remainingApprovals(previous, payload),
                 messages: applyConversationEvent(messages, payload),
                 revision: payload.revision ?? previous?.revision,
                 cursor: payload.cursor ?? previous?.cursor,
@@ -179,6 +208,7 @@ export function useChatStream({
         return {
           ...previous,
           sessionKey: previous?.sessionKey ?? sessionKeyForHistory,
+          pendingMcpApprovals: remainingApprovals(previous, payload),
           messages: nextMessages,
           revision: payload.revision ?? previous?.revision,
           cursor: payload.cursor ?? previous?.cursor,
@@ -200,6 +230,7 @@ export function useChatStream({
           return {
             ...previous,
             sessionKey: previous?.sessionKey ?? payloadSessionKey,
+            pendingMcpApprovals: remainingApprovals(previous, payload),
             messages: applyConversationEvent(messages, payload),
             revision: payload.revision ?? previous?.revision,
             cursor: payload.cursor ?? previous?.cursor,
@@ -285,4 +316,20 @@ function shouldSyncSidebar(sessionKey: string, state: string): boolean {
     if (oldest) lastSidebarSyncBySession.delete(oldest)
   }
   return true
+}
+
+function remainingApprovals(
+  previous: HistoryResponse | undefined,
+  event: ConversationEvent,
+) {
+  const pending = previous?.pendingMcpApprovals ?? []
+  if (event.state === 'reconcile') {
+    return pending.filter((approval) =>
+      (event.activeRunIds ?? []).includes(approval.runId),
+    )
+  }
+  if (isTerminalState(event.state ?? '')) {
+    return pending.filter((approval) => approval.runId !== event.runId)
+  }
+  return pending
 }
