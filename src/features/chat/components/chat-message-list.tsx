@@ -30,10 +30,8 @@ import { useChatScrollControl } from '../hooks/use-chat-scroll-control'
 import { useMessageNavigation } from '../hooks/use-message-navigation'
 import {
   findPreviousClonePoint,
-  projectConversationTurns,
+  toolResultsForTurn,
 } from './chat-message-list-utils'
-
-const EMPTY_ACTIVE_RUN_IDS = new Set<string>()
 
 type ChatMessageListProps = {
   messages: Array<ConversationTurn>
@@ -83,7 +81,6 @@ function ChatMessageListComponent({
   notice,
   noticePosition = 'start',
   waitingForResponse,
-  activeRunIds = EMPTY_ACTIVE_RUN_IDS,
   sessionKey,
   modelLabelById,
   mcpToolLabels,
@@ -130,23 +127,7 @@ function ChatMessageListComponent({
     return nextRef
   }
 
-  const { displayMessages, toolResultsByCallId } = useMemo(() => {
-    const projection = projectConversationTurns(messages)
-    const activeIds = new Set<string>()
-    projection.displayMessages.forEach(
-      function collectUserRefs(message, index) {
-        if (message.role !== 'user') return
-        const messageId = getMessageKey(message, index)
-        activeIds.add(messageId)
-        getOrCreateUserTurnRef(messageId)
-      },
-    )
-    for (const existingId of userTurnRefsRef.current.keys()) {
-      if (activeIds.has(existingId)) continue
-      userTurnRefsRef.current.delete(existingId)
-    }
-    return projection
-  }, [messages, activeRunIds])
+  const displayMessages = messages
 
   const latestUserIndex = useMemo(() => {
     for (let index = displayMessages.length - 1; index >= 0; index -= 1) {
@@ -208,7 +189,16 @@ function ChatMessageListComponent({
   }
 
   const slicedMessages = useMemo(() => {
-    return displayMessages.slice(-visibleCount)
+    const visibleMessages = displayMessages.slice(-visibleCount)
+    const visibleUserIds = new Set<string>()
+    visibleMessages.forEach(function collectVisibleUser(message, index) {
+      if (message.role === 'user')
+        visibleUserIds.add(getMessageKey(message, index))
+    })
+    for (const id of userTurnRefsRef.current.keys()) {
+      if (!visibleUserIds.has(id)) userTurnRefsRef.current.delete(id)
+    }
+    return visibleMessages
   }, [displayMessages, visibleCount])
 
   const {
@@ -359,7 +349,9 @@ function ChatMessageListComponent({
         ) : null}
         <MessageItem
           message={chatMessage}
-          toolResultsByCallId={hasToolCalls ? toolResultsByCallId : undefined}
+          toolResultsByCallId={
+            hasToolCalls ? toolResultsForTurn(chatMessage) : undefined
+          }
           forceActionsVisible={forceActionsVisible}
           isLastUser={index === slicedLastUserIndex}
           showAssistantModel
@@ -428,7 +420,6 @@ function ChatMessageListComponent({
     onClone,
     onDeleteUserTurn,
     onEditUserTurn,
-    toolResultsByCallId,
     highlightedMessageId,
     activeActivityKey,
     onOpenActivity,

@@ -25,6 +25,25 @@ export type MessageProjection = {
   toolResultsByCallId: Map<string, ConversationTurn>
 }
 
+const toolResultsByTurn = new WeakMap<
+  ConversationTurn,
+  Map<string, ConversationTurn>
+>()
+
+// Immutable turns keep their lookup map even when a different turn streams.
+export function toolResultsForTurn(turn: ConversationTurn) {
+  const cached = toolResultsByTurn.get(turn)
+  if (cached) return cached
+  const results = new Map<string, ConversationTurn>()
+  for (const step of turn.steps ?? []) {
+    if (step.role === 'toolResult' && step.toolCallId) {
+      results.set(toolResultLookupKey(turn, step.toolCallId), step)
+    }
+  }
+  toolResultsByTurn.set(turn, results)
+  return results
+}
+
 export function projectConversationTurns(
   messages: Array<ConversationTurn>,
 ): MessageProjection {
