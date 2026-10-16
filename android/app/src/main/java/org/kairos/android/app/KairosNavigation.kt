@@ -89,7 +89,7 @@ fun KairosNavigation(
             LaunchedEffect(Unit) { chat.enterRoute(Screen.Chat, search = true) }
             SearchOverlay(
                 chat,
-                onDismiss = chat::closeSearch,
+                onDismiss = { chat.closeSearch() },
                 onSelect = { id ->
                     chat.closeSearch(navigateBack = false)
                     chat.select(id)
