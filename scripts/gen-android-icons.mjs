@@ -32,6 +32,7 @@ const ICONS = [
   'PencilEdit02Icon',
   'PlusSignIcon',
   'Search01Icon',
+  'IncognitoIcon',
   'Settings01Icon',
   'Settings02Icon',
   'PlugSocketIcon',

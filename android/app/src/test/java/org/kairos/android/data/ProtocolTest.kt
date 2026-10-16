@@ -79,6 +79,37 @@ class ProtocolTest {
     }
 
     @Test
+    fun ephemeralRequestMatchesGoFieldNames() {
+        val request =
+            EphemeralRequest(
+                history = listOf(buildJsonObject { put("id", JsonPrimitive("t1")) }),
+                message = "Hi",
+                model = "m",
+                clientId = "c",
+                clientTime = "now",
+                clientTimeZone = "UTC",
+                attachments = listOf(AttachmentPayload("image/png", "x")),
+            )
+        val encoded = wireJson.encodeToJsonElement(request).jsonObject
+        // The backend decodes with DisallowUnknownFields; these keys must match its struct.
+        assertEquals(
+            setOf(
+                "history",
+                "message",
+                "model",
+                "clientId",
+                "clientTime",
+                "clientTimeZone",
+                "systemPrompt",
+                "webSearch",
+                "mathTools",
+                "attachments",
+            ),
+            encoded.keys,
+        )
+    }
+
+    @Test
     fun mcpApprovalRunIdTracksLiveRemoteToolCalls() {
         fun assistantTurn(status: String, tool: String) = buildJsonObject {
             put("id", JsonPrimitive("a1"))

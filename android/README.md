@@ -87,9 +87,9 @@ Enable both **Use text from screen** and **Use screenshot** in the digital assis
 
 The phone app is a chat client, not a server console. Everything needed to use Kairos from a device is native; everything that belongs to administration or desktop ergonomics stays on the web:
 
-**On mobile:** sign-in and server connection, streaming chat with edit/retry/fork/delete/stop, image attachments via the Photo Picker, per-conversation settings (system prompt, web search, math tools, reasoning effort, sampling, penalties, max output), the model picker with set-as-default, grouped conversation sidebar with paged loading and search, MCP tool approvals, appearance (six palettes, Light/Dark/System), the default-assistant overlay, and local caches for conversations, models, settings and recent history.
+**On mobile:** sign-in and server connection, streaming chat with edit/retry/fork/delete/stop, throwaway (ephemeral) chats that stream from /api/ephemeral/messages without creating a session, image attachments via the Photo Picker, per-conversation settings (system prompt, web search, math tools, reasoning effort, sampling, penalties, max output), the model picker with set-as-default, grouped conversation sidebar with paged loading and search, MCP tool approvals, appearance (six palettes, Light/Dark/System), the default-assistant overlay, and local caches for conversations, models, settings and recent history.
 
-**Web/desktop only (not on the phone):** conversation import (archive upload), bulk export, ephemeral messages, provider administration (API keys, model sync), account email/password changes, keyboard shortcuts, the service worker/offline cache, and the standalone transcript export page.
+**Web/desktop only (not on the phone):** conversation import (archive upload), bulk export, provider administration (API keys, model sync), account email/password changes, keyboard shortcuts, the service worker/offline cache, and the standalone transcript export page.
 
 The settings and activity panels use the same surface tokens as the web (`primary-*` palette steps, `font-medium` maximum weight, tabular numerals) ported by `scripts/gen-android-theme.mjs`. Sheets are Material bottom sheets without outlines — the scrim and surface step carry the separation; search is a full-screen page that owns the status-bar inset.
 

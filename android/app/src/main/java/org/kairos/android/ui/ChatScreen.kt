@@ -76,7 +76,10 @@ fun ChatScreen(chat: ChatViewModel, bridge: TranscriptBridge, onCopy: (String) -
     val banner =
         chat.error
             ?: if (chat.offline || connection == ConnectionState.Offline) "Can't reach server"
-            else if (connection == ConnectionState.Reconnecting) "Reconnecting…" else null
+            else if (connection == ConnectionState.Reconnecting) "Reconnecting…"
+            else if (chat.ephemeralMode && history.messages.isEmpty())
+                "Throwaway chat — nothing is saved"
+            else null
     LaunchedEffect(banner) { if (banner == null) bannerHeight = 0f }
     var attachments by
         remember(chat.sessionId) { mutableStateOf<List<ScreenAttachment>>(emptyList()) }
@@ -358,7 +361,7 @@ fun ChatScreen(chat: ChatViewModel, bridge: TranscriptBridge, onCopy: (String) -
                             )
                     }
                 NativeComposer(
-                    streaming = chat.sending || activeRunId(history) != null,
+                    streaming = chat.streaming,
                     enabled = !chat.busy,
                     onSend = { text ->
                         scope.launch {
@@ -404,7 +407,13 @@ fun ChatScreen(chat: ChatViewModel, bridge: TranscriptBridge, onCopy: (String) -
         history.messages
             .find { it.id == id }
             ?.let { message ->
-                MessageActionsSheet(message, chat, { chat.longPressId = null }, onCopy)
+                MessageActionsSheet(
+                    message,
+                    chat,
+                    { chat.longPressId = null },
+                    onCopy,
+                    ephemeral = chat.ephemeralMode,
+                )
             }
     }
     chat.activityId?.let { id ->

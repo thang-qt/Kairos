@@ -168,6 +168,25 @@ data class CommandAck(
 
 @Serializable data class AttachmentPayload(val mimeType: String, val content: String)
 
+/**
+ * Throwaway requests post the full displayed history and stream the answer without ever
+ * creating a session. Field names must match the Go struct exactly.
+ */
+@Serializable
+data class EphemeralRequest(
+    val history: List<JsonObject>,
+    val message: String,
+    val model: String,
+    val clientId: String,
+    val clientTime: String,
+    val clientTimeZone: String,
+    val systemPrompt: String = "",
+    val webSearch: Boolean = true,
+    val mathTools: Boolean = true,
+    val advanced: JsonObject? = null,
+    val attachments: List<AttachmentPayload> = emptyList(),
+)
+
 @Serializable
 data class SendRequest(
     val message: String,

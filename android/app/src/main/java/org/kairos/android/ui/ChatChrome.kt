@@ -40,6 +40,7 @@ import org.kairos.android.ui.theme.LocalKairosColors
 fun ChatHeader(chat: ChatViewModel, onOpenSidebar: () -> Unit) {
     val colors = LocalKairosColors.current
     val sessions by chat.sessions.collectAsState()
+    val history by chat.history.collectAsState()
     val catalog by chat.catalog.collectAsState()
     val modelKey =
         sessions.find { it.friendlyId == chat.sessionId }?.settings?.model?.ifBlank { chat.model }
@@ -49,6 +50,7 @@ fun ChatHeader(chat: ChatViewModel, onOpenSidebar: () -> Unit) {
             ?: modelKey.ifBlank { "Select model" }
     var models by remember { mutableStateOf(false) }
     var more by remember { mutableStateOf(false) }
+    val ephemeralAvailable = chat.sessionId == null && history.messages.isEmpty()
     Column(Modifier.fillMaxWidth()) {
         Spacer(
             Modifier.fillMaxWidth()
@@ -96,6 +98,15 @@ fun ChatHeader(chat: ChatViewModel, onOpenSidebar: () -> Unit) {
                     KIcon(KairosIcons.ArrowDown01, colors.p(500), size = 20.dp)
                 }
                 Spacer(Modifier.weight(1f))
+                if (ephemeralAvailable || chat.ephemeralMode)
+                    GhostIconButton(
+                        KairosIcons.Incognito,
+                        if (chat.ephemeralMode) "Throwaway chat is on" else "Enable throwaway chat",
+                        chat::toggleEphemeral,
+                        tint = if (chat.ephemeralMode) colors.p(950) else colors.p(700),
+                        selected = chat.ephemeralMode,
+                        enabled = ephemeralAvailable,
+                    )
                 GhostIconButton(
                     KairosIcons.MoreVertical,
                     "Conversation actions",

@@ -11,7 +11,11 @@ import org.kairos.android.data.*
 
 class ChatViewModel(val app: AppContainer) : ViewModel() {
     val conversation = app.conversation()
-    val history = conversation.history
+    private val ephemeral = EphemeralConversation(app.api)
+
+    // Saved sessions stream from the repository; throwaway mode swaps in its local history.
+    private val mergedHistory = MutableStateFlow(History())
+    val history: StateFlow<History> = mergedHistory.asStateFlow()
     val connection = conversation.connection
     val sessions = app.sessions.sessions
     val hasMore = app.sessions.hasMore
@@ -52,6 +56,9 @@ class ChatViewModel(val app: AppContainer) : ViewModel() {
     var composerGeneration by mutableIntStateOf(0)
         private set
 
+    var ephemeralMode by mutableStateOf(false)
+        private set
+
     var longPressId by mutableStateOf<String?>(null)
     var activityId by mutableStateOf<String?>(null)
     var searchOpen by mutableStateOf(false)
@@ -70,14 +77,34 @@ class ChatViewModel(val app: AppContainer) : ViewModel() {
         get() = app.models.name(activeSession?.settings?.model?.ifBlank { model } ?: model)
 
     val streaming
-        get() = sending || activeRunId(history.value) != null
+        get() =
+            sending ||
+                ephemeral.streaming.value ||
+                activeRunId(mergedHistory.value) != null
 
     init {
+        viewModelScope.launch {
+            conversation.history.collect { if (!ephemeralMode) mergedHistory.value = it }
+        }
+        viewModelScope.launch {
+            ephemeral.history.collect { if (ephemeralMode) mergedHistory.value = it }
+        }
+        viewModelScope.launch {
+            ephemeral.error.collect { value ->
+                if (value != null) {
+                    error = value
+                    ephemeral.clearError()
+                }
+            }
+        }
         viewModelScope.launch {
             app.tokens.signedIn.collect { signedIn ->
                 if (!signedIn && screen in listOf(Screen.Chat, Screen.Settings)) {
                     conversation.open(null)
                     sessionId = null
+                    ephemeral.reset()
+                    ephemeralMode = false
+                    mergedHistory.value = History()
                     app.clearUserData()
                     screen = if (app.server.url.isBlank()) Screen.Connect else Screen.SignIn
                 }
@@ -162,6 +189,9 @@ class ChatViewModel(val app: AppContainer) : ViewModel() {
     fun select(id: String?) {
         selectionGeneration++
         sessionId = id
+        ephemeralMode = false
+        ephemeral.reset()
+        mergedHistory.value = conversation.history.value
         conversation.open(id)
         editing = null
         composerSeed = ""
@@ -223,6 +253,15 @@ class ChatViewModel(val app: AppContainer) : ViewModel() {
         if (generation == selectionGeneration) model = key
     }
 
+    /** Throwaway mode only exists on a fresh, empty new chat, like the web. */
+    fun toggleEphemeral() {
+        if (sessionId != null || mergedHistory.value.messages.isNotEmpty()) return
+        ephemeralMode = !ephemeralMode
+        ephemeral.reset()
+        error = null
+        mergedHistory.value = History()
+    }
+
     fun send(text: String, attachments: List<AttachmentPayload> = emptyList()) = task {
         sending = true
         val generation = selectionGeneration
@@ -230,11 +269,15 @@ class ChatViewModel(val app: AppContainer) : ViewModel() {
             activeSession?.settings
                 ?: app.models.defaults(model.ifBlank { app.models.defaultModel() })
         try {
-            val next = conversation.send(text, selected, attachments, editing?.id)
-            if (generation == selectionGeneration) {
-                sessionId = next
-                editing = null
-                offline = false
+            if (ephemeralMode) {
+                ephemeral.send(text, selected, attachments) { seed(text) }
+            } else {
+                val next = conversation.send(text, selected, attachments, editing?.id)
+                if (generation == selectionGeneration) {
+                    sessionId = next
+                    editing = null
+                    offline = false
+                }
             }
         } catch (e: Exception) {
             if (e !is CancellationException && generation == selectionGeneration) seed(text)
@@ -244,7 +287,9 @@ class ChatViewModel(val app: AppContainer) : ViewModel() {
         }
     }
 
-    fun stop() = task(exclusive = false) { conversation.stop() }
+    fun stop() = task(exclusive = false) {
+        if (ephemeralMode) ephemeral.stop() else conversation.stop()
+    }
 
     fun edit(message: JsonObject) {
         editing = message
@@ -353,6 +398,7 @@ class ChatViewModel(val app: AppContainer) : ViewModel() {
         app.sessions.clear()
         app.models.clear()
         app.mcp.clear()
+        ephemeral.reset()
     }
 
     fun showError(message: String) {
