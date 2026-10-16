@@ -34,6 +34,19 @@ class CacheTest {
     }
 
     @Test
+    fun queuedCacheWritesDoNotRestoreDataAfterIdentityChange() {
+        val root = Files.createTempDirectory("kairos-cache-identity").toFile()
+        val cache = DiskCache(root)
+        val previousGeneration = cache.generation
+        cache.writeString("sessions.json", "old", previousGeneration)
+        cache.clear()
+        cache.writeString("sessions.json", "stale", previousGeneration)
+        assertNull(cache.readString("sessions.json"))
+        cache.writeString("sessions.json", "new", cache.generation)
+        assertEquals("new", cache.readString("sessions.json"))
+    }
+
+    @Test
     fun diskCacheEvictsLeastRecentlyWrittenFilesWithinBudget() {
         val root = Files.createTempDirectory("kairos-cache-lru").toFile()
         val cache = DiskCache(root, maxBytes = 120)
