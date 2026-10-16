@@ -223,8 +223,8 @@ func buildOpenAIContent(parts []ProviderMessagePart) []openai.ChatCompletionCont
 				}))
 			}
 		case "text":
-			if text := strings.TrimSpace(part.Text); text != "" {
-				contentParts = append(contentParts, openai.TextContentPart(text))
+			if part.Text != "" {
+				contentParts = append(contentParts, openai.TextContentPart(part.Text))
 			}
 		}
 	}

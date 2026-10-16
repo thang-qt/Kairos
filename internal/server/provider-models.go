@@ -156,8 +156,8 @@ func collectProviderMessageText(parts []ProviderMessagePart) string {
 		if strings.TrimSpace(part.Type) != "text" {
 			continue
 		}
-		if text := strings.TrimSpace(part.Text); text != "" {
-			fragments = append(fragments, text)
+		if part.Text != "" {
+			fragments = append(fragments, part.Text)
 		}
 	}
 	return strings.Join(fragments, "\n\n")

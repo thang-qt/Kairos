@@ -45,7 +45,7 @@ type chatMessageContentSource struct {
 func newTextContentPart(text string) chatMessageContentPart {
 	return chatMessageContentPart{
 		Type: "text",
-		Text: strings.TrimSpace(text),
+		Text: text,
 	}
 }
 
@@ -127,11 +127,10 @@ func contentPartsToMaps(parts []chatMessageContentPart) []map[string]any {
 	for _, part := range parts {
 		switch strings.TrimSpace(part.Type) {
 		case "text":
-			text := strings.TrimSpace(part.Text)
-			if text == "" {
+			if part.Text == "" {
 				continue
 			}
-			value := map[string]any{"type": "text", "text": text}
+			value := map[string]any{"type": "text", "text": part.Text}
 			if part.Phase != "" {
 				value["phase"] = part.Phase
 				value["phaseSource"] = part.PhaseSource
@@ -219,7 +218,7 @@ func contentPartsFromMaps(items []map[string]any) []chatMessageContentPart {
 	for _, item := range items {
 		switch strings.TrimSpace(stringValueFromMap(item, "type")) {
 		case "text":
-			text := strings.TrimSpace(stringValueFromMap(item, "text"))
+			text, _ := item["text"].(string)
 			if text != "" {
 				part := newTextContentPart(text)
 				part.Phase = normalizeMessagePhase(stringValueFromMap(item, "phase"))

@@ -89,3 +89,30 @@ func TestDeriveMessagePhases(t *testing.T) {
 		}
 	}
 }
+
+func TestAssistantTextWhitespaceSurvivesContentAndProviderConversions(t *testing.T) {
+	content := buildAssistantContent("", "  hello  ", nil,
+		ProviderTextSegment{Text: "Hello", Phase: "final_answer"},
+		ProviderTextSegment{Text: " ", Phase: "final_answer"},
+		ProviderTextSegment{Text: "world!", Phase: "final_answer"},
+		ProviderTextSegment{Text: "\n\n", Phase: "final_answer"},
+	)
+	mapped := contentPartsToMaps(content)
+	got, _ := mapped[1]["text"].(string)
+	if got != " " {
+		t.Fatalf("mapped assistant text = %q, want original whitespace", got)
+	}
+	providerParts := extractProviderMessageParts(mapped)
+	if len(providerParts) != 4 || providerParts[1].Text != " " || providerParts[3].Text != "\n\n" {
+		t.Fatalf("provider transcript parts = %#v, want whitespace-only segments", providerParts)
+	}
+	resultParts := providerPartsFromResult(ChatGenerationResult{TextSegments: []ProviderTextSegment{
+		{Text: "Hello"},
+		{Text: " "},
+		{Text: "world!"},
+		{Text: "\n\n"},
+	}})
+	if len(resultParts) != 4 || resultParts[1].Text != " " || resultParts[3].Text != "\n\n" {
+		t.Fatalf("provider result parts = %#v, want exact segment whitespace", resultParts)
+	}
+}

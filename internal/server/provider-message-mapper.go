@@ -60,7 +60,7 @@ func buildAssistantContent(
 		segments = []ProviderTextSegment{{Text: text}}
 	}
 	for _, segment := range segments {
-		if strings.TrimSpace(segment.Text) == "" {
+		if segment.Text == "" {
 			continue
 		}
 		part := newTextContentPart(segment.Text)

@@ -82,10 +82,10 @@ func extractProviderMessageParts(value any) []ProviderMessagePart {
 	for _, item := range items {
 		switch strings.TrimSpace(item.Type) {
 		case "text":
-			if text := strings.TrimSpace(item.Text); text != "" {
+			if item.Text != "" {
 				parts = append(parts, ProviderMessagePart{
 					Type:        "text",
-					Text:        text,
+					Text:        item.Text,
 					Phase:       item.Phase,
 					PhaseSource: item.PhaseSource,
 				})
