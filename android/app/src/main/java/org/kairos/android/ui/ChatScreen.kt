@@ -47,6 +47,7 @@ import org.kairos.android.assistant.ScreenAttachment
 import org.kairos.android.chat.ChatViewModel
 import org.kairos.android.data.ConnectionState
 import org.kairos.android.data.activeRunId
+import org.kairos.android.data.approvalRunId
 import org.kairos.android.data.id
 import org.kairos.android.transcript.TranscriptBridge
 import org.kairos.android.transcript.TranscriptTouchHost
@@ -319,6 +320,19 @@ fun ChatScreen(chat: ChatViewModel, bridge: TranscriptBridge, onCopy: (String) -
                     .imePadding()
                     .navigationBarsPadding()
             ) {
+                val approvals by chat.pendingApprovals.collectAsState()
+                val runId = approvalRunId(history.messages)
+                val currentApprovals =
+                    if (runId == null) emptyList() else approvals.filter { it.runId == runId }
+                if (currentApprovals.isNotEmpty())
+                    McpApprovalCard(
+                        currentApprovals,
+                        busy = chat.busy,
+                        onDecide = { decision, scope ->
+                            chat.decideApproval(currentApprovals.first(), decision, scope)
+                        },
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                    )
                 if (banner != null)
                     Row(
                         Modifier.align(Alignment.CenterHorizontally)
@@ -398,4 +412,15 @@ fun ChatScreen(chat: ChatViewModel, bridge: TranscriptBridge, onCopy: (String) -
             .find { it.id == id }
             ?.let { turn -> ActivitySheet(turn) { chat.activityId = null } }
     }
+    if (chat.conversationSettingsOpen)
+        ConversationSettingsSheet(chat) { chat.closeConversationSettings() }
+    if (chat.searchOpen)
+        SearchOverlay(
+            chat,
+            onDismiss = chat::closeSearch,
+            onSelect = { id ->
+                chat.closeSearch()
+                chat.select(id)
+            },
+        )
 }

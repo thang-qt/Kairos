@@ -33,6 +33,8 @@ const ICONS = [
   'PlusSignIcon',
   'Search01Icon',
   'Settings01Icon',
+  'Settings02Icon',
+  'PlugSocketIcon',
   'SidebarLeft01Icon',
   'SmartPhone01Icon',
   'Sun01Icon',

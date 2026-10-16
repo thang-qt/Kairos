@@ -228,6 +228,11 @@ data class ModelsResponse(
     val capabilities: ModelCapabilities = ModelCapabilities(),
 )
 
+@Serializable data class PreferencesRequest(val defaultModelId: String)
+
+@Serializable
+data class PreferencesResponse(val preferences: UserPreferences = UserPreferences())
+
 @Serializable
 data class ChatSettingsResponse(val settings: ChatSettingsPreferences = ChatSettingsPreferences())
 

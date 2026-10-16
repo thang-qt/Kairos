@@ -30,10 +30,11 @@ fun KairosSheet(
 ) {
     val colors = LocalKairosColors.current
     val shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp)
+    // No outline: a full-width border reads as a stray line across the screen. The scrim and
+    // the surface step provide the separation instead.
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-        modifier = modifier.border(1.dp, colors.p(200), shape),
         shape = shape,
         containerColor = colors.p(50),
         contentColor = colors.p(900),
@@ -86,6 +87,10 @@ fun SessionActionsSheet(
         SheetAction(KairosIcons.Pen01, "Rename") { rename = true }
         SheetAction(KairosIcons.Pin, if (session.isPinned) "Unpin" else "Pin") {
             chat.pin(session)
+            onDismiss()
+        }
+        SheetAction(KairosIcons.Settings02, "Chat settings") {
+            chat.openConversationSettings()
             onDismiss()
         }
         if (allowFork)
@@ -165,10 +170,18 @@ fun ModelsSheet(chat: ChatViewModel, onDismiss: () -> Unit) {
     val colors = LocalKairosColors.current
     val catalog by chat.catalog.collectAsState()
     var query by remember { mutableStateOf("") }
+    var busy by remember { mutableStateOf(false) }
+    val activeModel = chat.activeSession?.settings?.model?.ifBlank { chat.model } ?: chat.model
     KairosSheet(onDismiss) {
+        Text(
+            "Model",
+            color = colors.p(900),
+            fontWeight = FontWeight.Medium,
+        )
+        Spacer(Modifier.height(12.dp))
         KairosField(query, { query = it }, "Search models", search = true)
         Column(
-            Modifier.heightIn(max = 480.dp)
+            Modifier.heightIn(max = 420.dp)
                 .verticalScroll(rememberScrollState())
                 .padding(top = 16.dp)
         ) {
@@ -194,7 +207,8 @@ fun ModelsSheet(chat: ChatViewModel, onDismiss: () -> Unit) {
                     models.forEach { model ->
                         Row(
                             Modifier.fillMaxWidth().height(48.dp).pressable {
-                                if (catalog.capabilities.canSelectModel) {
+                                if (catalog.capabilities.canSelectModel && !busy) {
+                                    busy = true
                                     chat.chooseModel(model.key)
                                     onDismiss()
                                 }
@@ -219,62 +233,30 @@ fun ModelsSheet(chat: ChatViewModel, onDismiss: () -> Unit) {
                                     style = TextStyle(fontFeatureSettings = "tnum"),
                                 )
                             }
-                            if (model.key == (chat.activeSession?.settings?.model ?: chat.model))
-                                KIcon(KairosIcons.Tick02, colors.p(900))
+                            if (model.key == activeModel) KIcon(KairosIcons.Tick02, colors.p(900))
+                            if (
+                                catalog.capabilities.canSelectModel &&
+                                    model.key == activeModel &&
+                                    model.key != catalog.preferences.defaultModelId &&
+                                    !catalog.capabilities.defaultModelLocked
+                            )
+                                Text(
+                                    "Set default",
+                                    Modifier
+                                        .pressable(pressedColor = colors.p(200)) {
+                                            if (!busy) {
+                                                busy = true
+                                                chat.setDefaultModel(model.key)
+                                                onDismiss()
+                                            }
+                                        }
+                                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                                    color = colors.p(700),
+                                    fontSize = 12.sp,
+                                )
                         }
                     }
                 }
-        }
-    }
-}
-
-@Composable
-fun SearchSheet(chat: ChatViewModel, onDismiss: () -> Unit, onSelect: (String) -> Unit) {
-    val colors = LocalKairosColors.current
-    var query by remember { mutableStateOf("") }
-    var results by remember { mutableStateOf<List<SearchResult>>(emptyList()) }
-    var error by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(query) {
-        delay(200)
-        try {
-            results = chat.app.sessions.search(query)
-            error = null
-        } catch (e: Exception) {
-            if (e is kotlinx.coroutines.CancellationException) throw e
-            error = e.message
-        }
-    }
-    KairosSheet(onDismiss, Modifier.fillMaxHeight()) {
-        KairosField(query, { query = it }, "Search sessions", search = true)
-        error?.let {
-            Spacer(Modifier.height(12.dp))
-            ErrorBox(it)
-        }
-        Column(
-            Modifier.fillMaxHeight().verticalScroll(rememberScrollState()).padding(top = 16.dp)
-        ) {
-            results.forEach { result ->
-                Column(
-                    Modifier.fillMaxWidth()
-                        .pressable { onSelect(result.friendlyId) }
-                        .padding(vertical = 12.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
-                ) {
-                    Text(
-                        result.displayTitle,
-                        color = colors.p(900),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Text(
-                        result.snippet,
-                        color = colors.p(500),
-                        fontSize = 12.sp,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-            }
         }
     }
 }

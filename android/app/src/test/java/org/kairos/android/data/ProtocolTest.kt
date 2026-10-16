@@ -79,6 +79,39 @@ class ProtocolTest {
     }
 
     @Test
+    fun mcpApprovalRunIdTracksLiveRemoteToolCalls() {
+        fun assistantTurn(status: String, tool: String) = buildJsonObject {
+            put("id", JsonPrimitive("a1"))
+            put("role", JsonPrimitive("assistant"))
+            put("status", JsonPrimitive(status))
+            put("runId", JsonPrimitive("run-1"))
+            put(
+                "content",
+                buildJsonArray {
+                    add(
+                        buildJsonObject {
+                            put("type", JsonPrimitive("toolCall"))
+                            put("name", JsonPrimitive(tool))
+                        },
+                    )
+                },
+            )
+        }
+        assertEquals("run-1", approvalRunId(listOf(assistantTurn("running", "mcp_search"))))
+        // Local tools and finished turns never need approval polling.
+        assertEquals(null, approvalRunId(listOf(assistantTurn("running", "calculator"))))
+        assertEquals(null, approvalRunId(listOf(assistantTurn("completed", "mcp_search"))))
+        val payload =
+            wireJson.decodeFromString<McpApprovalsResponse>(
+                """{"approvals":[{"id":"ap1","runId":"run-1","serverName":"Docs","toolName":"search","arguments":{"q":"x"},"state":"pending","expiresAt":123}]}"""
+            )
+        val approval = payload.approvals.single()
+        assertEquals("ap1", approval.id)
+        assertEquals("run-1", approval.runId)
+        assertEquals("x", approval.arguments!!.jsonObject.string("q"))
+    }
+
+    @Test
     fun pagedSessionListCarriesCursor() {
         val payload =
             objectFrom(
