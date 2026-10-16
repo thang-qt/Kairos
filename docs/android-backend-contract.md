@@ -32,7 +32,7 @@ A client may render local form defaults, but should replace them with the
 - Include `clientId`, a stable `idempotencyKey` for a logical send, and
   `expectedRevision` when operating on an existing session.
 - Treat a timeout or 5xx as an ambiguous acceptance. Reuse the same key when
-  replaying *the same* command; reconcile server history first.
+  replaying _the same_ command; reconcile server history first.
 - Command results return revision and invalidated/removed turn identifiers.
   Apply those before subsequent event patches.
 - The conversation SSE connection provides canonical snapshots and event
@@ -52,3 +52,4 @@ same saved-conversation command endpoints as the full Android app.
 
 Go, React and Kotlin share the JSON wire protocol, but only Go is authoritative
 for persisted behavior. The new opt-in does not alter existing web callers.
+
