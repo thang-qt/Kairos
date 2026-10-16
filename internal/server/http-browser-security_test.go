@@ -33,6 +33,8 @@ func TestBrowserSecurityChecksMutatingAPIRequests(t *testing.T) {
 		{name: "same-site browser metadata without origin", method: http.MethodPost, path: "/api/sessions", contentType: "application/json", fetchSite: "same-site", cookie: true, wantStatus: http.StatusForbidden},
 		{name: "form request", method: http.MethodPost, path: "/api/sessions", contentType: "application/x-www-form-urlencoded", origin: "http://kairos.test", wantStatus: http.StatusUnsupportedMediaType},
 		{name: "logout needs no body", method: http.MethodPost, path: "/api/auth/logout", origin: "http://kairos.test", wantStatus: http.StatusNoContent},
+		{name: "model sync sends no body", method: http.MethodPost, path: "/api/models/sync", origin: "http://kairos.test", cookie: true, wantStatus: http.StatusNoContent},
+		{name: "bodyless model sync still checks origin", method: http.MethodPost, path: "/api/models/sync", origin: "http://sibling.kairos.test", fetchSite: "same-site", cookie: true, wantStatus: http.StatusForbidden},
 		{name: "archive upload keeps zip content type", method: http.MethodPost, path: "/api/imports/chatgpt", contentType: "application/zip", origin: "http://kairos.test", wantStatus: http.StatusNoContent},
 		{name: "delete needs no body", method: http.MethodDelete, path: "/api/sessions/abc", origin: "http://kairos.test", wantStatus: http.StatusNoContent},
 		{name: "options stays safe", method: http.MethodOptions, path: "/api/sessions", wantStatus: http.StatusNoContent},
@@ -102,6 +104,32 @@ func TestAppHandlerAddsBrowserSecurityHeaders(t *testing.T) {
 	}
 	if got := recorder.Header().Get("X-Frame-Options"); got != "DENY" {
 		t.Fatalf("X-Frame-Options = %q, want DENY", got)
+	}
+}
+
+func TestBodylessModelSyncRequiresSameOrigin(t *testing.T) {
+	app := newTestApp(t, nil)
+	cookie := signupAndRequireCookie(t, app, "bodyless-sync@example.com")
+	request := httptest.NewRequest(http.MethodPost, "http://kairos.test/api/models/sync", nil)
+	request.AddCookie(cookie)
+	request.Header.Set("Origin", "http://kairos.test")
+	recorder := httptest.NewRecorder()
+	app.handler.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("same-origin bodyless model sync status = %d, want %d; body=%s", recorder.Code, http.StatusOK, recorder.Body.String())
+	}
+	if got := request.Header.Get("Content-Type"); got != "" {
+		t.Fatalf("bodyless model sync unexpectedly has Content-Type %q", got)
+	}
+
+	crossOriginRequest := httptest.NewRequest(http.MethodPost, "http://kairos.test/api/models/sync", nil)
+	crossOriginRequest.AddCookie(cookie)
+	crossOriginRequest.Header.Set("Origin", "http://sibling.kairos.test")
+	crossOriginRequest.Header.Set("Sec-Fetch-Site", "same-site")
+	crossOriginRecorder := httptest.NewRecorder()
+	app.handler.ServeHTTP(crossOriginRecorder, crossOriginRequest)
+	if crossOriginRecorder.Code != http.StatusForbidden {
+		t.Fatalf("cross-origin bodyless model sync status = %d, want %d", crossOriginRecorder.Code, http.StatusForbidden)
 	}
 }
 

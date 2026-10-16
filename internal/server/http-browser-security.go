@@ -61,6 +61,9 @@ func isJSONRequestRequired(request *http.Request) bool {
 	if request.Method == http.MethodPost && request.URL.Path == "/api/auth/logout" {
 		return false
 	}
+	if request.Method == http.MethodPost && request.URL.Path == "/api/models/sync" {
+		return false
+	}
 	if request.Method == http.MethodPost && strings.HasPrefix(request.URL.Path, "/api/imports/") {
 		return false
 	}
