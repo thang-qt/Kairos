@@ -510,10 +510,13 @@ class ConversationRepository(
                 expectedRevision = revision,
                 attachments = attachments,
                 settings = if (id == null) settings else null,
-                systemPrompt = settings.systemPrompt,
-                webSearch = settings.webSearch,
-                mathTools = settings.mathTools,
-                advanced = requestAdvanced(settings.advanced),
+                // Go resolves effective model, instructions, tool flags and generation
+                // overrides from the saved or newly supplied conversation settings.
+                // Do not duplicate the web's option-policy logic in Kotlin.
+                systemPrompt = "",
+                webSearch = false,
+                mathTools = false,
+                advanced = null,
             )
         try {
             val path =
