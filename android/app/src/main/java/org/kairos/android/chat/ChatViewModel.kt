@@ -386,16 +386,22 @@ class ChatViewModel(val app: AppContainer) : ViewModel() {
     }
 
     fun logout(changeServer: Boolean = false) = task {
-        app.api.logout()
-        app.tokens.clear()
-        if (changeServer) {
-            app.server.clear()
-            screen = Screen.Connect
-        } else screen = Screen.SignIn
-        select(null)
-        app.sessions.clear()
-        app.models.clear()
-        ephemeral.reset()
+        // Remote revocation is best-effort. The user must be able to sign out locally
+        // even when the server is unreachable or the token is already invalid.
+        try {
+            app.api.logout()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            // Always clear local credentials in finally.
+        } finally {
+            app.tokens.clear()
+            select(null)
+            app.clearUserData()
+            ephemeral.reset()
+            if (changeServer) app.server.clear()
+            screen = if (changeServer) Screen.Connect else Screen.SignIn
+        }
     }
 
     fun showError(message: String) {
