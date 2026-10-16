@@ -126,6 +126,11 @@ func LoadConfig() (Config, error) {
 		if config.AdminPassword == "" && config.AdminPasswordHash == "" {
 			return Config{}, errors.New("ADMIN_PASSWORD or ADMIN_PASSWORD_HASH is required when BOOTSTRAP_ADMIN is true")
 		}
+		if config.AdminPasswordHash != "" {
+			if err := validatePasswordHash(config.AdminPasswordHash); err != nil {
+				return Config{}, fmt.Errorf("invalid ADMIN_PASSWORD_HASH: %w", err)
+			}
+		}
 	}
 	if config.SystemProviderKind == "openrouter" {
 		config.SystemProviderKind = openAIProviderKind

@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -50,6 +51,11 @@ func NewAuthService(db *sql.DB, config Config) *AuthService {
 func (service *AuthService) BootstrapAdmin() error {
 	if !service.config.BootstrapAdmin {
 		return nil
+	}
+	if service.config.AdminPasswordHash != "" {
+		if err := validatePasswordHash(service.config.AdminPasswordHash); err != nil {
+			return fmt.Errorf("invalid ADMIN_PASSWORD_HASH: %w", err)
+		}
 	}
 
 	var existingID string
@@ -478,45 +484,59 @@ func hashPassword(password string) (string, error) {
 }
 
 func verifyPassword(password string, encoded string) bool {
+	params, salt, expectedHash, err := parsePasswordHash(encoded)
+	if err != nil {
+		return false
+	}
+	actualHash := argon2.IDKey([]byte(password), salt, params.Iterations, params.Memory, params.Parallelism, uint32(len(expectedHash)))
+	return subtleCompare(actualHash, expectedHash)
+}
+
+func validatePasswordHash(encoded string) error {
+	if _, _, _, err := parsePasswordHash(encoded); err != nil {
+		return errors.New("must be a valid Argon2id v=19 hash with memory <= 256 MiB, iterations <= 10 and parallelism <= 8")
+	}
+	return nil
+}
+
+func parsePasswordHash(encoded string) (passwordHashParams, []byte, []byte, error) {
 	parts := strings.Split(encoded, "$")
 	if len(parts) != 5 {
-		return false
+		return passwordHashParams{}, nil, nil, errors.New("invalid hash format")
 	}
 	if parts[0] != "argon2id" {
-		return false
+		return passwordHashParams{}, nil, nil, errors.New("invalid hash algorithm")
 	}
 
-	var version int
-	var memory uint32
-	var iterations uint32
-	var parallelism uint8
-	if _, err := fmt.Sscanf(parts[1], "v=%d", &version); err != nil || version != 19 {
-		return false
+	if !strings.HasPrefix(parts[1], "v=") {
+		return passwordHashParams{}, nil, nil, errors.New("invalid hash version")
 	}
-	if _, err := fmt.Sscanf(parts[2], "m=%d,t=%d,p=%d", &memory, &iterations, &parallelism); err != nil {
-		return false
+	version, err := strconv.ParseUint(strings.TrimPrefix(parts[1], "v="), 10, 8)
+	if err != nil || version != 19 {
+		return passwordHashParams{}, nil, nil, errors.New("unsupported hash version")
 	}
-	if memory == 0 || memory > maxArgonMemoryKiB || iterations == 0 || iterations > maxArgonIterations || parallelism == 0 || parallelism > maxArgonParallelism {
-		return false
+
+	fields := strings.Split(parts[2], ",")
+	if len(fields) != 3 || !strings.HasPrefix(fields[0], "m=") || !strings.HasPrefix(fields[1], "t=") || !strings.HasPrefix(fields[2], "p=") {
+		return passwordHashParams{}, nil, nil, errors.New("invalid hash parameters")
+	}
+	memory, errMemory := strconv.ParseUint(strings.TrimPrefix(fields[0], "m="), 10, 32)
+	iterations, errIterations := strconv.ParseUint(strings.TrimPrefix(fields[1], "t="), 10, 32)
+	parallelism, errParallelism := strconv.ParseUint(strings.TrimPrefix(fields[2], "p="), 10, 8)
+	if errMemory != nil || errIterations != nil || errParallelism != nil || memory < 8*parallelism || memory > maxArgonMemoryKiB || iterations == 0 || iterations > maxArgonIterations || parallelism == 0 || parallelism > maxArgonParallelism {
+		return passwordHashParams{}, nil, nil, errors.New("hash parameters are outside supported bounds")
 	}
 
 	salt, err := base64.RawStdEncoding.DecodeString(parts[3])
-	if err != nil {
-		return false
-	}
-	if len(salt) < 8 || len(salt) > 1024 {
-		return false
+	if err != nil || len(salt) < 8 || len(salt) > 1024 {
+		return passwordHashParams{}, nil, nil, errors.New("invalid hash salt")
 	}
 	expectedHash, err := base64.RawStdEncoding.DecodeString(parts[4])
-	if err != nil {
-		return false
-	}
-	if len(expectedHash) < 16 || len(expectedHash) > 1024 {
-		return false
+	if err != nil || len(expectedHash) < 16 || len(expectedHash) > 1024 {
+		return passwordHashParams{}, nil, nil, errors.New("invalid hash key")
 	}
 
-	actualHash := argon2.IDKey([]byte(password), salt, iterations, memory, parallelism, uint32(len(expectedHash)))
-	return subtleCompare(actualHash, expectedHash)
+	return passwordHashParams{Memory: uint32(memory), Iterations: uint32(iterations), Parallelism: uint8(parallelism)}, salt, expectedHash, nil
 }
 
 func subtleCompare(left []byte, right []byte) bool {

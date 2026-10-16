@@ -45,6 +45,14 @@ func (app *App) handleSignup(writer http.ResponseWriter, request *http.Request) 
 		writeError(writer, http.StatusBadRequest, err.Error())
 		return
 	}
+	if !app.config.AuthEnabled {
+		writeError(writer, http.StatusForbidden, errAuthDisabled.Error())
+		return
+	}
+	if !app.config.AllowSignup {
+		writeError(writer, http.StatusForbidden, errSignupDisabled.Error())
+		return
+	}
 	if !app.allowAuthAttempt(writer, request, payload.Email) {
 		return
 	}

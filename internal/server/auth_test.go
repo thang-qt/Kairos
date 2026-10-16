@@ -3,14 +3,40 @@ package server
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
+
+func TestAdminPasswordHashConfigMustFitSupportedBounds(t *testing.T) {
+	salt := base64.RawStdEncoding.EncodeToString(make([]byte, 16))
+	key := base64.RawStdEncoding.EncodeToString(make([]byte, 32))
+	invalidHash := fmt.Sprintf("argon2id$v=19$m=%d,t=3,p=2$%s$%s", maxArgonMemoryKiB+1, salt, key)
+
+	if err := validatePasswordHash(invalidHash); err == nil {
+		t.Fatal("validatePasswordHash() accepted parameters above the safety bound")
+	}
+	service := NewAuthService(nil, Config{BootstrapAdmin: true, AdminEmail: "admin@example.invalid", AdminPasswordHash: invalidHash})
+	if err := service.BootstrapAdmin(); err == nil || !strings.Contains(err.Error(), "ADMIN_PASSWORD_HASH") {
+		t.Fatalf("BootstrapAdmin() error = %v, want actionable invalid hash error", err)
+	}
+
+	t.Setenv("APP_ENV", "development")
+	t.Setenv("BOOTSTRAP_ADMIN", "true")
+	t.Setenv("ADMIN_EMAIL", "admin@example.invalid")
+	t.Setenv("ADMIN_PASSWORD", "")
+	t.Setenv("ADMIN_PASSWORD_HASH", invalidHash)
+	if _, err := LoadConfig(); err == nil || !strings.Contains(err.Error(), "ADMIN_PASSWORD_HASH") {
+		t.Fatalf("LoadConfig() error = %v, want actionable invalid hash error", err)
+	}
+}
 
 type testApp struct {
 	app     *App

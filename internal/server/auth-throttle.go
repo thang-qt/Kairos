@@ -28,7 +28,8 @@ type authGuard struct {
 type authRateBucket struct {
 	tokens    float64
 	updatedAt time.Time
-	lastUsed  time.Time
+	capacity  float64
+	refill    float64
 }
 
 func newAuthGuard() *authGuard {
@@ -87,6 +88,7 @@ type authRateLimit struct {
 func (guard *authGuard) allowRateLimits(limits []authRateLimit, now time.Time) bool {
 	guard.rateMu.Lock()
 	defer guard.rateMu.Unlock()
+	guard.pruneRefilledBuckets(now)
 
 	for _, limit := range limits {
 		bucket, exists := guard.rateMap[limit.key]
@@ -100,15 +102,23 @@ func (guard *authGuard) allowRateLimits(limits []authRateLimit, now time.Time) b
 		}
 	}
 
+	missing := 0
+	for _, limit := range limits {
+		if _, exists := guard.rateMap[limit.key]; !exists {
+			missing++
+		}
+	}
+	if len(guard.rateMap)+missing > maxAuthRateBuckets {
+		return false
+	}
+
 	for _, limit := range limits {
 		bucket, exists := guard.rateMap[limit.key]
 		if !exists {
-			guard.makeRateBucketRoom(now)
-			bucket = authRateBucket{tokens: limit.capacity, updatedAt: now, lastUsed: now}
+			bucket = authRateBucket{tokens: limit.capacity, updatedAt: now, capacity: limit.capacity, refill: limit.refill}
 		}
 		bucket = refillAuthBucket(bucket, limit, now)
 		bucket.tokens--
-		bucket.lastUsed = now
 		guard.rateMap[limit.key] = bucket
 	}
 	return true
@@ -122,30 +132,18 @@ func refillAuthBucket(bucket authRateBucket, limit authRateLimit, now time.Time)
 		}
 		bucket.updatedAt = now
 	}
-	bucket.lastUsed = now
 	return bucket
 }
 
-func (guard *authGuard) makeRateBucketRoom(now time.Time) {
-	if len(guard.rateMap) < maxAuthRateBuckets {
-		return
-	}
-	cutoff := now.Add(-15 * time.Minute)
+func (guard *authGuard) pruneRefilledBuckets(now time.Time) {
 	for key, bucket := range guard.rateMap {
-		if bucket.lastUsed.Before(cutoff) {
+		limit := authRateLimit{capacity: bucket.capacity, refill: bucket.refill}
+		bucket = refillAuthBucket(bucket, limit, now)
+		if bucket.tokens >= bucket.capacity {
 			delete(guard.rateMap, key)
+			continue
 		}
-	}
-	for len(guard.rateMap) >= maxAuthRateBuckets {
-		var oldestKey string
-		var oldest time.Time
-		for key, bucket := range guard.rateMap {
-			if oldestKey == "" || bucket.lastUsed.Before(oldest) {
-				oldestKey = key
-				oldest = bucket.lastUsed
-			}
-		}
-		delete(guard.rateMap, oldestKey)
+		guard.rateMap[key] = bucket
 	}
 }
 
