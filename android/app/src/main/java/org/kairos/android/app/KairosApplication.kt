@@ -30,6 +30,7 @@ class AppContainer(context: Context) {
     val api = KairosApi(server, tokens)
     val sessions = SessionsRepository(api, cache, tokens)
     val models = ModelsRepository(api, cache)
+    val mcp = McpApprovalsRepository(api)
     // The assistant never constructs a WebView. Only the full application asks for this lazy
     // singleton.
     private val transcript = lazy { TranscriptBridge(api, MutableContextWrapper(context)) }
@@ -39,6 +40,7 @@ class AppContainer(context: Context) {
     fun clearUserData() {
         sessions.clear()
         models.clear()
+        mcp.clear()
         cache.clear()
         historyCache.clear()
         if (transcript.isInitialized()) transcript.value.render(null, emptyList())

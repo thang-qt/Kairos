@@ -26,6 +26,8 @@ class SessionsRepository(
     val hasMore = _hasMore.asStateFlow()
     private val _loadingMore = MutableStateFlow(false)
     val loadingMore = _loadingMore.asStateFlow()
+    private val _ready = MutableStateFlow(list.loadedCount > 0)
+    val ready = _ready.asStateFlow()
     private var syncJob: Job? = null
     private var streamJob: Job? = null
     private val scheduler = RefreshScheduler(scope, { refresh() })
@@ -70,6 +72,7 @@ class SessionsRepository(
         }
         list.setNextCursor(lastNext)
         publish()
+        _ready.value = true
         persist()
     }
 
@@ -159,6 +162,7 @@ class SessionsRepository(
     fun clear() {
         list.clear()
         publish()
+        _ready.value = false
         cache.delete(SESSIONS_CACHE_FILE)
     }
 
@@ -213,9 +217,7 @@ class ModelsRepository(private val api: KairosApi, private val cache: DiskCache)
         val settings = api.get<ChatSettingsResponse>("/api/me/chat-settings").settings
         _catalog.value = response
         chatSettings = settings
-        withContext(Dispatchers.IO) {
-            cache.writeModels(ModelsCacheState(catalog = response, chatSettings = settings))
-        }
+        persist()
     }
 
     fun clear() {
@@ -236,6 +238,24 @@ class ModelsRepository(private val api: KairosApi, private val cache: DiskCache)
     fun name(key: String) =
         _catalog.value.models.find { it.key == key || it.id == key }?.displayName
             ?: key.ifBlank { "Select model" }
+
+    /** PATCH /api/me/preferences; the response is the updated preferences object. */
+    suspend fun setDefault(modelId: String) {
+        val response =
+            api.write<PreferencesResponse, PreferencesRequest>(
+                "/api/me/preferences",
+                "PATCH",
+                PreferencesRequest(modelId),
+            )
+        _catalog.value = _catalog.value.copy(preferences = response.preferences)
+        persist()
+    }
+
+    private suspend fun persist() {
+        withContext(Dispatchers.IO) {
+            cache.writeModels(ModelsCacheState(catalog = _catalog.value, chatSettings = chatSettings))
+        }
+    }
 }
 
 class ConversationRepository(

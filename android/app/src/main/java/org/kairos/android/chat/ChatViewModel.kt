@@ -14,6 +14,9 @@ class ChatViewModel(val app: AppContainer) : ViewModel() {
     val history = conversation.history
     val connection = conversation.connection
     val sessions = app.sessions.sessions
+    val hasMore = app.sessions.hasMore
+    val loadingMore = app.sessions.loadingMore
+    val sessionsReady = app.sessions.ready
     val catalog = app.models.catalog
     var screen by
         mutableStateOf<Screen>(
@@ -51,6 +54,13 @@ class ChatViewModel(val app: AppContainer) : ViewModel() {
 
     var longPressId by mutableStateOf<String?>(null)
     var activityId by mutableStateOf<String?>(null)
+    var searchOpen by mutableStateOf(false)
+        private set
+
+    var conversationSettingsOpen by mutableStateOf(false)
+        private set
+
+    val pendingApprovals = app.mcp.pending
     private var selectionGeneration = 0
     private var pendingSession: String? = null
     val activeSession
@@ -71,6 +81,14 @@ class ChatViewModel(val app: AppContainer) : ViewModel() {
                     app.clearUserData()
                     screen = if (app.server.url.isBlank()) Screen.Connect else Screen.SignIn
                 }
+            }
+        }
+        // Poll MCP approvals only while the newest assistant turn is a live remote tool call.
+        viewModelScope.launch {
+            while (isActive) {
+                val needsPolling = approvalRunId(history.value.messages) != null
+                if (needsPolling) app.mcp.refresh()
+                delay(if (needsPolling) 1000 else 2000)
             }
         }
         if (app.tokens.signedIn.value) bootstrap()
@@ -149,6 +167,8 @@ class ChatViewModel(val app: AppContainer) : ViewModel() {
         composerSeed = ""
         composerGeneration++
         error = null
+        conversationSettingsOpen = false
+        app.mcp.clear()
         model =
             sessions.value
                 .find { it.friendlyId == id }
@@ -278,6 +298,45 @@ class ChatViewModel(val app: AppContainer) : ViewModel() {
 
     fun pin(session: SessionSummary) = task { app.sessions.pin(session) }
 
+    fun loadMoreSessions() {
+        viewModelScope.launch {
+            try {
+                app.sessions.loadMore()
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                offline = true
+            }
+        }
+    }
+
+    fun setDefaultModel(key: String) = task { app.models.setDefault(key) }
+
+    fun decideApproval(approval: McpApproval, decision: String, scope: String? = null) = task {
+        app.mcp.decide(approval, decision, scope)
+    }
+
+    fun saveConversationSettings(settings: ConversationSettings) = task {
+        conversation.settings(settings)
+    }
+
+    fun openSearch() {
+        error = null
+        searchOpen = true
+    }
+
+    fun closeSearch() {
+        searchOpen = false
+    }
+
+    fun openConversationSettings() {
+        error = null
+        conversationSettingsOpen = true
+    }
+
+    fun closeConversationSettings() {
+        conversationSettingsOpen = false
+    }
+
     fun deleteSession(session: SessionSummary) = task {
         app.sessions.delete(session)
         if (sessionId == session.friendlyId) select(null)
@@ -293,6 +352,7 @@ class ChatViewModel(val app: AppContainer) : ViewModel() {
         select(null)
         app.sessions.clear()
         app.models.clear()
+        app.mcp.clear()
     }
 
     fun showError(message: String) {

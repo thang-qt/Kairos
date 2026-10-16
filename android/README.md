@@ -83,4 +83,14 @@ Enable both **Use text from screen** and **Use screenshot** in the digital assis
 - Test the assistant and Preview with/without screenshot permission, late screenshots, secure apps, attach/remove/send, Stop, dismissal and mid-stream Open in Kairos/swipe-up. Check signed-out overlay, process restart and shared session history in the sidebar.
 - Confirm sign-out and Change server revoke the token and clear the old account's conversation state.
 
-This is a debug demo: no in-app signup or provider administration, speech recognition/hotword, or durable offline outbox/background streaming (the session-list sync runs only while the app is foregrounded). Streaming resumes from backend history when a surface returns. The activity sheet is a simple native list of reasoning text and tool name/status. Date dividers are omitted. Sidebar load-more is available in the repository API but not yet wired into the UI. OEM assistant/IME behavior, actual visual rendering, Photo Picker and Keystore behavior still require phone testing; no device or emulator was run during implementation.
+## Mobile scope
+
+The phone app is a chat client, not a server console. Everything needed to use Kairos from a device is native; everything that belongs to administration or desktop ergonomics stays on the web:
+
+**On mobile:** sign-in and server connection, streaming chat with edit/retry/fork/delete/stop, image attachments via the Photo Picker, per-conversation settings (system prompt, web search, math tools, reasoning effort, sampling, penalties, max output), the model picker with set-as-default, grouped conversation sidebar with paged loading and search, MCP tool approvals, appearance (six palettes, Light/Dark/System), the default-assistant overlay, and local caches for conversations, models, settings and recent history.
+
+**Web/desktop only (not on the phone):** conversation import (archive upload), bulk export, ephemeral messages, provider administration (API keys, model sync), account email/password changes, keyboard shortcuts, the service worker/offline cache, and the standalone transcript export page.
+
+The settings and activity panels use the same surface tokens as the web (`primary-*` palette steps, `font-medium` maximum weight, tabular numerals) ported by `scripts/gen-android-theme.mjs`. Sheets are Material bottom sheets without outlines — the scrim and surface step carry the separation; search is a full-screen page that owns the status-bar inset.
+
+This is a debug demo: no in-app signup or provider administration, speech recognition/hotword, or durable offline outbox/background streaming (the session-list sync runs only while the app is foregrounded). Streaming resumes from backend history when a surface returns. The activity sheet is a simple native list of reasoning text and tool name/status. Date dividers are omitted. OEM assistant/IME behavior, actual visual rendering, Photo Picker and Keystore behavior still require phone testing.

@@ -2,18 +2,14 @@
 
 package org.kairos.android.ui
 
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -127,9 +123,13 @@ fun Sidebar(
 ) {
     val colors = LocalKairosColors.current
     val sessions by chat.sessions.collectAsState()
-    var search by remember { mutableStateOf(false) }
+    val hasMore by chat.hasMore.collectAsState()
+    val loadingMore by chat.loadingMore.collectAsState()
+    val ready by chat.sessionsReady.collectAsState()
     var actions by remember { mutableStateOf<SessionSummary?>(null) }
     var logout by remember { mutableStateOf(false) }
+    val collapsed = remember { mutableStateOf(emptySet<String>()) }
+    val listState = rememberLazyListState()
     Column(modifier.background(colors.p(100)).statusBarsPadding()) {
         Row(
             Modifier.fillMaxWidth().height(48.dp).padding(horizontal = 8.dp),
@@ -158,31 +158,72 @@ fun Sidebar(
             verticalArrangement = Arrangement.spacedBy(1.dp),
         ) {
             SidebarAction(KairosIcons.PencilEdit02, "New Session", onClick = onNew)
-            SidebarAction(KairosIcons.Search01, "Search sessions", onClick = { search = true })
+            SidebarAction(KairosIcons.Search01, "Search sessions", onClick = chat::openSearch)
         }
-        Column(
-            Modifier.weight(1f)
-                .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            groupSessions(sessions).forEach { group ->
-                key(group.label) {
-                    SessionSection(group) { session ->
-                        key(session.friendlyId) {
-                            SessionItem(
-                                session.displayTitle,
-                                session.friendlyId == chat.sessionId,
-                                { actions = session },
-                            ) {
-                                onSelect(session)
+        Box(Modifier.weight(1f).fillMaxWidth()) {
+            when {
+                !ready -> Column(Modifier.fillMaxSize()) { LoadingState("Loading conversations…") }
+                sessions.isEmpty() && !hasMore ->
+                    EmptyState(
+                        KairosIcons.BubbleChat,
+                        "No conversations yet",
+                        "Start a chat and it will show up here.",
+                    )
+                else -> {
+                    LazyColumn(
+                        Modifier.fillMaxSize(),
+                        state = listState,
+                        contentPadding =
+                            PaddingValues(start = 8.dp, end = 8.dp, bottom = 16.dp),
+                        verticalArrangement = Arrangement.spacedBy(1.dp),
+                    ) {
+                        groupSessions(sessions).forEach { group ->
+                            item(key = "group-${group.label}") {
+                                GroupHeader(
+                                    group,
+                                    group.label !in collapsed.value,
+                                ) {
+                                    collapsed.value =
+                                        if (group.label in collapsed.value)
+                                            collapsed.value - group.label
+                                        else collapsed.value + group.label
+                                }
+                            }
+                            if (group.label !in collapsed.value) {
+                                items(group.sessions, key = { it.friendlyId }) { session ->
+                                    SessionItem(
+                                        session.displayTitle,
+                                        session.friendlyId == chat.sessionId,
+                                        { actions = session },
+                                    ) {
+                                        onSelect(session)
+                                    }
+                                }
                             }
                         }
+                        if (loadingMore)
+                            item(key = "load-more") {
+                                Row(
+                                    Modifier.fillMaxWidth().padding(vertical = 12.dp),
+                                    horizontalArrangement = Arrangement.Center,
+                                ) {
+                                    KIcon(KairosIcons.Loading03, colors.p(500))
+                                }
+                            }
+                    }
+                    // Auto-append pages when the end of the loaded list comes into view.
+                    LaunchedEffect(listState, hasMore) {
+                        snapshotFlow {
+                            val info = listState.layoutInfo
+                            info.visibleItemsInfo.lastOrNull()?.index to info.totalItemsCount
+                        }
+                            .collect { (last, total) ->
+                                if (hasMore && total > 0 && last != null && last >= total - 4)
+                                    chat.loadMoreSessions()
+                            }
                     }
                 }
             }
-            Spacer(Modifier.height(8.dp))
         }
         Row(
             Modifier.fillMaxWidth()
@@ -206,18 +247,39 @@ fun Sidebar(
             )
         }
     }
-    if (search)
-        SearchSheet(chat, { search = false }) { id ->
-            chat.select(id)
-            search = false
-            onClose()
-        }
     actions?.let { session -> SessionActionsSheet(session, chat, { actions = null }) }
     if (logout)
         ConfirmDialog("Sign out of Kairos?", "Sign out", { logout = false }) {
             logout = false
             chat.logout()
         }
+}
+
+/** Collapsible session group heading, matching the web's disclosure row. */
+@Composable
+private fun GroupHeader(
+    group: SessionGroup,
+    open: Boolean,
+    onToggle: () -> Unit,
+) {
+    val colors = LocalKairosColors.current
+    val rotation by animateFloatAsState(if (open) 90f else 0f, tween(150), label = "section-arrow")
+    Row(
+        Modifier.fillMaxWidth()
+            .height(32.dp)
+            .pressable(onClick = onToggle)
+            .padding(horizontal = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            group.label,
+            Modifier.weight(1f),
+            color = colors.p(700),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        KIcon(KairosIcons.ArrowRight01, colors.p(500), Modifier.rotate(rotation), size = 20.dp)
+    }
 }
 
 /** The web's ghost `sm` button with an icon: 32dp, pl-1.5, gap-2, medium text. */
@@ -249,40 +311,6 @@ fun SidebarAction(
             overflow = TextOverflow.Clip,
         )
         trailing?.invoke()
-    }
-}
-
-@Composable
-private fun SessionSection(group: SessionGroup, item: @Composable (SessionSummary) -> Unit) {
-    val colors = LocalKairosColors.current
-    var open by remember { mutableStateOf(true) }
-    val rotation by animateFloatAsState(if (open) 90f else 0f, tween(150), label = "section-arrow")
-    Column(Modifier.fillMaxWidth()) {
-        Row(
-            Modifier.fillMaxWidth()
-                .height(32.dp)
-                .pressable { open = !open }
-                .padding(horizontal = 6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                group.label,
-                Modifier.weight(1f),
-                color = colors.p(700),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            KIcon(KairosIcons.ArrowRight01, colors.p(500), Modifier.rotate(rotation), size = 20.dp)
-        }
-        AnimatedVisibility(
-            open,
-            enter = expandVertically(tween(150)) + fadeIn(tween(150)),
-            exit = shrinkVertically(tween(150)) + fadeOut(tween(150)),
-        ) {
-            Column(Modifier.padding(top = 4.dp), verticalArrangement = Arrangement.spacedBy(1.dp)) {
-                group.sessions.forEach { item(it) }
-            }
-        }
     }
 }
 

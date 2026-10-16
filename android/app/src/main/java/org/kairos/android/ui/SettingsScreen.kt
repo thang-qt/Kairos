@@ -54,11 +54,15 @@ fun SettingsScreen(chat: ChatViewModel) {
             chat.error?.let { ErrorBox(it) }
             SettingsSection("Account") {
                 SettingsRow("Email", chat.app.tokens.email)
-                SettingsRow("Sign out", onClick = { confirmation = "logout" })
+                SettingsRow("Sign out", divider = false, onClick = { confirmation = "logout" })
             }
             SettingsSection("Server") {
                 SettingsRow("Host", chat.app.server.host)
-                SettingsRow("Change server", onClick = { confirmation = "server" })
+                SettingsRow(
+                    "Change server",
+                    divider = false,
+                    onClick = { confirmation = "server" },
+                )
             }
             SettingsSection("Appearance") {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -143,12 +147,15 @@ fun SettingsScreen(chat: ChatViewModel) {
                 )
                 SettingsRow(
                     "Preview overlay",
+                    divider = false,
                     onClick = {
                         context.startActivity(Intent(context, OverlayPreviewActivity::class.java))
                     },
                 )
             }
-            SettingsSection("About") { SettingsRow("Version", BuildConfig.VERSION_NAME) }
+            SettingsSection("About") {
+                SettingsRow("Version", BuildConfig.VERSION_NAME, divider = false)
+            }
         }
     }
     confirmation?.let { value ->
@@ -178,7 +185,12 @@ private fun SettingsSection(title: String, content: @Composable ColumnScope.() -
 }
 
 @Composable
-private fun SettingsRow(label: String, value: String = "", onClick: (() -> Unit)? = null) {
+private fun SettingsRow(
+    label: String,
+    value: String = "",
+    divider: Boolean = true,
+    onClick: (() -> Unit)? = null,
+) {
     val colors = LocalKairosColors.current
     Row(
         Modifier.fillMaxWidth()
@@ -197,5 +209,5 @@ private fun SettingsRow(label: String, value: String = "", onClick: (() -> Unit)
             overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
         )
     }
-    Box(Modifier.fillMaxWidth().height(1.dp).background(colors.p(100)))
+    if (divider) Box(Modifier.fillMaxWidth().height(1.dp).background(colors.p(100)))
 }
