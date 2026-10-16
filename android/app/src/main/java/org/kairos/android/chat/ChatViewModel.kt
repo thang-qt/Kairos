@@ -7,6 +7,8 @@ import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.decodeFromString
 import org.kairos.android.app.*
 import org.kairos.android.data.*
 
@@ -21,6 +23,18 @@ class ChatViewModel(val app: AppContainer, private val savedState: SavedStateHan
         val key = draftKey(sessionId)
         if (text.isEmpty()) drafts.remove(key) else drafts[key] = text
         savedState["conversationDrafts"] = HashMap(drafts)
+    }
+
+    var newChatSettings by mutableStateOf(
+        savedState.get<String>("newChatSettings")?.let { raw ->
+            runCatching { wireJson.decodeFromString<ConversationSettings>(raw) }.getOrNull()
+        }
+    )
+        private set
+
+    private fun setNewChatSettings(settings: ConversationSettings?) {
+        newChatSettings = settings
+        savedState["newChatSettings"] = settings?.let { wireJson.encodeToString(it) }
     }
     val conversation = app.conversation()
     private val ephemeral = EphemeralConversation(app.api)
@@ -299,8 +313,9 @@ class ChatViewModel(val app: AppContainer, private val savedState: SavedStateHan
 
     fun chooseModel(key: String) = task {
         val generation = selectionGeneration
-        val settings = (activeSession?.settings ?: app.models.defaults(key)).copy(model = key)
-        conversation.settings(settings)
+        val settings =
+            (activeSession?.settings ?: newChatSettings ?: app.models.defaults(key)).copy(model = key)
+        if (sessionId == null) setNewChatSettings(settings) else conversation.settings(settings)
         if (generation == selectionGeneration) model = key
     }
 
@@ -318,6 +333,7 @@ class ChatViewModel(val app: AppContainer, private val savedState: SavedStateHan
         val generation = selectionGeneration
         val selected =
             activeSession?.settings
+                ?: newChatSettings
                 ?: app.models.defaults(model.ifBlank { app.models.defaultModel() })
         try {
             if (ephemeralMode) {
@@ -331,6 +347,7 @@ class ChatViewModel(val app: AppContainer, private val savedState: SavedStateHan
                     editing = null
                     offline = false
                     if (wasNewConversation && next != null) {
+                        setNewChatSettings(null)
                         navigate(NavigationRequest.Chat(next, replaceCurrent = true))
                     }
                 }
@@ -423,7 +440,10 @@ class ChatViewModel(val app: AppContainer, private val savedState: SavedStateHan
 
     fun saveConversationSettings(settings: ConversationSettings) = task {
         val target = conversationSettingsTarget
-        if (target == null || target == sessionId) {
+        if (target == null && sessionId == null) {
+            setNewChatSettings(settings)
+            model = settings.model
+        } else if (target == null || target == sessionId) {
             conversation.settings(settings)
         } else {
             val updated = app.api.write<SessionSummary, SettingsRequest>(
