@@ -521,7 +521,7 @@ export function useChatMutations({
               })
             })
           })
-          .catch(() => {
+          .catch((error) => {
             removeHistoryMessageByClientId(
               queryClient,
               'new',
@@ -532,6 +532,11 @@ export function useChatMutations({
             helpers.setValue(body)
             finishGeneration()
             setPinToTop(false)
+            setStreamError(
+              error instanceof Error
+                ? error.message
+                : 'Unable to create the conversation.',
+            )
           })
           .finally(() => {
             setSending(false)
