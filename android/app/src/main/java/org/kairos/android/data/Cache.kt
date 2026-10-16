@@ -15,6 +15,9 @@ import java.io.File
  * least-recently-used files (by modification time) after each write.
  */
 class DiskCache(private val root: File, private val maxBytes: Long = 0) {
+    private val lock = Any()
+    @Volatile private var cacheGeneration = 0L
+    val generation: Long get() = cacheGeneration
 
     init {
         if (!root.isDirectory) root.mkdirs()
@@ -35,16 +38,24 @@ class DiskCache(private val root: File, private val maxBytes: Long = 0) {
             target.readText()
         }.getOrNull()
 
-    fun writeString(name: String, content: String) {
-        runCatching {
+    // Capture generation before scheduling asynchronous writes. Clearing an identity
+    // invalidates all writes queued under its old generation.
+    fun writeString(name: String, content: String, expectedGeneration: Long = generation) {
+        synchronized(lock) {
+            if (expectedGeneration != generation) return
             val target = file(name)
             val temp = File(root, "${target.name}.tmp-${System.nanoTime()}")
-            temp.writeText(content)
-            if (!temp.renameTo(target)) {
+            try {
+                temp.writeText(content)
+                if (expectedGeneration != generation) return
+                if (!temp.renameTo(target)) {
+                    // Do not replace the prior cache with a possibly partial write.
+                    throw java.io.IOException("Unable to atomically store cache entry")
+                }
+                enforceBudget()
+            } finally {
                 temp.delete()
-                target.writeText(content)
             }
-            enforceBudget()
         }
     }
 
@@ -53,8 +64,11 @@ class DiskCache(private val root: File, private val maxBytes: Long = 0) {
     }
 
     fun clear() {
-        runCatching {
-            root.listFiles()?.forEach { it.delete() }
+        synchronized(lock) {
+            cacheGeneration++
+            root.listFiles()?.forEach { entry ->
+                if (entry.isDirectory) entry.deleteRecursively() else entry.delete()
+            }
         }
     }
 
@@ -95,16 +109,16 @@ const val MODELS_CACHE_FILE = "models.json"
 fun DiskCache.readSessions(): SessionListCache? =
     readString(SESSIONS_CACHE_FILE)?.let(SessionListCache::decoded)
 
-fun DiskCache.writeSessions(list: SessionListCache) {
-    writeString(SESSIONS_CACHE_FILE, list.encoded())
+fun DiskCache.writeSessions(snapshot: String, generation: Long) {
+    writeString(SESSIONS_CACHE_FILE, snapshot, generation)
 }
 
 fun DiskCache.readModels(): ModelsCacheState? =
     readString(MODELS_CACHE_FILE)
         ?.let { text -> runCatching { wireJson.decodeFromString<ModelsCacheState>(text) }.getOrNull() }
 
-fun DiskCache.writeModels(state: ModelsCacheState) {
-    writeString(MODELS_CACHE_FILE, wireJson.encodeToString(state))
+fun DiskCache.writeModels(state: ModelsCacheState, generation: Long) {
+    writeString(MODELS_CACHE_FILE, wireJson.encodeToString(state), generation)
 }
 
 /** History snapshots are keyed by a digest so arbitrary session ids map to safe file names. */
@@ -118,9 +132,9 @@ fun DiskCache.readHistory(sessionId: String): History? =
     readString(historyKey(sessionId))
         ?.let { text -> runCatching { wireJson.decodeFromString<History>(text) }.getOrNull() }
 
-fun DiskCache.writeHistory(sessionId: String, history: History) {
+fun DiskCache.writeHistory(sessionId: String, history: History, generation: Long) {
     if (history.revision < 0) return
-    writeString(historyKey(sessionId), wireJson.encodeToString(history))
+    writeString(historyKey(sessionId), wireJson.encodeToString(history), generation)
 }
 
 /**
