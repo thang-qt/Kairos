@@ -42,7 +42,9 @@ class SessionsRepository(
     }
 
     private fun persist() {
-        scope.launch(Dispatchers.IO) { cache.writeSessions(list) }
+        val snapshot = list.encoded()
+        val cacheGeneration = cache.generation
+        scope.launch(Dispatchers.IO) { cache.writeSessions(snapshot, cacheGeneration) }
     }
 
     suspend fun refresh() {
@@ -252,9 +254,9 @@ class ModelsRepository(private val api: KairosApi, private val cache: DiskCache)
     }
 
     private suspend fun persist() {
-        withContext(Dispatchers.IO) {
-            cache.writeModels(ModelsCacheState(catalog = _catalog.value, chatSettings = chatSettings))
-        }
+        val snapshot = ModelsCacheState(catalog = _catalog.value, chatSettings = chatSettings)
+        val cacheGeneration = cache.generation
+        withContext(Dispatchers.IO) { cache.writeModels(snapshot, cacheGeneration) }
     }
 }
 
@@ -397,9 +399,11 @@ class ConversationRepository(
     private fun persistHistory(history: History) {
         val id = sessionId ?: return
         val epoch = generation
+        val cacheGeneration = historyCache.generation
         scope.launch(Dispatchers.IO) {
-            // Skip writes for superseded sessions; same-session reopens keep writing.
-            if (generation == epoch || sessionId == id) historyCache.writeHistory(id, history)
+            if (generation == epoch && sessionId == id) {
+                historyCache.writeHistory(id, history, cacheGeneration)
+            }
         }
     }
 
