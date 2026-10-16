@@ -32,6 +32,7 @@ type User struct {
 type AuthService struct {
 	db     *sql.DB
 	config Config
+	guard  *authGuard
 }
 
 type passwordHashParams struct {
@@ -43,7 +44,7 @@ type passwordHashParams struct {
 }
 
 func NewAuthService(db *sql.DB, config Config) *AuthService {
-	return &AuthService{db: db, config: config}
+	return &AuthService{db: db, config: config, guard: newAuthGuard()}
 }
 
 func (service *AuthService) BootstrapAdmin() error {
@@ -62,7 +63,7 @@ func (service *AuthService) BootstrapAdmin() error {
 
 	passwordHash := service.config.AdminPasswordHash
 	if passwordHash == "" {
-		hashed, err := hashPassword(service.config.AdminPassword)
+		hashed, err := service.hashPassword(service.config.AdminPassword)
 		if err != nil {
 			return fmt.Errorf("hash bootstrap admin password: %w", err)
 		}
@@ -94,7 +95,7 @@ func (service *AuthService) Signup(ctx context.Context, email string, password s
 		return nil, "", time.Time{}, err
 	}
 
-	passwordHash, err := hashPassword(password)
+	passwordHash, err := service.hashPassword(password)
 	if err != nil {
 		return nil, "", time.Time{}, err
 	}
@@ -153,17 +154,18 @@ func (service *AuthService) Login(ctx context.Context, email string, password st
 		&row.CreatedAt,
 		&row.DisabledAt,
 	)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil, "", time.Time{}, errInvalidCredentials
-		}
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return nil, "", time.Time{}, err
 	}
-
-	if row.DisabledAt.Valid {
-		return nil, "", time.Time{}, errors.New("account is disabled")
+	passwordHash := row.PasswordHash
+	if errors.Is(err, sql.ErrNoRows) {
+		passwordHash = dummyPasswordHash
 	}
-	if !verifyPassword(password, row.PasswordHash) {
+	valid, verifyErr := service.verifyPassword(password, passwordHash)
+	if verifyErr != nil {
+		return nil, "", time.Time{}, verifyErr
+	}
+	if !valid || errors.Is(err, sql.ErrNoRows) || row.DisabledAt.Valid {
 		return nil, "", time.Time{}, errInvalidCredentials
 	}
 
@@ -308,7 +310,11 @@ func (service *AuthService) ChangeEmail(
 	if row.DisabledAt.Valid {
 		return nil, errors.New("account is disabled")
 	}
-	if !verifyPassword(currentPassword, row.PasswordHash) {
+	valid, verifyErr := service.verifyPassword(currentPassword, row.PasswordHash)
+	if verifyErr != nil {
+		return nil, verifyErr
+	}
+	if !valid {
 		return nil, errInvalidCredentials
 	}
 	if row.Email == normalizedEmail {
@@ -365,14 +371,18 @@ func (service *AuthService) ChangePassword(
 	if disabledAt.Valid {
 		return errors.New("account is disabled")
 	}
-	if !verifyPassword(currentPassword, existingHash) {
+	valid, verifyErr := service.verifyPassword(currentPassword, existingHash)
+	if verifyErr != nil {
+		return verifyErr
+	}
+	if !valid {
 		return errInvalidCredentials
 	}
 	if currentPassword == nextPassword {
 		return errors.New("new password must be different")
 	}
 
-	nextHash, err := hashPassword(nextPassword)
+	nextHash, err := service.hashPassword(nextPassword)
 	if err != nil {
 		return err
 	}
@@ -486,13 +496,22 @@ func verifyPassword(password string, encoded string) bool {
 	if _, err := fmt.Sscanf(parts[2], "m=%d,t=%d,p=%d", &memory, &iterations, &parallelism); err != nil {
 		return false
 	}
+	if memory == 0 || memory > maxArgonMemoryKiB || iterations == 0 || iterations > maxArgonIterations || parallelism == 0 || parallelism > maxArgonParallelism {
+		return false
+	}
 
 	salt, err := base64.RawStdEncoding.DecodeString(parts[3])
 	if err != nil {
 		return false
 	}
+	if len(salt) < 8 || len(salt) > 1024 {
+		return false
+	}
 	expectedHash, err := base64.RawStdEncoding.DecodeString(parts[4])
 	if err != nil {
+		return false
+	}
+	if len(expectedHash) < 16 || len(expectedHash) > 1024 {
 		return false
 	}
 

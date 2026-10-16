@@ -45,10 +45,15 @@ func (app *App) handleSignup(writer http.ResponseWriter, request *http.Request) 
 		writeError(writer, http.StatusBadRequest, err.Error())
 		return
 	}
+	if !app.allowAuthAttempt(writer, request, payload.Email) {
+		return
+	}
 
 	user, token, expiresAt, err := app.auth.Signup(request.Context(), payload.Email, payload.Password, requestMetaFromHTTP(request))
 	if err != nil {
 		switch {
+		case errors.Is(err, errAuthBusy):
+			writeError(writer, http.StatusServiceUnavailable, "Authentication is temporarily busy. Try again shortly.")
 		case errors.Is(err, errSignupDisabled):
 			writeError(writer, http.StatusForbidden, err.Error())
 		case errors.Is(err, errAuthDisabled):
@@ -69,11 +74,16 @@ func (app *App) handleLogin(writer http.ResponseWriter, request *http.Request) {
 		writeError(writer, http.StatusBadRequest, err.Error())
 		return
 	}
+	if !app.allowAuthAttempt(writer, request, payload.Email) {
+		return
+	}
 
 	user, token, expiresAt, err := app.auth.Login(request.Context(), payload.Email, payload.Password, requestMetaFromHTTP(request))
 	if err != nil {
 		status := http.StatusBadRequest
 		switch {
+		case errors.Is(err, errAuthBusy):
+			status = http.StatusServiceUnavailable
 		case errors.Is(err, errInvalidCredentials):
 			status = http.StatusUnauthorized
 		case errors.Is(err, errAuthDisabled):
@@ -96,11 +106,16 @@ func (app *App) handleTokenLogin(writer http.ResponseWriter, request *http.Reque
 		writeError(writer, http.StatusBadRequest, err.Error())
 		return
 	}
+	if !app.allowAuthAttempt(writer, request, payload.Email) {
+		return
+	}
 
 	user, token, expiresAt, err := app.auth.Login(request.Context(), payload.Email, payload.Password, requestMetaFromHTTP(request))
 	if err != nil {
 		status := http.StatusBadRequest
 		switch {
+		case errors.Is(err, errAuthBusy):
+			status = http.StatusServiceUnavailable
 		case errors.Is(err, errInvalidCredentials):
 			status = http.StatusUnauthorized
 		case errors.Is(err, errAuthDisabled):
@@ -150,6 +165,9 @@ func (app *App) handleChangeEmail(writer http.ResponseWriter, request *http.Requ
 		writeError(writer, http.StatusBadRequest, err.Error())
 		return
 	}
+	if !app.allowAuthAttempt(writer, request, user.Email) {
+		return
+	}
 
 	updatedUser, err := app.auth.ChangeEmail(
 		request.Context(),
@@ -160,6 +178,8 @@ func (app *App) handleChangeEmail(writer http.ResponseWriter, request *http.Requ
 	if err != nil {
 		status := http.StatusBadRequest
 		switch {
+		case errors.Is(err, errAuthBusy):
+			status = http.StatusServiceUnavailable
 		case errors.Is(err, errInvalidCredentials):
 			status = http.StatusUnauthorized
 		case errors.Is(err, errSessionNotFound), errors.Is(err, errUserNotFound):
@@ -183,6 +203,9 @@ func (app *App) handleChangePassword(writer http.ResponseWriter, request *http.R
 		writeError(writer, http.StatusBadRequest, err.Error())
 		return
 	}
+	if !app.allowAuthAttempt(writer, request, user.Email) {
+		return
+	}
 
 	err := app.auth.ChangePassword(
 		request.Context(),
@@ -194,6 +217,8 @@ func (app *App) handleChangePassword(writer http.ResponseWriter, request *http.R
 	if err != nil {
 		status := http.StatusBadRequest
 		switch {
+		case errors.Is(err, errAuthBusy):
+			status = http.StatusServiceUnavailable
 		case errors.Is(err, errInvalidCredentials):
 			status = http.StatusUnauthorized
 		case errors.Is(err, errSessionNotFound), errors.Is(err, errUserNotFound):
@@ -276,6 +301,23 @@ func requestMetaFromHTTP(request *http.Request) RequestMeta {
 		IPAddress: clientIP(request),
 		UserAgent: strings.TrimSpace(request.UserAgent()),
 	}
+}
+
+func (app *App) allowAuthAttempt(writer http.ResponseWriter, request *http.Request, email string) bool {
+	if app.auth.guard.allowAuthAttempt(peerIP(request), email) {
+		return true
+	}
+	writer.Header().Set("Retry-After", "60")
+	writeError(writer, http.StatusTooManyRequests, "Too many authentication attempts. Try again later.")
+	return false
+}
+
+func peerIP(request *http.Request) string {
+	host, _, err := net.SplitHostPort(strings.TrimSpace(request.RemoteAddr))
+	if err != nil {
+		return strings.TrimSpace(request.RemoteAddr)
+	}
+	return host
 }
 
 func clientIP(request *http.Request) string {
