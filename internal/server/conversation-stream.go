@@ -46,8 +46,16 @@ func (service *AgentRuntime) StreamSessionFromCursor(
 	heartbeat := time.NewTicker(15 * time.Second)
 	defer heartbeat.Stop()
 	for {
+		// Cancellation and a queued commit notification can become ready together.
+		// Do not let the notification turn a normal disconnect into a query error.
+		if ctx.Err() != nil {
+			return nil
+		}
 		events, err := service.readEvents(ctx, session.ID, afterCursor)
 		if err != nil {
+			if ctx.Err() != nil {
+				return nil
+			}
 			return err
 		}
 		for _, event := range events {
