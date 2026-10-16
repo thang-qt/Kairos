@@ -1,5 +1,7 @@
 package org.kairos.android.ui
 
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
@@ -39,10 +41,10 @@ private fun labelToEffort(label: String) =
 @Composable
 fun ConversationSettingsSheet(chat: ChatViewModel, onDismiss: () -> Unit) {
     val colors = LocalKairosColors.current
-    val session = chat.sessions.collectAsState().value.find {
+    val session = chat.sessions.collectAsStateWithLifecycle().value.find {
         it.friendlyId == chat.conversationSettingsTarget
     }
-    val catalog by chat.catalog.collectAsState()
+    val catalog by chat.catalog.collectAsStateWithLifecycle()
     val initial =
         session?.settings
             ?: chat.newChatSettings
