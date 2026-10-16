@@ -7,24 +7,98 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import kotlinx.serialization.json.*
 
-class SessionsRepository(private val api: KairosApi) {
-    private val _sessions = MutableStateFlow<List<SessionSummary>>(emptyList())
+/**
+ * Paged, cached session list. The store mirrors the web's infinite query: the first page is
+ * refetched on every refresh and older pages keep their request cursors; `loadMore` appends
+ * pages on demand. Content is hydrated from a disk cache at construction so the sidebar is
+ * warm before any network round-trip, then reconciled by the user-scoped SSE stream.
+ */
+class SessionsRepository(
+    private val api: KairosApi,
+    private val cache: DiskCache,
+    private val tokens: TokenStore,
+) {
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private val list: SessionListCache = cache.readSessions() ?: SessionListCache()
+    private val _sessions = MutableStateFlow(list.merged())
     val sessions = _sessions.asStateFlow()
+    private val _hasMore = MutableStateFlow(list.nextCursor != null)
+    val hasMore = _hasMore.asStateFlow()
+    private val _loadingMore = MutableStateFlow(false)
+    val loadingMore = _loadingMore.asStateFlow()
+    private var syncJob: Job? = null
+    private var streamJob: Job? = null
+    private val scheduler = RefreshScheduler(scope, { refresh() })
 
-    suspend fun refresh() {
-        _sessions.value = api.get<SessionsResponse>("/api/sessions").sessions
+    init {
+        publish()
     }
 
-    fun clear() {
-        _sessions.value = emptyList()
+    private fun publish() {
+        _sessions.value = list.merged()
+        _hasMore.value = list.nextCursor != null
+    }
+
+    private fun persist() {
+        scope.launch(Dispatchers.IO) { cache.writeSessions(list) }
+    }
+
+    suspend fun refresh() {
+        // Refetch every loaded page; page 0 failures propagate to the caller so the UI can
+        // surface them, older pages keep their previous slice when a refetch fails.
+        val pageCount = list.pageCount
+        var lastNext: String? = list.nextCursor
+        var lastUpdated = -1
+        for (index in 0 until pageCount) {
+            val cursor = list.cursorFor(index)
+            val query = buildString {
+                append("limit=50")
+                if (cursor != null) append("&" + api.parameter("cursor", cursor))
+            }
+            try {
+                val response = api.get<SessionsResponse>("/api/sessions?" + query)
+                list.set(index, cursor, response.sessions)
+                // The list-wide cursor is the one from the deepest successfully refetched page.
+                if (index >= lastUpdated) {
+                    lastUpdated = index
+                    lastNext = response.nextCursor
+                }
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                if (index == 0) throw e
+            }
+        }
+        list.setNextCursor(lastNext)
+        publish()
+        persist()
+    }
+
+    suspend fun loadMore() {
+        if (_loadingMore.value) return
+        val cursor = list.nextCursor ?: return
+        _loadingMore.value = true
+        try {
+            val response =
+                api.get<SessionsResponse>("/api/sessions?limit=50&" + api.parameter("cursor", cursor))
+            list.append(cursor, response.sessions, response.nextCursor)
+            publish()
+            persist()
+        } finally {
+            _loadingMore.value = false
+        }
+    }
+
+    /** Single-session lookup for ids missing from the loaded pages (deep links, old pages). */
+    suspend fun fetch(friendlyId: String): SessionSummary {
+        val session = api.get<SessionSummary>(api.sessionPath(friendlyId))
+        upsert(session)
+        return session
     }
 
     fun upsert(session: SessionSummary) {
-        _sessions.value =
-            (_sessions.value.filter { it.friendlyId != session.friendlyId } + session).sortedWith(
-                compareByDescending<SessionSummary> { it.isPinned }
-                    .thenByDescending { it.updatedAt }
-            )
+        list.upsert(session)
+        publish()
+        persist()
     }
 
     suspend fun rename(session: SessionSummary, label: String) {
@@ -64,11 +138,16 @@ class SessionsRepository(private val api: KairosApi) {
 
     suspend fun delete(session: SessionSummary) {
         val previous = _sessions.value
-        _sessions.value = previous.filter { it.friendlyId != session.friendlyId }
+        list.remove(session.friendlyId)
+        publish()
+        persist()
         try {
             api.raw(api.sessionPath(session.friendlyId), "DELETE")
         } catch (e: Exception) {
-            _sessions.value = previous
+            list.clear()
+            for (item in previous) list.upsert(item)
+            publish()
+            persist()
             throw e
         }
         refresh()
@@ -76,22 +155,73 @@ class SessionsRepository(private val api: KairosApi) {
 
     suspend fun search(query: String): List<SearchResult> =
         api.get<SearchResponse>("/api/sessions/search?" + api.query(query)).sessions
+
+    fun clear() {
+        list.clear()
+        publish()
+        cache.delete(SESSIONS_CACHE_FILE)
+    }
+
+    /**
+     * Keep the list synchronized while the app is in the foreground. The user-scoped stream
+     * only signals change; a debounced first-page refresh carries the actual state. Sign-out
+     * and 401 teardown both end the stream.
+     */
+    fun startSync() {
+        if (syncJob?.isActive == true) return
+        syncJob =
+            scope.launch {
+                tokens.signedIn.collect { signedIn ->
+                    if (signedIn && api.server.url.isNotBlank()) {
+                        if (streamJob?.isActive != true) {
+                            streamJob = launch {
+                                try {
+                                    refresh()
+                                } catch (e: CancellationException) {
+                                    throw e
+                                } catch (_: Exception) {
+                                    // The stream and later notifications still reconcile.
+                                }
+                                sessionListEvents(api).collect { scheduler.schedule() }
+                            }
+                        }
+                    } else {
+                        streamJob?.cancel()
+                        streamJob = null
+                    }
+                }
+            }
+    }
+
+    fun stopSync() {
+        syncJob?.cancel()
+        syncJob = null
+        streamJob?.cancel()
+        streamJob = null
+    }
 }
 
-class ModelsRepository(private val api: KairosApi) {
-    private val _catalog = MutableStateFlow(ModelsResponse())
+class ModelsRepository(private val api: KairosApi, private val cache: DiskCache) {
+    private val restored = cache.readModels()
+    private val _catalog = MutableStateFlow(restored?.catalog ?: ModelsResponse())
     val catalog = _catalog.asStateFlow()
-    var chatSettings = ChatSettingsPreferences()
+    var chatSettings = restored?.chatSettings ?: ChatSettingsPreferences()
         private set
 
     suspend fun refresh() {
-        _catalog.value = api.get("/api/models")
-        chatSettings = api.get<ChatSettingsResponse>("/api/me/chat-settings").settings
+        val response = api.get<ModelsResponse>("/api/models")
+        val settings = api.get<ChatSettingsResponse>("/api/me/chat-settings").settings
+        _catalog.value = response
+        chatSettings = settings
+        withContext(Dispatchers.IO) {
+            cache.writeModels(ModelsCacheState(catalog = response, chatSettings = settings))
+        }
     }
 
     fun clear() {
         _catalog.value = ModelsResponse()
         chatSettings = ChatSettingsPreferences()
+        cache.delete(MODELS_CACHE_FILE)
     }
 
     fun defaultModel(): String {
@@ -108,7 +238,11 @@ class ModelsRepository(private val api: KairosApi) {
             ?: key.ifBlank { "Select model" }
 }
 
-class ConversationRepository(private val api: KairosApi, private val sessions: SessionsRepository) {
+class ConversationRepository(
+    private val api: KairosApi,
+    private val sessions: SessionsRepository,
+    private val historyCache: DiskCache,
+) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var stream: Job? = null
     private var refreshJob: Job? = null
@@ -134,6 +268,14 @@ class ConversationRepository(private val api: KairosApi, private val sessions: S
         _history.value = History()
         _connection.value = ConnectionState.Connected
         if (id != null) {
+            // A cached snapshot renders instantly; the authoritative refresh and stream reconcile
+            // over it because server revisions never move backwards.
+            val epoch = generation
+            scope.launch {
+                val cached = withContext(Dispatchers.IO) { historyCache.readHistory(id) }
+                if (epoch == generation && cached != null && cached.revision > _history.value.revision)
+                    _history.value = cached
+            }
             refresh()
             connect(id)
         }
@@ -171,6 +313,7 @@ class ConversationRepository(private val api: KairosApi, private val sessions: S
                                         )
                                 }
                                 if (!applied.accepted) return@collect
+                                if (update.event.state != "delta") persistHistory(applied.history)
                                 update.event.session?.let(sessions::upsert)
                                 if (applied.refetch) refresh()
                                 // Terminal meaning comes from the turn, including
@@ -211,8 +354,10 @@ class ConversationRepository(private val api: KairosApi, private val sessions: S
                             refreshEpoch == refreshGeneration &&
                             fetched.revision >= _history.value.revision &&
                             fetched.cursor >= _history.value.cursor
-                    )
+                    ) {
                         _history.value = fetched
+                        persistHistory(fetched)
+                    }
                 } catch (e: Exception) {
                     if (e is CancellationException) throw e
                     if (epoch == generation && refreshEpoch == refreshGeneration)
@@ -227,6 +372,15 @@ class ConversationRepository(private val api: KairosApi, private val sessions: S
                     }
                 }
             }
+    }
+
+    private fun persistHistory(history: History) {
+        val id = sessionId ?: return
+        val epoch = generation
+        scope.launch(Dispatchers.IO) {
+            // Skip writes for superseded sessions; same-session reopens keep writing.
+            if (generation == epoch || sessionId == id) historyCache.writeHistory(id, history)
+        }
     }
 
     fun retryConnection() {

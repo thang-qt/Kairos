@@ -38,17 +38,28 @@ On first launch:
 
 The server URL and appearance persist locally. Tokens use an AES-256-GCM key in Android Keystore, with random IVs and encrypted ciphertext in private SharedPreferences; expiry is stored in unix seconds. The app sends a bearer header, never cookies. A 401 clears the token and returns to sign-in. At startup `/api/me` verifies the saved token; a network failure leaves the chat available with a retry banner. Logout revokes the server token before clearing local sign-in. Change server does the same, then returns to Connect. An auth-disabled backend still rejects chat without a user session; Connect explains that authentication must be enabled.
 
-Cleartext HTTP is allowed for development. Public HTTP hosts show “Not encrypted. Use only on a network you trust.” The WebView never holds the bearer token, fetches messages or loads remote resources; history images are inline base64.
+Cleartext HTTP is allowed for development. Public HTTP hosts show “Not encrypted. Use only on a network you trust.” The WebView never holds the bearer token, fetches messages or loads remote resources; history images are inline base64, and asset-sourced history images (`/api/assets/{id}`, used by imported conversations) are proxied through the authenticated bridge without exposing the token to the page.
 
 ## Packages and streaming
 
 - `app/`: application container, activity and sealed root screen state.
-- `data/`: stores, typed API envelopes, raw JSON turns, SSE framing, repositories, web reducer port and session grouping.
+- `data/`: stores, typed API envelopes, raw JSON turns, SSE framing, repositories, web reducer port, session grouping, and disk caches.
 - `chat/`: chat ViewModel and commands.
-- `transcript/`: offline WebView bridge, protocol mirror and unchanged touch arbitration.
+- `transcript/`: offline WebView bridge, protocol mirror, authenticated asset proxy and unchanged touch arbitration.
 - `assistant/`: voice/session services, overlay, screenshot encoding and preview.
 - `ui/`: existing palette/icon system, shared controls, chrome and screens.
 - `markdown/`: unchanged native renderer.
+
+## Caching and sync
+
+Cold starts render warm, not blank. All caches live under `filesDir/kairos-data` and are wiped on sign-out, change-server and token expiry:
+
+- **Conversations**: the sidebar uses the paged `GET /api/sessions?limit=50&cursor=…` endpoint. Loaded pages (with their opaque cursors) persist to disk, so the list is instant on relaunch; `loadMore()` appends pages on demand and older pages keep their cursors across refreshes. A single summary is fetched from `GET /api/sessions/{friendlyId}` when an id is missing from the loaded pages (deep links, older sessions).
+- **Models and settings**: the `/api/models` catalog and chat settings persist; the UI shows the cached catalog immediately and reconciles in the background.
+- **Conversation history**: the newest authoritative snapshot per recently opened session persists under an 8 MiB LRU budget. Opening a chat applies the cached snapshot before the first network response, and the revision/cursor gates keep a stale snapshot from ever downgrading live state.
+- **Session list sync**: while the app is foregrounded, a user-scoped SSE stream (`GET /api/me/sessions/events`) nudges a debounced refresh — conversations rename, pin, delete or appear across devices without polling. Any data frame means “something changed”; the payload stays empty by design.
+
+Persistence is plain JSON with atomic writes (temp file plus rename); writes happen on IO dispatchers and never block the UI thread. Cache contents are trusted as floor values only: server history, revisions and cursors remain authoritative.
 
 The SSE connection is cancelled when its surface leaves. Reconnect uses backoff and `Last-Event-ID`; every connection replaces state from the authoritative reconcile snapshot, subject to the web's revision/cursor gates. Full turns reconcile by id or clientId; compact patches copy only their modified JSON paths. Command acknowledgements remove invalidated turns and fence old events. Streaming sends only changed assistant turns to the WebView, at most once per message per display frame. Snapshot identity/order changes use init; theme and insets update independently.
 
@@ -72,4 +83,4 @@ Enable both **Use text from screen** and **Use screenshot** in the digital assis
 - Test the assistant and Preview with/without screenshot permission, late screenshots, secure apps, attach/remove/send, Stop, dismissal and mid-stream Open in Kairos/swipe-up. Check signed-out overlay, process restart and shared session history in the sidebar.
 - Confirm sign-out and Change server revoke the token and clear the old account's conversation state.
 
-This is a debug demo: no in-app signup or provider administration, speech recognition/hotword, durable offline history/outbox, or background streaming service. Those are outside this task. Streaming resumes from backend history when a surface returns. The activity sheet is a simple native list of reasoning text and tool name/status. Date dividers are omitted. OEM assistant/IME behavior, actual visual rendering, Photo Picker and Keystore behavior still require phone testing; no device or emulator was run during implementation.
+This is a debug demo: no in-app signup or provider administration, speech recognition/hotword, or durable offline outbox/background streaming (the session-list sync runs only while the app is foregrounded). Streaming resumes from backend history when a surface returns. The activity sheet is a simple native list of reasoning text and tool name/status. Date dividers are omitted. Sidebar load-more is available in the repository API but not yet wired into the UI. OEM assistant/IME behavior, actual visual rendering, Photo Picker and Keystore behavior still require phone testing; no device or emulator was run during implementation.

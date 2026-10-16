@@ -26,10 +26,11 @@ class MainActivity : ComponentActivity() {
     }
 
     private lateinit var chat: ChatViewModel
+    private lateinit var app: AppContainer
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val app = (application as KairosApplication).container
+        app = (application as KairosApplication).container
         chat =
             ViewModelProvider(
                 this,
@@ -118,11 +119,13 @@ class MainActivity : ComponentActivity() {
 
     override fun onStart() {
         super.onStart()
+        app.sessions.startSync()
         if (::chat.isInitialized && chat.screen == Screen.Chat) chat.conversation.resume()
     }
 
     override fun onStop() {
         if (::chat.isInitialized) chat.conversation.pause()
+        app.sessions.stopSync()
         super.onStop()
     }
 

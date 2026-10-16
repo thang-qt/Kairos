@@ -82,8 +82,19 @@ class OverlayConversation(private val app: AppContainer, private val label: Stri
             scope.launch {
                 try {
                     if (app.models.catalog.value.models.isEmpty()) app.models.refresh()
+                    // Sessions outside the cached pages resolve their summary on demand so the
+                    // overlay keeps using the conversation's own model and settings.
                     val settings =
                         app.sessions.sessions.value.find { it.friendlyId == sessionId }?.settings
+                            ?: sessionId?.let { id ->
+                                try {
+                                    app.sessions.fetch(id).settings
+                                } catch (e: CancellationException) {
+                                    throw e
+                                } catch (_: Exception) {
+                                    null
+                                }
+                            }
                             ?: app.models.defaults(app.models.defaultModel())
                     repository.send(text, settings, listOfNotNull(attachment?.payload()))
                 } catch (e: Exception) {

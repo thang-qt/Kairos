@@ -3,6 +3,7 @@ package org.kairos.android.data
 import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.buffer
 import kotlinx.coroutines.flow.callbackFlow
 import okhttp3.Call
@@ -166,3 +167,72 @@ class EventStream(private val api: KairosApi) {
             }
             .buffer(kotlinx.coroutines.channels.Channel.UNLIMITED)
 }
+
+/**
+ * User-scoped session-list change stream (GET /api/me/sessions/events). Any data frame means
+ * some conversation changed for this user, on this device or another one. The payload is empty
+ * by design; clients refresh the list. A 401 closes the flow after clearing the token.
+ */
+fun sessionListEvents(api: KairosApi): Flow<Unit> =
+    callbackFlow {
+        val currentCall = AtomicReference<Call?>()
+        val worker =
+            launch(Dispatchers.IO) {
+                var failures = 0
+                while (isActive) {
+                    try {
+                        val request =
+                            api.request("/api/me/sessions/events")
+                                .newBuilder()
+                                .header("Accept", "text/event-stream")
+                                .build()
+                        val call = api.streamClient.newCall(request)
+                        currentCall.set(call)
+                        if (!isActive) call.cancel()
+                        ensureActive()
+                        call.execute().use { response ->
+                            if (!response.isSuccessful)
+                                throw api.error(response.code, response.body?.string().orEmpty())
+                            check(
+                                response
+                                    .header("Content-Type")
+                                    .orEmpty()
+                                    .startsWith("text/event-stream")
+                            ) {
+                                "Invalid session list stream."
+                            }
+                            failures = 0
+                            val parser =
+                                SseParser { frame ->
+                                    if (frame.data.isNotEmpty())
+                                        trySend(Unit).getOrThrow()
+                                }
+                            response.body!!.charStream().use { reader ->
+                                val buffer = CharArray(8192)
+                                while (isActive) {
+                                    val count = reader.read(buffer)
+                                    if (count < 0) break
+                                    parser.feed(String(buffer, 0, count))
+                                }
+                            }
+                        }
+                    } catch (e: Exception) {
+                        if (e is CancellationException) throw e
+                        if (e is ApiException && e.code == 401) {
+                            close(e)
+                            return@launch
+                        }
+                    } finally {
+                        currentCall.set(null)
+                    }
+                    ensureActive()
+                    failures++
+                    delay(minOf(1000L * (1L shl minOf(failures - 1, 5)), 30000))
+                }
+            }
+        awaitClose {
+            currentCall.getAndSet(null)?.cancel()
+            worker.cancel()
+        }
+    }
+            .buffer(kotlinx.coroutines.channels.Channel.UNLIMITED)

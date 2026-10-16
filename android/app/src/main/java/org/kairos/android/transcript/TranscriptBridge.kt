@@ -14,8 +14,14 @@ import kotlinx.serialization.json.*
 import org.json.JSONObject
 import org.kairos.android.BuildConfig
 import org.kairos.android.data.*
+import java.net.URI
 
-class TranscriptBridge(val context: MutableContextWrapper) {
+/**
+ * Offline WebView transcript. The page origin is pinned to appassets.androidplatform.net; the
+ * only network it reaches is /api/assets/{id}, proxied here through the authenticated API so
+ * asset-sourced history images render without ever exposing the bearer token to the page.
+ */
+class TranscriptBridge(private val api: KairosApi, val context: MutableContextWrapper) {
     companion object {
         const val ORIGIN = "https://appassets.androidplatform.net"
         const val PAGE = "$ORIGIN/assets/transcript/transcript.html"
@@ -38,6 +44,7 @@ class TranscriptBridge(val context: MutableContextWrapper) {
     private var sent: List<JsonObject> = emptyList()
     private var theme = TranscriptTheme("default", "light")
     private var insets = TranscriptInsets(72f, 120f)
+    private val assetHost = URI(ORIGIN).host
 
     init {
         webView = WebView(context)
@@ -63,13 +70,17 @@ class TranscriptBridge(val context: MutableContextWrapper) {
                 override fun shouldInterceptRequest(
                     view: WebView,
                     request: WebResourceRequest,
-                ): WebResourceResponse =
-                    assets.shouldInterceptRequest(request.url)
-                        ?: WebResourceResponse(
-                            "text/plain",
-                            "UTF-8",
-                            ByteArrayInputStream(ByteArray(0)),
-                        )
+                ): WebResourceResponse {
+                    val url = request.url
+                    if (
+                        url.host == assetHost &&
+                            url.pathSegments.size == 3 &&
+                            url.pathSegments[0] == "api" &&
+                            url.pathSegments[1] == "assets"
+                    )
+                        return assetResponse(url.pathSegments[2]) ?: emptyResponse()
+                    return assets.shouldInterceptRequest(request.url) ?: emptyResponse()
+                }
 
                 override fun shouldOverrideUrlLoading(
                     view: WebView,
@@ -108,6 +119,26 @@ class TranscriptBridge(val context: MutableContextWrapper) {
             }
         webView.loadUrl(PAGE)
     }
+
+    private fun emptyResponse(): WebResourceResponse =
+        WebResourceResponse("text/plain", "UTF-8", ByteArrayInputStream(ByteArray(0)))
+
+    private fun assetResponse(assetId: String): WebResourceResponse? =
+        runCatching {
+            api.asset(assetId).use { response ->
+                val body = response.body ?: return@runCatching null
+                if (!response.isSuccessful) return@runCatching null
+                // Assets are small images; read fully and close the connection before handing
+                // the bytes to the WebView. The server's no-store directive is preserved.
+                WebResourceResponse(
+                    response.header("Content-Type") ?: "application/octet-stream",
+                    null,
+                    ByteArrayInputStream(body.bytes()),
+                ).apply {
+                    responseHeaders = mapOf("Cache-Control" to "no-store")
+                }
+            }
+        }.getOrNull()
 
     fun render(id: String?, turns: List<JsonObject>) {
         if (sessionId != id) {
