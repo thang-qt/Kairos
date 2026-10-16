@@ -85,6 +85,21 @@ class DiskCache(private val root: File, private val maxBytes: Long = 0) {
     }
 }
 
+
+/** Last selected chat is a per-identity cache entry, not a global preference. */
+class LastSessionStore(private val cache: DiskCache) {
+    private val scope = CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO)
+    val initial: String?
+        get() = cache.readString("last-session.txt")?.takeIf { it.isNotBlank() }
+
+    fun save(id: String?) {
+        val generation = cache.generation
+        scope.launch {
+            cache.writeString("last-session.txt", id.orEmpty(), generation)
+        }
+    }
+}
+
 @Serializable
 data class SessionPageCacheEntry(val cursor: String? = null, val sessions: List<SessionSummary> = emptyList())
 
