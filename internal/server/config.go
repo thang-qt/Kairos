@@ -11,6 +11,8 @@ import (
 	"time"
 )
 
+const developmentProviderEncryptionSecret = "kairos-dev-provider-secret"
+
 type Config struct {
 	AllowRemoteImport             bool
 	AssetStorage                  string
@@ -133,9 +135,13 @@ func LoadConfig() (Config, error) {
 		return Config{}, errors.New("SYSTEM_PROVIDER_1_KIND must be openai or openai-responses")
 	}
 	if config.ProviderEncryptionSecretKey == "" {
-		// Development and tests get a deterministic fallback. Production should
-		// provide an explicit secret before enabling BYOK provider storage.
-		config.ProviderEncryptionSecretKey = "kairos-dev-provider-secret"
+		if strings.EqualFold(config.AppEnv, "production") {
+			return Config{}, errors.New("PROVIDER_SECRET_KEY must be set to at least 32 characters in production")
+		}
+		config.ProviderEncryptionSecretKey = developmentProviderEncryptionSecret
+	}
+	if strings.EqualFold(config.AppEnv, "production") && (len(config.ProviderEncryptionSecretKey) < 32 || config.ProviderEncryptionSecretKey == developmentProviderEncryptionSecret) {
+		return Config{}, errors.New("PROVIDER_SECRET_KEY must be set to at least 32 characters in production")
 	}
 
 	if err := validateAssetConfig(config); err != nil {
