@@ -39,7 +39,9 @@ private fun labelToEffort(label: String) =
 @Composable
 fun ConversationSettingsSheet(chat: ChatViewModel, onDismiss: () -> Unit) {
     val colors = LocalKairosColors.current
-    val session = chat.activeSession
+    val session = chat.sessions.collectAsState().value.find {
+        it.friendlyId == chat.conversationSettingsTarget
+    }
     val catalog by chat.catalog.collectAsState()
     val initial =
         session?.settings
