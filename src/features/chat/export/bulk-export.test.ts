@@ -65,6 +65,28 @@ describe('bulk export', function () {
       ),
     ).toEqual(['new'])
   })
+  it('stops recent pagination once enough conversations are collected', async function () {
+    const backend = {
+      listRecentConversationPage: vi
+        .fn()
+        .mockResolvedValue({ sessions: [sessions[1]], nextCursor: 'more' }),
+      listConversationPage: vi.fn(),
+      getConversationHistory: vi.fn().mockResolvedValue({ messages: [] }),
+    } as unknown as ChatBackend
+    const result = await buildBulkExport(
+      backend,
+      { ...selection, scope: 'recent' },
+      'json',
+      new AbortController().signal,
+      vi.fn(),
+    )
+    expect(result.count).toBe(1)
+    expect(backend.listRecentConversationPage).toHaveBeenCalledTimes(1)
+    expect(backend.listConversationPage).not.toHaveBeenCalled()
+    expect(backend.getConversationHistory).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionKey: 'new' }),
+    )
+  })
   it('loads every page, deduplicates sessions, and fetches uncached history', async function () {
     const backend = {
       listConversationPage: vi

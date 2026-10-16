@@ -53,18 +53,22 @@ export async function buildBulkExport(
   const sessions = new Map<string, SessionMeta>()
   let cursor: string | null = null
   const cursors = new Set<string>()
+  const recentPages =
+    selection.scope === 'recent' && Boolean(backend.listRecentConversationPage)
   do {
     signal.throwIfAborted()
     onProgress(`Finding conversations… ${sessions.size}`)
-    const page: SessionPage = backend.listConversationPage
-      ? await backend.listConversationPage(cursor, signal)
-      : { sessions: await backend.listConversations(), nextCursor: null }
+    const page: SessionPage = recentPages
+      ? await backend.listRecentConversationPage!(cursor, signal)
+      : backend.listConversationPage
+        ? await backend.listConversationPage(cursor, signal)
+        : { sessions: await backend.listConversations(), nextCursor: null }
     for (const session of page.sessions) sessions.set(session.key, session)
     cursor = page.nextCursor
     if (cursor && cursors.has(cursor))
       throw new Error('Unable to finish loading conversations. Please retry.')
     if (cursor) cursors.add(cursor)
-  } while (cursor)
+  } while (cursor && (!recentPages || sessions.size < selection.limit))
   const selected = selectExportSessions([...sessions.values()], selection)
   if (!selected.length)
     throw new Error('No conversations match your selection.')
