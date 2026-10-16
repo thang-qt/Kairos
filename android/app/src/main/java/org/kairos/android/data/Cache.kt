@@ -66,9 +66,8 @@ class DiskCache(private val root: File, private val maxBytes: Long = 0) {
     fun clear() {
         synchronized(lock) {
             cacheGeneration++
-            root.listFiles()?.forEach { entry ->
-                if (entry.isDirectory) entry.deleteRecursively() else entry.delete()
-            }
+            // Nested history cache has its own generation and is cleared separately.
+            root.listFiles()?.filter { it.isFile }?.forEach { it.delete() }
         }
     }
 
