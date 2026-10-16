@@ -3,6 +3,7 @@ import type { DehydratedState, QueryClient } from '@tanstack/react-query'
 
 import { appQueryKeys } from './app-api'
 import { chatQueryKeys } from '@/features/chat/chat-queries'
+import { useChatSettingsStore } from '@/app/preferences/app-preferences'
 
 const DATABASE_NAME = 'kairos-query-cache'
 const DATABASE_VERSION = 2
@@ -68,6 +69,7 @@ export function subscribeToPersistedQueryCache(
   const writer = createCoalescedAsyncWriter({
     delayMs: PERSIST_THROTTLE_MS,
     write: async function persistLatestCache() {
+      if (!offlineCacheEnabled()) return
       const clientState = dehydrate(queryClient, {
         shouldDehydrateQuery: shouldPersistQuery,
         shouldDehydrateMutation: function nonSensitiveMutation(mutation) {
@@ -107,8 +109,45 @@ export function subscribeToPersistedQueryCache(
         activeUserID = currentUserID
       }
       if (identityTransitions > 0) return
-      writer.schedule(undefined)
+      if (offlineCacheEnabled()) writer.schedule(undefined)
     })
+
+  function clearDisabledCache() {
+    writer.cancel()
+    void clearPersistedQueryCache().catch(function reportClearFailure(error) {
+      console.error('Could not clear the offline cache.', error)
+    })
+  }
+  const unsubscribePreferences = useChatSettingsStore.subscribe(
+    function onCachePreferenceChange(state, previous) {
+      if (
+        state.settings.offlineCacheEnabled ===
+        previous.settings.offlineCacheEnabled
+      )
+        return
+      if (!offlineCacheEnabled()) {
+        clearDisabledCache()
+      } else {
+        writer.schedule(undefined)
+      }
+    },
+  )
+  function syncCachePreferenceFromAnotherTab(event: StorageEvent) {
+    if (event.key !== 'chat-settings' || !event.newValue) return
+    try {
+      const enabled = JSON.parse(event.newValue)?.state?.settings
+        ?.offlineCacheEnabled
+      if (typeof enabled !== 'boolean' || enabled === offlineCacheEnabled())
+        return
+      useChatSettingsStore
+        .getState()
+        .updateSettings({ offlineCacheEnabled: enabled })
+    } catch {
+      // Ignore unrelated or malformed preference data.
+    }
+  }
+  window.addEventListener('storage', syncCachePreferenceFromAnotherTab)
+  if (!offlineCacheEnabled()) clearDisabledCache()
 
   function flushOnPageHide() {
     void writer.flush()
@@ -118,6 +157,8 @@ export function subscribeToPersistedQueryCache(
 
   return function unsubscribeFromPersistence() {
     unsubscribe()
+    unsubscribePreferences()
+    window.removeEventListener('storage', syncCachePreferenceFromAnotherTab)
     window.removeEventListener('pagehide', flushOnPageHide)
     void transitionChain.finally(function flushFinalCache() {
       return writer.flush()
@@ -133,6 +174,7 @@ export async function restorePersistedQueryCache(
   },
 ) {
   const persistedClient = await persister.restoreClient()
+  if (!offlineCacheEnabled()) return false
   if (!persistedClient) return false
   const isExpired =
     Date.now() - persistedClient.timestamp > persistedQueryCacheMaxAge
@@ -463,12 +505,17 @@ function openDatabase(): Promise<IDBDatabase> {
 async function readPersistedClient(
   cacheKey: string,
 ): Promise<PersistedClient | undefined> {
+  if (!offlineCacheEnabled()) return undefined
   const database = await openDatabase()
   return new Promise(function read(resolve, reject) {
     const transaction = database.transaction(OBJECT_STORE_NAME, 'readonly')
     const request = transaction.objectStore(OBJECT_STORE_NAME).get(cacheKey)
     request.addEventListener('success', function resolveValue() {
-      resolve(request.result as PersistedClient | undefined)
+      resolve(
+        offlineCacheEnabled()
+          ? (request.result as PersistedClient | undefined)
+          : undefined,
+      )
     })
     request.addEventListener('error', function rejectRead() {
       reject(request.error)
@@ -483,7 +530,12 @@ async function writePersistedClient(
   cacheKey: string,
   client: PersistedClient,
 ): Promise<void> {
+  if (!offlineCacheEnabled()) return
   const database = await openDatabase()
+  if (!offlineCacheEnabled()) {
+    database.close()
+    return
+  }
   return new Promise(function write(resolve, reject) {
     const transaction = database.transaction(OBJECT_STORE_NAME, 'readwrite')
     transaction.objectStore(OBJECT_STORE_NAME).put(client, cacheKey)
@@ -495,6 +547,30 @@ async function writePersistedClient(
       database.close()
       reject(transaction.error)
     })
+  })
+}
+
+function offlineCacheEnabled(): boolean {
+  return useChatSettingsStore.getState().settings.offlineCacheEnabled !== false
+}
+
+export async function clearPersistedQueryCache(): Promise<void> {
+  const database = await openDatabase()
+  return new Promise(function clear(resolve, reject) {
+    const transaction = database.transaction(OBJECT_STORE_NAME, 'readwrite')
+    transaction.objectStore(OBJECT_STORE_NAME).clear()
+    transaction.addEventListener('complete', function finishClear() {
+      database.close()
+      resolve()
+    })
+    function rejectClear() {
+      database.close()
+      reject(
+        transaction.error ?? new Error('Offline cache clearing was aborted.'),
+      )
+    }
+    transaction.addEventListener('error', rejectClear)
+    transaction.addEventListener('abort', rejectClear)
   })
 }
 

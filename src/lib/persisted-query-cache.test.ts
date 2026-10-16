@@ -3,10 +3,12 @@
 import { QueryClient } from '@tanstack/react-query'
 import { IDBFactory } from 'fake-indexeddb'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { useChatSettingsStore } from '@/app/preferences/app-preferences'
 
 import { appQueryKeys } from './app-api'
 import {
   createCoalescedAsyncWriter,
+  clearPersistedQueryCache,
   createUserScopedQueryPersister,
   limitPersistedClient,
   persistedQueryCacheBuster,
@@ -15,6 +17,10 @@ import {
   subscribeToPersistedQueryCache,
 } from './persisted-query-cache'
 import type { PersistedClient, QueryPersister } from './persisted-query-cache'
+
+afterEach(function restoreOfflinePreference() {
+  useChatSettingsStore.getState().updateSettings({ offlineCacheEnabled: true })
+})
 
 type PersistedQuery = PersistedClient['clientState']['queries'][number]
 const testDatabaseName = 'kairos-query-cache'
@@ -104,6 +110,122 @@ function readTestStoreValue(database: IDBDatabase, key: string) {
 describe('persisted query cache', function persistedQueryCacheSuite() {
   afterEach(function restoreTimers() {
     vi.useRealTimers()
+  })
+
+  it('removes every user cache and refuses writes and restores after opting out', async function () {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    const first = new QueryClient()
+    const second = new QueryClient()
+    first.setQueryData(appQueryKeys.me, { id: 'first' })
+    second.setQueryData(appQueryKeys.me, { id: 'second' })
+    const firstPersister = createUserScopedQueryPersister(first)
+    const secondPersister = createUserScopedQueryPersister(second)
+    const saved = createPersistedClient([
+      createPersistedQuery(['chat', 'history', 'chat', 'key'], Date.now()),
+    ])
+    await firstPersister.persistClient(saved)
+    await secondPersister.persistClient(saved)
+    expect(await firstPersister.restoreClient()).toBeDefined()
+
+    useChatSettingsStore
+      .getState()
+      .updateSettings({ offlineCacheEnabled: false })
+    await clearPersistedQueryCache()
+    await firstPersister.persistClient(saved)
+    expect(await firstPersister.restoreClient()).toBeUndefined()
+    useChatSettingsStore
+      .getState()
+      .updateSettings({ offlineCacheEnabled: true })
+    expect(await firstPersister.restoreClient()).toBeUndefined()
+    expect(await secondPersister.restoreClient()).toBeUndefined()
+    first.clear()
+    second.clear()
+  })
+
+  it('cancels a pending restore when offline caching is disabled', async function () {
+    const queryClient = new QueryClient()
+    let finishRestore: ((client: PersistedClient) => void) | undefined
+    const persister: QueryPersister = {
+      persistClient: vi.fn(),
+      removeClient: vi.fn(),
+      restoreClient: function restoreClient() {
+        return new Promise(function pendingRestore(resolve) {
+          finishRestore = resolve
+        })
+      },
+    }
+    const restoring = restorePersistedQueryCache(queryClient, persister)
+    useChatSettingsStore
+      .getState()
+      .updateSettings({ offlineCacheEnabled: false })
+    finishRestore?.({
+      ...createPersistedClient([
+        createPersistedQuery(['chat', 'history', 'chat', 'key'], Date.now()),
+      ]),
+      timestamp: Date.now(),
+      buster: persistedQueryCacheBuster,
+    })
+    expect(await restoring).toBe(false)
+    expect(queryClient.getQueryCache().getAll()).toHaveLength(0)
+  })
+
+  it('still clears another user’s in-memory histories when offline caching is disabled', async function () {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    useChatSettingsStore
+      .getState()
+      .updateSettings({ offlineCacheEnabled: false })
+    const queryClient = new QueryClient()
+    queryClient.setQueryData(appQueryKeys.me, { id: 'first' })
+    queryClient.setQueryData(['chat', 'history', 'private', 'key'], {
+      secret: 'first user',
+    })
+    const unsubscribe = subscribeToPersistedQueryCache(queryClient, {
+      persistClient: vi.fn(),
+      restoreClient: vi.fn(),
+      removeClient: vi.fn(),
+    })
+    try {
+      queryClient.setQueryData(appQueryKeys.me, { id: 'second' })
+      await Promise.resolve()
+      expect(
+        queryClient.getQueryData(['chat', 'history', 'private', 'key']),
+      ).toBeUndefined()
+    } finally {
+      unsubscribe()
+      queryClient.clear()
+    }
+  })
+
+  it('cancels queued persistence when another tab disables the offline cache', async function () {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    vi.useFakeTimers()
+    const queryClient = new QueryClient()
+    queryClient.setQueryData(appQueryKeys.me, { id: 'owner' })
+    const persistClient = vi.fn()
+    const unsubscribe = subscribeToPersistedQueryCache(queryClient, {
+      persistClient,
+      restoreClient: vi.fn(),
+      removeClient: vi.fn(),
+    })
+    try {
+      queryClient.setQueryData(appQueryKeys.models, { models: [] })
+      window.dispatchEvent(
+        new StorageEvent('storage', {
+          key: 'chat-settings',
+          newValue: JSON.stringify({
+            state: { settings: { offlineCacheEnabled: false } },
+          }),
+        }),
+      )
+      await vi.advanceTimersByTimeAsync(1100)
+      expect(persistClient).not.toHaveBeenCalled()
+      expect(useChatSettingsStore.getState().settings.offlineCacheEnabled).toBe(
+        false,
+      )
+    } finally {
+      unsubscribe()
+      queryClient.clear()
+    }
   })
 
   it('selects only startup data and conversation histories', function () {

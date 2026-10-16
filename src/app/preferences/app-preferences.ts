@@ -64,6 +64,7 @@ export type ChatSettings = {
   themeMode: ThemeMode
   themePalette: ThemePalette
   wideMode: boolean
+  offlineCacheEnabled: boolean
 }
 
 type ChatSettingsState = {
@@ -91,6 +92,7 @@ const DEFAULT_CHAT_SETTINGS: ChatSettings = {
   themeMode: 'system',
   themePalette: 'default',
   wideMode: true,
+  offlineCacheEnabled: true,
 }
 
 function isThemeMode(value: unknown): value is ThemeMode {
@@ -185,6 +187,10 @@ function normalizeChatSettings(value: unknown): ChatSettings {
       record?.wideMode,
       DEFAULT_CHAT_SETTINGS.wideMode,
     ),
+    offlineCacheEnabled: booleanOrDefault(
+      record?.offlineCacheEnabled,
+      DEFAULT_CHAT_SETTINGS.offlineCacheEnabled,
+    ),
   }
 }
 
@@ -255,7 +261,7 @@ export const useChatSettingsStore = create<ChatSettingsState>()(
     }),
     {
       name: 'chat-settings',
-      version: 4,
+      version: 5,
       migrate: (persistedState) => {
         const state = objectRecord(persistedState)
         return {

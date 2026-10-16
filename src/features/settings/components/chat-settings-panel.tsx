@@ -1,4 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useState } from 'react'
+import { useChatSettings } from '@/app/preferences/app-preferences'
+import { clearPersistedQueryCache } from '@/lib/persisted-query-cache'
 import {
   appQueryKeys,
   updateChatSettingsPreferences,
@@ -21,6 +24,9 @@ import {
 } from './settings-layout'
 
 export function ChatSettingsPanel() {
+  const { settings: localSettings, updateSettings: updateLocalSettings } =
+    useChatSettings()
+  const [cacheError, setCacheError] = useState<string | null>(null)
   const modelsQuery = useModelsQuery()
   const chatSettingsQuery = useChatSettingsPreferencesQuery()
   const preferencesMutation = useUpdatePreferences()
@@ -38,6 +44,18 @@ export function ChatSettingsPanel() {
   const error = preferencesMutation.error ?? defaultsMutation.error
   const autoTitle = preferences?.autoGenerateTitle ?? false
   const separateTitleModel = preferences?.useSeparateTitleModel ?? false
+
+  async function changeOfflineCache(enabled: boolean) {
+    setCacheError(null)
+    try {
+      updateLocalSettings({ offlineCacheEnabled: enabled })
+      if (!enabled) await clearPersistedQueryCache()
+    } catch {
+      setCacheError(
+        'Browser storage could not be updated. Clear this site’s data in your browser settings.',
+      )
+    }
+  }
 
   function saveDefaults(updates: Partial<ConversationSettings>) {
     if (!defaults) return
@@ -68,6 +86,22 @@ export function ChatSettingsPanel() {
           {mutationErrorMessage(error, 'Failed to save chat settings.')}
         </SettingsNotice>
       ) : null}
+
+      <SettingsSection title="Privacy on this device">
+        <SettingsRow
+          label="Offline cache"
+          description="Save recent chats in this browser for faster reopening. Turning this off removes saved copies from this browser."
+        >
+          <Switch
+            aria-label="Offline cache"
+            checked={localSettings.offlineCacheEnabled}
+            onCheckedChange={changeOfflineCache}
+          />
+        </SettingsRow>
+        {cacheError ? (
+          <SettingsNotice tone="error">{cacheError}</SettingsNotice>
+        ) : null}
+      </SettingsSection>
 
       <SettingsSection title="Model">
         <SettingsRow
