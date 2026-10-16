@@ -2,6 +2,7 @@ import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 
 import { chatQueryKeys, fetchHistory } from '../chat-queries'
+import { resolveConversationSessionKey } from '../conversation-identity'
 import type { QueryClient } from '@tanstack/react-query'
 import type { ConversationTurn, HistoryResponse } from '../types'
 
@@ -28,7 +29,7 @@ export function useChatHistory({
 }: UseChatHistoryInput) {
   const sessionKeyForHistory = isNewChat
     ? 'new'
-    : forcedSessionKey || activeSessionKey || ''
+    : resolveConversationSessionKey({ activeSessionKey, forcedSessionKey })
   const historyKey = chatQueryKeys.history(
     activeFriendlyId,
     sessionKeyForHistory,
@@ -89,15 +90,21 @@ export function useChatHistory({
 
   const historyError =
     historyQuery.error instanceof Error ? historyQuery.error.message : null
+  const historyResolvedSessionKey =
+    typeof historyQuery.data?.sessionKey === 'string' &&
+    historyQuery.data.sessionKey.trim().length > 0
+      ? historyQuery.data.sessionKey.trim()
+      : undefined
   const resolvedSessionKey = useMemo(() => {
-    if (forcedSessionKey) return forcedSessionKey
-    const key = historyQuery.data?.sessionKey
-    if (typeof key === 'string' && key.trim().length > 0) return key.trim()
-    return activeSessionKey
-  }, [activeSessionKey, forcedSessionKey, historyQuery.data?.sessionKey])
+    return resolveConversationSessionKey({
+      activeSessionKey,
+      forcedSessionKey,
+      resolvedSessionKey: historyResolvedSessionKey,
+    })
+  }, [activeSessionKey, forcedSessionKey, historyResolvedSessionKey])
   const activeCanonicalKey = isNewChat
     ? 'new'
-    : resolvedSessionKey || activeFriendlyId
+    : resolveConversationSessionKey({ activeFriendlyId, resolvedSessionKey })
 
   return {
     historyQuery,
