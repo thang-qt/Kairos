@@ -216,9 +216,9 @@ export function CodeBlock({
   useEffect(() => {
     let active = true
     const timeout = window.setTimeout(
-      () => {
+      function highlightWhenReady() {
         getHighlighter()
-          .then(async (highlighter) => {
+          .then(async function highlight(highlighter) {
             const lang = resolveLanguage(normalizedLanguage)
             if (lang !== 'text') await loadLanguage(highlighter, lang)
             if (!active) return
@@ -233,7 +233,7 @@ export function CodeBlock({
               setHeaderBg(theme.bg)
             }
           })
-          .catch(() => {
+          .catch(function preservePlainText() {
             if (active) setHtml(null)
           })
       },

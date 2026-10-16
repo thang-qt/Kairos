@@ -113,9 +113,9 @@ export async function buildBulkExport(
             ? toMarkdown(messages, title)
             : toPlainText(messages, title)
       }
-      archive.add(file, encoder.encode(content))
+      await archive.add(file, encoder.encode(content))
     }
-    archive.add(
+    await archive.add(
       'index.json',
       encoder.encode(
         JSON.stringify(
@@ -197,18 +197,54 @@ export async function createExportArchive(signal: AbortSignal) {
   signal.addEventListener('abort', abort, { once: true })
 
   return {
-    add(path: string, content: Uint8Array) {
+    add: async function add(path: string, content: Uint8Array) {
       signal.throwIfAborted()
       if (terminated) throw new DOMException('Export cancelled.', 'AbortError')
       const file = new AsyncZipDeflate(path, { level: 6 })
       zip.add(file)
-      file.push(content, true)
+      const ondata = file.ondata
+      await new Promise<void>(function waitForEntry(resolve, reject) {
+        let entrySettled = false
+
+        function finishEntry(error?: unknown) {
+          if (entrySettled) return
+          entrySettled = true
+          signal.removeEventListener('abort', abortEntry)
+          if (error) reject(error)
+          else resolve()
+        }
+
+        function abortEntry() {
+          finishEntry(
+            signal.reason ??
+              new DOMException('Export cancelled.', 'AbortError'),
+          )
+        }
+
+        signal.addEventListener('abort', abortEntry, { once: true })
+        file.ondata = function forwardEntryData(error, chunk, final) {
+          try {
+            ondata(error, chunk, final)
+          } catch (forwardError) {
+            finishEntry(forwardError)
+            return
+          }
+          if (error) finishEntry(error)
+          else if (final) finishEntry()
+        }
+        try {
+          signal.throwIfAborted()
+          file.push(content, true)
+        } catch (error) {
+          finishEntry(error)
+        }
+      })
     },
-    finish() {
+    finish: function finish() {
       signal.throwIfAborted()
       zip.end()
       return completed
     },
-    cancel,
+    cancel: cancel,
   }
 }

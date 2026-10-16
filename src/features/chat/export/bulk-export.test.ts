@@ -1,9 +1,37 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { strFromU8, unzipSync } from 'fflate'
 import { buildBulkExport, selectExportSessions } from './bulk-export'
 import type { ExportSelection } from './bulk-export'
 import type { ChatBackend } from '@/lib/chat-backend/types'
 import type { SessionMeta } from '@/lib/chat-backend/contracts'
+
+const exportCompression = vi.hoisted(function createCompressionControl() {
+  return { delayed: false, pending: [] as Array<() => void> }
+})
+
+vi.mock('fflate', async function mockFflate(importOriginal) {
+  const actual = await importOriginal<typeof import('fflate')>()
+
+  class ControlledAsyncZipDeflate extends actual.AsyncZipDeflate {
+    override push(chunk: Uint8Array, final = false) {
+      if (exportCompression.delayed) {
+        const pushChunk = super.push.bind(this)
+        exportCompression.pending.push(function releaseCompression() {
+          pushChunk(chunk, final)
+        })
+      } else {
+        super.push(chunk, final)
+      }
+    }
+  }
+
+  return { ...actual, AsyncZipDeflate: ControlledAsyncZipDeflate }
+})
+
+afterEach(function resetCompressionControl() {
+  exportCompression.delayed = false
+  exportCompression.pending.length = 0
+})
 
 const selection: ExportSelection = { scope: 'all', from: '', to: '', limit: 1 }
 function session(key: string, date: string, isPinned = false): SessionMeta {
@@ -167,5 +195,69 @@ describe('bulk export', function () {
       buildBulkExport(backend, selection, 'json', controller.signal, vi.fn()),
     ).rejects.toThrow()
     expect(backend.getConversationHistory).not.toHaveBeenCalled()
+  })
+
+  it('waits for entry compression before fetching the next history', async function () {
+    exportCompression.delayed = true
+    const backend = {
+      listConversationPage: vi.fn().mockResolvedValue({
+        sessions: [sessions[0], sessions[1]],
+        nextCursor: null,
+      }),
+      getConversationHistory: vi.fn().mockResolvedValue({ messages: [] }),
+    } as unknown as ChatBackend
+    const result = buildBulkExport(
+      backend,
+      selection,
+      'json',
+      new AbortController().signal,
+      vi.fn(),
+    )
+
+    await vi.waitFor(function waitForFirstCompression() {
+      expect(backend.getConversationHistory).toHaveBeenCalledTimes(1)
+      expect(exportCompression.pending).toHaveLength(1)
+    })
+    expect(backend.getConversationHistory).toHaveBeenCalledTimes(1)
+    exportCompression.pending.shift()?.()
+
+    await vi.waitFor(function waitForSecondHistory() {
+      expect(backend.getConversationHistory).toHaveBeenCalledTimes(2)
+      expect(exportCompression.pending).toHaveLength(1)
+    })
+    exportCompression.pending.shift()?.()
+
+    await vi.waitFor(function waitForIndexCompression() {
+      expect(exportCompression.pending).toHaveLength(1)
+    })
+    exportCompression.pending.shift()?.()
+    await expect(result).resolves.toMatchObject({ count: 2 })
+  })
+
+  it('cancels an entry while its compression is pending', async function () {
+    exportCompression.delayed = true
+    const controller = new AbortController()
+    const backend = {
+      listConversationPage: vi.fn().mockResolvedValue({
+        sessions: [sessions[0], sessions[1]],
+        nextCursor: null,
+      }),
+      getConversationHistory: vi.fn().mockResolvedValue({ messages: [] }),
+    } as unknown as ChatBackend
+    const result = buildBulkExport(
+      backend,
+      selection,
+      'json',
+      controller.signal,
+      vi.fn(),
+    )
+
+    await vi.waitFor(function waitForPendingCompression() {
+      expect(exportCompression.pending).toHaveLength(1)
+    })
+    controller.abort()
+
+    await expect(result).rejects.toThrow()
+    expect(backend.getConversationHistory).toHaveBeenCalledTimes(1)
   })
 })
