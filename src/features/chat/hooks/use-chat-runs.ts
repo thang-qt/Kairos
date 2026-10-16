@@ -66,16 +66,21 @@ export function useChatRuns({
         }
         return
       }
+      const hasActiveRun = pendingRunIdsRef.current.has(runId)
       pendingRunIdsRef.current.add(runId)
-      setActiveRunIds(new Set(pendingRunIdsRef.current))
+      if (!hasActiveRun) {
+        setActiveRunIds(new Set(pendingRunIdsRef.current))
+      }
       const existingTimer = pendingRunTimersRef.current.get(runId)
-      if (typeof existingTimer === 'number') {
+      if (typeof existingTimer !== 'undefined') {
         window.clearTimeout(existingTimer)
       }
       const timeout = window.setTimeout(() => {
         pendingRunTimersRef.current.delete(runId)
-        pendingRunIdsRef.current.delete(runId)
-        setActiveRunIds(new Set(pendingRunIdsRef.current))
+        const didRemoveRun = pendingRunIdsRef.current.delete(runId)
+        if (didRemoveRun) {
+          setActiveRunIds(new Set(pendingRunIdsRef.current))
+        }
         refreshHistory()
         if (pendingRunIdsRef.current.size === 0) {
           finishGeneration()
