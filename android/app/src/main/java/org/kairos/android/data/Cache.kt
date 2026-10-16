@@ -116,7 +116,7 @@ fun DiskCache.readModels(): ModelsCacheState? =
     readString(MODELS_CACHE_FILE)
         ?.let { text -> runCatching { wireJson.decodeFromString<ModelsCacheState>(text) }.getOrNull() }
 
-fun DiskCache.writeModels(state: ModelsCacheState, generation: Long) {
+fun DiskCache.writeModels(state: ModelsCacheState, generation: Long = this.generation) {
     writeString(MODELS_CACHE_FILE, wireJson.encodeToString(state), generation)
 }
 
@@ -131,7 +131,7 @@ fun DiskCache.readHistory(sessionId: String): History? =
     readString(historyKey(sessionId))
         ?.let { text -> runCatching { wireJson.decodeFromString<History>(text) }.getOrNull() }
 
-fun DiskCache.writeHistory(sessionId: String, history: History, generation: Long) {
+fun DiskCache.writeHistory(sessionId: String, history: History, generation: Long = this.generation) {
     if (history.revision < 0) return
     writeString(historyKey(sessionId), wireJson.encodeToString(history), generation)
 }
