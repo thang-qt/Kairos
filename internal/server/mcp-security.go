@@ -47,12 +47,34 @@ func publicMCPAddress(ip netip.Addr) bool {
 	if !ip.IsGlobalUnicast() || ip.IsPrivate() || ip.IsLoopback() || ip.IsLinkLocalUnicast() {
 		return false
 	}
-	for _, cidr := range []string{"0.0.0.0/8", "100.64.0.0/10", "192.0.0.0/24", "192.0.2.0/24", "198.18.0.0/15", "198.51.100.0/24", "203.0.113.0/24", "240.0.0.0/4", "168.63.129.16/32", "64:ff9b:1::/48", "fec0::/10", "100::/64", "2001:db8::/32", "2001::/32", "2002::/16", "64:ff9b::/96"} {
+	// IANA marks 2001::/23 as non-globally-reachable unless a more-specific
+	// allocation overrides it; keep only the currently listed exceptions.
+	if ip.Is6() && netip.MustParsePrefix("2001::/23").Contains(ip) && !iana2001AddressIsGloballyReachable(ip) {
+		return false
+	}
+	for _, cidr := range []string{"0.0.0.0/8", "100.64.0.0/10", "192.0.0.0/24", "192.0.2.0/24", "198.18.0.0/15", "198.51.100.0/24", "203.0.113.0/24", "240.0.0.0/4", "168.63.129.16/32", "64:ff9b:1::/48", "fec0::/10", "100::/64", "100:0:0:1::/64", "2001:2::/48", "2001:db8::/32", "2001::/32", "2002::/16", "3fff::/20", "5f00::/16", "64:ff9b::/96"} {
 		if netip.MustParsePrefix(cidr).Contains(ip) {
 			return false
 		}
 	}
 	return true
+}
+
+func iana2001AddressIsGloballyReachable(ip netip.Addr) bool {
+	for _, cidr := range []string{
+		"2001:1::1/128",
+		"2001:1::2/128",
+		"2001:1::3/128",
+		"2001:3::/32",
+		"2001:4:112::/48",
+		"2001:20::/28",
+		"2001:30::/28",
+	} {
+		if netip.MustParsePrefix(cidr).Contains(ip) {
+			return true
+		}
+	}
+	return false
 }
 
 type mcpSafeTransport struct {

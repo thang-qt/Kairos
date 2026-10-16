@@ -284,7 +284,7 @@ func NewProviderService(db *sql.DB, config Config) *ProviderService {
 		modelCacheTTL:        providerModelCacheTTL,
 		refreshingModelUsers: make(map[string]struct{}),
 	}
-	if strings.EqualFold(config.AppEnv, "production") {
+	if strings.EqualFold(strings.TrimSpace(config.AppEnv), "production") {
 		for _, providerDriver := range service.drivers {
 			if driver, ok := providerDriver.(*OpenAICompatibleDriver); ok {
 				driver.secureUserProviders = true

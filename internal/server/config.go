@@ -152,7 +152,8 @@ func LoadConfig() (Config, error) {
 }
 
 func validateConfig(config Config) error {
-	switch strings.ToLower(strings.TrimSpace(config.AppEnv)) {
+	appEnv := strings.ToLower(strings.TrimSpace(config.AppEnv))
+	switch appEnv {
 	case "", "development", "test", "production":
 	default:
 		return errors.New("APP_ENV must be development, test, or production")
@@ -160,7 +161,7 @@ func validateConfig(config Config) error {
 	if !config.AuthEnabled && config.AllowSignup {
 		return errors.New("ALLOW_SIGNUP cannot be true when AUTH_ENABLED is false")
 	}
-	if !strings.EqualFold(config.AppEnv, "production") {
+	if appEnv != "production" {
 		return nil
 	}
 	if !config.AuthEnabled {

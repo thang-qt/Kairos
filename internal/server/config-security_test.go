@@ -107,3 +107,15 @@ func TestNewAppRejectsInsecureProductionConfigBeforeOpeningDatabase(t *testing.T
 		t.Fatal("NewApp() accepted production config with insecure session cookies")
 	}
 }
+
+func TestNewAppRejectsPaddedProductionEnvironmentWithWeakKey(t *testing.T) {
+	_, err := NewApp(Config{
+		AppEnv:                      " production ",
+		AuthEnabled:                 true,
+		CookieSecure:                true,
+		ProviderEncryptionSecretKey: "weak",
+	})
+	if err == nil {
+		t.Fatal("NewApp() accepted padded production environment with a weak provider key")
+	}
+}

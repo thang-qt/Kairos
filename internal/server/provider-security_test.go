@@ -2,12 +2,15 @@ package server
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"net/netip"
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestValidateProviderEndpointRequiresCleanHTTPSURL(t *testing.T) {
@@ -74,6 +77,49 @@ func TestProviderSafeTransportRejectsPrivateDNSAndCrossOrigin(t *testing.T) {
 	request, _ = http.NewRequest(http.MethodGet, "https://other.example/v1/models", nil)
 	if _, err := transport.RoundTrip(request); err == nil {
 		t.Fatal("RoundTrip() succeeded for a cross-origin request")
+	}
+}
+
+func TestProviderSafeTransportPinsProxyConnectTarget(t *testing.T) {
+	connectTarget := make(chan string, 1)
+	proxy := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		connectTarget <- request.Host
+		connection, buffer, err := http.NewResponseController(writer).Hijack()
+		if err != nil {
+			t.Errorf("hijack proxy connection: %v", err)
+			return
+		}
+		_, _ = fmt.Fprint(buffer, "HTTP/1.1 200 Connection Established\r\n\r\n")
+		_ = buffer.Flush()
+		_ = connection.Close()
+	}))
+	defer proxy.Close()
+	proxyURL, err := url.Parse(proxy.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	endpoint, _ := url.Parse("https://provider.example/v1")
+	transport := &providerSafeTransport{
+		endpoint: endpoint,
+		resolve: func(context.Context, string) ([]netip.Addr, error) {
+			return []netip.Addr{netip.MustParseAddr("8.8.8.8")}, nil
+		},
+		roundTrip: func(request *http.Request, httpTransport *http.Transport) (*http.Response, error) {
+			httpTransport.Proxy = http.ProxyURL(proxyURL)
+			return httpTransport.RoundTrip(request)
+		},
+	}
+	request, _ := http.NewRequest(http.MethodGet, "https://provider.example/v1/models", nil)
+	if _, err := transport.RoundTrip(request); err == nil {
+		t.Fatal("RoundTrip() unexpectedly completed without a proxy tunnel target")
+	}
+	select {
+	case target := <-connectTarget:
+		if target != "8.8.8.8:443" {
+			t.Fatalf("proxy CONNECT target = %q, want pinned address 8.8.8.8:443", target)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("proxy did not receive a CONNECT request")
 	}
 }
 

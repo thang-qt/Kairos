@@ -40,6 +40,10 @@ type App struct {
 }
 
 func NewApp(config Config) (*App, error) {
+	config.AppEnv = strings.ToLower(strings.TrimSpace(config.AppEnv))
+	if config.AppEnv == "" {
+		config.AppEnv = "development"
+	}
 	if err := validateConfig(config); err != nil {
 		return nil, err
 	}

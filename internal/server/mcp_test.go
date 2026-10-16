@@ -295,9 +295,14 @@ func TestMCPEndpointAndDNSProtection(t *testing.T) {
 			t.Fatalf("accepted %s", endpoint)
 		}
 	}
-	for _, ip := range []string{"127.0.0.1", "::1", "::ffff:127.0.0.1", "10.1.1.1", "169.254.169.254", "100.100.100.200", "fc00::1", "fe80::1", "0.0.0.0", "2002:7f00:1::"} {
+	for _, ip := range []string{"127.0.0.1", "::1", "::ffff:127.0.0.1", "10.1.1.1", "169.254.169.254", "100.100.100.200", "fc00::1", "fe80::1", "0.0.0.0", "2002:7f00:1::", "2001:1::4", "2001:2::1", "2001:10::1", "3fff::1", "5f00::1", "100:0:0:1::1"} {
 		if publicMCPAddress(netip.MustParseAddr(ip)) {
 			t.Fatalf("accepted IP %s", ip)
+		}
+	}
+	for _, ip := range []string{"8.8.8.8", "2600:1f18::1", "2001:1::1", "2001:3::1", "2001:4:112::1", "2001:20::1", "2001:30::1", "2001:200::1"} {
+		if !publicMCPAddress(netip.MustParseAddr(ip)) {
+			t.Fatalf("rejected globally reachable IP %s", ip)
 		}
 	}
 	endpoint, _ := url.Parse("https://public.example/mcp")
