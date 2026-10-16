@@ -19,6 +19,14 @@ type CodeBlockProps = {
   streaming?: boolean
 }
 
+type HighlightedCode = {
+  content: string
+  language: string
+  theme: string
+  html: string
+  headerBg: string | undefined
+}
+
 let highlighterPromise: Promise<HighlighterCore> | null = null
 const languagePromises = new Map<string, Promise<void>>()
 
@@ -202,9 +210,8 @@ export function CodeBlock({
 }: CodeBlockProps) {
   const resolvedTheme = useResolvedTheme()
   const [copied, setCopied] = useState(false)
-  const [html, setHtml] = useState<string | null>(null)
-  const [resolvedLanguage, setResolvedLanguage] = useState('text')
-  const [headerBg, setHeaderBg] = useState<string | undefined>()
+  const [highlightedCode, setHighlightedCode] =
+    useState<HighlightedCode | null>(null)
 
   const fallback = useMemo(() => {
     return content
@@ -227,14 +234,18 @@ export function CodeBlock({
               theme: themeName,
             })
             if (active) {
-              setResolvedLanguage(lang)
-              setHtml(highlighted)
               const theme = highlighter.getTheme(themeName)
-              setHeaderBg(theme.bg)
+              setHighlightedCode({
+                content,
+                language: normalizedLanguage,
+                theme: themeName,
+                html: highlighted,
+                headerBg: theme.bg,
+              })
             }
           })
           .catch(function preservePlainText() {
-            if (active) setHtml(null)
+            // Rendering already uses plain text when no matching highlight exists.
           })
       },
       streaming ? 450 : 80,
@@ -256,7 +267,15 @@ export function CodeBlock({
   }
 
   const isSingleLine = content.split('\n').length === 1
-  const displayLanguage = formatLanguageName(resolvedLanguage)
+  const matchingHighlight =
+    highlightedCode?.content === content &&
+    highlightedCode.language === normalizedLanguage &&
+    highlightedCode.theme === themeName
+      ? highlightedCode
+      : null
+  const displayLanguage = formatLanguageName(
+    matchingHighlight?.language ?? resolveLanguage(normalizedLanguage),
+  )
 
   return (
     <div
@@ -267,7 +286,7 @@ export function CodeBlock({
     >
       <div
         className={cn('flex items-center justify-between px-3 py-1')}
-        style={{ backgroundColor: headerBg }}
+        style={{ backgroundColor: matchingHighlight?.headerBg }}
       >
         <span className="text-xs leading-none font-medium text-primary-500">
           {displayLanguage}
@@ -288,7 +307,7 @@ export function CodeBlock({
           {copied ? 'Copied' : 'Copy'}
         </Button>
       </div>
-      {html ? (
+      {matchingHighlight ? (
         <div
           className={cn(
             'text-sm text-primary-900 [&>pre]:w-full [&>pre]:max-w-full [&>pre]:overflow-x-auto',
@@ -296,7 +315,7 @@ export function CodeBlock({
               ? '[&>pre]:whitespace-pre [&>pre]:px-3 [&>pre]:py-2'
               : '[&>pre]:px-3 [&>pre]:py-3',
           )}
-          dangerouslySetInnerHTML={{ __html: html }}
+          dangerouslySetInnerHTML={{ __html: matchingHighlight.html }}
         />
       ) : (
         <pre

@@ -36,3 +36,25 @@ it.each([
     })
   },
 )
+
+it('shows new streaming content while its replacement highlight is debounced', async function showStreamingFallback() {
+  const initialContent = 'const initial = "ready"'
+  const nextContent = 'const initial = "ready"\nconst streamed = true'
+  const view = render(
+    <CodeBlock content={initialContent} language="typescript" />,
+  )
+
+  await waitFor(function expectInitialHighlight() {
+    expect(
+      view.container.querySelectorAll('pre code span').length,
+    ).toBeGreaterThan(0)
+  })
+
+  view.rerender(
+    <CodeBlock content={nextContent} language="typescript" streaming />,
+  )
+
+  const code = view.container.querySelector('pre code')
+  expect(code?.textContent).toBe(nextContent)
+  expect(code?.querySelectorAll('span')).toHaveLength(0)
+})
