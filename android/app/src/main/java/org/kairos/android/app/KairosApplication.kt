@@ -23,6 +23,7 @@ class KairosApplication : Application() {
 }
 
 class AppContainer(context: Context) {
+    private val appContext = context.applicationContext
     val server = ServerStore(context)
     val tokens = TokenStore(context)
     val preferences = PreferencesStore(context)
@@ -66,7 +67,7 @@ class AppContainer(context: Context) {
 
     fun clearUserData() {
         // A photo selected for the previous account must never appear in a new session.
-        LibraryAttachment.pending = null
+        LibraryAttachment.clear(appContext)
         sessions.stopSync()
         sessions.clear()
         models.clear()
