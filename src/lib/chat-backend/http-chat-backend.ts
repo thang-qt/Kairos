@@ -662,18 +662,29 @@ export function createHTTPChatBackend(): ChatBackend {
       }
 
       function handleMessage(event: MessageEvent<string>) {
+        if (closed) return
         if (typeof event.data !== 'string' || event.data.trim().length === 0) {
           return
         }
 
+        let payload: ConversationEvent
         try {
-          const payload = JSON.parse(event.data)
+          payload = JSON.parse(event.data)
+        } catch {
+          // Ignore malformed stream payloads.
+          return
+        }
+
+        try {
           subscription.onEvent(payload)
           if (payload?.state === 'reconcile') {
             subscription.onReconcile?.(payload)
           }
-        } catch {
-          // Ignore malformed stream payloads.
+        } catch (error) {
+          console.error('Failed to apply conversation stream event.', error)
+          // Reload authoritative history using the same recovery path as a
+          // reconnect, since a failed callback may have partially applied a patch.
+          subscription.onReconnect?.()
         }
       }
 

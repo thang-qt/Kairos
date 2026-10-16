@@ -7,6 +7,88 @@ import {
 
 afterEach(function restoreGlobals() {
   vi.unstubAllGlobals()
+  vi.restoreAllMocks()
+})
+
+describe('conversation event subscriptions', function () {
+  function subscribe(onEvent = vi.fn(), onReconcile = vi.fn()) {
+    const listeners = new Map<string, EventListener>()
+    const close = vi.fn()
+    vi.stubGlobal('window', {})
+    vi.stubGlobal(
+      'EventSource',
+      class {
+        addEventListener(type: string, listener: EventListener) {
+          listeners.set(type, listener)
+        }
+        removeEventListener(type: string) {
+          listeners.delete(type)
+        }
+        close = close
+      },
+    )
+    const onReconnect = vi.fn()
+    const unsubscribe = createHTTPChatBackend().subscribeToConversation({
+      friendlyId: 'chat-1',
+      onEvent,
+      onReconcile,
+      onReconnect,
+    })
+    function emit(data: string) {
+      listeners.get('message')?.({ data } as MessageEvent<string>)
+    }
+    return { emit, onEvent, onReconnect, onReconcile, unsubscribe, close }
+  }
+
+  it('ignores malformed JSON and continues delivering valid events', function () {
+    const reportError = vi
+      .spyOn(console, 'error')
+      .mockImplementation(function () {})
+    const stream = subscribe()
+    stream.emit('{')
+    stream.emit('{"state":"delta"}')
+    expect(stream.onEvent).toHaveBeenCalledExactlyOnceWith({ state: 'delta' })
+    expect(stream.onReconnect).not.toHaveBeenCalled()
+    expect(reportError).not.toHaveBeenCalled()
+    stream.unsubscribe()
+    expect(stream.close).toHaveBeenCalledOnce()
+  })
+
+  it('reports callback failures and requests authoritative history', function () {
+    const failure = new Error('patch failed')
+    const reportError = vi
+      .spyOn(console, 'error')
+      .mockImplementation(function () {})
+    const onEvent = vi.fn().mockImplementationOnce(function () {
+      throw failure
+    })
+    const stream = subscribe(onEvent)
+    stream.emit('{"state":"delta"}')
+    expect(reportError).toHaveBeenCalledWith(
+      'Failed to apply conversation stream event.',
+      failure,
+    )
+    expect(stream.onReconnect).toHaveBeenCalledOnce()
+    stream.emit('{"state":"final"}')
+    expect(onEvent).toHaveBeenLastCalledWith({ state: 'final' })
+    stream.unsubscribe()
+  })
+
+  it('reports reconciliation callback failures', function () {
+    const reportError = vi
+      .spyOn(console, 'error')
+      .mockImplementation(function () {})
+    const stream = subscribe(
+      vi.fn(),
+      vi.fn(function () {
+        throw new Error('reconciliation failed')
+      }),
+    )
+    stream.emit('{"state":"reconcile"}')
+    expect(reportError).toHaveBeenCalledOnce()
+    expect(stream.onReconnect).toHaveBeenCalledOnce()
+    stream.unsubscribe()
+  })
 })
 
 describe('consumeSSEChatEvents', function () {
