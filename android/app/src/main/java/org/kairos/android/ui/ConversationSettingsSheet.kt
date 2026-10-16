@@ -45,6 +45,8 @@ fun ConversationSettingsSheet(chat: ChatViewModel, onDismiss: () -> Unit) {
     val catalog by chat.catalog.collectAsState()
     val initial =
         session?.settings
+            ?: chat.newChatSettings
+            ?: chat.model.takeIf { it.isNotBlank() }?.let(chat.app.models::defaults)
             ?: catalog.models.firstOrNull()?.let { chat.app.models.defaults(it.key) }
     if (initial == null) return
     var systemPrompt by remember(initial.systemPrompt) { mutableStateOf(initial.systemPrompt) }
@@ -157,14 +159,14 @@ fun ConversationSettingsSheet(chat: ChatViewModel, onDismiss: () -> Unit) {
             }
             if (session == null)
                 Text(
-                    "Start the conversation first; settings apply per conversation.",
+                    "These settings will be used when you send the first message.",
                     color = colors.p(500),
                     fontSize = 12.sp,
                 )
             PrimaryButton(
                 "Save settings",
                 busy = chat.busy,
-                enabled = session != null,
+                enabled = true,
                 onClick = {
                     chat.saveConversationSettings(
                         ConversationSettings(
