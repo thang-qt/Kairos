@@ -2,6 +2,8 @@
 
 package org.kairos.android.ui
 
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -39,9 +41,9 @@ import org.kairos.android.ui.theme.LocalKairosColors
 @Composable
 fun ChatHeader(chat: ChatViewModel, onOpenSidebar: () -> Unit) {
     val colors = LocalKairosColors.current
-    val sessions by chat.sessions.collectAsState()
-    val history by chat.history.collectAsState()
-    val catalog by chat.catalog.collectAsState()
+    val sessions by chat.sessions.collectAsStateWithLifecycle()
+    val history by chat.history.collectAsStateWithLifecycle()
+    val catalog by chat.catalog.collectAsStateWithLifecycle()
     val modelKey =
         sessions.find { it.friendlyId == chat.sessionId }?.settings?.model?.ifBlank { chat.model }
             ?: chat.model
@@ -135,10 +137,10 @@ fun Sidebar(
     onClose: () -> Unit,
 ) {
     val colors = LocalKairosColors.current
-    val sessions by chat.sessions.collectAsState()
-    val hasMore by chat.hasMore.collectAsState()
-    val loadingMore by chat.loadingMore.collectAsState()
-    val ready by chat.sessionsReady.collectAsState()
+    val sessions by chat.sessions.collectAsStateWithLifecycle()
+    val hasMore by chat.hasMore.collectAsStateWithLifecycle()
+    val loadingMore by chat.loadingMore.collectAsStateWithLifecycle()
+    val ready by chat.sessionsReady.collectAsStateWithLifecycle()
     var actions by remember { mutableStateOf<SessionSummary?>(null) }
     var logout by remember { mutableStateOf(false) }
     val collapsed = remember { mutableStateOf(emptySet<String>()) }
