@@ -18,23 +18,23 @@ type newConversationInput struct {
 }
 
 type SubmitTurnInput struct {
-	ExecutionID      string                `json:"-"`
-	NewConversation  *newConversationInput `json:"-"`
-	UseConversationSettings bool `json:"useConversationSettings,omitempty"`
-	EditMessageID    string                `json:"-"`
-	ExpectedRevision *int64                `json:"expectedRevision,omitempty"`
-	FriendlyID       string                `json:"-"`
-	Message          string                `json:"message"`
-	Model            string                `json:"model"`
-	SystemPrompt     string                `json:"systemPrompt"`
-	WebSearch        bool                  `json:"webSearch"`
-	MathTools        bool                  `json:"mathTools"`
-	Advanced         *ChatAdvancedOptions  `json:"advanced"`
-	IdempotencyKey   string                `json:"idempotencyKey"`
-	ClientID         string                `json:"clientId"`
-	ClientTime       string                `json:"clientTime"`
-	ClientTimeZone   string                `json:"clientTimeZone"`
-	Attachments      []AttachmentPayload   `json:"attachments"`
+	ExecutionID             string                `json:"-"`
+	NewConversation         *newConversationInput `json:"-"`
+	UseConversationSettings bool                  `json:"useConversationSettings,omitempty"`
+	EditMessageID           string                `json:"-"`
+	ExpectedRevision        *int64                `json:"expectedRevision,omitempty"`
+	FriendlyID              string                `json:"-"`
+	Message                 string                `json:"message"`
+	Model                   string                `json:"model"`
+	SystemPrompt            string                `json:"systemPrompt"`
+	WebSearch               bool                  `json:"webSearch"`
+	MathTools               bool                  `json:"mathTools"`
+	Advanced                *ChatAdvancedOptions  `json:"advanced"`
+	IdempotencyKey          string                `json:"idempotencyKey"`
+	ClientID                string                `json:"clientId"`
+	ClientTime              string                `json:"clientTime"`
+	ClientTimeZone          string                `json:"clientTimeZone"`
+	Attachments             []AttachmentPayload   `json:"attachments"`
 }
 
 type AttachmentPayload struct {
