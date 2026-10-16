@@ -110,36 +110,78 @@ class ProtocolTest {
     }
 
     @Test
-    fun mcpApprovalRunIdTracksLiveRemoteToolCalls() {
-        fun assistantTurn(status: String, tool: String) = buildJsonObject {
-            put("id", JsonPrimitive("a1"))
-            put("role", JsonPrimitive("assistant"))
-            put("status", JsonPrimitive(status))
-            put("runId", JsonPrimitive("run-1"))
-            put(
-                "content",
-                buildJsonArray {
-                    add(
-                        buildJsonObject {
-                            put("type", JsonPrimitive("toolCall"))
-                            put("name", JsonPrimitive(tool))
-                        },
-                    )
-                },
+    fun approvalsRestoreFromSnapshotsAndRideStreamEvents() {
+        fun approval(state: String) =
+            McpApproval(
+                id = "approval",
+                runId = "run",
+                serverName = "Server",
+                toolName = "tool",
+                arguments = buildJsonObject { put("value", JsonPrimitive("input")) },
+                state = state,
+                expiresAt = 1900000000000,
             )
-        }
-        assertEquals("run-1", approvalRunId(listOf(assistantTurn("running", "mcp_search"))))
-        // Local tools and finished turns never need approval polling.
-        assertEquals(null, approvalRunId(listOf(assistantTurn("running", "calculator"))))
-        assertEquals(null, approvalRunId(listOf(assistantTurn("completed", "mcp_search"))))
-        val payload =
-            wireJson.decodeFromString<McpApprovalsResponse>(
-                """{"approvals":[{"id":"ap1","runId":"run-1","serverName":"Docs","toolName":"search","arguments":{"q":"x"},"state":"pending","expiresAt":123}]}"""
+        // A reconcile snapshot restores the pending approval.
+        val restored =
+            handleConversationEvent(
+                History(),
+                ConversationEvent(
+                    state = "reconcile",
+                    snapshot =
+                        History(
+                            sessionKey = "session",
+                            revision = 1,
+                            cursor = 10,
+                            messages = emptyList(),
+                            pendingMcpApprovals = listOf(approval("pending")),
+                        ),
+                ),
             )
-        val approval = payload.approvals.single()
-        assertEquals("ap1", approval.id)
-        assertEquals("run-1", approval.runId)
-        assertEquals("x", approval.arguments!!.jsonObject.string("q"))
+        assertEquals(listOf(approval("pending")), restored.history.pendingMcpApprovals)
+        // A decision event replaces the row by id; non-pending states drop it.
+        val decided =
+            handleConversationEvent(
+                restored.history,
+                ConversationEvent(
+                    state = "mcp-approval",
+                    revision = 1,
+                    cursor = 11,
+                    sessionKey = "session",
+                    mcpApproval = approval("approved"),
+                ),
+            )
+        assertEquals(emptyList<McpApproval>(), decided.history.pendingMcpApprovals)
+        val repending =
+            handleConversationEvent(
+                decided.history,
+                ConversationEvent(
+                    state = "mcp-approval",
+                    revision = 1,
+                    cursor = 12,
+                    mcpApproval = approval("pending"),
+                ),
+            )
+        assertEquals(listOf(approval("pending")), repending.history.pendingMcpApprovals)
+        // A reconcile only keeps approvals for runs that are still active.
+        val reconciled =
+            handleConversationEvent(
+                repending.history,
+                ConversationEvent(state = "reconcile", activeRunIds = listOf("other")),
+            )
+        assertEquals(emptyList<McpApproval>(), reconciled.history.pendingMcpApprovals)
+        // Terminal events drop their run's approvals.
+        val terminal =
+            handleConversationEvent(
+                repending.history,
+                ConversationEvent(state = "final", runId = "run"),
+            )
+        assertEquals(emptyList<McpApproval>(), terminal.history.pendingMcpApprovals)
+        val unaffected =
+            handleConversationEvent(
+                repending.history,
+                ConversationEvent(state = "final", runId = "other"),
+            )
+        assertEquals(listOf(approval("pending")), unaffected.history.pendingMcpApprovals)
     }
 
     @Test

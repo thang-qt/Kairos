@@ -164,6 +164,15 @@ class KairosApi(val server: ServerStore, val tokens: TokenStore) {
     fun asset(assetId: String): okhttp3.Response =
         client.newCall(request("/api/assets/" + encodePath(assetId))).execute()
 
+    /** Records a tool-approval decision; the resulting state arrives on the stream. */
+    suspend fun decideApproval(approval: McpApproval, decision: String, scope: String? = null) {
+        write<JsonObject, McpDecisionRequest>(
+            "/api/mcp/approvals/" + encodePath(approval.id),
+            "POST",
+            McpDecisionRequest(decision, scope),
+        )
+    }
+
     /**
      * One-shot SSE request (throwaway messages). The read loop runs on the IO dispatcher and
      * reacts to cancellation by killing the connection, like the event stream does.

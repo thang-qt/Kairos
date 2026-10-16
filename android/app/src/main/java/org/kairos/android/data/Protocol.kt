@@ -105,6 +105,7 @@ data class History(
     val cursor: Long = 0,
     val activeRunIds: List<String> = emptyList(),
     val messages: List<JsonObject> = emptyList(),
+    val pendingMcpApprovals: List<McpApproval> = emptyList(),
 )
 
 @Serializable(with = TurnPatchSerializer::class)
@@ -149,6 +150,7 @@ data class ConversationEvent(
     val activeRunIds: List<String>? = null,
     val session: SessionSummary? = null,
     val error: String? = null,
+    val mcpApproval: McpApproval? = null,
 )
 
 @Serializable

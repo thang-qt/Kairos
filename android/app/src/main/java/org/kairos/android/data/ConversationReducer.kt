@@ -124,8 +124,21 @@ data class EventApplication(
 )
 
 // Preserve the order in use-chat-stream.ts: snapshot, revision, cursor, refetch, identity, reducer,
-// cursor.
+// cursor. Approvals ride the same stream: a dedicated event carries the decision state, and
+// reconcile/terminal events prune stale pending approvals for finished runs.
 fun handleConversationEvent(previous: History, event: ConversationEvent): EventApplication {
+    event.mcpApproval?.let { approval ->
+        val pending =
+            previous.pendingMcpApprovals.filter { it.id != approval.id } +
+                if (approval.state == "pending") listOf(approval) else emptyList()
+        return EventApplication(
+            previous.copy(
+                pendingMcpApprovals = pending,
+                revision = event.revision ?: previous.revision,
+                cursor = event.cursor ?: previous.cursor,
+            )
+        )
+    }
     if (event.state == "heartbeat") return EventApplication(previous, accepted = false)
     event.snapshot?.let { snapshot ->
         return if (snapshot.revision >= previous.revision && snapshot.cursor >= previous.cursor)
@@ -145,12 +158,17 @@ fun handleConversationEvent(previous: History, event: ConversationEvent): EventA
                 messages =
                     if (event.state == "reconcile" && previous.revision >= 0) emptyList()
                     else previous.messages,
+                pendingMcpApprovals = remainingApprovals(next, event),
             )
         refetch = true
     }
     if (event.message == null && event.turnPatch.isEmpty()) {
         if (event.state in listOf("reconcile", "final", "error", "aborted")) {
-            next = next.copy(messages = applyConversationEvent(next.messages, event))
+            next =
+                next.copy(
+                    messages = applyConversationEvent(next.messages, event),
+                    pendingMcpApprovals = remainingApprovals(next, event),
+                )
             refetch = true
         }
         return EventApplication(next, refetch)
@@ -167,7 +185,7 @@ fun handleConversationEvent(previous: History, event: ConversationEvent): EventA
     val affected =
         if (event.message != null) turnFromConversationEvent(event)
         else turns.find { it.id == event.turnId }
-    next = next.copy(messages = turns)
+    next = next.copy(messages = turns, pendingMcpApprovals = remainingApprovals(next, event))
     if (affected != null) {
         next =
             next.copy(
@@ -178,4 +196,19 @@ fun handleConversationEvent(previous: History, event: ConversationEvent): EventA
         if (event.state in listOf("final", "error", "aborted")) refetch = true
     }
     return EventApplication(next, refetch)
+}
+
+/**
+ * Port of the web's remainingApprovals: a reconcile keeps approvals for runs that are still
+ * active, a terminal event drops the run's approvals, everything else keeps the pending set.
+ */
+fun remainingApprovals(previous: History, event: ConversationEvent): List<McpApproval> {
+    val pending = previous.pendingMcpApprovals
+    if (event.state == "reconcile") {
+        val active = event.activeRunIds ?: return emptyList()
+        return pending.filter { approval -> approval.runId in active }
+    }
+    if (event.state in listOf("final", "error", "aborted"))
+        return pending.filter { approval -> approval.runId != event.runId }
+    return pending
 }

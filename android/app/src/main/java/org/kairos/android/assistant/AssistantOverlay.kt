@@ -51,6 +51,7 @@ import org.kairos.android.data.status
 import org.kairos.android.markdown.OverlayMarkdown
 import org.kairos.android.ui.GhostIconButton
 import org.kairos.android.ui.KIcon
+import org.kairos.android.ui.McpApprovalCard
 import org.kairos.android.ui.KairosMark
 import org.kairos.android.ui.ModelLabel
 import org.kairos.android.ui.NativeComposer
@@ -363,7 +364,20 @@ fun AssistantOverlay(
                         Text("Sign in to Kairos to use the assistant.", color = colors.p(700))
                         PrimaryButton("Open Kairos") { onOpenApp(null) }
                     }
-                else
+                else {
+                    if (conversation.pendingApprovals.isNotEmpty())
+                        McpApprovalCard(
+                            conversation.pendingApprovals,
+                            busy = conversation.streaming,
+                            onDecide = { decision, decisionScope ->
+                                conversation.decide(
+                                    conversation.pendingApprovals.first(),
+                                    decision,
+                                    decisionScope,
+                                )
+                            },
+                            modifier = Modifier.padding(bottom = 4.dp),
+                        )
                     key(generation) {
                         NativeComposer(
                             conversation.streaming,
@@ -387,6 +401,7 @@ fun AssistantOverlay(
                                 ),
                         )
                     }
+                }
             }
         }
     }

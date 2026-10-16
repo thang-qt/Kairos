@@ -49,7 +49,6 @@ import org.kairos.android.assistant.ScreenAttachment
 import org.kairos.android.chat.ChatViewModel
 import org.kairos.android.data.ConnectionState
 import org.kairos.android.data.activeRunId
-import org.kairos.android.data.approvalRunId
 import org.kairos.android.data.id
 import org.kairos.android.transcript.TranscriptBridge
 import org.kairos.android.transcript.TranscriptTouchHost
@@ -339,10 +338,10 @@ fun ChatScreen(chat: ChatViewModel, bridge: TranscriptBridge, onCopy: (String) -
                     .imePadding()
                     .navigationBarsPadding()
             ) {
-                val approvals by chat.pendingApprovals.collectAsState()
-                val runId = approvalRunId(history.messages)
+                // Approvals arrive with the conversation history and stream updates; they are
+                // session-scoped, so no run filter is needed.
                 val currentApprovals =
-                    if (runId == null) emptyList() else approvals.filter { it.runId == runId }
+                    history.pendingMcpApprovals.filter { it.state == "pending" }
                 if (currentApprovals.isNotEmpty())
                     McpApprovalCard(
                         currentApprovals,
