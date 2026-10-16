@@ -353,20 +353,20 @@ func (app *App) handleSendMessage(writer http.ResponseWriter, request *http.Requ
 	}
 
 	result, err := app.runtime.StartRun(request.Context(), user.ID, SubmitTurnInput{
-		ExpectedRevision:         payload.ExpectedRevision,
-		UseConversationSettings:  payload.UseConversationSettings,
-		FriendlyID:               request.PathValue("friendlyId"),
-		Message:                  payload.Message,
-		Model:                    payload.Model,
-		SystemPrompt:             payload.SystemPrompt,
-		WebSearch:                payload.WebSearch,
-		MathTools:                payload.MathTools,
-		Advanced:                 payload.Advanced,
-		IdempotencyKey:           payload.IdempotencyKey,
-		ClientID:                 payload.ClientID,
-		ClientTime:               payload.ClientTime,
-		ClientTimeZone:           payload.ClientTimeZone,
-		Attachments:              payload.Attachments,
+		ExpectedRevision:        payload.ExpectedRevision,
+		UseConversationSettings: payload.UseConversationSettings,
+		FriendlyID:              request.PathValue("friendlyId"),
+		Message:                 payload.Message,
+		Model:                   payload.Model,
+		SystemPrompt:            payload.SystemPrompt,
+		WebSearch:               payload.WebSearch,
+		MathTools:               payload.MathTools,
+		Advanced:                payload.Advanced,
+		IdempotencyKey:          payload.IdempotencyKey,
+		ClientID:                payload.ClientID,
+		ClientTime:              payload.ClientTime,
+		ClientTimeZone:          payload.ClientTimeZone,
+		Attachments:             payload.Attachments,
 	})
 	if err != nil {
 		switch {
