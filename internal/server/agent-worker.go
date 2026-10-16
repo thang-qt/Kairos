@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"time"
@@ -63,6 +64,9 @@ type persistedGenerationSink struct {
 	record         executionRecord
 	session        *sessionRecord
 	lastCheckpoint time.Time
+	lastSnapshot   time.Time
+	projection     map[string]any
+	forceSnapshot  bool
 }
 
 func (sink *persistedGenerationSink) ModelResolved(model ProviderModel) error {
@@ -116,17 +120,21 @@ func (sink *persistedGenerationSink) ModelStarted() error {
 	if err := sink.service.refreshTurnExec(ctx, tx, sink.record.ID, "delta"); err != nil {
 		return err
 	}
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	sink.projection = nil
+	return nil
+}
+
+func (sink *persistedGenerationSink) CheckpointDue() bool {
+	return sink.lastCheckpoint.IsZero() || time.Since(sink.lastCheckpoint) >= 100*time.Millisecond
 }
 
 func (sink *persistedGenerationSink) Delta(message map[string]any) error {
-	// Full snapshots stay in chat_runs; the journal stores compact patches.
-	// At most 10 checkpoints/s, with immediate first progress.
-	if !sink.lastCheckpoint.IsZero() && time.Since(sink.lastCheckpoint) < 100*time.Millisecond {
+	if !sink.CheckpointDue() {
 		return nil
 	}
-	checkpointStarted := time.Now()
-	firstCheckpoint := sink.lastCheckpoint.IsZero()
 	ctx := context.Background()
 	tx, err := sink.service.beginEventTx(ctx, nil)
 	if err != nil {
@@ -140,19 +148,58 @@ func (sink *persistedGenerationSink) Delta(message map[string]any) error {
 	if !valid {
 		return errGenerationInactive
 	}
-	if err := checkpointStepExec(ctx, tx, sink.record.ID, message); err != nil {
+	previous := sink.projection
+	if previous == nil {
+		projection, err := sink.service.loadRunProjection(ctx, tx, sink.record.ID)
+		if err != nil {
+			return err
+		}
+		if projection == nil {
+			return errGenerationInactive
+		}
+		previous = cloneTurnValue(projection.turn).(map[string]any)
+	}
+	next, patches := advanceRunProjection(previous, message)
+	if len(patches) == 0 {
+		return nil
+	}
+	// Patch events retain the original 100ms durability without rewriting growing
+	// message bodies. Complete snapshots and steps persist at bounded intervals.
+	snapshot := sink.forceSnapshot || sink.lastSnapshot.IsZero() || time.Since(sink.lastSnapshot) >= time.Second
+	if snapshot {
+		if err := checkpointStepExec(ctx, tx, sink.record.ID, message); err != nil {
+			return err
+		}
+		encoded, err := json.Marshal(next)
+		if err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE chat_runs SET turn_json=?,turn_dirty=0 WHERE id=?`, string(encoded), sink.record.ID); err != nil {
+			return err
+		}
+	} else {
+		if _, err := tx.ExecContext(ctx, `UPDATE chat_runs SET turn_dirty=1 WHERE id=?`, sink.record.ID); err != nil {
+			return err
+		}
+	}
+	event := ConversationEvent{RunID: sink.record.ID, SessionKey: sink.record.SessionID, Revision: sink.record.Revision, TurnID: sink.record.AssistantTurnID, State: "delta", TurnPatch: patches}
+	if err := insertChatEventExec(ctx, tx, event); err != nil {
 		return err
 	}
-	if err := sink.service.refreshTurnExec(ctx, tx, sink.record.ID, "delta"); err != nil {
-		return err
+	if snapshot {
+		if err := updateRunCheckpointCursor(ctx, tx, sink.record.ID, sink.record.SessionID); err != nil {
+			return err
+		}
 	}
 	if err := tx.Commit(); err != nil {
 		return err
 	}
+	sink.projection = next
 	sink.lastCheckpoint = time.Now()
-	if firstCheckpoint {
-		log.Printf("kairos: stage=event_commit run=%s state=delta duration_ms=%d", sink.record.ID, time.Since(checkpointStarted).Milliseconds())
+	if snapshot {
+		sink.lastSnapshot = sink.lastCheckpoint
 	}
+	sink.forceSnapshot = false
 	return nil
 }
 
@@ -165,6 +212,7 @@ func (sink *persistedGenerationSink) ToolRound(messages []map[string]any, totalT
 		return errGenerationInactive
 	}
 	sink.session.TotalTokens = summary.TotalTokens
+	sink.projection = nil
 	return nil
 }
 
@@ -265,11 +313,13 @@ func (service *AgentRuntime) unregisterRunCancel(record executionRecord) {
 
 func (sink *persistedGenerationSink) BeforeTool(message map[string]any, call ProviderToolCall) error {
 	sink.lastCheckpoint = time.Time{}
+	sink.forceSnapshot = true
 	return sink.Delta(toolStartedSnapshot(message, call.ID))
 }
 
 // Completed tool results checkpoint individually, before the next tool starts.
 func (sink *persistedGenerationSink) ToolCompleted(message map[string]any) error {
 	sink.lastCheckpoint = time.Time{}
+	sink.forceSnapshot = true
 	return sink.Delta(message)
 }

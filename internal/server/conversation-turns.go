@@ -13,20 +13,27 @@ import (
 
 var errConversationConflict = errors.New("conversation changed or already has an active run; reload and retry")
 
-// refreshTurnExec is the sole projection writer. Its event is committed with its checkpoint.
-func (service *AgentRuntime) refreshTurnExec(ctx context.Context, exec sqlExecutor, runID, state string) error {
+// Full projections establish boundary and recovery snapshots.
+type runProjection struct {
+	turn         map[string]any
+	sessionID    string
+	previousJSON string
+}
+
+// Load full state at boundaries and for recovery, never for each text checkpoint.
+func (service *AgentRuntime) loadRunProjection(ctx context.Context, exec sqlExecutor, runID string) (*runProjection, error) {
 	var sessionID, turnID, status, errorMessage, previousJSON string
 	var revision, started int64
 	var invalidated, hasRequest int
 	if err := exec.QueryRowContext(ctx, `SELECT session_id,COALESCE(assistant_message_id,id),status,COALESCE(error_message,''),revision,started_at,invalidated,(request_json IS NOT NULL AND request_json!=''),COALESCE(turn_json,'') FROM chat_runs WHERE id=?`, runID).Scan(&sessionID, &turnID, &status, &errorMessage, &revision, &started, &invalidated, &hasRequest, &previousJSON); err != nil {
-		return err
+		return nil, err
 	}
 	if invalidated != 0 {
-		return nil
+		return nil, nil
 	}
 	rows, err := exec.QueryContext(ctx, `SELECT message_json FROM chat_run_steps WHERE run_id=? ORDER BY timestamp,step_id`, runID)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	steps := []map[string]any{}
 	content := []any{}
@@ -35,12 +42,12 @@ func (service *AgentRuntime) refreshTurnExec(ctx context.Context, exec sqlExecut
 		var encoded string
 		if err := rows.Scan(&encoded); err != nil {
 			rows.Close()
-			return err
+			return nil, err
 		}
 		var message map[string]any
 		if err := json.Unmarshal([]byte(encoded), &message); err != nil {
 			rows.Close()
-			return err
+			return nil, err
 		}
 		steps = append(steps, message)
 		if stringValueFromMap(message, "role") == "assistant" {
@@ -52,7 +59,7 @@ func (service *AgentRuntime) refreshTurnExec(ctx context.Context, exec sqlExecut
 	}
 	if err := rows.Err(); err != nil {
 		rows.Close()
-		return err
+		return nil, err
 	}
 	rows.Close()
 	if status == "aborted" || status == "interrupted" || status == "error" {
@@ -73,11 +80,11 @@ func (service *AgentRuntime) refreshTurnExec(ctx context.Context, exec sqlExecut
 	if canRetry {
 		var newer int
 		if err := exec.QueryRowContext(ctx, `SELECT COUNT(*) FROM chat_runs WHERE session_id=? AND invalidated=0 AND started_at>?`, sessionID, started).Scan(&newer); err != nil {
-			return err
+			return nil, err
 		}
 		var users int
 		if err := exec.QueryRowContext(ctx, `SELECT COUNT(*) FROM chat_messages m JOIN chat_runs r ON r.id=? WHERE m.session_id=? AND m.role='user' AND (json_extract(m.message_json,'$.id')=r.user_message_id OR (r.user_message_id IS NULL AND m.timestamp=r.started_at))`, runID, sessionID).Scan(&users); err != nil {
-			return err
+			return nil, err
 		}
 		canRetry = newer == 0 && users > 0
 	}
@@ -92,11 +99,26 @@ func (service *AgentRuntime) refreshTurnExec(ctx context.Context, exec sqlExecut
 	if errorMessage != "" {
 		turn["error"] = errorMessage
 	}
+	return &runProjection{turn: turn, sessionID: sessionID, previousJSON: previousJSON}, nil
+}
+
+func (service *AgentRuntime) refreshTurnExec(ctx context.Context, exec sqlExecutor, runID, state string) error {
+	if err := service.materializeRunCheckpoint(ctx, exec, runID); err != nil {
+		return err
+	}
+	projection, err := service.loadRunProjection(ctx, exec, runID)
+	if err != nil || projection == nil {
+		return err
+	}
+	turn, sessionID, previousJSON := projection.turn, projection.sessionID, projection.previousJSON
+	turnID := stringValueFromMap(turn, "id")
+	revision := int64Value(turn["revision"])
+	errorMessage := stringValueFromMap(turn, "error")
 	encoded, err := json.Marshal(turn)
 	if err != nil {
 		return err
 	}
-	if _, err := exec.ExecContext(ctx, `UPDATE chat_runs SET turn_json=? WHERE id=?`, string(encoded), runID); err != nil {
+	if _, err := exec.ExecContext(ctx, `UPDATE chat_runs SET turn_json=?,turn_dirty=0 WHERE id=?`, string(encoded), runID); err != nil {
 		return err
 	}
 	event := ConversationEvent{RunID: runID, SessionKey: sessionID, Revision: revision, TurnID: turnID, State: state, Error: errorMessage, Message: turn}
@@ -111,7 +133,10 @@ func (service *AgentRuntime) refreshTurnExec(ctx context.Context, exec sqlExecut
 		}
 	}
 
-	return insertChatEventExec(ctx, exec, event)
+	if err := insertChatEventExec(ctx, exec, event); err != nil {
+		return err
+	}
+	return updateRunCheckpointCursor(ctx, exec, runID, sessionID)
 }
 
 func insertChatEventExec(ctx context.Context, exec sqlExecutor, event ConversationEvent) error {
@@ -206,17 +231,18 @@ func (service *ConversationService) GetHistory(ctx context.Context, userID, frie
 			legacyUserTimes[record.Timestamp] = true
 		}
 	}
-	rows, err := tx.QueryContext(ctx, `SELECT id,COALESCE(turn_json,''),status,COALESCE(assistant_message_id,id),started_at,(request_json IS NOT NULL AND request_json!=''),COALESCE(error_message,'') FROM chat_runs WHERE session_id=? AND invalidated=0 ORDER BY started_at,id`, session.ID)
+	rows, err := tx.QueryContext(ctx, `SELECT id,COALESCE(turn_json,''),status,COALESCE(assistant_message_id,id),started_at,(request_json IS NOT NULL AND request_json!=''),COALESCE(error_message,''),turn_dirty FROM chat_runs WHERE session_id=? AND invalidated=0 ORDER BY started_at,id`, session.ID)
 	if err != nil {
 		return history, err
 	}
 	turns := map[string]map[string]any{}
+	dirtyRuns := []string{}
 	ordered := []string{}
 	for rows.Next() {
 		var id, encoded, status, turnID, errorMessage string
-		var hasRequest int
+		var hasRequest, dirty int
 		var started int64
-		if err := rows.Scan(&id, &encoded, &status, &turnID, &started, &hasRequest, &errorMessage); err != nil {
+		if err := rows.Scan(&id, &encoded, &status, &turnID, &started, &hasRequest, &errorMessage, &dirty); err != nil {
 			rows.Close()
 			return history, err
 		}
@@ -252,12 +278,22 @@ func (service *ConversationService) GetHistory(ctx context.Context, userID, frie
 			turns[id]["error"] = errorMessage
 		}
 		ordered = append(ordered, id)
+		if dirty != 0 {
+			dirtyRuns = append(dirtyRuns, id)
+		}
 	}
 	if err := rows.Err(); err != nil {
 		rows.Close()
 		return history, err
 	}
 	rows.Close()
+	for _, id := range dirtyRuns {
+		turn, err := (&AgentRuntime{}).replayRunCheckpoint(ctx, tx, id)
+		if err != nil {
+			return history, err
+		}
+		turns[id] = turn
+	}
 	// Backfill the same projection for historical rounds. Unknown legacy messages remain readable.
 	historical := map[string][]map[string]any{}
 	for _, r := range records {

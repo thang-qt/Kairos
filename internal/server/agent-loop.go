@@ -138,9 +138,7 @@ func (service *AgentRuntime) executeGeneration(
 			assistantMessageID = newID()
 		}
 		assistantTimestamp := nextMessageTimestamp()
-		accumulatedText := ""
-		accumulatedSegments := []ProviderTextSegment{}
-		accumulatedThinking := ""
+		var textBuffer generationTextBuffer
 		accumulatedToolCalls := []ProviderToolCall{}
 		if err := sink.ModelStarted(); err != nil {
 			return err
@@ -174,18 +172,15 @@ func (service *AgentRuntime) executeGeneration(
 					log.Printf("kairos: stage=first_text run=%s provider_ms=%d accepted_ms=%d", input.RunID, time.Since(providerStarted).Milliseconds(), time.Now().UnixMilli()-input.AcceptedAt)
 					firstVisible = false
 				}
-				accumulatedThinking += delta.Thinking
-				accumulatedText += delta.Text
-				if delta.TextSegments != nil {
-					accumulatedSegments = append([]ProviderTextSegment(nil), delta.TextSegments...)
-				} else if delta.Text != "" {
-					accumulatedSegments = appendTextSegment(accumulatedSegments, delta.Text, delta.Phase, "")
+				textBuffer.add(delta)
+				if len(delta.ToolCalls) > 0 {
+					accumulatedToolCalls = mergeProviderToolCalls(accumulatedToolCalls, delta.ToolCalls)
 				}
-				accumulatedToolCalls = mergeProviderToolCalls(
-					accumulatedToolCalls,
-					delta.ToolCalls,
-				)
-				content := buildAssistantContent(accumulatedThinking, accumulatedText, accumulatedToolCalls, accumulatedSegments...)
+				// Gate construction, not just persistence, for throttled sinks.
+				if checkpoint, ok := sink.(interface{ CheckpointDue() bool }); ok && !checkpoint.CheckpointDue() {
+					return nil
+				}
+				content := buildAssistantContent(textBuffer.thinking.String(), textBuffer.text.String(), accumulatedToolCalls, textBuffer.snapshotSegments()...)
 				if len(content) == 0 {
 					return nil
 				}
@@ -209,10 +204,7 @@ func (service *AgentRuntime) executeGeneration(
 
 		deriveResultPhases(&result)
 		displayModel = displayModel.withProviderResult(result)
-		accumulatedThinking = firstNonEmpty(
-			result.ThinkingText,
-			accumulatedThinking,
-		)
+		accumulatedThinking := firstNonEmpty(result.ThinkingText, textBuffer.thinking.String())
 		accumulatedToolCalls = mergeProviderToolCalls(
 			accumulatedToolCalls,
 			result.ToolCalls,
