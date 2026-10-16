@@ -1091,7 +1091,7 @@ func defaultConversationSettings() ConversationSettings {
 }
 
 func encodeConversationSettings(settings ConversationSettings) (string, error) {
-	data, err := json.Marshal(settings)
+	data, err := json.Marshal(canonicalConversationSettings(settings))
 	if err != nil {
 		return "", fmt.Errorf("encode conversation settings: %w", err)
 	}
