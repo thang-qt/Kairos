@@ -214,6 +214,7 @@ func (service *ConversationService) commitConversationImportWithProgress(ctx con
 		if err = tx.Commit(); err != nil {
 			return err
 		}
+		service.sessionLists.publish(userID)
 		report.Imported++
 		if progress != nil {
 			progress(report)

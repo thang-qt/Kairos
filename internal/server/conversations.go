@@ -67,6 +67,7 @@ type ConversationService struct {
 	db            *sql.DB
 	commandMu     sync.Mutex
 	notifications conversationNotifications
+	sessionLists  sessionListNotifications
 }
 
 type sessionRecord struct {
@@ -201,6 +202,7 @@ func (service *ConversationService) CreateSessionWithSettings(
 	`, sessionID, userID, friendlyID, nullableString(normalizedLabel), nullableString(normalizedLabel), nullableString(normalizedLabel), 0, now, now, defaultContextTokens, settingsJSON); err != nil {
 		return SessionSummary{}, fmt.Errorf("create session: %w", err)
 	}
+	service.sessionLists.publish(userID)
 
 	return SessionSummary{
 		Key:           sessionID,
@@ -271,6 +273,7 @@ func (service *ConversationService) PinSession(
 	`, boolAsInt(isPinned), record.ID, userID); err != nil {
 		return SessionSummary{}, fmt.Errorf("pin session: %w", err)
 	}
+	service.sessionLists.publish(userID)
 
 	record.IsPinned = isPinned
 	return sessionRecordToSummary(record)
@@ -296,6 +299,7 @@ func (service *ConversationService) RenameSession(
 	`, nullableString(normalizedLabel), nullableString(normalizedLabel), now, record.ID, userID); err != nil {
 		return SessionSummary{}, fmt.Errorf("rename session: %w", err)
 	}
+	service.sessionLists.publish(userID)
 
 	record.Title = nullableString(normalizedLabel)
 	record.Label = nullableString(normalizedLabel)
@@ -325,6 +329,7 @@ func (service *ConversationService) DeleteSession(
 	if rowsAffected == 0 {
 		return errChatSessionNotFound
 	}
+	service.sessionLists.publish(userID)
 
 	return nil
 }
@@ -433,6 +438,7 @@ func (service *ConversationService) DeleteUserMessageAtRevision(
 	if err := service.truncateSessionMessagesExec(ctx, tx, &source, messageRecords, messageIndex); err != nil {
 		return SessionSummary{}, err
 	}
+	tx.recordSessionListChange(userID)
 	if err := tx.Commit(); err != nil {
 		return SessionSummary{}, err
 	}
@@ -565,6 +571,7 @@ func (service *ConversationService) appendMessagesWithOptions(
 			current.DerivedTitle = nullableString(summary.DerivedTitle)
 		}
 	}
+	transaction.recordSessionListChange(session.UserID)
 	if err := transaction.Commit(); err != nil {
 		return SessionSummary{}, fmt.Errorf("commit append messages tx: %w", err)
 	}
@@ -707,6 +714,7 @@ func (service *ConversationService) UpdateSessionTitleIfEmptyAtRevision(ctx cont
 	if err := insertChatEventExec(ctx, tx, ConversationEvent{SessionKey: sessionID, FriendlyID: record.FriendlyID, Revision: revision, State: "title", Session: &summary}); err != nil {
 		return false, err
 	}
+	tx.recordSessionListChange(userID)
 	if err := tx.Commit(); err != nil {
 		return false, err
 	}
@@ -831,6 +839,7 @@ func (service *ConversationService) createClonedSession(
 			return SessionSummary{}, fmt.Errorf("copy clone message: %w", err)
 		}
 	}
+	transaction.recordSessionListChange(source.UserID)
 
 	if err := transaction.Commit(); err != nil {
 		return SessionSummary{}, fmt.Errorf("commit clone session: %w", err)

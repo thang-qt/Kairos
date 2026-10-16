@@ -4,6 +4,7 @@ import type {
   ChatDeleteConversationInput,
   ConversationEvent,
   ChatHistoryInput,
+  ChatSessionListSubscription,
   ChatRenameConversationInput,
   ChatStatus,
 } from './types'
@@ -706,6 +707,30 @@ export function createHTTPChatBackend(): ChatBackend {
           handleMessage as EventListener,
         )
         eventSource.removeEventListener('error', handleError)
+        eventSource.close()
+      }
+    },
+    subscribeToSessionList(subscription: ChatSessionListSubscription) {
+      if (typeof window === 'undefined') return function noop() {}
+
+      const eventSource = new EventSource('/api/me/sessions/events')
+      let closed = false
+
+      function handleChange() {
+        if (closed) return
+        subscription.onChange()
+      }
+
+      eventSource.addEventListener('open', handleChange)
+      eventSource.addEventListener('message', handleChange as EventListener)
+
+      return function unsubscribe() {
+        closed = true
+        eventSource.removeEventListener('open', handleChange)
+        eventSource.removeEventListener(
+          'message',
+          handleChange as EventListener,
+        )
         eventSource.close()
       }
     },

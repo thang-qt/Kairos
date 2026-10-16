@@ -12,6 +12,11 @@ type conversationNotifications struct {
 	subscribers map[string]map[chan struct{}]struct{}
 }
 
+type sessionListNotifications struct {
+	mu          sync.Mutex
+	subscribers map[string]map[chan struct{}]struct{}
+}
+
 func (broker *conversationNotifications) subscribe(sessionID string) (<-chan struct{}, func()) {
 	broker.mu.Lock()
 	defer broker.mu.Unlock()
@@ -43,10 +48,44 @@ func (broker *conversationNotifications) publish(sessionID string) {
 	}
 }
 
+func (broker *sessionListNotifications) subscribe(userID string) (<-chan struct{}, func()) {
+	broker.mu.Lock()
+	defer broker.mu.Unlock()
+	if broker.subscribers == nil {
+		broker.subscribers = make(map[string]map[chan struct{}]struct{})
+	}
+	if broker.subscribers[userID] == nil {
+		broker.subscribers[userID] = make(map[chan struct{}]struct{})
+	}
+	channel := make(chan struct{}, 1)
+	broker.subscribers[userID][channel] = struct{}{}
+	return channel, func() {
+		broker.mu.Lock()
+		defer broker.mu.Unlock()
+		delete(broker.subscribers[userID], channel)
+		if len(broker.subscribers[userID]) == 0 {
+			delete(broker.subscribers, userID)
+		}
+	}
+}
+
+func (broker *sessionListNotifications) publish(userID string) {
+	broker.mu.Lock()
+	defer broker.mu.Unlock()
+	for channel := range broker.subscribers[userID] {
+		select {
+		case channel <- struct{}{}:
+		default:
+		}
+	}
+}
+
 type conversationTransaction struct {
 	*sql.Tx
-	notifications *conversationNotifications
-	sessions      map[string]struct{}
+	notifications    *conversationNotifications
+	sessionLists     *sessionListNotifications
+	sessions         map[string]struct{}
+	sessionListUsers map[string]struct{}
 }
 
 func (tx *conversationTransaction) recordEvent(sessionID string) {
@@ -55,12 +94,23 @@ func (tx *conversationTransaction) recordEvent(sessionID string) {
 	}
 	tx.sessions[sessionID] = struct{}{}
 }
+
+func (tx *conversationTransaction) recordSessionListChange(userID string) {
+	if tx.sessionListUsers == nil {
+		tx.sessionListUsers = make(map[string]struct{})
+	}
+	tx.sessionListUsers[userID] = struct{}{}
+}
+
 func (tx *conversationTransaction) Commit() error {
 	if err := tx.Tx.Commit(); err != nil {
 		return err
 	}
 	for sessionID := range tx.sessions {
 		tx.notifications.publish(sessionID)
+	}
+	for userID := range tx.sessionListUsers {
+		tx.sessionLists.publish(userID)
 	}
 	return nil
 }
@@ -69,7 +119,9 @@ func (service *ConversationService) beginEventTx(ctx context.Context, options *s
 	if err != nil {
 		return nil, err
 	}
-	return &conversationTransaction{Tx: tx, notifications: &service.notifications}, nil
+	return &conversationTransaction{
+		Tx: tx, notifications: &service.notifications, sessionLists: &service.sessionLists,
+	}, nil
 }
 func (service *AgentRuntime) beginEventTx(ctx context.Context, options *sql.TxOptions) (*conversationTransaction, error) {
 	return service.conversations.beginEventTx(ctx, options)

@@ -7,7 +7,55 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 )
+
+func (app *App) handleSessionListEvents(writer http.ResponseWriter, request *http.Request) {
+	user, ok := app.requireAuthenticatedUser(writer, request)
+	if !ok {
+		return
+	}
+
+	flusher, ok := writer.(http.Flusher)
+	if !ok {
+		writeError(writer, http.StatusInternalServerError, "streaming unsupported")
+		return
+	}
+
+	changed, unsubscribe := app.conversations.sessionLists.subscribe(user.ID)
+	defer unsubscribe()
+	streamContext, cancel := app.runtime.requestContext(request.Context())
+	defer cancel()
+
+	writer.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
+	writer.Header().Set("Cache-Control", "no-cache")
+	writer.Header().Set("Connection", "keep-alive")
+	writer.Header().Set("X-Accel-Buffering", "no")
+	writer.WriteHeader(http.StatusOK)
+	if _, err := writer.Write([]byte(": connected\n\n")); err != nil {
+		return
+	}
+	flusher.Flush()
+
+	heartbeat := time.NewTicker(15 * time.Second)
+	defer heartbeat.Stop()
+	for {
+		select {
+		case <-streamContext.Done():
+			return
+		case <-changed:
+			if _, err := writer.Write([]byte("data: {}\n\n")); err != nil {
+				return
+			}
+			flusher.Flush()
+		case <-heartbeat.C:
+			if _, err := writer.Write([]byte(": heartbeat\n\n")); err != nil {
+				return
+			}
+			flusher.Flush()
+		}
+	}
+}
 
 func (app *App) handleSessionEvents(writer http.ResponseWriter, request *http.Request) {
 	user, ok := app.requireAuthenticatedUser(writer, request)

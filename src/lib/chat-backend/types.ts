@@ -195,6 +195,10 @@ export type ChatSubscription = {
   onReconcile?: (event: ConversationEvent) => void
 }
 
+export type ChatSessionListSubscription = {
+  onChange: () => void
+}
+
 export type ChatBackend = {
   retryRun: (input: {
     friendlyId: string
@@ -248,4 +252,7 @@ export type ChatBackend = {
     input: ChatDeleteUserMessageInput,
   ) => Promise<ChatConversationResult>
   subscribeToConversation: (subscription: ChatSubscription) => () => void
+  subscribeToSessionList?: (
+    subscription: ChatSessionListSubscription,
+  ) => () => void
 }

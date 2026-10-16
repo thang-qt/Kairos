@@ -280,6 +280,7 @@ func (service *AgentRuntime) commitRunMessages(ctx context.Context, record execu
 	if err := service.refreshTurnExec(ctx, tx, record.ID, state); err != nil {
 		return summary, false, err
 	}
+	tx.recordSessionListChange(record.UserID)
 	if err := tx.Commit(); err != nil {
 		return summary, false, err
 	}

@@ -91,6 +91,71 @@ describe('conversation event subscriptions', function () {
   })
 })
 
+describe('session list event subscriptions', function () {
+  it('refreshes on the initial open, reconnects, and committed change hints', function () {
+    const listeners = new Map<string, Set<EventListenerOrEventListenerObject>>()
+    const onChange = vi.fn()
+    let sourceURL = ''
+    let sourceClosed = false
+
+    class FakeEventSource {
+      closed = false
+
+      constructor(public url: string) {
+        sourceURL = url
+      }
+
+      addEventListener(
+        type: string,
+        listener: EventListenerOrEventListenerObject,
+      ) {
+        const callbacks = listeners.get(type) ?? new Set()
+        callbacks.add(listener)
+        listeners.set(type, callbacks)
+      }
+
+      removeEventListener(
+        type: string,
+        listener: EventListenerOrEventListenerObject,
+      ) {
+        listeners.get(type)?.delete(listener)
+      }
+
+      close() {
+        this.closed = true
+        sourceClosed = this.closed
+      }
+    }
+
+    function emit(type: string, event: Event) {
+      for (const listener of listeners.get(type) ?? []) {
+        if (typeof listener === 'function') listener(event)
+        else listener.handleEvent(event)
+      }
+    }
+
+    vi.stubGlobal('window', {})
+    vi.stubGlobal('EventSource', FakeEventSource)
+
+    const unsubscribe = createHTTPChatBackend().subscribeToSessionList?.({
+      onChange,
+    })
+
+    expect(sourceURL).toBe('/api/me/sessions/events')
+    emit('open', new Event('open'))
+    emit('open', new Event('open'))
+    emit('message', new MessageEvent('message', { data: '{}' }))
+    expect(onChange).toHaveBeenCalledTimes(3)
+
+    unsubscribe?.()
+    expect(sourceClosed).toBe(true)
+    expect(listeners.get('open')).toHaveLength(0)
+    expect(listeners.get('message')).toHaveLength(0)
+    emit('message', new MessageEvent('message', { data: '{}' }))
+    expect(onChange).toHaveBeenCalledTimes(3)
+  })
+})
+
 describe('consumeSSEChatEvents', function () {
   it('delivers model deltas and a terminal event across response chunks', async function () {
     const encoder = new TextEncoder()

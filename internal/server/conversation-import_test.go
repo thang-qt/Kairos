@@ -256,6 +256,12 @@ func TestConversationImportPipelineSupportsOtherAdaptersAndScopesSourceIDs(t *te
 func TestConversationImportRollbackAndRetry(t *testing.T) {
 	app := newTestApp(t, nil)
 	cookie := signupAndRequireCookie(t, app, "rollback-import@example.invalid")
+	var userID string
+	if err := app.app.db.QueryRow(`SELECT id FROM users LIMIT 1`).Scan(&userID); err != nil {
+		t.Fatal(err)
+	}
+	changed, unsubscribe := app.app.conversations.sessionLists.subscribe(userID)
+	defer unsubscribe()
 	if _, err := app.app.db.Exec(`CREATE TRIGGER fail_import BEFORE INSERT ON chat_messages BEGIN SELECT RAISE(ABORT,'synthetic failure'); END`); err != nil {
 		t.Fatal(err)
 	}
@@ -269,6 +275,7 @@ func TestConversationImportRollbackAndRetry(t *testing.T) {
 	if err := app.app.db.QueryRow(`SELECT count(*) FROM chat_sessions`).Scan(&count); err != nil || count != 0 {
 		t.Fatal("partial conversation persisted", err)
 	}
+	assertNoSessionListNotification(t, changed)
 	if _, err := app.app.db.Exec(`DROP TRIGGER fail_import`); err != nil {
 		t.Fatal(err)
 	}
@@ -276,6 +283,7 @@ func TestConversationImportRollbackAndRetry(t *testing.T) {
 	if report.Failed || report.Imported != 1 {
 		t.Fatal("retry failed")
 	}
+	assertSessionListNotification(t, changed)
 }
 
 func TestChatGPTImportMissingImagesSplitFilesAndDuplicates(t *testing.T) {

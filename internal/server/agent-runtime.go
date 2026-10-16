@@ -364,6 +364,7 @@ func (service *AgentRuntime) StartRun(
 	if _, err := transaction.ExecContext(ctx, `UPDATE chat_runs SET user_message_id=? WHERE id=?`, messageIDFromMap(userMessage), record.ID); err != nil {
 		return SubmitTurnResult{}, err
 	}
+	transaction.recordSessionListChange(userID)
 	if err := transaction.Commit(); err != nil {
 		return SubmitTurnResult{}, fmt.Errorf("commit run tx: %w", err)
 	}

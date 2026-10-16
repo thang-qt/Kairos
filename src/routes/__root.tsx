@@ -10,6 +10,7 @@ import { getDesktopBridge, getShell } from '@/lib/shell'
 import { appQueryClient } from '@/lib/query-client'
 import { AppQueryProvider } from '@/lib/app-query-provider'
 import { ErrorScreen } from '@/components/error-screen'
+import { ChatSessionSync } from '@/features/chat/hooks/use-chat-session-sync'
 
 type RouterContext = {
   queryClient: typeof appQueryClient
@@ -43,6 +44,7 @@ function RootLayout() {
 
   return (
     <AppQueryProvider>
+      <ChatSessionSync />
       <div className="root">
         <Outlet />
       </div>
