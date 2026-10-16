@@ -342,7 +342,7 @@
           pname = "kairos";
           inherit version src;
 
-          vendorHash = "sha256-DaMgsXldDXrIsebfuwkrrOXdsIkpNLbI+ZzBAmbfRLU=";
+          vendorHash = "sha256-L36XxizV7WqZSxWGjhizkSUzXMKXGMyVedZ4EQPTZ90=";
           subPackages = [ "./cmd/kairosd" ];
 
           preBuild = ''
