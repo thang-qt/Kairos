@@ -48,7 +48,7 @@ func cleanupFixture(t *testing.T, store assetStorage) (*App, string, SubmitTurnR
 	if err := app.db.QueryRow(`SELECT id FROM users WHERE email=?`, "cleanup@example.invalid").Scan(&userID); err != nil {
 		t.Fatal(err)
 	}
-	image := "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aWQAAAABJRU5ErkJggg=="
+	image := base64.StdEncoding.EncodeToString(testPNGBytes(t))
 	result, err := app.runtime.StartRun(context.Background(), userID, SubmitTurnInput{NewConversation: &newConversationInput{Settings: defaultConversationSettings()}, Message: "image", Attachments: []AttachmentPayload{{MimeType: "image/png", Content: image}}})
 	if err != nil {
 		t.Fatal(err)
@@ -122,7 +122,7 @@ func TestAssetCleanupProtectsUncommittedUploads(t *testing.T) {
 	store := &cleanupTestStorage{}
 	app, userID, _ := cleanupFixture(t, store)
 	assets := app.conversations.assets
-	image, _ := base64.StdEncoding.DecodeString("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aWQAAAABJRU5ErkJggg==")
+	image := testPNGBytes(t)
 	message := map[string]any{"content": contentPartsToMaps([]chatMessageContentPart{newImageContentPart("image/png", base64.StdEncoding.EncodeToString(image))})}
 	app.conversations.commandMu.Lock()
 	err := assets.storeMessage(context.Background(), userID, message)

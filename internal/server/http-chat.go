@@ -371,6 +371,8 @@ func (app *App) handleSendMessage(writer http.ResponseWriter, request *http.Requ
 			writeError(writer, http.StatusConflict, err.Error())
 		case errors.Is(err, errChatSessionNotFound):
 			writeError(writer, http.StatusNotFound, err.Error())
+		case errors.Is(err, errInvalidImageAttachment):
+			writeError(writer, http.StatusBadRequest, err.Error())
 		case errors.Is(err, errNoProviderAvailable),
 			errors.Is(err, errNoModelAvailable),
 			errors.Is(err, errModelNotAvailable):

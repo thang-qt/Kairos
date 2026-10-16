@@ -47,8 +47,12 @@ func (service *AgentRuntime) StreamEphemeral(
 		return err
 	}
 	userMessage["timestamp"] = time.Now().UnixMilli()
+	flattenedHistory := flattenTurnHistory(history)
+	if err := validateEphemeralInlineImages(flattenedHistory); err != nil {
+		return err
+	}
 	requestHistory := append(
-		append([]map[string]any(nil), safeProviderTranscript(flattenTurnHistory(history))...),
+		append([]map[string]any(nil), safeProviderTranscript(flattenedHistory)...),
 		userMessage,
 	)
 

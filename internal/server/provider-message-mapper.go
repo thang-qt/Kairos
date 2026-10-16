@@ -1,6 +1,7 @@
 package server
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -18,10 +19,11 @@ func buildUserMessage(
 
 	content := make([]chatMessageContentPart, 0, len(attachments)+1)
 	for _, attachment := range attachments {
-		if strings.TrimSpace(attachment.MimeType) == "" || strings.TrimSpace(attachment.Content) == "" {
-			continue
+		data, mimeType, err := decodeImagePayload(attachment.MimeType, attachment.Content)
+		if err != nil {
+			return nil, "", fmt.Errorf("%w: %v", errInvalidImageAttachment, err)
 		}
-		content = append(content, newImageContentPart(attachment.MimeType, attachment.Content))
+		content = append(content, newImageContentPart(mimeType, base64.StdEncoding.EncodeToString(data)))
 	}
 	if normalizedMessage != "" {
 		content = append(content, newTextContentPart(normalizedMessage))

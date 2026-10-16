@@ -31,7 +31,7 @@ type imageImportAdapter struct{}
 
 func (imageImportAdapter) Source() string { return "concurrency-test" }
 func (imageImportAdapter) Walk(ctx context.Context, _ importImageStore, visit func(importConversation) error) error {
-	image := newImageContentPart("image/png", "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aWQAAAABJRU5ErkJggg==")
+	image := newImageContentPart("image/png", validTestPNGBase64)
 	return visit(importConversation{SourceID: "same", Title: "Import", Messages: []importMessage{{Role: "user", Content: []chatMessageContentPart{image, image}}}})
 }
 func TestImportUploadsDoNotBlockChatCommandsOrLoseAssets(t *testing.T) {

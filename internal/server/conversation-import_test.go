@@ -53,10 +53,7 @@ func importFixtureArchive(t *testing.T, conversations ...map[string]any) []byte 
 	if err != nil {
 		t.Fatal(err)
 	}
-	png, err := base64.StdEncoding.DecodeString("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aWQAAAABJRU5ErkJggg==")
-	if err != nil {
-		t.Fatal(err)
-	}
+	png := testPNGBytes(t)
 	return importFixtureZIP(t, map[string][]byte{"export/conversations-000.json": body, "export/synthetic-image.dat": png, "user.json": []byte(`{"email":"synthetic@example.invalid"}`), "unrelated.pdf": []byte("%PDF-1.7")})
 }
 

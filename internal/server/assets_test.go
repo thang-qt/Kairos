@@ -202,7 +202,7 @@ func TestAssetUploadFailureAndValidation(t *testing.T) {
 		t.Fatal(err)
 	}
 	ctx := context.Background()
-	png, _ := base64.StdEncoding.DecodeString("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aWQAAAABJRU5ErkJggg==")
+	png := testPNGBytes(t)
 	result, err := app.app.runtime.StartRun(ctx, userID, SubmitTurnInput{NewConversation: &newConversationInput{Settings: defaultConversationSettings()}, Message: "Image", Attachments: []AttachmentPayload{{MimeType: "image/png", Content: base64.StdEncoding.EncodeToString(png)}}})
 	if err != nil {
 		t.Fatal(err)

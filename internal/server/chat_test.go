@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"database/sql"
+	"encoding/base64"
 	"net/http"
 	"strings"
 	"sync"
@@ -68,6 +69,68 @@ func TestEphemeralMessageGeneratesWithoutPersistingChatData(t *testing.T) {
 		}
 		if count != 0 {
 			t.Fatalf("%s rows = %d, want 0", table, count)
+		}
+	}
+}
+
+func TestChatEndpointsRejectMalformedImagesWithoutPersistingTurns(t *testing.T) {
+	testServer := newTestApp(t, func(config *Config) {
+		config.SystemProviderEnabled = true
+		config.SystemProviderLabel = "Test provider"
+		config.SystemProviderStaticModels = []string{"test-model"}
+	})
+	testServer.app.providers.drivers[openAIProviderKind] = fakeProviderDriver{
+		models: []ProviderModel{{ID: "test-model", Object: "model", OwnedBy: "test"}},
+		output: "This response is temporary.",
+	}
+	cookie := signupAndRequireCookie(t, testServer, "image-validation@example.com")
+	invalidImage := base64.StdEncoding.EncodeToString(testPNGBytes(t)[:20])
+	attachment := []AttachmentPayload{{MimeType: "image/png", Content: invalidImage}}
+
+	createResponse := performJSONRequest(t, testServer.handler, http.MethodPost, "/api/sessions", createSessionRequest{
+		Message:     "Create with a malformed image.",
+		Attachments: attachment,
+	}, []*http.Cookie{cookie})
+	assertStatusCode(t, createResponse, http.StatusBadRequest)
+
+	var sessionCount int
+	if err := testServer.app.db.QueryRow(`SELECT COUNT(*) FROM chat_sessions`).Scan(&sessionCount); err != nil || sessionCount != 0 {
+		t.Fatalf("sessions after rejected create = %d, %v", sessionCount, err)
+	}
+	createResponse = performJSONRequest(t, testServer.handler, http.MethodPost, "/api/sessions", createSessionRequest{Label: "Image checks"}, []*http.Cookie{cookie})
+	assertStatusCode(t, createResponse, http.StatusCreated)
+	var created struct {
+		FriendlyID string `json:"friendlyId"`
+	}
+	decodeResponseJSON(t, createResponse, &created)
+
+	sendResponse := performJSONRequest(t, testServer.handler, http.MethodPost, "/api/sessions/"+created.FriendlyID+"/messages", sendMessageRequest{
+		Message:     "Send with a malformed image.",
+		Model:       "test-model",
+		Attachments: attachment,
+	}, []*http.Cookie{cookie})
+	assertStatusCode(t, sendResponse, http.StatusBadRequest)
+
+	ephemeralResponse := performJSONRequest(t, testServer.handler, http.MethodPost, "/api/ephemeral/messages", ephemeralMessageRequest{
+		History: []map[string]any{{
+			"role": "user",
+			"content": []map[string]any{{
+				"type":   "image",
+				"source": map[string]any{"type": "base64", "media_type": "image/png", "data": invalidImage},
+			}},
+		}},
+		Message: "Continue with malformed history.",
+		Model:   "test-model",
+	}, []*http.Cookie{cookie})
+	assertStatusCode(t, ephemeralResponse, http.StatusOK)
+	if !strings.Contains(ephemeralResponse.Body.String(), "invalid inline image in history") {
+		t.Fatalf("ephemeral response did not reject malformed history image: %s", ephemeralResponse.Body.String())
+	}
+
+	for _, table := range []string{"chat_messages", "chat_runs"} {
+		var count int
+		if err := testServer.app.db.QueryRow("SELECT COUNT(*) FROM " + table).Scan(&count); err != nil || count != 0 {
+			t.Fatalf("%s rows after rejected image requests = %d, %v", table, count, err)
 		}
 	}
 }

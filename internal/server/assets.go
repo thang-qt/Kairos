@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"net/http"
 	"sync"
 	"time"
 )
@@ -69,18 +68,9 @@ func (service *assetService) storeMessage(ctx context.Context, userID string, me
 		if part.Type != "image" || part.Source == nil || part.Source.Type != "base64" {
 			continue
 		}
-		data, err := base64.StdEncoding.DecodeString(part.Source.Data)
+		data, mime, err := decodeImagePayload(part.Source.MediaType, part.Source.Data)
 		if err != nil {
-			return fmt.Errorf("invalid image encoding")
-		}
-		if len(data) == 0 || len(data) > maxImportImage {
-			return fmt.Errorf("image exceeds the 20 MiB limit")
-		}
-		mime := http.DetectContentType(data)
-		switch mime {
-		case "image/png", "image/jpeg", "image/gif", "image/webp":
-		default:
-			return fmt.Errorf("unsupported image format")
+			return err
 		}
 		id := newID()
 		store := service.stores[service.active]

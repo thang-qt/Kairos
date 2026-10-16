@@ -10,6 +10,7 @@ require (
 	github.com/modelcontextprotocol/go-sdk v1.8.0
 	github.com/openai/openai-go/v3 v3.43.0
 	golang.org/x/crypto v0.39.0
+	golang.org/x/image v0.43.0
 	modernc.org/sqlite v1.39.1
 )
 
