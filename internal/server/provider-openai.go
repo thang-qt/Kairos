@@ -18,7 +18,8 @@ const openAIProviderKind = "openai"
 const defaultOpenAIBaseURL = "https://api.openai.com/v1"
 
 type OpenAICompatibleDriver struct {
-	httpClient *http.Client
+	httpClient          *http.Client
+	secureUserProviders bool
 }
 
 func (driver *OpenAICompatibleDriver) Kind() string { return openAIProviderKind }
@@ -28,7 +29,9 @@ func (driver *OpenAICompatibleDriver) ListModels(ctx context.Context, provider r
 		return modelsFromStaticList(provider.StaticModels, provider.Record), nil
 	}
 
-	models, err := driver.client(provider).Models.List(ctx)
+	client, httpClient := driver.client(provider)
+	defer driver.closeUserProviderConnections(provider, httpClient)
+	models, err := client.Models.List(ctx)
 	if err != nil {
 		if len(provider.StaticModels) > 0 {
 			return modelsFromStaticList(provider.StaticModels, provider.Record), nil
@@ -69,7 +72,9 @@ func (driver *OpenAICompatibleDriver) GenerateChatStream(
 	if provider.Record.UseResponsesAPI || provider.Record.Kind == openAIResponsesProviderKind {
 		return driver.generateResponses(ctx, provider, request, onDelta)
 	}
-	stream := driver.client(provider).Chat.Completions.NewStreaming(ctx, buildOpenAIChatRequest(request))
+	client, httpClient := driver.client(provider)
+	defer driver.closeUserProviderConnections(provider, httpClient)
+	stream := client.Chat.Completions.NewStreaming(ctx, buildOpenAIChatRequest(request))
 	defer stream.Close()
 
 	accumulator := openAIStreamAccumulator{}
@@ -91,8 +96,32 @@ func (driver *OpenAICompatibleDriver) GenerateChatStream(
 	return accumulator.result(provider.Record.Label, request.Model), nil
 }
 
-func (driver *OpenAICompatibleDriver) client(provider resolvedProvider) *openai.Client {
-	return driver.clientWithHTTPClient(provider, driver.httpClient)
+func (driver *OpenAICompatibleDriver) client(provider resolvedProvider) (*openai.Client, *http.Client) {
+	httpClient := driver.httpClientForProvider(provider)
+	return driver.clientWithHTTPClient(provider, httpClient), httpClient
+}
+
+func (driver *OpenAICompatibleDriver) httpClientForProvider(provider resolvedProvider) *http.Client {
+	if !driver.secureUserProviders || provider.Record.Owner != "user" {
+		return driver.httpClient
+	}
+	client, err := newProviderHTTPClient(normalizeOpenAIBaseURL(provider.BaseURL))
+	if err != nil {
+		return &http.Client{Transport: providerRejectTransport{err: err}}
+	}
+	return client
+}
+
+type providerRejectTransport struct{ err error }
+
+func (transport providerRejectTransport) RoundTrip(*http.Request) (*http.Response, error) {
+	return nil, transport.err
+}
+
+func (driver *OpenAICompatibleDriver) closeUserProviderConnections(provider resolvedProvider, client *http.Client) {
+	if driver.secureUserProviders && provider.Record.Owner == "user" && client != nil {
+		client.CloseIdleConnections()
+	}
 }
 
 func (driver *OpenAICompatibleDriver) clientWithHTTPClient(

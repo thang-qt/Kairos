@@ -107,7 +107,8 @@ func (driver *OpenAICompatibleDriver) generateResponses(ctx context.Context, pro
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+provider.APIKey)
-	client := driver.httpClient
+	client := driver.httpClientForProvider(provider)
+	defer driver.closeUserProviderConnections(provider, client)
 	if client == nil {
 		client = http.DefaultClient
 	}

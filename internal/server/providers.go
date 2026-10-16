@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"strings"
 	"sync"
 	"time"
 )
@@ -282,6 +283,13 @@ func NewProviderService(db *sql.DB, config Config) *ProviderService {
 		drivers:              defaultProviderDrivers(),
 		modelCacheTTL:        providerModelCacheTTL,
 		refreshingModelUsers: make(map[string]struct{}),
+	}
+	if strings.EqualFold(config.AppEnv, "production") {
+		for _, providerDriver := range service.drivers {
+			if driver, ok := providerDriver.(*OpenAICompatibleDriver); ok {
+				driver.secureUserProviders = true
+			}
+		}
 	}
 	if config.SystemProviderEnabled {
 		service.system = &systemProvider{
