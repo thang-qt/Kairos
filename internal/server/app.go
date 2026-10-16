@@ -196,7 +196,7 @@ func (app *App) Handler() http.Handler {
 	mux.HandleFunc("GET /api/sessions/{friendlyId}/events", app.handleSessionEvents)
 	mux.Handle("/", app.frontendHandler())
 
-	return app.withCommonMiddleware(app.withBrowserSecurity(mux))
+	return withRequestBodyTimeout(app.withCommonMiddleware(app.withBrowserSecurity(mux)))
 }
 
 func (app *App) frontendHandler() http.Handler {
