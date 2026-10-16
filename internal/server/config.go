@@ -55,7 +55,7 @@ type Config struct {
 }
 
 func LoadConfig() (Config, error) {
-	appEnv := getEnv("APP_ENV", "development")
+	appEnv := strings.ToLower(getEnv("APP_ENV", "development"))
 	production := strings.EqualFold(appEnv, "production")
 	sessionTTLHours, err := getEnvInt("SESSION_TTL_HOURS", 24*30)
 	if err != nil {
@@ -142,14 +142,37 @@ func LoadConfig() (Config, error) {
 		}
 		config.ProviderEncryptionSecretKey = developmentProviderEncryptionSecret
 	}
-	if strings.EqualFold(config.AppEnv, "production") && (len(config.ProviderEncryptionSecretKey) < 32 || config.ProviderEncryptionSecretKey == developmentProviderEncryptionSecret) {
-		return Config{}, errors.New("PROVIDER_SECRET_KEY must be set to at least 32 characters in production")
-	}
-
 	if err := validateAssetConfig(config); err != nil {
 		return Config{}, err
 	}
+	if err := validateConfig(config); err != nil {
+		return Config{}, err
+	}
 	return config, nil
+}
+
+func validateConfig(config Config) error {
+	switch strings.ToLower(strings.TrimSpace(config.AppEnv)) {
+	case "", "development", "test", "production":
+	default:
+		return errors.New("APP_ENV must be development, test, or production")
+	}
+	if !config.AuthEnabled && config.AllowSignup {
+		return errors.New("ALLOW_SIGNUP cannot be true when AUTH_ENABLED is false")
+	}
+	if !strings.EqualFold(config.AppEnv, "production") {
+		return nil
+	}
+	if !config.AuthEnabled {
+		return errors.New("AUTH_ENABLED must be true in production")
+	}
+	if !config.CookieSecure {
+		return errors.New("SESSION_COOKIE_SECURE must be true in production")
+	}
+	if len(config.ProviderEncryptionSecretKey) < 32 || config.ProviderEncryptionSecretKey == developmentProviderEncryptionSecret {
+		return errors.New("PROVIDER_SECRET_KEY must be set to at least 32 characters in production")
+	}
+	return nil
 }
 
 func getEnv(key string, fallback string) string {

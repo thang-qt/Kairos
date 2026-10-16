@@ -42,6 +42,13 @@ Common settings:
 - `PROVIDER_SECRET_KEY` for encrypting stored provider credentials
 - `BOOTSTRAP_ADMIN`, `ADMIN_EMAIL`, and `ADMIN_PASSWORD` for first admin setup
 
+Set `APP_ENV` to `development`, `test`, or `production`. Production requires an
+explicit `PROVIDER_SECRET_KEY` with at least 32 characters; authentication and
+secure session cookies are required. Self-service signup and user-defined
+provider base URLs default to disabled. Back up the key with the database:
+changing or losing it makes stored provider credentials unreadable, so users
+must enter those credentials again.
+
 See [.env.example](.env.example) for the full list.
 
 ## Image storage

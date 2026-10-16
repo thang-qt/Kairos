@@ -6,7 +6,7 @@ Kairos connects to user-managed remote MCP servers using Streamable HTTP. Add co
 
 Select the GitHub read-only preset (`https://api.githubcopilot.com/mcp/readonly`) or standard preset (`https://api.githubcopilot.com/mcp/`). Create a personal access token at https://github.com/settings/personal-access-tokens with only the repositories and permissions needed for your selected tools. Organization policies, repository access, and SSO authorization can further restrict access. Paste the token, save, test, then enable tools. GitHub uses the same client as custom servers; there is no special GitHub executor or OAuth flow.
 
-Stored tokens cannot be read back. Replace a token by editing its connection. Production bearer storage requires an explicitly configured `PROVIDER_SECRET_KEY` of at least 32 characters; protect and back up this key with the database. Losing or changing it makes existing encrypted credentials unreadable. Development uses the existing development encryption configuration.
+Stored tokens cannot be read back. Replace a token by editing its connection. Production credential storage requires an explicitly configured `PROVIDER_SECRET_KEY` of at least 32 characters; protect and back up this key with the database. The key encrypts both MCP bearer tokens and user-defined LLM provider API keys. Losing or changing it makes existing encrypted credentials unreadable, so users must enter them again. Development uses the existing development encryption configuration.
 
 ## Runtime and approvals
 

@@ -63,3 +63,47 @@ func TestLoadConfigUsesSafeProductionDefaults(t *testing.T) {
 		t.Fatal("production custom-provider-URL default = true, want false")
 	}
 }
+
+func TestLoadConfigRejectsUnsupportedAppEnvironment(t *testing.T) {
+	t.Setenv("APP_ENV", "prod")
+	t.Setenv("PROVIDER_SECRET_KEY", "0123456789abcdef0123456789abcdef")
+
+	if _, err := LoadConfig(); err == nil {
+		t.Fatal("LoadConfig() accepted an unsupported APP_ENV value")
+	}
+}
+
+func TestLoadConfigRejectsInsecureProductionOverrides(t *testing.T) {
+	tests := []struct {
+		name         string
+		authEnabled  string
+		cookieSecure string
+	}{
+		{name: "authentication disabled", authEnabled: "false", cookieSecure: "true"},
+		{name: "insecure session cookie", authEnabled: "true", cookieSecure: "false"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Setenv("APP_ENV", "production")
+			t.Setenv("PROVIDER_SECRET_KEY", "0123456789abcdef0123456789abcdef")
+			t.Setenv("AUTH_ENABLED", test.authEnabled)
+			t.Setenv("ALLOW_SIGNUP", "false")
+			t.Setenv("SESSION_COOKIE_SECURE", test.cookieSecure)
+			if _, err := LoadConfig(); err == nil {
+				t.Fatal("LoadConfig() accepted an insecure production override")
+			}
+		})
+	}
+}
+
+func TestNewAppRejectsInsecureProductionConfigBeforeOpeningDatabase(t *testing.T) {
+	_, err := NewApp(Config{
+		AppEnv:                      "production",
+		AuthEnabled:                 true,
+		CookieSecure:                false,
+		ProviderEncryptionSecretKey: "0123456789abcdef0123456789abcdef",
+	})
+	if err == nil {
+		t.Fatal("NewApp() accepted production config with insecure session cookies")
+	}
+}

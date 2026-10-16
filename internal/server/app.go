@@ -40,6 +40,9 @@ type App struct {
 }
 
 func NewApp(config Config) (*App, error) {
+	if err := validateConfig(config); err != nil {
+		return nil, err
+	}
 	if err := prepareDatabaseFiles(config.DBPath); err != nil {
 		return nil, err
 	}
