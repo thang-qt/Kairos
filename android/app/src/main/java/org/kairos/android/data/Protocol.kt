@@ -194,9 +194,9 @@ data class CommandAck(
 data class EphemeralRequest(
     val history: List<JsonObject>,
     val message: String,
-    val clientId: String,
-    val clientTime: String,
-    val clientTimeZone: String,
+    val clientId: String = "",
+    val clientTime: String = "",
+    val clientTimeZone: String = "",
     val settings: ConversationSettings? = null,
     val attachments: List<AttachmentPayload> = emptyList(),
 )
@@ -210,10 +210,10 @@ data class EphemeralRequest(
 @Serializable
 data class SendRequest(
     val message: String,
-    val clientId: String,
+    val clientId: String = "",
     val idempotencyKey: String = clientId,
-    val clientTime: String,
-    val clientTimeZone: String,
+    val clientTime: String = "",
+    val clientTimeZone: String = "",
     val expectedRevision: Long? = null,
     val attachments: List<AttachmentPayload> = emptyList(),
     val settings: ConversationSettings? = null,

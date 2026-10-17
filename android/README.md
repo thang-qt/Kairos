@@ -40,6 +40,19 @@ Cleartext HTTP is allowed for development. Public HTTP hosts show “Not encrypt
 
 ## Packages and streaming
 
+### Layering
+
+```text
+Go backend (authoritative behavior and durable state)
+  └─ Kotlin data layer: KairosApi, DTOs, SSE EventStream, disk caches, stores
+      └─ Feature repositories: sessions, models, conversation history, ephemeral, approvals
+          └─ ChatViewModel (one per activity), OverlayConversation (per overlay session)
+              └─ Navigation Compose destinations
+                  └─ Compose UI / shared transcript WebView
+```
+
+The backend defines behavior; the data layer is the only layer that speaks HTTP and owns caches; the ViewModel owns UI-adjacent state (drafts, focus, sheets, screen transitions); composables render. ChatViewModel is still the widest owner (~540 lines) because it coordinates auth, chat, search, and settings state. The planned split keeps repositories as-is and moves the coordination into focused ViewModels (`AuthViewModel` for connect/sign-in/server change, `ChatStateViewModel` for conversation selection and drafts, `SettingsViewModel` for the settings sheets and drafts) while Navigation Compose remains the single back-stack owner. Do not duplicate backend rules in Kotlin to close a parity gap — extend the backend contract instead.
+
 - `app/`: application container, activity and sealed root screen state.
 - `data/`: stores, typed API envelopes, raw JSON turns, SSE framing, repositories, web reducer port, session grouping, and disk caches.
 - `chat/`: chat ViewModel and commands.
@@ -96,3 +109,36 @@ The phone app is a chat client, not a server console. Everything needed to use K
 The settings and activity panels use the same surface tokens as the web (`primary-*` palette steps, `font-medium` maximum weight, tabular numerals) ported by `scripts/gen-android-theme.mjs`. Sheets are Material bottom sheets without outlines — the scrim and surface step carry the separation; search is a full-screen page that owns the status-bar inset. MCP approvals need no polling: the history payload carries pending approvals, decisions stream back as `mcp-approval` events, and reconcile/terminal events prune approvals of finished runs — the same event path the web uses, in both the app and the overlay.
 
 This is a debug demo: no in-app signup or provider administration, speech recognition/hotword, or durable offline outbox/background streaming (the session-list sync runs only while the app is foregrounded). Streaming resumes from backend history when a surface returns. The activity sheet renders the web's timeline semantics natively; thinking/tool visibility settings live on the web only. Date dividers are omitted. The assistant role cannot be requested on stock AOSP, so the settings fallback remains on those devices. OEM assistant/IME behavior, actual visual rendering, Photo Picker and Keystore behavior still require phone testing.
+
+### Web/Android parity matrix
+
+Status against the latest web implementation. "Shared" means the same React component runs offline in the transcript WebView, so parity is structural rather than reimplemented.
+
+| Feature                                                  | Status      | Notes                                                                             |
+| -------------------------------------------------------- | ----------- | --------------------------------------------------------------------------------- |
+| Conversation creation (empty + first message atomically) | Implemented | `POST /api/sessions` carries the new-chat `settings` draft; backend-authoritative |
+| Conversation list, grouping, pagination                  | Implemented | Paged endpoint, pinned-first ordering, sidebar auto load-more                     |
+| Conversation search                                      | Implemented | Full-screen search route over `/api/sessions/search`                              |
+| Conversation rename/pin/delete/fork                      | Implemented | Backend-enforced; sidebar and message actions                                     |
+| History rendering, streaming, reconnect                  | Implemented | Reducer port + authoritative snapshots; transcript is the web `MessageItem`       |
+| Send with idempotency + process-death recovery           | Implemented | Pending-send journal stores only a digest and the key                             |
+| Edit, retry, stop, delete turns                          | Implemented | Same endpoints and rules; retry eligibility comes from `canRetry`                 |
+| Model selection                                          | Implemented | Picker with set-as-default; model presets applied by the backend                  |
+| Per-conversation settings                                | Implemented | Settings sheet persists via `PATCH …/settings`                                    |
+| New-chat settings drafts                                 | Implemented | Saved across process death; consumed on first send                                |
+| Markdown, code, LaTeX, tables, images                    | Shared      | Offline WebView renders the web's `MessageItem`                                   |
+| Tool steps, sources, activity timeline                   | Implemented | Native activity sheet ports `splitAssistantActivity`                              |
+| MCP approvals                                            | Implemented | Streamed `mcp-approval` events in app and overlay; no polling                     |
+| Ephemeral chats                                          | Implemented | Client-owned history; resolved `settings` draft per send                          |
+| Image attachments                                        | Implemented | Photo Picker (JPEG ≤1280px, ≤300KB), overlay screenshots                          |
+| Document/file attachments                                | Incomplete  | Not offered by the mobile composer; beta exclusion                                |
+| Offline first paint of cached chats                      | Implemented | Disk snapshots render before network; never downgrade live state                  |
+| Background sync when app is closed                       | Excluded    | Session-list sync is foreground-only by design                                    |
+| Conversation export                                      | Excluded    | Web/desktop only for beta                                                         |
+| Provider/account administration                          | Excluded    | Web/desktop only                                                                  |
+| Keyboard shortcuts                                       | Excluded    | Touch-first; native gestures instead                                              |
+| Date dividers                                            | Omitted     | The transcript renders `MessageItem` without the list-level divider pass          |
+| Thinking/tool visibility settings                        | Omitted     | Web-only for beta                                                                 |
+| TalkBack, large fonts, system insets                     | Unverified  | Requires device testing before release                                            |
+
+Anything marked incomplete or omitted above is deliberate for beta; everything else degrades to the documented behavior rather than reimplementing backend rules in Kotlin.
