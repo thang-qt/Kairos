@@ -127,8 +127,8 @@ fun workingDurationMs(message: JsonObject): Long {
             ?.mapNotNull { it as? JsonObject }
             ?.filter { it.role == "toolResult" }
             ?.sumOf { step ->
-                val duration = step.record("details")?.get("durationMs") as? Number
-                duration?.toLong() ?: 0L
+                val duration = step.record("details")?.get("durationMs") as? JsonPrimitive
+                duration?.longOrNull ?: 0L
             } ?: 0L
     return fallback
 }
@@ -188,13 +188,14 @@ sealed interface ActivityStep {
         val failed: Boolean,
         val web: Boolean,
         val sources: List<WebSource> = emptyList(),
+        val details: String = "",
     ) : ActivityStep
 }
 
 data class WebSource(val title: String, val url: String, val content: String?)
 
 /** Builds the display steps for a turn's activity indexes. */
-fun activitySteps(message: JsonObject, indexes: List<Int>): List<ActivityStep> {
+fun activitySteps(message: JsonObject, indexes: List<Int>, mcpLabels: Map<String, String> = emptyMap()): List<ActivityStep> {
     val parts = message.parts()
     val steps = (message["steps"] as? JsonArray)?.mapNotNull { it as? JsonObject }.orEmpty()
     return indexes.mapNotNull { index ->
@@ -203,7 +204,7 @@ fun activitySteps(message: JsonObject, indexes: List<Int>): List<ActivityStep> {
             "thinking" ->
                 part.text("thinking")?.let { ActivityStep.Thinking(it, isAssistantStreaming(message)) }
             "text" -> part.text("text")?.let { ActivityStep.Narration(it) }
-            "toolCall" -> toolStep(part, message, steps)
+            "toolCall" -> toolStep(part, message, steps, mcpLabels)
             else -> null
         }
     }
@@ -238,14 +239,18 @@ fun webSources(message: JsonObject, callId: String?): List<WebSource> {
         val id = event.text("id")
         if (callId != null && id != callId) continue
         val result = event.record("result") ?: continue
-        val url = result.text("url") ?: continue
-        if (name == "web_fetch" && sources.containsKey(url)) continue
-        sources[url] =
-            WebSource(
-                result.text("title") ?: hostnameFromUrl(url) ?: url,
-                url,
-                result.text("text"),
+        val records = if (name == "web_search") {
+            (result["results"] as? JsonArray)?.mapNotNull { it as? JsonObject }
+                ?: listOf(result)
+        } else listOf(result)
+        for (record in records) {
+            val url = record.text("url") ?: continue
+            if (sources.containsKey(url)) continue
+            sources[url] = WebSource(
+                record.text("title") ?: hostnameFromUrl(url) ?: url,
+                url, record.text("text") ?: record.text("snippet"),
             )
+        }
     }
     return sources.values.toList()
 }
@@ -257,50 +262,73 @@ private fun toolStep(
     part: JsonObject,
     message: JsonObject,
     steps: List<JsonObject>,
+    mcpLabels: Map<String, String>,
 ): ActivityStep {
     val callId = part.string("id")
     val name = part.string("name").orEmpty()
     val status = part.string("status")
     val result = resultFor(callId, steps)
-    val failed = status == "error" || (result?.get("isError") as? JsonPrimitive)?.booleanOrNull == true
+    val event = (message.record("details")?.get("tools") as? JsonArray)
+        ?.mapNotNull { it as? JsonObject }
+        ?.lastOrNull { it.string("id") == callId }
+    val savedOutput = event?.record("result")
+    val error = event?.text("error") ?: savedOutput?.text("error")
+    val failed = status in listOf("error", "aborted", "interrupted", "output-error") ||
+        (result?.get("isError") as? JsonPrimitive)?.booleanOrNull == true || error != null
+    val completed = status in listOf("completed", "output-available") ||
+        result != null || savedOutput != null
+    val running = !completed && !failed
     val isWebTool = name == "web_search" || name == "web_fetch"
-    if (isWebTool && (status == null || status == "running")) {
+    if (isWebTool) {
         val events = webEvents(message, callId)
+        val arguments = part.record("arguments") ?: part.text("partialJson")?.let {
+            runCatching { wireJson.parseToJsonElement(it) as? JsonObject }.getOrNull()
+        }
+        val requests = events.mapNotNull { event ->
+            val args = event.record("arguments")
+            val out = event.record("result")
+            Triple(event.text("name") ?: name,
+                args?.text("query") ?: out?.text("query"),
+                args?.text("url") ?: out?.text("url"))
+        }.ifEmpty { listOf(Triple(name, arguments?.text("query"), arguments?.text("url"))) }
         return webStep(
-            events.mapNotNull { event ->
-                val args = event.record("arguments")
-                val out = event.record("result")
-                Triple(
-                    event.text("name") ?: "web_tool",
-                    args?.text("query") ?: out?.text("query"),
-                    args?.text("url") ?: out?.text("url"),
-                )
-            },
+            requests,
             events.mapNotNull { it.text("error") },
-            running = status == null || status == "running",
+            running = running,
             webSources(message, callId),
         )
     }
-    val input = part.record("input")
+    val input = part.record("arguments")
     val label = input?.text("label")
-    val title = toolActionTitle(name, status == "output-available", label, input)
+    val resultDetails = result?.record("details") ?: savedOutput
+    val serverName = resultDetails?.text("mcpServer")
+    val toolName = resultDetails?.text("mcpTool")
+    val displayName = if (serverName != null && toolName != null) "$serverName · $toolName"
+        else mcpLabels[name]
+    val title = if (name.startsWith("mcp_")) {
+        val action = if (completed) "Called" else "Calling"
+        "$action ${displayName ?: "remote tool"}" + (label?.let { ": $it" } ?: "")
+    } else toolActionTitle(name, completed, label, input)
+    val outputText = resultText(result).ifEmpty { savedOutput?.toString().orEmpty() }
     val meta =
         when {
-            failed -> "Failed"
-            status == "output-available" -> {
-                val text = resultText(result)
-                if (text.isEmpty()) ""
-                else "= ${if (text.length > 48) text.take(48) + "…" else text}"
-            }
+            failed -> error ?: resultText(result).ifEmpty { "No result was saved for this call." }
             name.startsWith("mcp_") -> argumentSummary(input)
+            completed -> outputText
             else -> ""
         }
     return ActivityStep.Tool(
         title = title,
         meta = meta,
-        running = status != "output-available" && status != "output-error" && !failed,
+        running = running,
         failed = failed,
         web = false,
+        details = if (name.startsWith("mcp_")) {
+            listOfNotNull(
+                input?.let { "Input\n$it" },
+                outputText.takeIf { it.isNotBlank() }?.let { "Output\n$it" },
+            ).joinToString("\n\n")
+        } else "",
     )
 }
 
@@ -360,8 +388,7 @@ private fun toolActionTitle(
             if (expr != null) "Calculating: $expr" else "Calculating"
         }
         name.startsWith("mcp_") -> {
-            val display = name.removePrefix("mcp_").replace('_', ' ')
-            if (completed) "Called $display" else "Calling $display"
+            if (completed) "Called remote tool" else "Calling remote tool"
         }
         else -> toolActionName(name, completed)
     }
