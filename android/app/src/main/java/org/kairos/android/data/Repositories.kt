@@ -450,7 +450,13 @@ class ConversationRepository(
         val id = sessionId
         val epoch = generation
         val prior = ambiguousSend
-        val fingerprint = pendingSends?.fingerprint(id, editId, text, settings, attachments)
+        // Hashing can cover megabytes of attachment bytes; never do it on the main thread.
+        val fingerprint =
+            pendingSends?.let { store ->
+                withContext(Dispatchers.IO) {
+                    store.fingerprint(id, editId, text, settings, attachments)
+                }
+            }
         val clientId =
             if (fingerprint != null) {
                 checkNotNull(pendingSends).acquire(fingerprint)
