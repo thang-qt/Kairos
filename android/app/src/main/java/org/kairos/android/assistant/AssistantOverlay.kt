@@ -2,6 +2,8 @@
 
 package org.kairos.android.assistant
 
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -80,7 +82,7 @@ fun AssistantOverlay(
         val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
         val generation = conversation.generation
         val imeVisible = WindowInsets.ime.getBottom(density) > 0
-        val signedIn by app.container.tokens.signedIn.collectAsState()
+        val signedIn by app.container.tokens.signedIn.collectAsStateWithLifecycle()
         val systemDark = androidx.compose.foundation.isSystemInDarkTheme()
         SideEffect { app.theme.systemDark = systemDark }
         LaunchedEffect(generation) {
