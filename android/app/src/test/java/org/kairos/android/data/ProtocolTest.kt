@@ -52,16 +52,25 @@ class ProtocolTest {
     fun strictRequestFieldsMatchCreateAndSendGoStructs() {
         val request =
             SendRequest(
-                "Hello",
-                "model",
-                "client",
+                message = "Hello",
+                clientId = "client",
                 clientTime = "2026-10-14T00:00:00Z",
                 clientTimeZone = "UTC",
             )
         val existing = wireJson.encodeToJsonElement(request).jsonObject
-        assertFalse(existing.containsKey("settings"))
-        assertFalse(existing.containsKey("expectedRevision"))
-        assertEquals("client", existing.string("idempotencyKey"))
+        // Omitted generation fields inherit the conversation's backend settings. Sending
+        // zero values instead would clear prompts and disable configured tools.
+        assertEquals(
+            setOf(
+                "message",
+                "clientId",
+                "idempotencyKey",
+                "clientTime",
+                "clientTimeZone",
+                "attachments",
+            ),
+            existing.keys,
+        )
         val created =
             wireJson
                 .encodeToJsonElement(request.copy(settings = ConversationSettings(model = "model")))
@@ -84,7 +93,6 @@ class ProtocolTest {
             EphemeralRequest(
                 history = listOf(buildJsonObject { put("id", JsonPrimitive("t1")) }),
                 message = "Hi",
-                model = "m",
                 clientId = "c",
                 clientTime = "now",
                 clientTimeZone = "UTC",
@@ -96,13 +104,9 @@ class ProtocolTest {
             setOf(
                 "history",
                 "message",
-                "model",
                 "clientId",
                 "clientTime",
                 "clientTimeZone",
-                "systemPrompt",
-                "webSearch",
-                "mathTools",
                 "attachments",
             ),
             encoded.keys,
