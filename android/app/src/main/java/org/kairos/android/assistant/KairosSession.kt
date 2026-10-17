@@ -83,7 +83,7 @@ class KairosSession(context: Context) : VoiceInteractionSession(context) {
                 onDismiss = { hide() },
                 onOpenApp = { sessionId ->
                     // The options overload (API 31+) carries the slide-up entry animation.
-                    if (Build.VERSION.SDK_INT >= 31)
+                    if (Build.VERSION.SDK_INT >= 34)
                         startAssistantActivity(
                             mainAppIntent(context, sessionId),
                             openAppOptions(context),

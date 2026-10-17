@@ -42,7 +42,9 @@ class SessionsRepository(
     }
 
     private fun persist() {
-        scope.launch(Dispatchers.IO) { cache.writeSessions(list) }
+        val snapshot = list.encoded()
+        val cacheGeneration = cache.generation
+        scope.launch(Dispatchers.IO) { cache.writeSessions(snapshot, cacheGeneration) }
     }
 
     suspend fun refresh() {
@@ -252,9 +254,9 @@ class ModelsRepository(private val api: KairosApi, private val cache: DiskCache)
     }
 
     private suspend fun persist() {
-        withContext(Dispatchers.IO) {
-            cache.writeModels(ModelsCacheState(catalog = _catalog.value, chatSettings = chatSettings))
-        }
+        val snapshot = ModelsCacheState(catalog = _catalog.value, chatSettings = chatSettings)
+        val cacheGeneration = cache.generation
+        withContext(Dispatchers.IO) { cache.writeModels(snapshot, cacheGeneration) }
     }
 }
 
@@ -274,10 +276,23 @@ class ConversationRepository(
     val turns = history.map { it.messages }.stateIn(scope, SharingStarted.Eagerly, emptyList())
     private val _connection = MutableStateFlow(ConnectionState.Connected)
     val connection = _connection.asStateFlow()
+
+    private data class PendingSend(
+        val sessionId: String?,
+        val editId: String?,
+        val text: String,
+        val attachments: List<AttachmentPayload>,
+        val settings: ConversationSettings,
+        val clientId: String,
+    )
+    // Retain the command identity after an ambiguous network failure: a retry of
+    // the same input must not create a second run if the first reached the server.
+    private var ambiguousSend: PendingSend? = null
     var sessionId: String? = null
         private set
 
     fun open(id: String?) {
+        ambiguousSend = null
         generation++
         refreshGeneration++
         stream?.cancel()
@@ -397,9 +412,11 @@ class ConversationRepository(
     private fun persistHistory(history: History) {
         val id = sessionId ?: return
         val epoch = generation
+        val cacheGeneration = historyCache.generation
         scope.launch(Dispatchers.IO) {
-            // Skip writes for superseded sessions; same-session reopens keep writing.
-            if (generation == epoch || sessionId == id) historyCache.writeHistory(id, history)
+            if (generation == epoch && sessionId == id) {
+                historyCache.writeHistory(id, history, cacheGeneration)
+            }
         }
     }
 
@@ -431,7 +448,17 @@ class ConversationRepository(
     ): String? {
         val id = sessionId
         val epoch = generation
-        val clientId = UUID.randomUUID().toString()
+        val prior = ambiguousSend
+        val clientId =
+            if (
+                prior != null &&
+                    prior.sessionId == id &&
+                    prior.editId == editId &&
+                    prior.text == text &&
+                    prior.attachments == attachments &&
+                    prior.settings == settings
+            ) prior.clientId else UUID.randomUUID().toString()
+        ambiguousSend = null
         val previous = _history.value
         val revision = if (id != null) readyRevision() else null
         val optimistic = buildJsonObject {
@@ -506,6 +533,13 @@ class ConversationRepository(
             scope.launch { runCatching { sessions.refresh() } }
             return sessionId
         } catch (e: Exception) {
+            if (epoch == generation && e !is CancellationException) {
+                // A timeout, transport error, or 5xx may occur after backend acceptance.
+                // Keep the idempotency key for the user's next matching retry.
+                if (e !is ApiException || e.code == 408 || e.code >= 500) {
+                    ambiguousSend = PendingSend(id, editId, text, attachments, settings, clientId)
+                }
+            }
             if (epoch == generation) {
                 // Remove only this command's optimistic item; preserve concurrent SSE updates.
                 val current = _history.value
