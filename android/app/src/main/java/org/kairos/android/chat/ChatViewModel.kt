@@ -356,7 +356,7 @@ class ChatViewModel(val app: AppContainer, private val savedState: SavedStateHan
                     offline = false
                     if (wasNewConversation && next != null) {
                         updateNewChatDraftSettings(null)
-                        navigate(NavigationRequest.Chat(next, replaceCurrent = true))
+                        navigate(NavigationRequest.Chat(next))
                     }
                 }
             }

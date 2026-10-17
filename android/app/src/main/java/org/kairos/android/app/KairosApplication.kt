@@ -99,5 +99,5 @@ sealed interface NavigationRequest {
     data object Settings : NavigationRequest
     data object Search : NavigationRequest
     data object Back : NavigationRequest
-    data class Chat(val friendlyId: String?, val replaceCurrent: Boolean = false) : NavigationRequest
+    data class Chat(val friendlyId: String?) : NavigationRequest
 }
