@@ -362,6 +362,7 @@ private fun formatElapsed(elapsedMs: Long): String = formatActivityDuration(elap
 @Composable
 private fun ActivityRow(step: ActivityStep, hasConnector: Boolean) {
     val colors = LocalKairosColors.current
+    val openBrowser = rememberOpenBrowser()
     Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
         Column(Modifier.width(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             Box(Modifier.height(24.dp), contentAlignment = Alignment.Center) {
@@ -423,7 +424,7 @@ private fun ActivityRow(step: ActivityStep, hasConnector: Boolean) {
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                                 modifier =
-                                    Modifier.pressable(onClick = { openBrowserQuietly(source.url) })
+                                    Modifier.pressable(onClick = { openBrowser(source.url) })
                                         .padding(vertical = 1.dp),
                             )
                         }
@@ -491,6 +492,10 @@ private fun Modifier.pulsing(): Modifier = composed {
     graphicsLayer { this.alpha = alpha }
 }
 
-private fun openBrowserQuietly(url: String) {
-    // Overlays open links through their own browser hook; the sheet keeps links inert here.
+@Composable
+private fun rememberOpenBrowser(): (String) -> Unit {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    return remember(context) {
+        { url -> org.kairos.android.assistant.openBrowser(context, url) }
+    }
 }
