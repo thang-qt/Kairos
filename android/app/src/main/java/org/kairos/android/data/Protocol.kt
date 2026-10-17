@@ -53,6 +53,16 @@ data class ConversationSettings(
     val advanced: AdvancedSettings = AdvancedSettings(),
 )
 
+/** The backend's frozen configuration for an accepted command (see chat-api-contract.md). */
+@Serializable
+data class EffectiveConfiguration(
+    val model: String = "",
+    val systemPrompt: String = "",
+    val webSearch: Boolean = true,
+    val mathTools: Boolean = true,
+    val advanced: JsonObject? = null,
+)
+
 @Serializable
 data class SessionSummary(
     val key: String = "",
@@ -164,6 +174,7 @@ data class CommandAck(
     val assistantTurnId: String? = null,
     val clientId: String? = null,
     val userTurn: JsonObject? = null,
+    val effectiveConfiguration: EffectiveConfiguration? = null,
     val removedTurnIds: List<String> = emptyList(),
     val invalidatedRunIds: List<String> = emptyList(),
 )
@@ -173,26 +184,32 @@ data class CommandAck(
 /**
  * Throwaway requests post the full displayed history and stream the answer without ever
  * creating a session. Field names must match the Go struct exactly.
+ *
+ * Generation configuration is submitted as the resolved `settings` draft: on the backend a
+ * settings object replaces the per-conversation base for that command only, and omitted
+ * top-level overrides inherit it. Sending zero values instead (systemPrompt "",
+ * webSearch false) would disable configured tools, so this type no longer carries them.
  */
 @Serializable
 data class EphemeralRequest(
     val history: List<JsonObject>,
     val message: String,
-    val model: String,
     val clientId: String,
     val clientTime: String,
     val clientTimeZone: String,
-    val systemPrompt: String = "",
-    val webSearch: Boolean = true,
-    val mathTools: Boolean = true,
-    val advanced: JsonObject? = null,
+    val settings: ConversationSettings? = null,
     val attachments: List<AttachmentPayload> = emptyList(),
 )
 
+/**
+ * A chat command: create, send, or edit. Omitted generation fields inherit the backend's
+ * authoritative settings (see docs/chat-api-contract.md). For creation, `settings` is the
+ * user's draft and is persisted as the new conversation's settings; for existing
+ * conversations the backend reads its own saved settings, so `settings` stays null.
+ */
 @Serializable
 data class SendRequest(
     val message: String,
-    val model: String,
     val clientId: String,
     val idempotencyKey: String = clientId,
     val clientTime: String,
@@ -200,10 +217,6 @@ data class SendRequest(
     val expectedRevision: Long? = null,
     val attachments: List<AttachmentPayload> = emptyList(),
     val settings: ConversationSettings? = null,
-    val systemPrompt: String = "",
-    val webSearch: Boolean = true,
-    val mathTools: Boolean = true,
-    val advanced: JsonObject? = null,
 )
 
 @Serializable data class SettingsRequest(val settings: ConversationSettings)

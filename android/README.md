@@ -1,6 +1,6 @@
 # Kairos Android demo
 
-The Compose app connects to the real Kairos HTTP backend. Sign-in, saved conversations, images, model selection, streaming, stop/retry, editing, forks, session search and settings use the same protocol as the web app. The transcript is an offline WebView containing the web's `MessageItem`, activity chip, tool primitives and markdown stack. The assistant overlay renders markdown natively and saves normal sessions.
+The Compose app connects to the real Kairos HTTP backend. Sign-in, saved conversations, images, model selection, streaming, stop/retry, editing, forks, session search and settings use the same protocol as the web app. The transcript is an offline WebView containing the web's `MessageItem`, activity chip, tool primitives and markdown stack. The assistant overlay renders markdown natively and saves normal sessions. Generation configuration is backend-authoritative (see `docs/android-backend-contract.md`): commands omit generation fields they do not genuinely override, new chats carry a `settings` draft, and acknowledgements include the frozen `effectiveConfiguration`.
 
 ## Build and install
 
