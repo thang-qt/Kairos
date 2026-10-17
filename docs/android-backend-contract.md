@@ -6,7 +6,7 @@ execution, and durable conversation state (see `docs/chat-api-contract.md`). And
 
 ## The omission rule
 
-Request bodies distinguish *omitted* from *explicitly supplied* fields. An omitted
+Request bodies distinguish _omitted_ from _explicitly supplied_ fields. An omitted
 generation field inherits the backend's authoritative settings; an explicit value overrides
 them. This makes blind zero values destructive: sending `webSearch: false` disables web
 search even when the conversation enables it, and sending `systemPrompt: ""` clears the
@@ -54,7 +54,7 @@ All commands carry `clientId`, a stable `idempotencyKey` for the logical send,
 ## Commands, revisions, idempotency
 
 - Treat a timeout or 5xx as an ambiguous acceptance. Reuse the same key when replaying the
-  *same* command (`PendingSendStore` journals only a payload digest and the key); reconcile
+  _same_ command (`PendingSendStore` journals only a payload digest and the key); reconcile
   server history first. A definitive 4xx cannot be replayed as the same command.
 - Command results return `revision`, `runId`, `invalidatedRunIds`, and `removedTurnIds`.
   Apply them before subsequent event patches.
