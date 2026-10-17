@@ -147,20 +147,27 @@ class ChatViewModel(val app: AppContainer) : ViewModel() {
         check(capabilities.capabilities.auth.enabled) {
             "This server has sign-in disabled. Kairos chat still requires an authenticated account. Enable authentication on the server."
         }
+        // A server change invalidates the old account's local projection.
+        app.tokens.clear()
+        app.clearUserData()
         app.server.save(normalized)
         screen = Screen.SignIn
     }
 
     fun signIn(email: String, password: String) = task {
         app.tokens.save(app.api.login(email.trim(), password))
+        app.bindSignedInIdentity()
         screen = Screen.Chat
         select(pendingSession)
         pendingSession = null
         refreshAll()
+        app.sessions.startSync()
     }
 
     fun changeConnect() {
         error = null
+        app.tokens.clear()
+        app.clearUserData()
         screen = Screen.Connect
     }
 
