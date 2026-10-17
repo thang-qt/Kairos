@@ -264,6 +264,7 @@ class ConversationRepository(
     private val api: KairosApi,
     private val sessions: SessionsRepository,
     private val historyCache: DiskCache,
+    private val pendingSends: PendingSendStore? = null,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var stream: Job? = null
@@ -449,8 +450,11 @@ class ConversationRepository(
         val id = sessionId
         val epoch = generation
         val prior = ambiguousSend
+        val fingerprint = pendingSends?.fingerprint(id, editId, text, settings, attachments)
         val clientId =
-            if (
+            if (fingerprint != null) {
+                checkNotNull(pendingSends).acquire(fingerprint)
+            } else if (
                 prior != null &&
                     prior.sessionId == id &&
                     prior.editId == editId &&
@@ -521,6 +525,7 @@ class ConversationRepository(
                         if (editId == null) "/messages"
                         else "/messages/${api.encodePath(editId)}/edit"
             val ack = api.write<CommandAck, SendRequest>(path, "POST", request)
+            pendingSends?.forgetIf(clientId)
             if (epoch != generation) return ack.friendlyId.ifBlank { id }
             acceptCommand(ack)
             if (id == null) {
@@ -531,6 +536,10 @@ class ConversationRepository(
             scope.launch { runCatching { sessions.refresh() } }
             return sessionId
         } catch (e: Exception) {
+            if (e is ApiException && e.code != 408 && e.code < 500) {
+                // A definitive rejection cannot be replayed as the same command.
+                withContext(NonCancellable) { pendingSends?.forgetIf(clientId) }
+            }
             if (epoch == generation && e !is CancellationException) {
                 // A timeout, transport error, or 5xx may occur after backend acceptance.
                 // Keep the idempotency key for the user's next matching retry.

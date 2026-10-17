@@ -46,6 +46,8 @@ class AppContainer(context: Context) {
     private val historyCache =
         DiskCache(File(cacheRoot, "history"), maxBytes = 8L * 1024 * 1024)
     val api = KairosApi(server, tokens)
+    val pendingSends = PendingSendStore(cache)
+    val lastSession = LastSessionStore(cache)
     val sessions = SessionsRepository(api, cache, tokens)
     val models = ModelsRepository(api, cache)
     // The assistant never constructs a WebView. Only the full application asks for this lazy
@@ -77,7 +79,7 @@ class AppContainer(context: Context) {
         if (transcript.isInitialized()) transcript.value.render(null, emptyList())
     }
 
-    fun conversation() = ConversationRepository(api, sessions, historyCache)
+    fun conversation() = ConversationRepository(api, sessions, historyCache, pendingSends)
 }
 
 sealed interface Screen {
