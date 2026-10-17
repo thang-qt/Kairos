@@ -1,12 +1,8 @@
-import { useCallback } from 'react'
-import { useQueryClient } from '@tanstack/react-query'
+import { useCallback, useState } from 'react'
 
-import { chatQueryKeys } from '@/features/chat/chat-queries'
+import { getChatBackend } from '@/lib/chat-backend'
 import { getMessageTimestamp, textFromMessage } from '@/features/chat/utils'
-import type {
-  ConversationTurn,
-  HistoryResponse,
-} from '@/lib/chat-backend/contracts'
+import type { ConversationTurn } from '@/lib/chat-backend/contracts'
 
 export type ConversationExportFormat = 'markdown' | 'json' | 'text'
 
@@ -21,53 +17,69 @@ export function useConversationExport({
   currentSessionKey,
   sessionTitle,
 }: UseExportInput) {
-  const queryClient = useQueryClient()
-
+  const [failure, setFailure] = useState<{
+    friendlyId: string
+    message: string
+  } | null>(null)
   const exportConversation = useCallback(
-    function exportConversation(format: ConversationExportFormat) {
-      const historyKey = chatQueryKeys.history(
-        currentFriendlyId,
-        currentSessionKey || currentFriendlyId,
-      )
-      const cached = queryClient.getQueryData<HistoryResponse>(historyKey)
-      const messages = Array.isArray(cached?.messages) ? cached.messages : []
+    async function exportConversation(format: ConversationExportFormat) {
+      setFailure(null)
+      try {
+        const history = await getChatBackend().getConversationHistory({
+          friendlyId: currentFriendlyId,
+          sessionKey: currentSessionKey || currentFriendlyId,
+        })
+        const messages = history.messages
 
-      if (messages.length === 0) return
+        if (messages.length === 0) return
 
-      const title = sessionTitle || currentFriendlyId
-      const chatMessages = messages.filter(
-        (msg) => msg.role === 'user' || msg.role === 'assistant',
-      )
+        const title = sessionTitle || currentFriendlyId
+        const chatMessages = messages.filter(
+          (msg) => msg.role === 'user' || msg.role === 'assistant',
+        )
 
-      let content: string
-      let extension: string
-      let mimeType: string
+        let content: string
+        let extension: string
+        let mimeType: string
 
-      switch (format) {
-        case 'markdown':
-          content = toMarkdown(chatMessages, title)
-          extension = 'md'
-          mimeType = 'text/markdown'
-          break
-        case 'json':
-          content = toJSON(chatMessages, title)
-          extension = 'json'
-          mimeType = 'application/json'
-          break
-        case 'text':
-          content = toPlainText(chatMessages, title)
-          extension = 'txt'
-          mimeType = 'text/plain'
-          break
+        switch (format) {
+          case 'markdown':
+            content = toMarkdown(chatMessages, title)
+            extension = 'md'
+            mimeType = 'text/markdown'
+            break
+          case 'json':
+            content = toJSON(chatMessages, title)
+            extension = 'json'
+            mimeType = 'application/json'
+            break
+          case 'text':
+            content = toPlainText(chatMessages, title)
+            extension = 'txt'
+            mimeType = 'text/plain'
+            break
+        }
+
+        const filename = sanitizeFilename(title) + '.' + extension
+        downloadFile(content, filename, mimeType)
+      } catch (error) {
+        setFailure({
+          friendlyId: currentFriendlyId,
+          message:
+            error instanceof Error
+              ? error.message
+              : 'Unable to export conversation.',
+        })
       }
-
-      const filename = sanitizeFilename(title) + '.' + extension
-      downloadFile(content, filename, mimeType)
     },
-    [currentFriendlyId, currentSessionKey, queryClient, sessionTitle],
+    [currentFriendlyId, currentSessionKey, sessionTitle],
   )
 
-  return { exportConversation }
+  return {
+    exportConversation,
+    exportError:
+      failure?.friendlyId === currentFriendlyId ? failure.message : null,
+  }
 }
 
 function formatTimestamp(message: ConversationTurn): string {

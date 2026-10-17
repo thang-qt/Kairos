@@ -35,9 +35,7 @@ import { useChatRestoration } from './hooks/use-chat-restoration'
 import { useChatMutations } from './hooks/use-chat-mutations'
 import {
   beginFreshNewChat,
-  buildChatRequestAdvancedSettings,
-  normalizeConversationTextSetting,
-  resolveConversationModelID,
+  displayConversationModelID,
   useConversationSettings,
 } from './conversation-settings'
 import { RIGHT_SIDEBAR_WIDTH, RightSidebar } from './components/right-sidebar'
@@ -129,7 +127,7 @@ export function ChatScreen({
     modelOverrides: chatSettingsQuery.data?.modelOverrides,
     defaultModelId,
   })
-  const resolvedConversationModel = resolveConversationModelID(
+  const resolvedConversationModel = displayConversationModelID(
     conversationSettings.model,
     models,
     defaultModelId,
@@ -155,15 +153,6 @@ export function ChatScreen({
       updateConversationSettings({ model: modelId })
     },
     [updateConversationSettings],
-  )
-  const resolvedSystemPrompt = normalizeConversationTextSetting(
-    conversationSettings.systemPrompt,
-  )
-  const resolvedWebSearch = conversationSettings.webSearch
-  const resolvedMathTools = conversationSettings.mathTools
-  const resolvedAdvancedSettings = buildChatRequestAdvancedSettings(
-    conversationSettings.advanced,
-    resolvedConversationModelDetails,
   )
   const {
     historyQuery,
@@ -191,7 +180,7 @@ export function ChatScreen({
       ? activeSession.totalTokens
       : countConversationTokens(displayMessages)
 
-  const { exportConversation } = useConversationExport({
+  const { exportConversation, exportError } = useConversationExport({
     currentFriendlyId: activeFriendlyId,
     currentSessionKey: sessionKeyForHistory,
     sessionTitle: activeTitle,
@@ -223,7 +212,8 @@ export function ChatScreen({
         ? backendStatusQuery.data.detail || 'Chat backend unavailable'
         : null
   const backendUnavailable = isChatBackendUnavailable(backendStatusQuery)
-  const backendError = backendStatusError ?? sessionsError ?? historyError
+  const backendError =
+    backendStatusError ?? sessionsError ?? historyError ?? exportError
   const handleBackendRefetch = useCallback(() => {
     void backendStatusQuery.refetch()
   }, [backendStatusQuery])
@@ -313,10 +303,6 @@ export function ChatScreen({
     activeSessionKey,
     onSessionResolved: onSessionResolved ? handleSessionCreated : undefined,
     resolvedConversationModel,
-    resolvedSystemPrompt,
-    resolvedWebSearch,
-    resolvedMathTools,
-    resolvedAdvancedSettings,
     conversationSettings,
     beginGeneration,
     finishGeneration,

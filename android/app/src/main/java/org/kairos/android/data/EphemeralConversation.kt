@@ -74,14 +74,12 @@ class EphemeralConversation(private val api: KairosApi) {
                             EphemeralRequest(
                                 history = previous,
                                 message = text,
-                                model = settings.model,
                                 clientId = clientId,
                                 clientTime = Instant.now().toString(),
                                 clientTimeZone = ZoneId.systemDefault().id,
-                                systemPrompt = settings.systemPrompt,
-                                webSearch = settings.webSearch,
-                                mathTools = settings.mathTools,
-                                advanced = requestAdvanced(settings.advanced),
+                                // The resolved draft replaces the backend base for this
+                                // command: user defaults plus the picked model and preset.
+                                settings = settings,
                                 attachments = attachments,
                             )
                         ),

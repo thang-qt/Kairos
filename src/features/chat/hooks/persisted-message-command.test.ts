@@ -1,3 +1,4 @@
+import { defaultConversationSettings } from '../conversation-settings'
 import { QueryClient } from '@tanstack/react-query'
 import { describe, expect, it, vi } from 'vitest'
 
@@ -20,10 +21,8 @@ describe('sendPersistedMessage', function () {
     const retryable = { current: null as RetryableNetworkSend | null }
     const dependencies = {
       queryClient,
-      resolvedConversationModel: 'model-default',
-      resolvedSystemPrompt: '',
-      resolvedWebSearch: false,
-      resolvedMathTools: false,
+      conversationSettings: defaultConversationSettings,
+
       beginGeneration: vi.fn(),
       finishGeneration: vi.fn(),
       startRun: vi.fn(),
@@ -59,6 +58,9 @@ describe('sendPersistedMessage', function () {
     const history = queryClient.getQueryData<{
       messages: Array<{ status?: string; clientId?: string }>
     }>(chatQueryKeys.history('friendly-id', 'session-key'))
+    expect(request?.settings).toEqual(defaultConversationSettings)
+    expect(request?.advanced).toBeUndefined()
+    expect(retryable.current?.settings).toEqual(request?.settings)
     expect(retryable.current?.idempotencyKey).toBe(request?.idempotencyKey)
     expect(retryable.current?.clientId).toBe(request?.clientId)
     expect(retryable.current?.model).toBe('model-custom')
@@ -83,10 +85,8 @@ describe('sendPersistedMessage', function () {
     const retryable = { current: null as RetryableNetworkSend | null }
     const dependencies = {
       queryClient,
-      resolvedConversationModel: 'model-default',
-      resolvedSystemPrompt: '',
-      resolvedWebSearch: false,
-      resolvedMathTools: false,
+      conversationSettings: defaultConversationSettings,
+
       beginGeneration: vi.fn(),
       finishGeneration: vi.fn(),
       startRun: vi.fn(),

@@ -38,6 +38,15 @@ func (service *AgentRuntime) StreamEphemeral(
 		_ = sink.publish(state, strings.TrimSpace(runErr.Error()))
 	}()
 
+	settings, err := service.providers.InitialChatSettings(ctx, userID, input.Model)
+	if err != nil {
+		return err
+	}
+	input, err = service.resolveChatConfiguration(ctx, userID, settings, input)
+	if err != nil {
+		return err
+	}
+	sink.configuration = input.EffectiveConfiguration
 	userMessage, _, err := buildUserMessage(
 		input.Message,
 		input.Attachments,
@@ -71,10 +80,11 @@ func (service *AgentRuntime) StreamEphemeral(
 }
 
 type ephemeralGenerationSink struct {
-	runID  string
-	turnID string
-	steps  []map[string]any
-	emit   func(ConversationEvent) error
+	configuration *EffectiveChatConfiguration
+	runID         string
+	turnID        string
+	steps         []map[string]any
+	emit          func(ConversationEvent) error
 }
 
 func (sink *ephemeralGenerationSink) ModelResolved(_ ProviderModel) error {
@@ -112,6 +122,9 @@ func (sink *ephemeralGenerationSink) Final(message map[string]any, _ int64) erro
 func (sink *ephemeralGenerationSink) publish(state, errorMessage string) error {
 	content := []map[string]any{}
 	turn := map[string]any{"id": sink.turnID, "role": "assistant", "runId": sink.runID, "steps": sink.steps, "status": map[string]string{"delta": "running", "final": "completed", "error": "error", "aborted": "aborted"}[state]}
+	if sink.configuration != nil {
+		turn["effectiveConfiguration"] = sink.configuration
+	}
 	for _, step := range sink.steps {
 		if stringValueFromMap(step, "role") == "assistant" {
 			content = append(content, contentPartsToMaps(contentPartsFromAny(step["content"]))...)

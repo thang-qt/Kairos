@@ -502,18 +502,16 @@ class ConversationRepository(
                 )
         val request =
             SendRequest(
-                text,
-                settings.model,
-                clientId,
+                message = text,
+                clientId = clientId,
                 clientTime = Instant.now().toString(),
                 clientTimeZone = ZoneId.systemDefault().id,
                 expectedRevision = revision,
                 attachments = attachments,
+                // Creation persists this draft as the new conversation's settings. Existing
+                // conversations send no generation fields at all: omitted overrides inherit
+                // the backend's authoritative saved settings (docs/chat-api-contract.md).
                 settings = if (id == null) settings else null,
-                systemPrompt = settings.systemPrompt,
-                webSearch = settings.webSearch,
-                mathTools = settings.mathTools,
-                advanced = requestAdvanced(settings.advanced),
             )
         try {
             val path =
@@ -671,25 +669,3 @@ class ConversationRepository(
     }
 }
 
-fun requestAdvanced(settings: AdvancedSettings): JsonObject = buildJsonObject {
-    if (settings.reasoning)
-        put("reasoning", buildJsonObject { put("effort", settings.reasoningEffort) })
-    if (settings.sampling)
-        put(
-            "sampling",
-            buildJsonObject {
-                put("temperature", settings.temperature)
-                put("topP", settings.topP)
-                put("topK", settings.topK)
-            },
-        )
-    if (settings.penalties)
-        put(
-            "penalties",
-            buildJsonObject {
-                put("frequencyPenalty", settings.frequencyPenalty)
-                put("presencePenalty", settings.presencePenalty)
-            },
-        )
-    if (settings.maxTokens) put("maxTokens", settings.maxTokensValue)
-}

@@ -47,6 +47,7 @@ export type MessageContent =
   | ImageContent
 
 export type ConversationTurn = {
+  effectiveConfiguration?: EffectiveChatConfiguration
   canRetry?: boolean
   steps?: Array<ConversationTurn>
   status?: string
@@ -175,4 +176,24 @@ export type ChatRequestAdvancedSettings = {
     presencePenalty?: number
   }
   maxTokens?: number
+}
+
+export type EffectiveChatConfiguration = {
+  model: string
+  systemPrompt: string
+  webSearch: boolean
+  mathTools: boolean
+  advanced: {
+    reasoning: { effort: ReasoningEffort } | null
+    sampling: {
+      temperature: number | null
+      topP: number | null
+      topK: number | null
+    } | null
+    penalties: {
+      frequencyPenalty: number | null
+      presencePenalty: number | null
+    } | null
+    maxTokens: number | null
+  } | null
 }

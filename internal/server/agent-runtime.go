@@ -18,22 +18,25 @@ type newConversationInput struct {
 }
 
 type SubmitTurnInput struct {
-	ExecutionID      string                `json:"-"`
-	NewConversation  *newConversationInput `json:"-"`
-	EditMessageID    string                `json:"-"`
-	ExpectedRevision *int64                `json:"expectedRevision,omitempty"`
-	FriendlyID       string                `json:"-"`
-	Message          string                `json:"message"`
-	Model            string                `json:"model"`
-	SystemPrompt     string                `json:"systemPrompt"`
-	WebSearch        bool                  `json:"webSearch"`
-	MathTools        bool                  `json:"mathTools"`
-	Advanced         *ChatAdvancedOptions  `json:"advanced"`
-	IdempotencyKey   string                `json:"idempotencyKey"`
-	ClientID         string                `json:"clientId"`
-	ClientTime       string                `json:"clientTime"`
-	ClientTimeZone   string                `json:"clientTimeZone"`
-	Attachments      []AttachmentPayload   `json:"attachments"`
+	ConfigurationFields    map[string]bool             `json:"-"`
+	Settings               *ConversationSettings       `json:"-"`
+	EffectiveConfiguration *EffectiveChatConfiguration `json:"effectiveConfiguration,omitempty"`
+	ExecutionID            string                      `json:"-"`
+	NewConversation        *newConversationInput       `json:"-"`
+	EditMessageID          string                      `json:"-"`
+	ExpectedRevision       *int64                      `json:"expectedRevision,omitempty"`
+	FriendlyID             string                      `json:"-"`
+	Message                string                      `json:"message"`
+	Model                  string                      `json:"model"`
+	SystemPrompt           string                      `json:"systemPrompt"`
+	WebSearch              bool                        `json:"webSearch"`
+	MathTools              bool                        `json:"mathTools"`
+	Advanced               *ChatAdvancedOptions        `json:"advanced"`
+	IdempotencyKey         string                      `json:"idempotencyKey"`
+	ClientID               string                      `json:"clientId"`
+	ClientTime             string                      `json:"clientTime"`
+	ClientTimeZone         string                      `json:"clientTimeZone"`
+	Attachments            []AttachmentPayload         `json:"attachments"`
 }
 
 type AttachmentPayload struct {
@@ -42,6 +45,7 @@ type AttachmentPayload struct {
 }
 
 type SubmitTurnResult struct {
+	EffectiveConfiguration *EffectiveChatConfiguration `json:"effectiveConfiguration,omitempty"`
 	CommandChanges
 	Revision        int64          `json:"revision"`
 	UserTurn        map[string]any `json:"userTurn,omitempty"`
@@ -157,7 +161,11 @@ func (service *AgentRuntime) StartRun(
 		}
 	}
 	if creating {
-		settingsJSON, encodeErr := encodeConversationSettings(input.NewConversation.Settings)
+		normalized, normalizeErr := service.providers.NormalizeChatSettings(ctx, userID, input.NewConversation.Settings)
+		if normalizeErr != nil {
+			return SubmitTurnResult{}, normalizeErr
+		}
+		settingsJSON, encodeErr := encodeConversationSettings(normalized)
 		if encodeErr != nil {
 			return SubmitTurnResult{}, encodeErr
 		}
@@ -182,15 +190,24 @@ func (service *AgentRuntime) StartRun(
 		}
 		if found {
 			return SubmitTurnResult{
-				RunID:           existingRun.ID,
-				Revision:        existingRun.Revision,
-				FriendlyID:      session.FriendlyID,
-				SessionKey:      session.ID,
-				AssistantTurnID: existingRun.AssistantTurnID,
-				UserTurnID:      existingRun.UserTurnID,
-				ClientID:        strings.TrimSpace(input.ClientID),
+				EffectiveConfiguration: service.runConfiguration(ctx, existingRun.ID),
+				RunID:                  existingRun.ID,
+				Revision:               existingRun.Revision,
+				FriendlyID:             session.FriendlyID,
+				SessionKey:             session.ID,
+				AssistantTurnID:        existingRun.AssistantTurnID,
+				UserTurnID:             existingRun.UserTurnID,
+				ClientID:               strings.TrimSpace(input.ClientID),
 			}, nil
 		}
+	}
+	settings, err := decodeConversationSettings(session.ConversationSettingsJSON)
+	if err != nil {
+		return SubmitTurnResult{}, err
+	}
+	input, err = service.resolveChatConfiguration(ctx, userID, settings, input)
+	if err != nil {
+		return SubmitTurnResult{}, err
 	}
 	shouldGenerateTitle := shouldAutoGenerateSessionTitle(session)
 	titlePreferences := UserPreferences{}
@@ -349,13 +366,14 @@ func (service *AgentRuntime) StartRun(
 			}
 			if found {
 				return SubmitTurnResult{
-					RunID:           existingRun.ID,
-					Revision:        existingRun.Revision,
-					FriendlyID:      session.FriendlyID,
-					SessionKey:      session.ID,
-					AssistantTurnID: existingRun.AssistantTurnID,
-					UserTurnID:      existingRun.UserTurnID,
-					ClientID:        strings.TrimSpace(input.ClientID),
+					EffectiveConfiguration: service.runConfiguration(ctx, existingRun.ID),
+					RunID:                  existingRun.ID,
+					Revision:               existingRun.Revision,
+					FriendlyID:             session.FriendlyID,
+					SessionKey:             session.ID,
+					AssistantTurnID:        existingRun.AssistantTurnID,
+					UserTurnID:             existingRun.UserTurnID,
+					ClientID:               strings.TrimSpace(input.ClientID),
 				}, nil
 			}
 		}
@@ -377,7 +395,7 @@ func (service *AgentRuntime) StartRun(
 	log.Printf("kairos: stage=accepted run=%s revision=%d acceptance_ms=%d", record.ID, record.Revision, time.Since(acceptanceStarted).Milliseconds())
 
 	return SubmitTurnResult{
-		CommandChanges: session.CommandChanges, Revision: record.Revision, UserTurn: userMessage,
+		EffectiveConfiguration: input.EffectiveConfiguration, CommandChanges: session.CommandChanges, Revision: record.Revision, UserTurn: userMessage,
 		RunID:           runID,
 		FriendlyID:      session.FriendlyID,
 		SessionKey:      session.ID,

@@ -46,7 +46,7 @@ func (service *AgentRuntime) executeGeneration(
 	if err != nil {
 		return err
 	}
-	if err := validateReasoningOptions(model, input.Request.Advanced); err != nil {
+	if err := validateChatAdvancedOptions(model, input.Request.Advanced); err != nil {
 		return err
 	}
 	log.Printf("kairos: stage=provider_resolution run=%s duration_ms=%d", input.RunID, time.Since(resolutionStarted).Milliseconds())

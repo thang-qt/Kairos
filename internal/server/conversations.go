@@ -64,6 +64,7 @@ type HistoryPayload struct {
 }
 
 type ConversationService struct {
+	providers     *ProviderService
 	assets        *assetService
 	db            *sql.DB
 	commandMu     sync.Mutex
@@ -175,6 +176,10 @@ func (service *ConversationService) CreateSessionWithSettings(
 	label string,
 	settings ConversationSettings,
 ) (SessionSummary, error) {
+	settings, err := service.normalizeSettings(ctx, userID, settings)
+	if err != nil {
+		return SessionSummary{}, err
+	}
 	now := time.Now().UnixMilli()
 	settingsJSON, err := encodeConversationSettings(settings)
 	if err != nil {
@@ -225,7 +230,13 @@ func (service *ConversationService) UpdateConversationSettings(
 	friendlyID string,
 	settings ConversationSettings,
 ) (SessionSummary, error) {
+	service.commandMu.Lock()
+	defer service.commandMu.Unlock()
 	record, err := service.findSessionByFriendlyID(ctx, userID, friendlyID)
+	if err != nil {
+		return SessionSummary{}, err
+	}
+	settings, err = service.normalizeSettings(ctx, userID, settings)
 	if err != nil {
 		return SessionSummary{}, err
 	}
@@ -1091,7 +1102,7 @@ func defaultConversationSettings() ConversationSettings {
 }
 
 func encodeConversationSettings(settings ConversationSettings) (string, error) {
-	data, err := json.Marshal(settings)
+	data, err := json.Marshal(normalizeConversationSettings(settings))
 	if err != nil {
 		return "", fmt.Errorf("encode conversation settings: %w", err)
 	}
@@ -1103,10 +1114,11 @@ func decodeConversationSettings(raw string) (ConversationSettings, error) {
 	if strings.TrimSpace(raw) == "" || strings.TrimSpace(raw) == "{}" {
 		return settings, nil
 	}
-	if err := json.Unmarshal([]byte(raw), &settings); err != nil {
+	type legacySettings ConversationSettings
+	if err := json.Unmarshal([]byte(raw), (*legacySettings)(&settings)); err != nil {
 		return ConversationSettings{}, fmt.Errorf("decode conversation settings: %w", err)
 	}
-	return settings, nil
+	return normalizeConversationSettings(settings), nil
 }
 
 func mustDecodeConversationSettings(raw string) ConversationSettings {

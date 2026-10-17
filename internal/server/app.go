@@ -93,6 +93,7 @@ func NewApp(config Config) (*App, error) {
 	}
 	conversations.assets = assets
 	providers := NewProviderService(db, config)
+	conversations.providers = providers
 	webTools := NewWebToolSettingsService(db, config)
 	mcp := NewMCPService(db, config)
 	mcp.conversations = conversations

@@ -23,3 +23,10 @@ The page shows progress and supports cancellation, including during ZIP compress
 does not download a partial file. Exports are assembled in browser memory;
 large histories may take time and require a smaller date range or count.
 Conversations edited during export may reflect changes made while it runs.
+
+The single-conversation exporter also fetches complete authoritative history
+before formatting, rather than reading the React query cache. A failed fetch
+reports an error and produces no download. A running conversation exports its
+committed server snapshot at fetch time; local optimistic turns are excluded.
+Ephemeral conversations remain client-owned and are not part of persisted
+conversation exports.

@@ -30,9 +30,7 @@ function createInput() {
     activeFriendlyId: 'new',
     isNewChat: true,
     resolvedConversationModel: 'test-model',
-    resolvedSystemPrompt: '',
-    resolvedWebSearch: false,
-    resolvedMathTools: false,
+
     conversationSettings: defaultConversationSettings,
     beginGeneration: vi.fn(),
     finishGeneration: vi.fn(),

@@ -22,10 +22,10 @@ type runProjection struct {
 
 // Load full state at boundaries and for recovery, never for each text checkpoint.
 func (service *AgentRuntime) loadRunProjection(ctx context.Context, exec sqlExecutor, runID string) (*runProjection, error) {
-	var sessionID, turnID, status, errorMessage, previousJSON string
+	var sessionID, turnID, status, errorMessage, previousJSON, configurationJSON string
 	var revision, started, completed int64
 	var invalidated, hasRequest int
-	if err := exec.QueryRowContext(ctx, `SELECT session_id,COALESCE(assistant_message_id,id),status,COALESCE(error_message,''),revision,started_at,COALESCE(completed_at,0),invalidated,(request_json IS NOT NULL AND request_json!=''),COALESCE(turn_json,'') FROM chat_runs WHERE id=?`, runID).Scan(&sessionID, &turnID, &status, &errorMessage, &revision, &started, &completed, &invalidated, &hasRequest, &previousJSON); err != nil {
+	if err := exec.QueryRowContext(ctx, `SELECT session_id,COALESCE(assistant_message_id,id),status,COALESCE(error_message,''),revision,started_at,COALESCE(completed_at,0),invalidated,(request_json IS NOT NULL AND request_json!=''),COALESCE(turn_json,''),COALESCE(json_extract(request_json,'$.effectiveConfiguration'),'') FROM chat_runs WHERE id=?`, runID).Scan(&sessionID, &turnID, &status, &errorMessage, &revision, &started, &completed, &invalidated, &hasRequest, &previousJSON, &configurationJSON); err != nil {
 		return nil, err
 	}
 	if invalidated != 0 {
@@ -76,6 +76,13 @@ func (service *AgentRuntime) loadRunProjection(ctx context.Context, exec sqlExec
 		}
 	}
 	turn := map[string]any{"id": turnID, "role": "assistant", "runId": runID, "status": status, "revision": revision, "timestamp": started, "content": content, "steps": steps}
+	if configurationJSON != "" {
+		var configuration EffectiveChatConfiguration
+		if err := json.Unmarshal([]byte(configurationJSON), &configuration); err != nil {
+			return nil, err
+		}
+		turn["effectiveConfiguration"] = configuration
+	}
 	if completed > 0 {
 		turn["completedAt"] = completed
 	}
