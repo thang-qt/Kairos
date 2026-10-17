@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.MutableContextWrapper
 import org.kairos.android.data.*
 import org.kairos.android.transcript.TranscriptBridge
+import org.kairos.android.assistant.LibraryAttachment
 import java.io.File
 import java.security.MessageDigest
 
@@ -64,6 +65,8 @@ class AppContainer(context: Context) {
     }
 
     fun clearUserData() {
+        // A photo selected for the previous account must never appear in a new session.
+        LibraryAttachment.pending = null
         sessions.stopSync()
         sessions.clear()
         models.clear()
@@ -83,4 +86,14 @@ sealed interface Screen {
     data object Chat : Screen
 
     data object Settings : Screen
+}
+
+/** Navigation intent from UI actions; only the NavHost owns destination history. */
+sealed interface NavigationRequest {
+    data object Connect : NavigationRequest
+    data object SignIn : NavigationRequest
+    data object Settings : NavigationRequest
+    data object Search : NavigationRequest
+    data object Back : NavigationRequest
+    data class Chat(val friendlyId: String?, val replaceCurrent: Boolean = false) : NavigationRequest
 }

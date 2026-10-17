@@ -179,13 +179,8 @@ fun ChatScreen(chat: ChatViewModel, bridge: TranscriptBridge, onCopy: (String) -
     }
 
     PredictiveBackHandler(
-        enabled = fraction > 0.001f || chat.searchOpen,
+        enabled = fraction > 0.001f,
     ) { events ->
-        if (chat.searchOpen) {
-            events.collect {}
-            chat.closeSearch()
-            return@PredictiveBackHandler
-        }
         val initial = drawer.requireOffset()
         try {
             drawer.anchoredDrag {
@@ -391,7 +386,9 @@ fun ChatScreen(chat: ChatViewModel, bridge: TranscriptBridge, onCopy: (String) -
                     },
                     onStop = { chat.stop() },
                     focusRequestKey = chat.composerGeneration,
+                    focusKey = chat.composerFocusGeneration.takeIf { it > 0 },
                     initialDraft = chat.composerSeed,
+                    onDraftChange = chat::saveDraft,
                     editing = chat.editing != null,
                     onCancelEdit = chat::cancelEdit,
                     attachments = attachments,
@@ -443,13 +440,4 @@ fun ChatScreen(chat: ChatViewModel, bridge: TranscriptBridge, onCopy: (String) -
     }
     if (chat.conversationSettingsOpen)
         ConversationSettingsSheet(chat) { chat.closeConversationSettings() }
-    if (chat.searchOpen)
-        SearchOverlay(
-            chat,
-            onDismiss = chat::closeSearch,
-            onSelect = { id ->
-                chat.closeSearch()
-                chat.select(id)
-            },
-        )
 }

@@ -51,6 +51,7 @@ fun NativeComposer(
     focusRequestKey: Int? = null,
     focusKey: Int? = null,
     initialDraft: String = "",
+    onDraftChange: (String) -> Unit = {},
     editing: Boolean = false,
     onCancelEdit: () -> Unit = {},
     attachments: List<ScreenAttachment> = emptyList(),
@@ -68,13 +69,6 @@ fun NativeComposer(
     val focusRequester = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
     var draft by remember(focusRequestKey) { mutableStateOf(initialDraft) }
-    LaunchedEffect(focusRequestKey) {
-        if (focusRequestKey != null) {
-            withFrameNanos {}
-            focusRequester.requestFocus()
-            keyboard?.show()
-        }
-    }
     LaunchedEffect(focusKey) {
         if (focusKey != null) {
             withFrameNanos {}
@@ -90,6 +84,7 @@ fun NativeComposer(
         ) {
             onSend(draft.trim())
             draft = ""
+            onDraftChange("")
         }
     }
     Column(modifier.onSizeChanged { onBodyHeight(it.height) }.padding(contentPadding)) {
@@ -217,7 +212,7 @@ fun NativeComposer(
         }
                 BasicTextField(
                     value = draft,
-                    onValueChange = { draft = it },
+                    onValueChange = { draft = it; onDraftChange(it) },
                     maxLines = 8,
                     textStyle =
                         TextStyle(

@@ -128,7 +128,7 @@ fun SessionActionsSheet(
             onDismiss()
         }
         SheetAction(KairosIcons.Settings02, "Chat settings") {
-            chat.openConversationSettings()
+            chat.openConversationSettings(session.friendlyId)
             onDismiss()
         }
         if (allowFork)
