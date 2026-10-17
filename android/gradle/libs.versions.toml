@@ -26,6 +26,7 @@ compose-ui-tooling-preview = { module = "androidx.compose.ui:ui-tooling-preview"
 activity-compose = { module = "androidx.activity:activity-compose", version.ref = "activity" }
 webkit = { module = "androidx.webkit:webkit", version.ref = "webkit" }
 lifecycle-runtime-ktx = { module = "androidx.lifecycle:lifecycle-runtime-ktx", version.ref = "lifecycle" }
+lifecycle-runtime-compose = { module = "androidx.lifecycle:lifecycle-runtime-compose", version.ref = "lifecycle" }
 
 lifecycle-viewmodel = { module = "androidx.lifecycle:lifecycle-viewmodel", version.ref = "lifecycle" }
 savedstate = { module = "androidx.savedstate:savedstate", version.ref = "savedstate" }

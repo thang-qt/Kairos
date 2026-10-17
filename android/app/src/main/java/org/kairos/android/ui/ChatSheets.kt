@@ -2,6 +2,8 @@
 
 package org.kairos.android.ui
 
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -209,7 +211,7 @@ fun MessageActionsSheet(
 @Composable
 fun ModelsSheet(chat: ChatViewModel, onDismiss: () -> Unit) {
     val colors = LocalKairosColors.current
-    val catalog by chat.catalog.collectAsState()
+    val catalog by chat.catalog.collectAsStateWithLifecycle()
     var query by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
     val activeModel = chat.activeSession?.settings?.model?.ifBlank { chat.model } ?: chat.model
