@@ -5,7 +5,7 @@ let state = initialState
 const listeners = new Set<() => void>()
 export let followBottom = true
 export function setFollowBottom(value: boolean) {
-  followBottom = value
+  followBottom = state.scrollPolicy === 'bottom' && value
 }
 export function getSnapshot() {
   return state
@@ -23,8 +23,9 @@ export function post(event: WebEvent) {
   bridgeWindow.kairosNative?.postMessage(JSON.stringify(event))
 }
 export function receive(command: NativeCommand) {
-  if (command.type === 'init') followBottom = true
   state = reduceTranscript(state, command)
+  if (command.type === 'init' || command.type === 'scroll-policy')
+    followBottom = state.scrollPolicy === 'bottom'
   document.documentElement.className = `theme-${state.theme.palette} ${state.theme.mode}`
   listeners.forEach(function notify(listener) {
     listener()

@@ -12,6 +12,8 @@ import android.view.KeyEvent
 import android.view.View
 import android.view.WindowManager
 import android.view.inputmethod.InputMethodManager
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.core.view.WindowCompat
@@ -31,6 +33,11 @@ class KairosSession(context: Context) : VoiceInteractionSession(context) {
     private val pickerScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var pickerJob: Job? = null
     private var content: ComposeView? = null
+    private var pickerPending = false
+    private var pickerLaunch: Intent? = null
+    private var captureRequested = false
+    private var routeToApp = false
+    private var renderOverlay by androidx.compose.runtime.mutableStateOf(false)
     private val backCallback =
         if (Build.VERSION.SDK_INT >= 33) android.window.OnBackInvokedCallback { hide() } else null
 
@@ -55,6 +62,7 @@ class KairosSession(context: Context) : VoiceInteractionSession(context) {
                 WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM or
                 WindowManager.LayoutParams.FLAG_DIM_BEHIND
         )
+        sessionWindow.addFlags(WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED)
         sessionWindow.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
         sessionWindow.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
         WindowCompat.setDecorFitsSystemWindows(sessionWindow, false)
@@ -79,6 +87,7 @@ class KairosSession(context: Context) : VoiceInteractionSession(context) {
 
     private fun installContent(view: ComposeView) {
         view.setContent {
+            if (!renderOverlay) return@setContent
             AssistantOverlay(
                 app,
                 conversation,
@@ -94,13 +103,18 @@ class KairosSession(context: Context) : VoiceInteractionSession(context) {
                     else startAssistantActivity(mainAppIntent(context, sessionId))
                     hide()
                 },
+                onPickImage = { pickLibraryImage() },
+                onTakePhoto = { pickLibraryImage(camera = true) },
             )
         }
     }
 
     override fun onPrepareShow(args: Bundle?, showFlags: Int) {
         super.onPrepareShow(args, showFlags)
-        screenCapture.begin()
+        routeToApp = !pickerPending && LibraryAttachment.pending(context) == null &&
+            app.container.foregroundAssistant.route()
+        captureRequested = !routeToApp && !pickerPending
+        if (captureRequested) screenCapture.begin()
     }
 
     // Discard screen text, view structure and content unread; Kairos only offers the screenshot.
@@ -108,13 +122,21 @@ class KairosSession(context: Context) : VoiceInteractionSession(context) {
 
     // Nullable, non-deprecated in API 35. No callback at all without SHOW_WITH_SCREENSHOT.
     override fun onHandleScreenshot(screenshot: Bitmap?) {
-        screenCapture.receive(screenshot)
+        if (captureRequested) screenCapture.receive(screenshot)
     }
 
     override fun onShow(args: Bundle?, showFlags: Int) {
         // Do not inspect args (which can describe foreground activities).
         super.onShow(args, showFlags)
-        conversation.show()
+        if (routeToApp) {
+            routeToApp = false
+            hide()
+            return
+        }
+        renderOverlay = true
+        val handoff = LibraryAttachment.pending(context)
+        conversation.show(resume = pickerPending, recoveredSessionId = handoff?.sessionId)
+        pickerPending = false
         content?.let(::installContent)
         owner.show()
         content?.requestApplyInsets()
@@ -129,38 +151,56 @@ class KairosSession(context: Context) : VoiceInteractionSession(context) {
         }
     }
 
-    /** Applies a photo-library attachment picked through the trampoline activity. */
+    /** Decode away from the UI thread and reject delivery into a later invocation. */
     private fun consumeLibraryAttachment() {
-        val uri = LibraryAttachment.peek(context) ?: return
+        val handoff = LibraryAttachment.pending(context) ?: return
+        val uris = LibraryAttachment.selectedUris(context)
+        if (uris.isEmpty()) {
+            if (handoff.returned) LibraryAttachment.clear(context, handoff.requestId)
+            return
+        }
+        val generation = conversation.generation
         pickerJob?.cancel()
         pickerJob = pickerScope.launch {
-            // Decoding can be expensive; never block the assistant's first frame.
-            val attachment = withContext(Dispatchers.IO) {
-                runCatching { ScreenAttachment.fromUri(context, uri) }.getOrNull()
+            val attachments = try {
+                withContext(Dispatchers.IO) { uris.map { ScreenAttachment.fromUri(context, it) } }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                LibraryAttachment.clear(context, handoff.requestId)
+                return@launch
             }
-            if (conversation.visible && attachment != null) {
-                screenCapture.receiveAttachment(attachment)
-                LibraryAttachment.clear(context)
-            } else if (attachment == null) {
-                LibraryAttachment.clear(context)
+            if (conversation.visible && conversation.generation == generation &&
+                LibraryAttachment.pending(context)?.requestId == handoff.requestId) {
+                attachments.forEach(screenCapture::receiveAttachment)
+                LibraryAttachment.clear(context, handoff.requestId)
             }
         }
     }
 
-    fun pickLibraryImage() {
+    fun pickLibraryImage(camera: Boolean = false) {
+        var requestId: String? = null
         try {
-            context
-                .startActivity(
-                    Intent(context, PickerTrampolineActivity::class.java)
-                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                )
-        } catch (_: Exception) {}
+            requestId = LibraryAttachment.begin(context, conversation.sessionId)
+            pickerPending = true
+            pickerLaunch = Intent(context, PickerTrampolineActivity::class.java)
+                .putExtra("camera", camera).putExtra("requestId", requestId)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            // VoiceInteractionSession remains above normal activities until explicitly hidden.
+            // Launch from onHide, after its menu/composition and window have been dismissed.
+            hide()
+        } catch (_: Exception) {
+            pickerPending = false
+            pickerLaunch = null
+            requestId?.let { LibraryAttachment.clear(context, it) }
+        }
     }
 
     override fun onHide() {
+        renderOverlay = false
         pickerJob?.cancel()
-        conversation.hide()
-        screenCapture.clear()
+        conversation.hide(forPicker = pickerPending)
+        if (!pickerPending) screenCapture.clear()
         // Release remembered thumbnails too; a stopped lifecycle alone retains composition state.
         content?.disposeComposition()
         content?.let {
@@ -171,6 +211,19 @@ class KairosSession(context: Context) : VoiceInteractionSession(context) {
         if (Build.VERSION.SDK_INT >= 33 && backCallback != null)
             window.window?.onBackInvokedDispatcher?.unregisterOnBackInvokedCallback(backCallback)
         super.onHide()
+        val launch = pickerLaunch
+        pickerLaunch = null
+        if (launch != null) android.os.Handler(android.os.Looper.getMainLooper()).post {
+            val requestId = launch.getStringExtra("requestId")
+            if (requestId != null && LibraryAttachment.pending(context)?.requestId == requestId) {
+                try { context.startActivity(launch) }
+                catch (_: Exception) {
+                    pickerPending = false
+                    LibraryAttachment.clear(context, requestId)
+                    android.widget.Toast.makeText(context, "Unable to open attachment source.", android.widget.Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
     }
 
     override fun onBackPressed() {

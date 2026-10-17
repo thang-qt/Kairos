@@ -58,9 +58,14 @@ fun NativeComposer(
     onRemoveAttachment: (ScreenAttachment) -> Unit = {},
     onAttach: () -> Unit = {},
     onPickImage: (() -> Unit)? = null,
+    onTakePhoto: (() -> Unit)? = null,
     onBodyHeight: (Int) -> Unit = {},
     screenCapture: ScreenCaptureState? = null,
     floating: Boolean = false,
+    assistantStyle: Boolean = false,
+    workingLabel: String = "Thinking…",
+    onWorkingClick: (() -> Unit)? = null,
+    handle: (@Composable () -> Unit)? = null,
     onScreenSettingsOpened: () -> Unit = {},
     contentPadding: PaddingValues = PaddingValues(start = 20.dp, end = 20.dp, bottom = 12.dp),
 ) {
@@ -68,6 +73,7 @@ fun NativeComposer(
     val context = LocalContext.current
     val focusRequester = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
+    val sheetHost = LocalInlineSheetHost.current
     var draft by remember(focusRequestKey) { mutableStateOf(initialDraft) }
     LaunchedEffect(focusKey) {
         if (focusKey != null) {
@@ -80,7 +86,7 @@ fun NativeComposer(
         if (
             enabled &&
                 (draft.isNotBlank() ||
-                    (!editing && (screenCapture?.attached != null || attachments.isNotEmpty())))
+                    (!editing && (screenCapture?.attachments?.isNotEmpty() == true || attachments.isNotEmpty())))
         ) {
             onSend(draft.trim())
             draft = ""
@@ -130,20 +136,21 @@ fun NativeComposer(
                 KIcon(KairosIcons.ArrowUpRight01, colors.p(600), size = 20.dp)
             }
         }
-        val shape = RoundedCornerShape(22.dp)
+        val shape = RoundedCornerShape(if (assistantStyle) 36.dp else 22.dp)
         Column(
             Modifier.fillMaxWidth()
                 // shadow-[0px_12px_32px_0px_rgba(0,0,0,0.05)]; the overlay needs more lift over
                 // other apps.
                 .shadow(
-                    if (floating) 16.dp else 12.dp,
+                    if (assistantStyle) 4.dp else if (floating) 16.dp else 12.dp,
                     shape,
                     ambientColor = colors.ink.copy(alpha = 0.05f),
                     spotColor = colors.ink.copy(alpha = if (floating) 0.2f else 0.08f),
                 )
-                .background(colors.surface.copy(alpha = if (floating) 0.96f else 0.86f), shape)
-                .border(1.dp, colors.ink.copy(alpha = 0.1f), shape)
+                .background(if (assistantStyle) colors.p(50) else colors.surface.copy(alpha = if (floating) 0.96f else 0.86f), shape)
+                .then(if (assistantStyle) Modifier else Modifier.border(1.dp, colors.ink.copy(alpha = 0.1f), shape))
         ) {
+            handle?.invoke()
             if (attachments.isNotEmpty())
                 Row(
                     Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp)
@@ -154,73 +161,55 @@ fun NativeComposer(
                         ScreenAttachmentChip(attachment, { onRemoveAttachment(attachment) })
                     }
                 }
-            screenCapture?.attached?.let { attachment ->
-                ScreenAttachmentChip(
-                    attachment,
-                    screenCapture::remove,
-                    Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp),
-                )
-            }
+            if (screenCapture?.attachments?.isNotEmpty() == true)
+                Row(Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp)
+                    .horizontalScroll(androidx.compose.foundation.rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    screenCapture.attachments.forEach { attachment ->
+                        ScreenAttachmentChip(attachment, { screenCapture.remove(attachment) })
+                    }
+                }
             Row(
-                Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 9.dp),
-                verticalAlignment = Alignment.Bottom,
+                Modifier.fillMaxWidth().padding(horizontal = if (assistantStyle) 12.dp else 8.dp, vertical = if (assistantStyle) 14.dp else 9.dp),
+                verticalAlignment = if (assistantStyle) Alignment.CenterVertically else Alignment.Bottom,
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-        if (screenCapture == null) {
-            GhostIconButton(
-                KairosIcons.PlusSign,
-                "Attach image",
-                { if (!editing) onAttach() },
-                tint = colors.p(900),
-                round = true,
-            )
-        } else if (onPickImage != null) {
-            // Both sources exist here: system screenshot and the photo library.
-            var choosing by remember { mutableStateOf(false) }
-            GhostIconButton(
-                KairosIcons.PlusSign,
-                "Attach content",
-                { if (!editing) choosing = true },
-                tint = colors.p(900),
-                round = true,
-            )
-            if (choosing)
-                AttachmentChoiceSheet(
-                    screenCaptureAvailable = screenCapture.available,
-                    onScreen = {
-                        choosing = false
-                        screenCapture.attach()
-                    },
-                    onLibrary = {
-                        choosing = false
-                        onPickImage()
-                    },
-                    onDismiss = { choosing = false },
+                var choosing by remember { mutableStateOf(false) }
+                if (!assistantStyle || !streaming) GhostIconButton(
+                    KairosIcons.PlusSign,
+                    "Attach content",
+                    { if (!editing) { keyboard?.hide(); choosing = true } },
+                    tint = colors.p(900), round = true,
                 )
-        } else {
-            // Unavailable looks disabled, but a tap still explains the system toggle.
-            GhostIconButton(
-                KairosIcons.SmartPhone01,
-                "Attach screen",
-                screenCapture::attach,
-                Modifier.alpha(if (screenCapture.available) 1f else 0.5f).semantics {
-                    if (!screenCapture.available) disabled()
-                },
-                tint = colors.p(900),
-                round = true,
-            )
-        }
-                BasicTextField(
+                if (choosing)
+                    AttachmentChoiceSheet(
+                        screenCaptureAvailable = screenCapture?.available == true,
+                        showScreen = screenCapture != null,
+                        onScreen = { sheetHost?.dismiss(); choosing = false; screenCapture?.attach() },
+                        onLibrary = { sheetHost?.dismiss(); choosing = false; (onPickImage ?: onAttach)() },
+                        onCamera = onTakePhoto?.let { takePhoto ->
+                            { sheetHost?.dismiss(); choosing = false; takePhoto() }
+                        },
+                        onDismiss = { choosing = false },
+                    )
+                if (assistantStyle && streaming) {
+                    Text(
+                        workingLabel, color = colors.p(700), fontSize = 16.sp, lineHeight = 24.sp,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f).padding(horizontal = 14.dp, vertical = 8.dp)
+                            .then(if (onWorkingClick != null) Modifier.pressable(onClick = onWorkingClick) else Modifier),
+                    )
+                } else BasicTextField(
                     value = draft,
                     onValueChange = { draft = it; onDraftChange(it) },
-                    maxLines = 8,
+                    maxLines = if (assistantStyle) 4 else 8,
                     textStyle =
                         TextStyle(
                             color = colors.p(950),
-                            fontSize = 15.sp,
-                            lineHeight = 22.sp,
-                            letterSpacing = (-0.15).sp,
+                            fontSize = if (assistantStyle) 18.sp else 15.sp,
+                            lineHeight = if (assistantStyle) 26.sp else 22.sp,
                             fontFamily = FontFamily.SansSerif,
+                            platformStyle = androidx.compose.ui.text.PlatformTextStyle(includeFontPadding = false),
                         ),
                     cursorBrush = SolidColor(colors.p(950)),
                     modifier =
@@ -229,18 +218,30 @@ fun NativeComposer(
                             .padding(start = 8.dp, end = 4.dp, top = 5.dp, bottom = 5.dp)
                             .focusRequester(focusRequester),
                     decorationBox = { inner ->
-                        if (draft.isEmpty())
-                            Text(
-                                "Type a message…",
-                                color = colors.p(500),
-                                fontSize = 15.sp,
-                                lineHeight = 22.sp,
-                                maxLines = 1,
-                            )
-                        inner()
+                        Box(contentAlignment = Alignment.CenterStart) {
+                            if (draft.isEmpty())
+                                Text(
+                                    if (assistantStyle) "Ask Kairos" else "Type a message…",
+                                    style = TextStyle(
+                                        color = colors.p(500),
+                                        fontSize = if (assistantStyle) 18.sp else 15.sp,
+                                        lineHeight = if (assistantStyle) 26.sp else 22.sp,
+                                        fontFamily = FontFamily.SansSerif,
+                                        platformStyle = androidx.compose.ui.text.PlatformTextStyle(includeFontPadding = false),
+                                    ),
+                                    maxLines = 1,
+                                )
+                            inner()
+                        }
                     },
                 )
-                if (streaming) {
+                if (streaming && assistantStyle) {
+                    Box(Modifier.size(44.dp).background(colors.p(200), CircleShape)
+                        .semantics { contentDescription = "Stop response" }
+                        .pressable(CircleShape, onClick = onStop), contentAlignment = Alignment.Center) {
+                        Box(Modifier.size(14.dp).border(1.5.dp, colors.p(800), RoundedCornerShape(3.dp)))
+                    }
+                } else if (streaming) {
                     // Button variant="outline" size="sm", rounded-full.
                     Box(
                         Modifier.height(32.dp)
@@ -255,8 +256,8 @@ fun NativeComposer(
                     }
                 } else {
                     Box(
-                        Modifier.size(32.dp)
-                            .background(colors.p(950), CircleShape)
+                        Modifier.size(if (assistantStyle) 44.dp else 32.dp)
+                            .background(if (assistantStyle) colors.p(200) else colors.p(950), CircleShape)
                             .semantics { contentDescription = "Send message" }
                             .pressable(
                                 CircleShape,
@@ -266,7 +267,7 @@ fun NativeComposer(
                             ),
                         contentAlignment = Alignment.Center,
                     ) {
-                        KIcon(KairosIcons.ArrowUp02, colors.p(50))
+                        KIcon(KairosIcons.ArrowUp02, if (assistantStyle) colors.p(900) else colors.p(50))
                     }
                 }
             }

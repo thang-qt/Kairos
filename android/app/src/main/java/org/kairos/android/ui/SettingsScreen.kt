@@ -2,6 +2,8 @@ package org.kairos.android.ui
 
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.ui.semantics.Role
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
@@ -16,7 +18,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import org.kairos.android.BuildConfig
-import org.kairos.android.assistant.defaultAssistantRoleIntent
 import org.kairos.android.assistant.isDefaultAssistant
 import org.kairos.android.assistant.openAssistantSettings
 import org.kairos.android.chat.ChatViewModel
@@ -129,34 +130,32 @@ fun SettingsScreen(chat: ChatViewModel) {
                     }
                 }
             }
+            SettingsSection("Conversation") {
+                RendererSetting(
+                    "App rendering", chat.app.preferences.appRenderer,
+                    chat.app.preferences::appRenderer,
+                )
+            }
             SettingsSection("Assistant") {
                 var held by remember { mutableStateOf(isDefaultAssistant(context)) }
-                DisposableEffect(context) {
-                    val lifecycle = (context as? androidx.activity.ComponentActivity)?.lifecycle
+                val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
+                DisposableEffect(lifecycle) {
                     val observer =
                         androidx.lifecycle.LifecycleEventObserver { _, event ->
                             if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME)
                                 held = isDefaultAssistant(context)
                         }
-                    lifecycle?.addObserver(observer)
-                    onDispose { lifecycle?.removeObserver(observer) }
+                    lifecycle.addObserver(observer)
+                    onDispose { lifecycle.removeObserver(observer) }
                 }
-                // Best practice: ask through the system's own role dialog (API 29+), verify on
-                // result, and fall back to the default-apps settings only when the role prompt
-                // is unavailable on this device.
-                val roleRequest =
-                    androidx.activity.compose.rememberLauncherForActivityResult(
-                        androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult()
-                    ) {
-                        held = isDefaultAssistant(context)
-                    }
                 SettingsRow(
                     "Default assistant",
                     if (held) "Kairos" else "Set up",
-                    onClick = {
-                        val intent = defaultAssistantRoleIntent(context)
-                        if (intent != null) roleRequest.launch(intent) else openAssistantSettings(context)
-                    },
+                    onClick = { openAssistantSettings(context) },
+                )
+                RendererSetting(
+                    "Overlay rendering", chat.app.preferences.assistantRenderer,
+                    chat.app.preferences::assistantRenderer,
                 )
             }
             SettingsSection("About") {
@@ -214,6 +213,50 @@ private fun SettingsRow(
             maxLines = 1,
             overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
         )
+        if (onClick != null) KIcon(KairosIcons.ArrowUpRight01, colors.p(500))
     }
     if (divider) Box(Modifier.fillMaxWidth().height(1.dp).background(colors.p(100)))
+}
+
+@Composable
+private fun RendererSetting(title: String, value: AssistantRenderer, onChange: (AssistantRenderer) -> Unit) {
+    val colors = LocalKairosColors.current
+    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text(title, color = colors.p(900))
+        Text(
+            "Choose how messages are displayed.",
+            color = colors.p(600),
+            fontSize = 12.sp,
+        )
+        AssistantRenderer.entries.forEach { renderer ->
+            val selected = value == renderer
+            Row(
+                Modifier.fillMaxWidth()
+                    .background(if (selected) colors.p(100) else colors.surface, RoundedCornerShape(12.dp))
+                    .selectable(
+                        selected = selected,
+                        role = Role.RadioButton,
+                        onClick = { onChange(renderer) },
+                    )
+                    .padding(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                androidx.compose.material3.RadioButton(
+                    selected = selected,
+                    onClick = null,
+                )
+                Column(Modifier.weight(1f)) {
+                    Text(renderer.label, color = colors.p(900), fontWeight = FontWeight.Medium)
+                    Text(
+                        if (renderer == AssistantRenderer.Native)
+                            "Android text, markdown and activity"
+                        else "Shared web transcript, code, tables and math",
+                        color = colors.p(600),
+                        fontSize = 12.sp,
+                    )
+                }
+            }
+        }
+    }
 }

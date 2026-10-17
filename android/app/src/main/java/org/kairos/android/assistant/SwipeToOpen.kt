@@ -3,7 +3,7 @@ package org.kairos.android.assistant
 import android.os.Build
 import android.view.HapticFeedbackConstants
 import android.view.View
-import androidx.compose.animation.core.FastOutLinearInEasing
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.spring
@@ -29,8 +29,8 @@ import org.kairos.android.ui.icons.KairosIcons
 import org.kairos.android.ui.theme.LocalKairosColors
 
 /**
- * Swipe up on the overlay to continue in the full app. The stack follows the finger 1:1 up to
- * [threshold], then with resistance; releasing past it (or flinging up) hands off.
+ * Swipe up on the header to continue in the app. Travel is capped at [threshold];
+ * the panel uses progress to grow to a fixed height, then hands off on release.
  */
 @Stable
 class SwipeToOpenState
@@ -53,10 +53,7 @@ internal constructor(
         get() = offset > 0f || opening
 
     val progress
-        get() = offset / threshold
-
-    val alpha
-        get() = if (opening) ((threshold * 2f - offset) / threshold).coerceIn(0f, 1f) else 1f
+        get() = (offset / (threshold * 1.2f)).coerceIn(0f, 1f)
 
     /** [delta] is a pointer delta: negative moves the finger up. */
     fun dragBy(delta: Float) {
@@ -65,6 +62,7 @@ internal constructor(
         offset =
             if (delta < 0f) offset - delta * (if (offset < threshold) 1f else 0.35f)
             else (offset - delta).coerceAtLeast(0f)
+        offset = offset.coerceIn(0f, threshold)
         val nowArmed = offset >= threshold
         if (nowArmed != armed) {
             armed = nowArmed
@@ -107,8 +105,8 @@ internal constructor(
             scope.launch {
                 animate(
                     offset,
-                    threshold * 2f,
-                    animationSpec = tween(200, easing = FastOutLinearInEasing),
+                    threshold * 1.2f,
+                    animationSpec = tween(180, easing = FastOutSlowInEasing),
                 ) { value, _ ->
                     offset = value
                 }
@@ -127,7 +125,7 @@ fun rememberSwipeToOpen(generation: Int, onOpen: () -> Unit): SwipeToOpenState {
     return remember(generation, density) {
         SwipeToOpenState(
             scope,
-            with(density) { 120.dp.toPx() },
+            with(density) { 88.dp.toPx() },
             with(density) { 1200.dp.toPx() },
             view,
             latest,

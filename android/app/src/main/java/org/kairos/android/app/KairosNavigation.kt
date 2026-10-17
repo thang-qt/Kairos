@@ -28,7 +28,7 @@ import org.kairos.android.ui.SettingsScreen
 @Composable
 fun KairosNavigation(
     chat: ChatViewModel,
-    bridge: TranscriptBridge,
+    bridgeFactory: () -> TranscriptBridge,
     onCopy: (String) -> Unit,
 ) {
     val controller = rememberNavController()
@@ -74,12 +74,12 @@ fun KairosNavigation(
         }
         composable<NewChatRoute> {
             LaunchedEffect(Unit) { chat.enterRoute(Screen.Chat) }
-            ChatScreen(chat, bridge, onCopy)
+            ChatScreen(chat, bridgeFactory, onCopy)
         }
         composable<ConversationRoute> { entry ->
             val target = entry.toRoute<ConversationRoute>().friendlyId
             LaunchedEffect(target) { chat.enterRoute(Screen.Chat, id = target) }
-            ChatScreen(chat, bridge, onCopy)
+            ChatScreen(chat, bridgeFactory, onCopy)
         }
         composable<SettingsRoute> {
             LaunchedEffect(Unit) { chat.enterRoute(Screen.Settings) }

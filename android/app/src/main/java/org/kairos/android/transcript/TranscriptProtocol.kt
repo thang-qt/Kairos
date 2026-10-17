@@ -11,6 +11,8 @@ val transcriptJson = Json(wireJson) { explicitNulls = true }
 
 @Serializable data class TranscriptInsets(val top: Float, val bottom: Float)
 
+@Serializable data class TranscriptPresentation(val showModel: Boolean = true, val showActivity: Boolean = true)
+
 @Serializable
 data class TranscriptInit(
     val type: String = "init",
@@ -18,6 +20,9 @@ data class TranscriptInit(
     val insets: TranscriptInsets,
     val messages: List<JsonObject>,
     val sessionId: String?,
+    val toolLabels: Map<String, String> = emptyMap(),
+    val scrollPolicy: String = "bottom",
+    val presentation: TranscriptPresentation = TranscriptPresentation(),
 )
 
 @Serializable data class TranscriptUpsert(val type: String = "upsert", val message: JsonObject)

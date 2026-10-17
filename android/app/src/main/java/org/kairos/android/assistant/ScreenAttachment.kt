@@ -125,7 +125,7 @@ class ScreenCaptureState {
     var available by mutableStateOf(false)
         private set
 
-    var attached by mutableStateOf<ScreenAttachment?>(null)
+    var attachments by mutableStateOf<List<ScreenAttachment>>(emptyList())
         private set
 
     var showSettingsHint by mutableStateOf(false)
@@ -151,26 +151,26 @@ class ScreenCaptureState {
             showSettingsHint = true
             return
         }
-        attached = ScreenAttachment.fromBitmap(bitmap)
+        receiveAttachment(ScreenAttachment.fromBitmap(bitmap))
         showSettingsHint = false
     }
 
-    fun remove() {
-        attached = null
+    fun remove(attachment: ScreenAttachment) {
+        attachments = attachments.filterNot { it.id == attachment.id }
     }
 
-    fun takeAttachment(): ScreenAttachment? = attached.also { attached = null }
+    fun takeAttachments(): List<ScreenAttachment> = attachments.also { attachments = emptyList() }
 
     fun receiveAttachment(attachment: ScreenAttachment) {
         if (!accepting) return // Same retention rules as system screenshots.
-        attached = attachment
+        attachments = attachments + attachment
         showSettingsHint = false
     }
 
     fun clear() {
         accepting = false
         source = null // Callback bitmap ownership is unspecified; let GC release it, not recycle.
-        attached = null
+        attachments = emptyList()
         available = false
         showSettingsHint = false
     }

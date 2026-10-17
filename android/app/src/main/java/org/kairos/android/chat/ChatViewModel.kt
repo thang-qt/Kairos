@@ -124,7 +124,8 @@ class ChatViewModel(val app: AppContainer, private val savedState: SavedStateHan
     var conversationSettingsTarget by mutableStateOf<String?>(null)
         private set
 
-    private var selectionGeneration = 0
+    var selectionGeneration by mutableIntStateOf(0)
+        private set
     private var pendingSession: String? = null
     val activeSession
         get() = sessions.value.find { it.friendlyId == sessionId }
@@ -293,6 +294,11 @@ class ChatViewModel(val app: AppContainer, private val savedState: SavedStateHan
             }
         }
         if (notifyNavigation) navigate(NavigationRequest.Chat(id))
+    }
+
+    fun openNewChatFromAssistant() {
+        openIntent(null)
+        if (app.tokens.signedIn.value) composerFocusGeneration++
     }
 
     fun openIntent(id: String?) {

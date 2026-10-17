@@ -165,6 +165,11 @@ enum class ThemeMode {
     System,
 }
 
+enum class AssistantRenderer(val label: String) {
+    Native("Native"),
+    WebView("WebView"),
+}
+
 class PreferencesStore(context: Context) {
     private val prefs = context.getSharedPreferences("appearance", Context.MODE_PRIVATE)
     var paletteIndex by
@@ -177,6 +182,29 @@ class PreferencesStore(context: Context) {
                 .getOrDefault(ThemeMode.System)
         )
         private set
+
+    var assistantRenderer by mutableStateOf(
+        runCatching {
+            AssistantRenderer.valueOf(prefs.getString("assistantRenderer", "Native")!!)
+        }.getOrDefault(AssistantRenderer.Native)
+    )
+        private set
+
+    fun assistantRenderer(value: AssistantRenderer) {
+        assistantRenderer = value
+        prefs.edit().putString("assistantRenderer", value.name).apply()
+    }
+
+    var appRenderer by mutableStateOf(
+        runCatching { AssistantRenderer.valueOf(prefs.getString("appRenderer", "WebView")!!) }
+            .getOrDefault(AssistantRenderer.WebView)
+    )
+        private set
+
+    fun appRenderer(value: AssistantRenderer) {
+        appRenderer = value
+        prefs.edit().putString("appRenderer", value.name).apply()
+    }
 
     var systemDark by mutableStateOf(false)
     val dark

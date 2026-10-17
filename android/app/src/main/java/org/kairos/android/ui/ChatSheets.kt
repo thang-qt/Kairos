@@ -40,6 +40,11 @@ fun KairosSheet(
     modifier: Modifier = Modifier,
     content: @Composable ColumnScope.() -> Unit,
 ) {
+    val inlineHost = LocalInlineSheetHost.current
+    if (inlineHost != null) {
+        PresentInlineSheet(inlineHost, onDismiss, content)
+        return
+    }
     val colors = LocalKairosColors.current
     val shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp)
     // No outline: a full-width border reads as a stray line across the screen. The scrim and
@@ -90,26 +95,43 @@ fun SheetAction(
     }
 }
 
-/** Chooses between the system screenshot and the photo library where both exist. */
+/** Explicit attachment sources for the app and assistant composer. */
 @Composable
 fun AttachmentChoiceSheet(
     screenCaptureAvailable: Boolean,
     onScreen: () -> Unit,
     onLibrary: () -> Unit,
     onDismiss: () -> Unit,
+    showScreen: Boolean = true,
+    onCamera: (() -> Unit)? = null,
 ) {
+    val colors = LocalKairosColors.current
     KairosSheet(onDismiss) {
-        Text("Attach", fontWeight = FontWeight.Medium)
-        Spacer(Modifier.height(8.dp))
-        SheetAction(KairosIcons.SmartPhone01, "Attach current screen", enabled = screenCaptureAvailable, onClick = onScreen)
-        SheetAction(KairosIcons.PlusSign, "Choose image from library", onClick = onLibrary)
-        if (!screenCaptureAvailable)
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            if (showScreen) AttachmentSourceTile(KairosIcons.SmartPhone01, "Screen", Modifier.weight(1f), onScreen)
+            AttachmentSourceTile(KairosIcons.Image02, "Photos", Modifier.weight(1f), onLibrary)
+            onCamera?.let { AttachmentSourceTile(KairosIcons.Camera01, "Camera", Modifier.weight(1f), it) }
+        }
+        if (showScreen && !screenCaptureAvailable)
             Text(
-                "Turn on 'Use screenshot' in the digital assistant settings to attach the current screen.",
-                color = LocalKairosColors.current.p(500),
-                fontSize = 12.sp,
-                lineHeight = 16.sp,
+                "Enable screenshot access in Digital assistant settings to attach your screen.",
+                modifier = Modifier.padding(top = 16.dp, bottom = 8.dp),
+                color = colors.p(600), fontSize = 12.sp, lineHeight = 18.sp,
             )
+    }
+}
+
+@Composable
+private fun AttachmentSourceTile(icon: ImageVector, title: String, modifier: Modifier, onClick: () -> Unit) {
+    val colors = LocalKairosColors.current
+    Column(
+        modifier.height(104.dp).background(colors.p(200), RoundedCornerShape(24.dp))
+            .pressable(RoundedCornerShape(24.dp), onClick = onClick).padding(12.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterVertically),
+    ) {
+        KIcon(icon, colors.p(800))
+        Text(title, color = colors.p(800), fontSize = 13.sp, maxLines = 1)
     }
 }
 
@@ -305,12 +327,12 @@ fun ModelsSheet(chat: ChatViewModel, onDismiss: () -> Unit) {
 }
 
 @Composable
-fun ActivitySheet(turn: JsonObject, onDismiss: () -> Unit) {
+fun ActivitySheet(turn: JsonObject, mcpLabels: Map<String, String> = emptyMap(), onDismiss: () -> Unit) {
     val colors = LocalKairosColors.current
     val split = remember(turn) { splitAssistantActivity(turn) }
     val streaming = split.let { isAssistantStreaming(turn) }
     val indexes = visibleActivityIndexes(turn, split.activityIndexes, streaming)
-    val steps = remember(indexes, turn) { activitySteps(turn, indexes) }
+    val steps = remember(indexes, turn, mcpLabels) { activitySteps(turn, indexes, mcpLabels) }
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(streaming) {
         while (streaming) {
@@ -408,13 +430,29 @@ private fun ActivityRow(step: ActivityStep, hasConnector: Boolean) {
                     if (step.meta.isNotEmpty())
                         Text(
                             step.meta,
+                            maxLines = if (step.details.isNotBlank()) 2 else Int.MAX_VALUE,
+                            overflow = TextOverflow.Ellipsis,
                             color = colors.p(500),
                             fontSize = 12.sp,
                             lineHeight = 16.sp,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
                             style = TextStyle(fontFeatureSettings = "tnum"),
                         )
+                    if (step.details.isNotBlank()) {
+                        var showDetails by remember(step.title) { mutableStateOf(false) }
+                        Text(
+                            if (showDetails) "Hide details" else "Show details",
+                            color = colors.p(600), fontSize = 12.sp,
+                            modifier = Modifier.pressable { showDetails = !showDetails }.padding(vertical = 6.dp),
+                        )
+                        if (showDetails)
+                            androidx.compose.foundation.text.selection.SelectionContainer {
+                                Text(step.details, color = colors.p(700), fontSize = 12.sp,
+                                    modifier = Modifier.fillMaxWidth().heightIn(max = 240.dp)
+                                        .verticalScroll(rememberScrollState())
+                                        .background(colors.p(100), RoundedCornerShape(8.dp)).padding(10.dp),
+                                    style = TextStyle(fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace))
+                            }
+                    }
                     if (step.web && step.sources.isNotEmpty()) {
                         Spacer(Modifier.height(4.dp))
                         step.sources.take(3).forEach { source ->

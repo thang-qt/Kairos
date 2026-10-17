@@ -29,6 +29,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
@@ -49,12 +50,15 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import org.kairos.android.assistant.ScreenAttachment
 import org.kairos.android.chat.ChatViewModel
+import org.kairos.android.data.AssistantRenderer
 import org.kairos.android.data.ConnectionState
 import org.kairos.android.data.activeRunId
 import org.kairos.android.data.id
 import org.kairos.android.transcript.TranscriptBridge
+import org.kairos.android.transcript.TranscriptTheme
 import org.kairos.android.transcript.TranscriptTouchHost
 import org.kairos.android.ui.theme.LocalKairosColors
+import org.kairos.android.ui.theme.KairosPalettes
 
 enum class DrawerPosition {
     Closed,
@@ -62,7 +66,15 @@ enum class DrawerPosition {
 }
 
 @Composable
-fun ChatScreen(chat: ChatViewModel, bridge: TranscriptBridge, onCopy: (String) -> Unit) {
+fun ChatScreen(
+    chat: ChatViewModel,
+    bridgeFactory: () -> TranscriptBridge,
+    onCopy: (String) -> Unit,
+) {
+    val renderer = chat.app.preferences.appRenderer
+    val bridge = remember(renderer, chat.app.identityVersion) {
+        if (renderer == AssistantRenderer.WebView) bridgeFactory() else null
+    }
     val colors = LocalKairosColors.current
     val context = LocalContext.current
     val view = LocalView.current
@@ -108,16 +120,56 @@ fun ChatScreen(chat: ChatViewModel, bridge: TranscriptBridge, onCopy: (String) -
                     }
                 }
         }
-    LaunchedEffect(history, chat.sessionId) { bridge.render(chat.sessionId, history.messages) }
-    LaunchedEffect(bridge) {
-        bridge.onEvent = { event ->
+    var cameraUri by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf<String?>(null) }
+    val camera = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.TakePicture()
+    ) { success ->
+        val uri = cameraUri?.let(android.net.Uri::parse)
+        cameraUri = null
+        val target = chat.sessionId
+        if (success && uri != null) scope.launch {
+            try {
+                val image = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    org.kairos.android.assistant.ScreenAttachment.fromUri(context, uri)
+                }
+                if (chat.sessionId == target) attachments = attachments + image
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                chat.showError("Unable to attach this photo.")
+            } finally {
+                org.kairos.android.assistant.CameraAttachment.remove(context, uri)
+            }
+        } else org.kairos.android.assistant.CameraAttachment.remove(context, uri)
+    }
+    LaunchedEffect(chat.sessionId) { chat.app.mcpLabels.refresh() }
+    SideEffect {
+        bridge?.let {
+            it.webView.setBackgroundColor(chat.app.preferences.colors.surface.toArgb())
+            it.theme(
+                TranscriptTheme(
+                    KairosPalettes[chat.app.preferences.paletteIndex].name,
+                    if (chat.app.preferences.dark) "dark" else "light",
+                )
+            )
+            it.toolLabels(chat.app.mcpLabels.labels)
+        }
+    }
+    LaunchedEffect(history, chat.sessionId, renderer, bridge) {
+        bridge?.render(chat.sessionId, if (renderer == AssistantRenderer.WebView) history.messages else emptyList())
+    }
+    DisposableEffect(bridge, chat) {
+        if (bridge == null) return@DisposableEffect onDispose {}
+        val handler: (org.json.JSONObject) -> Unit = { event ->
             when (event.optString("type")) {
                 "longPress" -> chat.longPressId = event.optString("id")
                 "activity" -> chat.activityId = event.optString("id")
             }
         }
+        bridge.onEvent = handler
+        onDispose {
+            if (bridge.onEvent === handler) bridge.onEvent = {}
+        }
     }
-    DisposableEffect(bridge) { onDispose { bridge.onEvent = {} } }
     var webTouch by remember { mutableStateOf(false) }
     var verticalGesture by remember { mutableStateOf(false) }
     var edgeGesture by remember { mutableStateOf(false) }
@@ -142,7 +194,9 @@ fun ChatScreen(chat: ChatViewModel, bridge: TranscriptBridge, onCopy: (String) -
     val offset = drawer.offset.takeIf { !it.isNaN() } ?: 0f
     val fraction = (offset / width).coerceIn(0f, 1f)
 
-    LaunchedEffect(statusTop, composerHeight) { bridge.insets(statusTop + 48f, composerHeight) }
+    LaunchedEffect(statusTop, composerHeight, bridge) {
+        bridge?.insets(statusTop + 48f, composerHeight)
+    }
     LaunchedEffect(drawer) {
         var last = DrawerPosition.Closed
         snapshotFlow { drawer.settledValue }
@@ -296,24 +350,47 @@ fun ChatScreen(chat: ChatViewModel, bridge: TranscriptBridge, onCopy: (String) -
                     flingBehavior = AnchoredDraggableDefaults.flingBehavior(drawer),
                 )
         ) {
-            AndroidView(
-                factory = { ctx ->
-                    (bridge.webView.parent as? ViewGroup)?.removeView(bridge.webView)
-                    TranscriptTouchHost(ctx, bridge).apply {
-                        onDrag = { delta ->
-                            animationJob?.cancel()
-                            animationJob = null
-                            drawer.dispatchRawDelta(delta)
-                        }
-                        onRelease = ::settle
-                        onTouchActive = { webTouch = it }
-                        systemEdge = maxOf(leftEdge, rightEdge)
-                    }
-                },
-                update = { host -> host.systemEdge = maxOf(leftEdge, rightEdge) },
-                modifier = Modifier.fillMaxSize(),
-                onRelease = { host -> host.removeView(bridge.webView) },
-            )
+            if (renderer == AssistantRenderer.Native || bridge == null || !bridge.supported) {
+                key(chat.selectionGeneration, chat.app.identityVersion) {
+                    NativeTranscript(
+                        messages = history.messages,
+                        dark = chat.app.preferences.dark,
+                        api = chat.app.api,
+                        identityVersion = chat.app.identityVersion,
+                        identityVersionProvider = { chat.app.identityVersion },
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(
+                            start = 16.dp, end = 16.dp,
+                            top = statusTop.dp + 64.dp,
+                            bottom = composerHeight.dp + 16.dp,
+                        ),
+                        onActivity = { chat.activityId = it },
+                        onMessageActions = { chat.longPressId = it },
+                        onLink = { org.kairos.android.assistant.openBrowser(context, it) },
+                    )
+                }
+            } else {
+                key(bridge) {
+                    AndroidView(
+                        factory = { ctx ->
+                            (bridge.webView.parent as? ViewGroup)?.removeView(bridge.webView)
+                            TranscriptTouchHost(ctx, bridge).apply {
+                                onDrag = { delta ->
+                                    animationJob?.cancel()
+                                    animationJob = null
+                                    drawer.dispatchRawDelta(delta)
+                                }
+                                onRelease = ::settle
+                                onTouchActive = { webTouch = it }
+                                systemEdge = maxOf(leftEdge, rightEdge)
+                            }
+                        },
+                        update = { host -> host.systemEdge = maxOf(leftEdge, rightEdge) },
+                        modifier = Modifier.fillMaxSize(),
+                        onRelease = { host -> host.removeView(bridge.webView) },
+                    )
+                }
+            }
             ChatHeader(chat, onOpenSidebar = ::open)
             // A sibling layer covers the entire bottom inset; padding cannot clip its paint.
             Box(
@@ -376,13 +453,12 @@ fun ChatScreen(chat: ChatViewModel, bridge: TranscriptBridge, onCopy: (String) -
                     streaming = chat.streaming,
                     enabled = !chat.busy,
                     onSend = { text ->
+                        keyboard?.hide()
+                        focusManager.clearFocus()
                         scope.launch {
                             chat.send(text, attachments.map { it.payload() }).join()
                             if (chat.error == null) {
                                 attachments = emptyList()
-                                // Reading the reply beats an always-up keyboard.
-                                keyboard?.hide()
-                                focusManager.clearFocus()
                             }
                         }
                     },
@@ -406,6 +482,17 @@ fun ChatScreen(chat: ChatViewModel, bridge: TranscriptBridge, onCopy: (String) -
                             )
                         )
                     },
+                    onTakePhoto = {
+                        try {
+                            val uri = org.kairos.android.assistant.CameraAttachment.create(context)
+                            cameraUri = uri.toString()
+                            camera.launch(uri)
+                        } catch (_: Exception) {
+                            org.kairos.android.assistant.CameraAttachment.remove(context, cameraUri?.let(android.net.Uri::parse))
+                            cameraUri = null
+                            chat.showError("Unable to open camera.")
+                        }
+                    },
                     onBodyHeight = { height -> composerBodyHeight = height / density.density },
                 )
             }
@@ -415,11 +502,7 @@ fun ChatScreen(chat: ChatViewModel, bridge: TranscriptBridge, onCopy: (String) -
                         .background(colors.ink.copy(alpha = fraction * 0.16f))
                         .clickable(onClick = ::close)
                 )
-            if (!bridge.supported)
-                Text(
-                    "Update Android System WebView to enable the message bridge.",
-                    modifier = Modifier.align(Alignment.Center).padding(24.dp),
-                )
+
         }
     }
     chat.longPressId?.let { id ->
@@ -438,7 +521,7 @@ fun ChatScreen(chat: ChatViewModel, bridge: TranscriptBridge, onCopy: (String) -
     chat.activityId?.let { id ->
         history.messages
             .find { it.id == id }
-            ?.let { turn -> ActivitySheet(turn) { chat.activityId = null } }
+            ?.let { turn -> ActivitySheet(turn, chat.app.mcpLabels.labels) { chat.activityId = null } }
     }
     if (chat.conversationSettingsOpen)
         ConversationSettingsSheet(chat) { chat.closeConversationSettings() }

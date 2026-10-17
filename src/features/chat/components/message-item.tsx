@@ -53,6 +53,7 @@ type MessageItemProps = {
   forceActionsVisible?: boolean
   isLastUser?: boolean
   showAssistantModel?: boolean
+  showAssistantActivity?: boolean
   showAssistantActions?: boolean
   showTimestamp?: boolean
   wrapperRef?: React.RefObject<HTMLDivElement | null>
@@ -79,6 +80,7 @@ function MessageItemComponent({
   forceActionsVisible = false,
   isLastUser = false,
   showAssistantModel = true,
+  showAssistantActivity = true,
   showAssistantActions = true,
   showTimestamp = true,
   wrapperRef,
@@ -229,7 +231,10 @@ function MessageItemComponent({
       {/* While live steps are in the chat they stand in for the chip; it
           grows in as they fold away when the turn finishes. */}
       <AnimatePresence initial={false}>
-        {activity && activity.activityIndexes.length > 0 && !liveActivity ? (
+        {showAssistantActivity &&
+        activity &&
+        activity.activityIndexes.length > 0 &&
+        !liveActivity ? (
           <motion.div
             key="activity-chip"
             className="w-full overflow-y-clip"
@@ -264,12 +269,12 @@ function MessageItemComponent({
         ) : null}
       </AnimatePresence>
 
-      {isAwaitingFirstOutput(message, activity) ? (
+      {showAssistantActivity && isAwaitingFirstOutput(message, activity) ? (
         <TypingIndicator className="py-1" />
       ) : null}
 
       <AnimatePresence initial={false}>
-        {liveActivity && activity ? (
+        {showAssistantActivity && liveActivity && activity ? (
           <LiveActivityCollapse key="live-activity">
             <LiveActivity
               message={message}
@@ -362,6 +367,8 @@ export function areMessagesEqual(
     return false
   }
   if (prevProps.isLastUser !== nextProps.isLastUser) return false
+  if (prevProps.showAssistantActivity !== nextProps.showAssistantActivity)
+    return false
   if (prevProps.showAssistantModel !== nextProps.showAssistantModel) {
     return false
   }

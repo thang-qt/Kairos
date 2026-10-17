@@ -14,12 +14,7 @@ import android.widget.Toast
 import org.kairos.android.R
 import org.kairos.android.app.MainActivity
 
-/**
- * Production assistant-role flow. API 29+ requests ROLE_VOICE_INTERACTION with the system's
- * own dialog (RoleManager.createRequestRoleIntent); ROLE_ASSISTANT is only used as a read
- * probe because AOSP marks it non-requestable. Devices without the role fall back to the
- * system default-apps settings.
- */
+/** Read the system-owned assistant choice; setup always opens its management screen. */
 fun isDefaultAssistant(context: Context): Boolean {
     if (Build.VERSION.SDK_INT < 29)
         return VoiceInteractionService.isActiveService(
@@ -31,26 +26,7 @@ fun isDefaultAssistant(context: Context): Boolean {
         roles.isRoleHeld(RoleManager.ROLE_ASSISTANT)
 }
 
-/**
- * The system's role-request intent when this platform allows requesting the assistant role
- * (some OEM builds do; AOSP marks ASSISTANT non-requestable). Launch it with an
- * activity-result launcher and re-check [isDefaultAssistant] afterwards; null means fall back
- * to [openAssistantSettings].
- */
-fun defaultAssistantRoleIntent(context: Context): Intent? {
-    if (Build.VERSION.SDK_INT < 29) return null
-    val roles = context.getSystemService(RoleManager::class.java) ?: return null
-    if (!roles.isRoleAvailable(RoleManager.ROLE_ASSISTANT)) return null
-    return try {
-        roles.createRequestRoleIntent(RoleManager.ROLE_ASSISTANT)
-    } catch (_: IllegalArgumentException) {
-        null
-    } catch (_: SecurityException) {
-        null
-    }
-}
-
-/** Last-resort deep link into the system assistant settings. */
+/** Open assistant management directly; requesting an already-held role can silently do nothing. */
 fun openAssistantSettings(context: Context) {
     for (action in
         listOf(
@@ -60,7 +36,11 @@ fun openAssistantSettings(context: Context) {
         try {
             context.startActivity(Intent(action).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
             return
-        } catch (_: ActivityNotFoundException) {}
+        } catch (_: ActivityNotFoundException) {
+            // Try the next public settings route.
+        } catch (_: SecurityException) {
+            // Some OEMs restrict the narrower settings activity.
+        }
     }
     Toast.makeText(
             context,

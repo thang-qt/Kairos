@@ -53,8 +53,16 @@ val generateTranscript by tasks.registering(Exec::class) {
     workingDir = rootProject.projectDir.parentFile
     val pnpm = if (System.getProperty("os.name").startsWith("Windows")) "pnpm.cmd" else "pnpm"
     commandLine(pnpm, "build:transcript")
-    // The generated transcript imports web components, icons and styles. Always run
-    // the generator before an APK build rather than packaging a stale local asset.
+    // Rebuild whenever shared renderer code changes, rather than packaging stale assets.
+    inputs.files(fileTree(rootProject.projectDir.parentFile.resolve("src")))
+    inputs.files(
+        rootProject.projectDir.parentFile.resolve("transcript.html"),
+        rootProject.projectDir.parentFile.resolve("vite.transcript.config.ts"),
+        rootProject.projectDir.parentFile.resolve("package.json"),
+        rootProject.projectDir.parentFile.resolve("pnpm-lock.yaml"),
+        rootProject.projectDir.parentFile.resolve("scripts/gen-android-theme.mjs"),
+        rootProject.projectDir.parentFile.resolve("scripts/gen-android-icons.mjs"),
+    )
     outputs.dir(layout.projectDirectory.dir("src/main/assets/transcript"))
 }
 

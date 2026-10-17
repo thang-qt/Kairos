@@ -25,14 +25,18 @@ import {
   setFollowBottom,
   subscribe,
 } from './store'
-import type { NativeCommand } from './protocol'
+import type { NativeCommand, Presentation } from './protocol'
 
 const modelLabels: ReadonlyMap<string, string> = new Map()
 
 const MessageRow = memo(function MessageRow({
   message,
+  toolLabels,
+  presentation,
 }: {
   message: ConversationTurn
+  toolLabels: ReadonlyMap<string, string>
+  presentation: Presentation
 }) {
   const projection = useMemo(
     function tools() {
@@ -51,8 +55,11 @@ const MessageRow = memo(function MessageRow({
       <MessageItem
         message={message}
         modelLabelById={modelLabels}
+        mcpToolLabels={toolLabels}
         toolResultsByCallId={projection.toolResultsByCallId}
         showAssistantActions={false}
+        showAssistantModel={presentation.showModel}
+        showAssistantActivity={presentation.showActivity}
         showTimestamp={false}
         onOpenActivity={openActivity}
       />
@@ -64,6 +71,12 @@ const WINDOW_SIZE = 30
 
 function Transcript() {
   const state = useSyncExternalStore(subscribe, getSnapshot)
+  const toolLabels = useMemo(
+    function labels() {
+      return new Map(Object.entries(state.toolLabels))
+    },
+    [state.toolLabels],
+  )
   // The web renders a sliding window that grows upward as the reader approaches
   // the top; the offline transcript mirrors that so long conversations stay snappy.
   const [visibleCount, setVisibleCount] = useState(WINDOW_SIZE)
@@ -89,6 +102,50 @@ function Transcript() {
       return count + WINDOW_SIZE
     })
   }, [])
+  const latestUserIndex = rendered.findLastIndex(function isUser(message) {
+    return message.role === 'user'
+  })
+  const latestUser = rendered[latestUserIndex]
+  const latestUserId =
+    typeof latestUser?.clientId === 'string' && latestUser.clientId
+      ? latestUser.clientId
+      : latestUser?.id
+  const previousUser = useRef(latestUserId)
+  const [pinnedUser, setPinnedUser] = useState<string>()
+  const latestTurn = useRef<HTMLDivElement>(null)
+  useLayoutEffect(
+    function pinNewRequest() {
+      if (
+        state.scrollPolicy === 'bottom' &&
+        latestUserId &&
+        latestUserId !== previousUser.current
+      ) {
+        setFollowBottom(false)
+        setPinnedUser(latestUserId)
+      }
+      previousUser.current = latestUserId
+    },
+    [latestUserId, state.scrollPolicy],
+  )
+  useLayoutEffect(
+    function alignNewRequest() {
+      if (!pinnedUser || pinnedUser !== latestUserId || !latestTurn.current)
+        return
+      const top =
+        latestTurn.current.getBoundingClientRect().top +
+        window.scrollY -
+        state.insets.top -
+        16
+      window.scrollTo(0, Math.max(0, top))
+    },
+    [pinnedUser],
+  )
+  useLayoutEffect(
+    function anchorOverlayReply() {
+      if (state.scrollPolicy === 'top') window.scrollTo(0, 0)
+    },
+    [state.scrollPolicy, state.sessionId, state.messages[0]?.id],
+  )
   useLayoutEffect(
     function followAndAcknowledge() {
       if (followBottom)
@@ -111,9 +168,51 @@ function Transcript() {
         paddingBottom: state.insets.bottom + 16,
       }}
     >
-      {rendered.map(function renderMessage(message) {
-        return <MessageRow key={message.id} message={message} />
-      })}
+      {rendered
+        .slice(
+          0,
+          pinnedUser && latestUserIndex >= 0
+            ? latestUserIndex
+            : rendered.length,
+        )
+        .map(function renderMessage(message) {
+          return (
+            <MessageRow
+              key={
+                typeof message.clientId === 'string' && message.clientId
+                  ? message.clientId
+                  : message.id
+              }
+              message={message}
+              toolLabels={toolLabels}
+              presentation={state.presentation}
+            />
+          )
+        })}
+      {pinnedUser && latestUserIndex >= 0 ? (
+        <div
+          ref={latestTurn}
+          className="flex flex-col gap-6"
+          style={{
+            minHeight: `calc(100dvh - ${state.insets.top + state.insets.bottom + 32}px)`,
+          }}
+        >
+          {rendered.slice(latestUserIndex).map(function renderLatest(message) {
+            return (
+              <MessageRow
+                key={
+                  typeof message.clientId === 'string' && message.clientId
+                    ? message.clientId
+                    : message.id
+                }
+                message={message}
+                toolLabels={toolLabels}
+                presentation={state.presentation}
+              />
+            )
+          })}
+        </div>
+      ) : null}
       {rendered.length < state.messages.length ? (
         <LoadOlderSentinel onLoadOlder={loadOlder} />
       ) : null}
@@ -199,7 +298,7 @@ window.addEventListener(
     const atBottom =
       window.scrollY + window.innerHeight >=
       document.documentElement.scrollHeight - 48
-    if (userScrolling || atBottom) setFollowBottom(atBottom)
+    if (userScrolling) setFollowBottom(atBottom)
     if (atBottom !== previousBottom) {
       previousBottom = atBottom
       post({ type: 'atBottom', value: atBottom })
@@ -216,14 +315,22 @@ window.addEventListener(
   },
   { passive: true },
 )
+let previousContentHeight = 0
 new ResizeObserver(function keepPinned() {
+  if (getSnapshot().scrollPolicy === 'top') {
+    const height = Math.ceil(
+      document.querySelector('main')?.getBoundingClientRect().height ?? 0,
+    )
+    if (height > 0 && height !== previousContentHeight) {
+      previousContentHeight = height
+      post({ type: 'content-size', height })
+    }
+  }
   if (followBottom && !userScrolling)
     window.scrollTo(0, document.documentElement.scrollHeight)
 }).observe(document.getElementById('root')!)
 installInteractions()
 createRoot(document.getElementById('root')!).render(<Transcript />)
-requestAnimationFrame(function firstFrame() {
-  requestAnimationFrame(function ready() {
-    post({ type: 'ready', firstPaintMs: performance.now() })
-  })
-})
+// Readiness means the command listener is installed, not that Chromium has painted.
+// Service-backed assistant windows can defer animation frames until native supplies content.
+post({ type: 'ready', firstPaintMs: performance.now() })

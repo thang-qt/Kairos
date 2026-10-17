@@ -14,6 +14,14 @@ class OverlayConversation(private val app: AppContainer, private val label: Stri
     private var sendJob: Job? = null
     private var shownAt = 0L
     private var frameReported = false
+    private var pausedSessionId: String? = null
+    private var pausedIdentity: String? = null
+    private val operations = OverlayOperationEpoch()
+
+    private fun identity(): String? = attachmentIdentity(app.server.url, app.tokens.token)
+    private fun accepts(epoch: Long, owner: String?): Boolean =
+        operations.accepts(epoch) && owner != null && owner == identity() && visible
+    var draft by mutableStateOf("")
     var messages by mutableStateOf<List<JsonObject>>(emptyList())
         private set
 
@@ -46,6 +54,11 @@ class OverlayConversation(private val app: AppContainer, private val label: Stri
         scope.launch {
             app.tokens.signedIn.collect {
                 if (!it) {
+                    operations.advance()
+                    pausedSessionId = null
+                    pausedIdentity = null
+                    draft = ""
+                    error = null
                     sendJob?.cancel()
                     repository.open(null)
                     messages = emptyList()
@@ -56,9 +69,15 @@ class OverlayConversation(private val app: AppContainer, private val label: Stri
         }
     }
 
-    fun show() {
-        repository.open(null)
+    fun show(resume: Boolean = false, recoveredSessionId: String? = null) {
+        operations.advance()
         sendJob?.cancel()
+        val canResume = resume && pausedIdentity != null && pausedIdentity == identity()
+        val target = recoveredSessionId ?: if (canResume) pausedSessionId else null
+        repository.open(target)
+        if (!canResume) draft = ""
+        pausedSessionId = null
+        pausedIdentity = null
         messages = emptyList()
         pendingApprovals = emptyList()
         streaming = false
@@ -79,10 +98,14 @@ class OverlayConversation(private val app: AppContainer, private val label: Stri
         }
     }
 
-    fun send(text: String, attachment: ScreenAttachment? = null) {
-        if ((text.isBlank() && attachment == null) || streaming || !app.tokens.signedIn.value)
+    fun send(text: String, attachments: List<ScreenAttachment> = emptyList()) {
+        if ((text.isBlank() && attachments.isEmpty()) || streaming || !app.tokens.signedIn.value)
             return
+        val epoch = operations.capture()
+        val owner = identity()
+        if (!visible || owner == null) return
         streaming = true
+        draft = ""
         error = null
         sendJob =
             scope.launch {
@@ -102,51 +125,66 @@ class OverlayConversation(private val app: AppContainer, private val label: Stri
                                 }
                             }
                             ?: app.models.defaults(app.models.defaultModel())
-                    repository.send(text, settings, listOfNotNull(attachment?.payload()))
+                    if (accepts(epoch, owner))
+                        repository.send(text, settings, attachments.map { it.payload() })
                 } catch (e: Exception) {
                     if (e is CancellationException) throw e
-                    error = e.message ?: "Can't reach server."
+                    if (accepts(epoch, owner)) error = e.message ?: "Can't reach server."
                 } finally {
-                    streaming = activeRunId(repository.history.value) != null
+                    if (accepts(epoch, owner)) streaming = activeRunId(repository.history.value) != null
                 }
             }
     }
 
     fun stop() {
+        val epoch = operations.capture()
+        val owner = identity()
         scope.launch {
             try {
                 repository.stop()
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
-                error = e.message
+                if (accepts(epoch, owner)) error = e.message
             }
         }
     }
 
     fun decide(approval: McpApproval, decision: String, decisionScope: String? = null) {
+        val epoch = operations.capture()
+        val owner = identity()
         scope.launch {
             try {
                 app.api.decideApproval(approval, decision, decisionScope)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                error = e.message ?: "Can't reach server."
+                if (accepts(epoch, owner)) error = e.message ?: "Can't reach server."
             }
         }
     }
 
     fun requestOpen(onOpen: (String?) -> Unit) {
+        val epoch = operations.capture()
+        val owner = identity()
+        val pendingSend = sendJob
         scope.launch {
-            sendJob?.join()
-            if (visible) onOpen(sessionId)
+            pendingSend?.join()
+            if (accepts(epoch, owner)) onOpen(sessionId)
         }
     }
 
-    fun hide() {
+    fun hide(forPicker: Boolean = false) {
+        operations.advance()
+        pausedSessionId = if (forPicker) sessionId else null
+        pausedIdentity = if (forPicker) identity() else null
+        if (!forPicker) draft = ""
         visible = false
         sendJob?.cancel()
         repository.open(null)
         messages = emptyList()
+        pendingApprovals = emptyList()
+        streaming = false
+        error = null
     }
 
     fun destroy() {

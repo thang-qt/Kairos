@@ -2,9 +2,10 @@ package org.kairos.android.app
 
 import android.app.Application
 import android.content.Context
-import android.content.MutableContextWrapper
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.setValue
 import org.kairos.android.data.*
-import org.kairos.android.transcript.TranscriptBridge
 import org.kairos.android.assistant.LibraryAttachment
 import java.io.File
 import java.security.MessageDigest
@@ -27,6 +28,7 @@ class AppContainer(context: Context) {
     val server = ServerStore(context)
     val tokens = TokenStore(context)
     val preferences = PreferencesStore(context)
+    val foregroundAssistant = ForegroundAssistantRouter()
     private val cacheRoot = File(context.filesDir, "kairos-data")
 
     // Disk history is a UI cache, never account state. A startup with a different
@@ -46,15 +48,14 @@ class AppContainer(context: Context) {
     private val historyCache =
         DiskCache(File(cacheRoot, "history"), maxBytes = 8L * 1024 * 1024)
     val api = KairosApi(server, tokens)
+    val mcpLabels = McpLabels(api)
     val pendingSends = PendingSendStore(cache)
     val lastSession = LastSessionStore(cache)
     val sessions = SessionsRepository(api, cache, tokens)
     val models = ModelsRepository(api, cache)
-    // The assistant never constructs a WebView. Only the full application asks for this lazy
-    // singleton.
-    private val transcript = lazy { TranscriptBridge(api, MutableContextWrapper(context)) }
-    val bridge
-        get() = transcript.value
+    /** Changes whenever authenticated data is cleared, fencing in-flight asset reads. */
+    var identityVersion by mutableLongStateOf(0L)
+        private set
 
     private fun cacheIdentity(): String {
         val source = server.url + "\n" + tokens.token.orEmpty()
@@ -69,14 +70,15 @@ class AppContainer(context: Context) {
     }
 
     fun clearUserData() {
+        identityVersion++
         // A photo selected for the previous account must never appear in a new session.
         LibraryAttachment.clear(appContext)
+        mcpLabels.clear()
         sessions.stopSync()
         sessions.clear()
         models.clear()
         cache.clear()
         historyCache.clear()
-        if (transcript.isInitialized()) transcript.value.render(null, emptyList())
     }
 
     fun conversation() = ConversationRepository(api, sessions, historyCache, pendingSends)

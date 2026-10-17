@@ -21,6 +21,8 @@ const ICONS = [
   'ArrowUp02Icon',
   'ArrowUpRight01Icon',
   'BubbleChatIcon',
+  'Camera01Icon',
+  'Image02Icon',
   'Cancel01Icon',
   'Copy01Icon',
   'CopyLinkIcon',
