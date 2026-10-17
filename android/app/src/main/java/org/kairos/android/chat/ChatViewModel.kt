@@ -2,6 +2,7 @@ package org.kairos.android.chat
 
 import androidx.compose.runtime.*
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
@@ -9,9 +10,41 @@ import kotlinx.serialization.json.JsonObject
 import org.kairos.android.app.*
 import org.kairos.android.data.*
 
-class ChatViewModel(val app: AppContainer) : ViewModel() {
+class ChatViewModel(val app: AppContainer, private val savedState: SavedStateHandle) : ViewModel() {
+    private val drafts: MutableMap<String, String> =
+        savedState.get<HashMap<String, String>>("conversationDrafts")?.toMutableMap()
+            ?: mutableMapOf()
+
+    private fun draftKey(id: String?): String = id ?: "__new_chat__"
+
+    fun saveDraft(text: String) {
+        val key = draftKey(sessionId)
+        if (text.isEmpty()) drafts.remove(key) else drafts[key] = text
+        savedState["conversationDrafts"] = HashMap(drafts)
+    }
     val conversation = app.conversation()
     private val ephemeral = EphemeralConversation(app.api)
+    private val navigationEvents = MutableSharedFlow<NavigationRequest>(extraBufferCapacity = 16)
+    val navigation = navigationEvents.asSharedFlow()
+
+    private fun navigate(request: NavigationRequest) {
+        navigationEvents.tryEmit(request)
+    }
+
+    /** Invoked by NavHost on process restoration and system Back. */
+    fun enterRoute(destination: Screen, id: String? = null, search: Boolean = false) {
+        val previous = screen
+        screen = destination
+        searchOpen = search
+        when (destination) {
+            Screen.Chat -> {
+                if (!search && conversation.sessionId != id) select(id, notifyNavigation = false)
+                else if (previous == Screen.Settings) conversation.resume()
+            }
+            Screen.Settings -> conversation.pause()
+            else -> Unit
+        }
+    }
 
     // Saved sessions stream from the repository; throwaway mode swaps in its local history.
     private val mergedHistory = MutableStateFlow(History())
@@ -29,7 +62,7 @@ class ChatViewModel(val app: AppContainer) : ViewModel() {
         )
         private set
 
-    var sessionId by mutableStateOf<String?>(null)
+    var sessionId by mutableStateOf(savedState.get<String>("selectedConversation"))
         private set
 
     var model by mutableStateOf("")
@@ -71,6 +104,9 @@ class ChatViewModel(val app: AppContainer) : ViewModel() {
     var conversationSettingsOpen by mutableStateOf(false)
         private set
 
+    var conversationSettingsTarget by mutableStateOf<String?>(null)
+        private set
+
     private var selectionGeneration = 0
     private var pendingSession: String? = null
     val activeSession
@@ -110,6 +146,7 @@ class ChatViewModel(val app: AppContainer) : ViewModel() {
                     mergedHistory.value = History()
                     app.clearUserData()
                     screen = if (app.server.url.isBlank()) Screen.Connect else Screen.SignIn
+                    navigate(if (screen == Screen.Connect) NavigationRequest.Connect else NavigationRequest.SignIn)
                 }
             }
         }
@@ -152,6 +189,7 @@ class ChatViewModel(val app: AppContainer) : ViewModel() {
         app.clearUserData()
         app.server.save(normalized)
         screen = Screen.SignIn
+        navigate(NavigationRequest.SignIn)
     }
 
     fun signIn(email: String, password: String) = task {
@@ -169,28 +207,35 @@ class ChatViewModel(val app: AppContainer) : ViewModel() {
         app.tokens.clear()
         app.clearUserData()
         screen = Screen.Connect
+        navigate(NavigationRequest.Connect)
     }
 
     fun settings() {
         screen = Screen.Settings
         conversation.pause()
+        navigate(NavigationRequest.Settings)
     }
 
     fun back() {
         error = null
         when (screen) {
-            Screen.SignIn -> screen = Screen.Connect
+            Screen.SignIn -> {
+                screen = Screen.Connect
+                navigate(NavigationRequest.Connect)
+            }
             Screen.Settings -> {
                 screen = Screen.Chat
                 conversation.resume()
+                navigate(NavigationRequest.Back)
             }
             else -> Unit
         }
     }
 
-    fun select(id: String?) {
+    fun select(id: String?, notifyNavigation: Boolean = true) {
         selectionGeneration++
         sessionId = id
+        savedState["selectedConversation"] = id
         ephemeralMode = false
         ephemeral.reset()
         // Clear the previous chat before opening the requested conversation.
@@ -198,10 +243,12 @@ class ChatViewModel(val app: AppContainer) : ViewModel() {
         mergedHistory.value = History()
         conversation.open(id)
         editing = null
-        composerSeed = ""
+        composerSeed = drafts[draftKey(id)].orEmpty()
         composerGeneration++
+        composerFocusGeneration = 0
         error = null
         conversationSettingsOpen = false
+        conversationSettingsTarget = null
         model =
             sessions.value
                 .find { it.friendlyId == id }
@@ -224,6 +271,7 @@ class ChatViewModel(val app: AppContainer) : ViewModel() {
                 }
             }
         }
+        if (notifyNavigation) navigate(NavigationRequest.Chat(id))
     }
 
     fun openIntent(id: String?) {
@@ -277,9 +325,14 @@ class ChatViewModel(val app: AppContainer) : ViewModel() {
             } else {
                 val next = conversation.send(text, selected, attachments, editing?.id)
                 if (generation == selectionGeneration) {
+                    val wasNewConversation = sessionId == null
                     sessionId = next
+                    savedState["selectedConversation"] = next
                     editing = null
                     offline = false
+                    if (wasNewConversation && next != null) {
+                        navigate(NavigationRequest.Chat(next, replaceCurrent = true))
+                    }
                 }
             }
         } catch (e: Exception) {
@@ -306,6 +359,7 @@ class ChatViewModel(val app: AppContainer) : ViewModel() {
     }
 
     fun seed(text: String) {
+        saveDraft(text)
         composerSeed = text
         composerGeneration++
     }
@@ -368,25 +422,39 @@ class ChatViewModel(val app: AppContainer) : ViewModel() {
     }
 
     fun saveConversationSettings(settings: ConversationSettings) = task {
-        conversation.settings(settings)
+        val target = conversationSettingsTarget
+        if (target == null || target == sessionId) {
+            conversation.settings(settings)
+        } else {
+            val updated = app.api.write<SessionSummary, SettingsRequest>(
+                app.api.sessionPath(target) + "/settings",
+                "PATCH",
+                SettingsRequest(settings),
+            )
+            app.sessions.upsert(updated)
+        }
     }
 
     fun openSearch() {
         error = null
         searchOpen = true
+        navigate(NavigationRequest.Search)
     }
 
-    fun closeSearch() {
+    fun closeSearch(navigateBack: Boolean = true) {
         searchOpen = false
+        if (navigateBack) navigate(NavigationRequest.Back)
     }
 
-    fun openConversationSettings() {
+    fun openConversationSettings(target: String? = sessionId) {
         error = null
+        conversationSettingsTarget = target
         conversationSettingsOpen = true
     }
 
     fun closeConversationSettings() {
         conversationSettingsOpen = false
+        conversationSettingsTarget = null
     }
 
     fun deleteSession(session: SessionSummary) = task {
@@ -410,6 +478,7 @@ class ChatViewModel(val app: AppContainer) : ViewModel() {
             ephemeral.reset()
             if (changeServer) app.server.clear()
             screen = if (changeServer) Screen.Connect else Screen.SignIn
+            navigate(if (changeServer) NavigationRequest.Connect else NavigationRequest.SignIn)
         }
     }
 

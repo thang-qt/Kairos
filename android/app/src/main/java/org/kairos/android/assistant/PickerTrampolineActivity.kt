@@ -39,7 +39,11 @@ class PickerTrampolineActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+        // Do not relaunch the picker when ActivityResultRegistry restores an in-flight
+        // request after the process or activity was recreated.
+        if (savedInstanceState == null) {
+            picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+        }
     }
 
     /** Falls back to leaving the pending attachment for the next invocation. */
