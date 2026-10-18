@@ -25,8 +25,8 @@ import kotlinx.coroutines.delay
 import org.kairos.android.chat.ChatViewModel
 import org.kairos.android.data.SearchResult
 import org.kairos.android.data.SessionSummary
-import org.kairos.android.ui.icons.KairosIcons
-import org.kairos.android.ui.theme.LocalKairosColors
+import org.kairos.android.ui.icons.AppIcons
+import org.kairos.android.ui.theme.LocalThemeColors
 
 private val shortDate = DateTimeFormatter.ofPattern("MMM d")
 
@@ -55,7 +55,7 @@ fun SearchOverlay(
     onDismiss: () -> Unit,
     onSelect: (String) -> Unit,
 ) {
-    val colors = LocalKairosColors.current
+    val colors = LocalThemeColors.current
     val focusRequester = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
     var query by remember { mutableStateOf("") }
@@ -93,8 +93,8 @@ fun SearchOverlay(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                GhostIconButton(KairosIcons.ArrowLeft01, "Close search", onDismiss)
-                KairosField(
+                GhostIconButton(AppIcons.ArrowLeft01, "Close search", onDismiss)
+                TextField(
                     query,
                     { query = it },
                     "Search sessions",
@@ -112,7 +112,7 @@ fun SearchOverlay(
                 results == null -> LoadingState("Searching…")
                 results!!.isEmpty() ->
                     EmptyState(
-                        KairosIcons.Search01,
+                        AppIcons.Search01,
                         "No matches",
                         "Nothing in your conversations matches \"$query\".",
                     )
@@ -132,10 +132,10 @@ fun SearchOverlay(
 
 @Composable
 private fun RecentSessions(sessions: List<SessionSummary>, onSelect: (String) -> Unit) {
-    val colors = LocalKairosColors.current
+    val colors = LocalThemeColors.current
     if (sessions.isEmpty()) {
         EmptyState(
-            KairosIcons.BubbleChat,
+            AppIcons.BubbleChat,
             "No conversations yet",
             "Start a chat and it will show up here.",
         )
@@ -182,7 +182,7 @@ private fun RecentSessions(sessions: List<SessionSummary>, onSelect: (String) ->
 
 @Composable
 private fun SearchResultRow(result: SearchResult, onClick: () -> Unit) {
-    val colors = LocalKairosColors.current
+    val colors = LocalThemeColors.current
     Column(
         Modifier.fillMaxWidth()
             .pressable(pressedColor = colors.p(100), onClick = onClick)

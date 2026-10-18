@@ -57,8 +57,8 @@ import org.kairos.android.data.id
 import org.kairos.android.transcript.TranscriptBridge
 import org.kairos.android.transcript.TranscriptTheme
 import org.kairos.android.transcript.TranscriptTouchHost
-import org.kairos.android.ui.theme.LocalKairosColors
-import org.kairos.android.ui.theme.KairosPalettes
+import org.kairos.android.ui.theme.LocalThemeColors
+import org.kairos.android.ui.theme.ColorPalettes
 
 enum class DrawerPosition {
     Closed,
@@ -75,7 +75,7 @@ fun ChatScreen(
     val bridge = remember(renderer, chat.app.identityVersion) {
         if (renderer == AssistantRenderer.WebView) bridgeFactory() else null
     }
-    val colors = LocalKairosColors.current
+    val colors = LocalThemeColors.current
     val context = LocalContext.current
     val view = LocalView.current
     val density = LocalDensity.current
@@ -147,7 +147,7 @@ fun ChatScreen(
             it.webView.setBackgroundColor(chat.app.preferences.colors.surface.toArgb())
             it.theme(
                 TranscriptTheme(
-                    KairosPalettes[chat.app.preferences.paletteIndex].name,
+                    ColorPalettes[chat.app.preferences.paletteIndex].name,
                     if (chat.app.preferences.dark) "dark" else "light",
                 )
             )

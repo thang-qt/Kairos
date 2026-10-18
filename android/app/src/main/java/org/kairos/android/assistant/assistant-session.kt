@@ -22,11 +22,11 @@ import androidx.lifecycle.setViewTreeViewModelStoreOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import kotlinx.coroutines.*
 import org.kairos.android.R
-import org.kairos.android.app.KairosApplication
+import org.kairos.android.app.ChatApplication
 import org.kairos.android.markdown.MathRenderer
 
-class KairosSession(context: Context) : VoiceInteractionSession(context) {
-    private val app = context.applicationContext as KairosApplication
+class AssistantSession(context: Context) : VoiceInteractionSession(context) {
+    private val app = context.applicationContext as ChatApplication
     private val owner = SessionViewOwner()
     private val conversation = OverlayConversation(app.container, "Assistant")
     private val screenCapture = ScreenCaptureState()
@@ -42,7 +42,7 @@ class KairosSession(context: Context) : VoiceInteractionSession(context) {
         if (Build.VERSION.SDK_INT >= 33) android.window.OnBackInvokedCallback { hide() } else null
 
     init {
-        setTheme(R.style.Theme_Kairos_Overlay)
+        setTheme(R.style.Theme_AssistantOverlay)
     }
 
     override fun onCreate() {

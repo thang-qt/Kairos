@@ -71,7 +71,7 @@ sealed interface StreamUpdate {
     data class Connection(val state: ConnectionState) : StreamUpdate
 }
 
-class EventStream(private val api: KairosApi) {
+class EventStream(private val api: BackendApi) {
     fun events(id: String, cursor: Long) =
         callbackFlow {
                 val currentCall = AtomicReference<Call?>()
@@ -178,7 +178,7 @@ class EventStream(private val api: KairosApi) {
  * some conversation changed for this user, on this device or another one. The payload is empty
  * by design; clients refresh the list. A 401 closes the flow after clearing the token.
  */
-fun sessionListEvents(api: KairosApi): Flow<Unit> =
+fun sessionListEvents(api: BackendApi): Flow<Unit> =
     callbackFlow {
         val currentCall = AtomicReference<Call?>()
         val worker =

@@ -31,8 +31,8 @@ import org.kairos.android.chat.ChatViewModel
 import org.kairos.android.data.SessionGroup
 import org.kairos.android.data.SessionSummary
 import org.kairos.android.data.groupSessions
-import org.kairos.android.ui.icons.KairosIcons
-import org.kairos.android.ui.theme.LocalKairosColors
+import org.kairos.android.ui.icons.AppIcons
+import org.kairos.android.ui.theme.LocalThemeColors
 
 /**
  * src/features/chat/components/chat-header.tsx at phone width (the title is hidden below `sm`),
@@ -40,7 +40,7 @@ import org.kairos.android.ui.theme.LocalKairosColors
  */
 @Composable
 fun ChatHeader(chat: ChatViewModel, onOpenSidebar: () -> Unit) {
-    val colors = LocalKairosColors.current
+    val colors = LocalThemeColors.current
     val sessions by chat.sessions.collectAsStateWithLifecycle()
     val history by chat.history.collectAsStateWithLifecycle()
     val catalog by chat.catalog.collectAsStateWithLifecycle()
@@ -76,7 +76,7 @@ fun ChatHeader(chat: ChatViewModel, onOpenSidebar: () -> Unit) {
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 GhostIconButton(
-                    KairosIcons.SidebarLeft01,
+                    AppIcons.SidebarLeft01,
                     "Open sidebar",
                     onOpenSidebar,
                     Modifier.padding(end = 12.dp),
@@ -97,12 +97,12 @@ fun ChatHeader(chat: ChatViewModel, onOpenSidebar: () -> Unit) {
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.widthIn(max = 220.dp),
                     )
-                    KIcon(KairosIcons.ArrowDown01, colors.p(500), size = 20.dp)
+                    AppIcon(AppIcons.ArrowDown01, colors.p(500), size = 20.dp)
                 }
                 Spacer(Modifier.weight(1f))
                 if (ephemeralAvailable || chat.ephemeralMode)
                     GhostIconButton(
-                        KairosIcons.Incognito,
+                        AppIcons.Incognito,
                         if (chat.ephemeralMode) "Throwaway chat is on" else "Enable throwaway chat",
                         chat::toggleEphemeral,
                         tint = if (chat.ephemeralMode) colors.p(950) else colors.p(700),
@@ -112,7 +112,7 @@ fun ChatHeader(chat: ChatViewModel, onOpenSidebar: () -> Unit) {
                 // A conversation that does not exist yet has no actions to offer.
                 if (chat.activeSession != null)
                     GhostIconButton(
-                        KairosIcons.MoreVertical,
+                        AppIcons.MoreVertical,
                         "Conversation actions",
                         { more = true },
                         tint = colors.p(700),
@@ -136,7 +136,7 @@ fun Sidebar(
     onNew: () -> Unit,
     onClose: () -> Unit,
 ) {
-    val colors = LocalKairosColors.current
+    val colors = LocalThemeColors.current
     val sessions by chat.sessions.collectAsStateWithLifecycle()
     val hasMore by chat.hasMore.collectAsStateWithLifecycle()
     val loadingMore by chat.loadingMore.collectAsStateWithLifecycle()
@@ -157,12 +157,12 @@ fun Sidebar(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                KairosMark()
+                BrandMark()
                 Text("Kairos", fontWeight = FontWeight.Medium, color = colors.p(900))
             }
             Spacer(Modifier.weight(1f))
             GhostIconButton(
-                KairosIcons.SidebarLeft01,
+                AppIcons.SidebarLeft01,
                 "Close sidebar",
                 onClose,
                 tint = colors.p(900),
@@ -172,15 +172,15 @@ fun Sidebar(
             Modifier.padding(start = 8.dp, end = 8.dp, bottom = 16.dp),
             verticalArrangement = Arrangement.spacedBy(1.dp),
         ) {
-            SidebarAction(KairosIcons.PencilEdit02, "New Session", onClick = onNew)
-            SidebarAction(KairosIcons.Search01, "Search sessions", onClick = chat::openSearch)
+            SidebarAction(AppIcons.PencilEdit02, "New Session", onClick = onNew)
+            SidebarAction(AppIcons.Search01, "Search sessions", onClick = chat::openSearch)
         }
         Box(Modifier.weight(1f).fillMaxWidth()) {
             when {
                 !ready -> Column(Modifier.fillMaxSize()) { LoadingState("Loading conversations…") }
                 sessions.isEmpty() && !hasMore ->
                     EmptyState(
-                        KairosIcons.BubbleChat,
+                        AppIcons.BubbleChat,
                         "No conversations yet",
                         "Start a chat and it will show up here.",
                     )
@@ -222,7 +222,7 @@ fun Sidebar(
                                     Modifier.fillMaxWidth().padding(vertical = 12.dp),
                                     horizontalArrangement = Arrangement.Center,
                                 ) {
-                                    KIcon(KairosIcons.Loading03, colors.p(500))
+                                    AppIcon(AppIcons.Loading03, colors.p(500))
                                 }
                             }
                     }
@@ -251,11 +251,11 @@ fun Sidebar(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            SidebarAction(KairosIcons.Settings01, "Settings", Modifier.weight(1f)) {
+            SidebarAction(AppIcons.Settings01, "Settings", Modifier.weight(1f)) {
                 chat.settings()
             }
             GhostIconButton(
-                KairosIcons.Logout01,
+                AppIcons.Logout01,
                 "Sign out",
                 { logout = true },
                 tint = colors.p(700),
@@ -277,7 +277,7 @@ private fun GroupHeader(
     open: Boolean,
     onToggle: () -> Unit,
 ) {
-    val colors = LocalKairosColors.current
+    val colors = LocalThemeColors.current
     val rotation by animateFloatAsState(if (open) 90f else 0f, tween(150), label = "section-arrow")
     Row(
         Modifier.fillMaxWidth()
@@ -293,7 +293,7 @@ private fun GroupHeader(
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
-        KIcon(KairosIcons.ArrowRight01, colors.p(500), Modifier.rotate(rotation), size = 20.dp)
+        AppIcon(AppIcons.ArrowRight01, colors.p(500), Modifier.rotate(rotation), size = 20.dp)
     }
 }
 
@@ -306,7 +306,7 @@ fun SidebarAction(
     trailing: (@Composable () -> Unit)? = null,
     onClick: () -> Unit,
 ) {
-    val colors = LocalKairosColors.current
+    val colors = LocalThemeColors.current
     Row(
         modifier
             .fillMaxWidth()
@@ -316,7 +316,7 @@ fun SidebarAction(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        KIcon(icon, colors.p(900))
+        AppIcon(icon, colors.p(900))
         Text(
             label,
             Modifier.weight(1f),
@@ -337,7 +337,7 @@ private fun SessionItem(
     onLongPress: () -> Unit,
     onClick: () -> Unit,
 ) {
-    val colors = LocalKairosColors.current
+    val colors = LocalThemeColors.current
     val shape = RoundedCornerShape(8.dp)
     Box(
         Modifier.fillMaxWidth()
@@ -366,7 +366,7 @@ private fun SessionItem(
 /** Mono model label shared by the overlay reply card (message-item.tsx). */
 @Composable
 fun ModelLabel(model: String) {
-    val colors = LocalKairosColors.current
+    val colors = LocalThemeColors.current
     Text(
         model,
         fontFamily = FontFamily.Monospace,

@@ -4,7 +4,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.unit.dp
 
 /** Shared geometry for controls, grouped content, and elevated surfaces. */
-object KairosUiTokens {
+object UiTokens {
     val controlShape = RoundedCornerShape(8.dp)
     val cardShape = RoundedCornerShape(12.dp)
     val dialogShape = RoundedCornerShape(16.dp)

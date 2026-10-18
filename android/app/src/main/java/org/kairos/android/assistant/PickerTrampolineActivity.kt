@@ -15,7 +15,7 @@ object LibraryAttachment {
 
     private fun prefs(context: Context) = context.getSharedPreferences(STORE, Context.MODE_PRIVATE)
     private fun identity(context: Context): String? {
-        val app = (context.applicationContext as org.kairos.android.app.KairosApplication).container
+        val app = (context.applicationContext as org.kairos.android.app.ChatApplication).container
         return attachmentIdentity(app.server.url, app.tokens.token)
     }
 

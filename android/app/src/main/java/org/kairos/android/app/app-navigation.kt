@@ -26,7 +26,7 @@ import org.kairos.android.ui.SettingsScreen
 
 /** One saved Navigation Compose back stack for the full app, not screen flags in the VM. */
 @Composable
-fun KairosNavigation(
+fun AppNavigation(
     chat: ChatViewModel,
     bridgeFactory: () -> TranscriptBridge,
     onCopy: (String) -> Unit,

@@ -18,11 +18,11 @@ import androidx.compose.ui.unit.sp
 import org.kairos.android.app.Screen
 import org.kairos.android.chat.ChatViewModel
 import org.kairos.android.data.*
-import org.kairos.android.ui.theme.LocalKairosColors
+import org.kairos.android.ui.theme.LocalThemeColors
 
 @Composable
 fun AuthScreen(chat: ChatViewModel) {
-    val colors = LocalKairosColors.current
+    val colors = LocalThemeColors.current
     val connect = chat.screen == Screen.Connect
     var url by rememberSaveable { mutableStateOf(chat.app.server.url) }
     var email by rememberSaveable { mutableStateOf("") }
@@ -51,7 +51,7 @@ fun AuthScreen(chat: ChatViewModel) {
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                KairosMark(size = 24.dp)
+                BrandMark(size = 24.dp)
                 Text(
                     "Kairos",
                     fontFamily = FontFamily.Serif,
@@ -108,7 +108,7 @@ fun AuthScreen(chat: ChatViewModel) {
                 Spacer(Modifier.height(24.dp))
                 if (connect) {
                     FieldLabel("SERVER")
-                    KairosField(
+                    TextField(
                         url,
                         { url = it },
                         "https://kairos.example.com",
@@ -126,7 +126,7 @@ fun AuthScreen(chat: ChatViewModel) {
                     }
                 } else {
                     FieldLabel("EMAIL")
-                    KairosField(
+                    TextField(
                         email,
                         { email = it },
                         "you@example.com",
@@ -135,7 +135,7 @@ fun AuthScreen(chat: ChatViewModel) {
                     )
                     Spacer(Modifier.height(16.dp))
                     FieldLabel("PASSWORD")
-                    KairosField(
+                    TextField(
                         password,
                         { password = it },
                         "Password",
@@ -166,7 +166,7 @@ fun AuthScreen(chat: ChatViewModel) {
 
 @Composable
 private fun FieldLabel(label: String) {
-    val colors = LocalKairosColors.current
+    val colors = LocalThemeColors.current
     Text(
         label,
         Modifier.padding(bottom = 8.dp),

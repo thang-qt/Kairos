@@ -3,6 +3,7 @@
 package org.kairos.android.ui
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.border
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -12,6 +13,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -47,12 +49,12 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import org.kairos.android.ui.icons.KairosIcons
-import org.kairos.android.ui.theme.LocalKairosColors
+import org.kairos.android.ui.icons.AppIcons
+import org.kairos.android.ui.theme.LocalThemeColors
 
 /** Hugeicons glyph at the web's 20dp / 1.5 stroke. */
 @Composable
-fun KIcon(icon: ImageVector, tint: Color, modifier: Modifier = Modifier, size: Dp = 20.dp) {
+fun AppIcon(icon: ImageVector, tint: Color, modifier: Modifier = Modifier, size: Dp = 20.dp) {
     Icon(icon, contentDescription = null, tint = tint, modifier = modifier.size(size))
 }
 
@@ -70,7 +72,7 @@ fun Modifier.pressable(
 ): Modifier = composed {
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
-    val fill = pressedColor ?: LocalKairosColors.current.p(200)
+    val fill = pressedColor ?: LocalThemeColors.current.p(200)
     this.background(if (pressed) fill else Color.Transparent, shape)
         .combinedClickable(interaction, indication = null, enabled = enabled, role = role, onLongClick = onLongClick, onClick = onClick)
 }
@@ -82,15 +84,15 @@ fun GhostIconButton(
     label: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
-    tint: Color = LocalKairosColors.current.p(800),
+    tint: Color = LocalThemeColors.current.p(800),
     round: Boolean = false,
     size: Dp = 32.dp,
     selected: Boolean = false,
     enabled: Boolean = true,
     onLongClick: (() -> Unit)? = null,
 ) {
-    val colors = LocalKairosColors.current
-    val shape = if (round) CircleShape else KairosUiTokens.controlShape
+    val colors = LocalThemeColors.current
+    val shape = if (round) CircleShape else UiTokens.controlShape
     Box(
         modifier.size(size)
             .alpha(if (enabled) 1f else 0.5f)
@@ -98,13 +100,13 @@ fun GhostIconButton(
             .semantics { contentDescription = label }
             .pressable(shape, enabled = enabled, onLongClick = onLongClick, onClick = onClick),
         contentAlignment = Alignment.Center,
-    ) { KIcon(icon, tint) }
+    ) { AppIcon(icon, tint) }
 }
 
 /** The Kairos mark from src/components/icons/kairos-icon-big.tsx (84-unit viewBox). */
 @Composable
-fun KairosMark(modifier: Modifier = Modifier, size: Dp = 20.dp) {
-    val colors = LocalKairosColors.current
+fun BrandMark(modifier: Modifier = Modifier, size: Dp = 20.dp) {
+    val colors = LocalThemeColors.current
     Canvas(modifier.size(size)) {
         val unit = this.size.width / 84f
         drawRoundRect(colors.p(950), Offset(8f * unit, 8f * unit), Size(50f * unit, 50f * unit), CornerRadius(11f * unit))
@@ -120,7 +122,7 @@ fun EmptyState(
     hint: String,
     modifier: Modifier = Modifier,
 ) {
-    val colors = LocalKairosColors.current
+    val colors = LocalThemeColors.current
     Column(
         modifier.fillMaxSize().padding(32.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -130,7 +132,7 @@ fun EmptyState(
             Modifier.size(44.dp)
                 .background(colors.p(100), RoundedCornerShape(12.dp)),
             contentAlignment = Alignment.Center,
-        ) { KIcon(icon, colors.p(600)) }
+        ) { AppIcon(icon, colors.p(600)) }
         Spacer(Modifier.height(12.dp))
         Text(
             title,
@@ -152,7 +154,7 @@ fun EmptyState(
 /** Centered busy indicator with a label. */
 @Composable
 fun LoadingState(label: String, modifier: Modifier = Modifier) {
-    val colors = LocalKairosColors.current
+    val colors = LocalThemeColors.current
     val transition = rememberInfiniteTransition(label = "loading")
     val angle by
         transition.animateFloat(
@@ -166,7 +168,22 @@ fun LoadingState(label: String, modifier: Modifier = Modifier) {
         horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        KIcon(KairosIcons.Loading03, colors.p(600), Modifier.rotate(angle))
+        AppIcon(AppIcons.Loading03, colors.p(600), Modifier.rotate(angle))
         Text(label, color = colors.p(600), fontSize = 13.sp)
+    }
+}
+
+@Composable
+fun ErrorBox(message: String) {
+    val colors = LocalThemeColors.current
+    Row(
+        Modifier.fillMaxWidth()
+            .background(colors.p(100), RoundedCornerShape(12.dp))
+            .border(1.dp, colors.p(200), UiTokens.cardShape)
+            .padding(12.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        AppIcon(AppIcons.AlertCircle, colors.p(800))
+        Text(message, color = colors.p(900), fontSize = 14.sp, lineHeight = 20.sp)
     }
 }

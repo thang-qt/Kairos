@@ -22,7 +22,7 @@ import androidx.compose.ui.input.key.*
 import androidx.compose.ui.platform.*
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import org.kairos.android.app.KairosApplication
+import org.kairos.android.app.ChatApplication
 import org.kairos.android.data.*
 import org.kairos.android.ui.*
 import org.kairos.android.ui.theme.*
@@ -30,7 +30,7 @@ import org.kairos.android.ui.theme.*
 /** The first invocation is only a focused composer; answers occupy a top-anchored reply pane. */
 @Composable
 fun AssistantOverlay(
-    app: KairosApplication,
+    app: ChatApplication,
     conversation: OverlayConversation,
     screenCapture: ScreenCaptureState,
     onDismiss: () -> Unit,
@@ -38,8 +38,8 @@ fun AssistantOverlay(
     onPickImage: () -> Unit = {},
     onTakePhoto: () -> Unit = {},
 ) {
-    KairosTheme(app.theme.colors, app.theme.dark) {
-        val colors = LocalKairosColors.current
+    AppTheme(app.theme.colors, app.theme.dark) {
+        val colors = LocalThemeColors.current
         val context = LocalContext.current
         val view = LocalView.current
         val density = LocalDensity.current
@@ -185,7 +185,7 @@ fun AssistantOverlay(
 
 @Composable
 private fun OverlayDragHandle(modifier: Modifier, progress: Float) {
-    val colors = LocalKairosColors.current
+    val colors = LocalThemeColors.current
     Box(modifier.fillMaxWidth().height(if (progress > 0f) 32.dp else 24.dp), contentAlignment = Alignment.Center) {
         if (progress > 0f) Text(if (progress >= 0.83f) "Release to open Kairos" else "Continue in Kairos", color = colors.p(600), fontSize = 12.sp)
         else Box(Modifier.size(36.dp, 4.dp).background(colors.p(400), RoundedCornerShape(2.dp)))

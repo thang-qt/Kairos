@@ -45,11 +45,11 @@ import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import org.kairos.android.ui.KIcon
-import org.kairos.android.ui.icons.KairosIcons
+import org.kairos.android.ui.AppIcon
+import org.kairos.android.ui.icons.AppIcons
 import org.kairos.android.ui.pressable
-import org.kairos.android.ui.theme.KairosColors
-import org.kairos.android.ui.theme.LocalKairosColors
+import org.kairos.android.ui.theme.PaletteColors
+import org.kairos.android.ui.theme.LocalThemeColors
 
 /*
  * Native renderer for the assistant overlay, at feature parity with the web's Streamdown setup
@@ -58,14 +58,14 @@ import org.kairos.android.ui.theme.LocalKairosColors
 
 private val Body = TextStyle(fontSize = 15.sp, lineHeight = 24.sp, letterSpacing = (-0.15).sp)
 
-private class MdEnv(val colors: KairosColors, val dark: Boolean, val density: Density, val onLink: (String) -> Unit)
+private class MdEnv(val colors: PaletteColors, val dark: Boolean, val density: Density, val onLink: (String) -> Unit)
 
 private val LocalMdEnv = staticCompositionLocalOf<MdEnv> { error("OverlayMarkdown only") }
 
 @Composable
 fun OverlayMarkdown(text: String, streaming: Boolean, dark: Boolean, onLink: (String) -> Unit) {
     val blocks = remember(text, streaming) { MarkdownDocument.parse(text, streaming) }
-    val colors = LocalKairosColors.current
+    val colors = LocalThemeColors.current
     val density = LocalDensity.current
     val env = remember(colors, dark, density, onLink) { MdEnv(colors, dark, density, onLink) }
     CompositionLocalProvider(LocalMdEnv provides env) {
@@ -135,7 +135,7 @@ private fun TaskBox(checked: Boolean) {
         Modifier.size(14.dp).background(if (checked) colors.p(950) else Color.Transparent, shape)
             .border(1.dp, if (checked) colors.p(950) else colors.p(400), shape),
         contentAlignment = Alignment.Center,
-    ) { if (checked) KIcon(KairosIcons.Tick02, colors.p(50), size = 12.dp) }
+    ) { if (checked) AppIcon(AppIcons.Tick02, colors.p(50), size = 12.dp) }
 }
 
 /** AnnotatedString plus inline math placeholders; the placeholder list also feeds table measuring. */
@@ -267,7 +267,7 @@ private fun CodeBlock(block: MdBlock.Code) {
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                KIcon(if (copied) KairosIcons.Tick02 else KairosIcons.Copy01, colors.p(500), size = 16.dp)
+                AppIcon(if (copied) AppIcons.Tick02 else AppIcons.Copy01, colors.p(500), size = 16.dp)
                 Text(if (copied) "Copied" else "Copy", color = colors.p(500), fontSize = 12.sp, fontWeight = FontWeight.Medium)
             }
         }

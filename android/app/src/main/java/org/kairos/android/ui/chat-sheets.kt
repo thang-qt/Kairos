@@ -31,11 +31,11 @@ import kotlinx.coroutines.delay
 import kotlinx.serialization.json.*
 import org.kairos.android.chat.ChatViewModel
 import org.kairos.android.data.*
-import org.kairos.android.ui.icons.KairosIcons
-import org.kairos.android.ui.theme.LocalKairosColors
+import org.kairos.android.ui.icons.AppIcons
+import org.kairos.android.ui.theme.LocalThemeColors
 
 @Composable
-fun KairosSheet(
+fun ModalSheet(
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
     content: @Composable ColumnScope.() -> Unit,
@@ -45,8 +45,8 @@ fun KairosSheet(
         PresentInlineSheet(inlineHost, onDismiss, content)
         return
     }
-    val colors = LocalKairosColors.current
-    val shape = KairosUiTokens.sheetShape
+    val colors = LocalThemeColors.current
+    val shape = UiTokens.sheetShape
     // No outline: a full-width border reads as a stray line across the screen. The scrim and
     // the surface step provide the separation instead.
     ModalBottomSheet(
@@ -56,7 +56,7 @@ fun KairosSheet(
         containerColor = colors.p(50),
         contentColor = colors.p(900),
         tonalElevation = 0.dp,
-        scrimColor = colors.ink.copy(alpha = KairosUiTokens.scrimAlpha),
+        scrimColor = colors.ink.copy(alpha = UiTokens.scrimAlpha),
         dragHandle = {
             Box(
                 Modifier.padding(vertical = 12.dp)
@@ -81,7 +81,7 @@ fun SheetAction(
     enabled: Boolean = true,
     onClick: () -> Unit,
 ) {
-    val colors = LocalKairosColors.current
+    val colors = LocalThemeColors.current
     Row(
         Modifier.fillMaxWidth()
             .height(48.dp)
@@ -90,7 +90,7 @@ fun SheetAction(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        KIcon(icon, if (enabled) colors.p(900) else colors.p(400))
+        AppIcon(icon, if (enabled) colors.p(900) else colors.p(400))
         Text(label, color = if (enabled) colors.p(900) else colors.p(400))
     }
 }
@@ -105,12 +105,12 @@ fun AttachmentChoiceSheet(
     showScreen: Boolean = true,
     onCamera: (() -> Unit)? = null,
 ) {
-    val colors = LocalKairosColors.current
-    KairosSheet(onDismiss) {
+    val colors = LocalThemeColors.current
+    ModalSheet(onDismiss) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            if (showScreen) AttachmentSourceTile(KairosIcons.SmartPhone01, "Screen", Modifier.weight(1f), onScreen)
-            AttachmentSourceTile(KairosIcons.Image02, "Photos", Modifier.weight(1f), onLibrary)
-            onCamera?.let { AttachmentSourceTile(KairosIcons.Camera01, "Camera", Modifier.weight(1f), it) }
+            if (showScreen) AttachmentSourceTile(AppIcons.SmartPhone01, "Screen", Modifier.weight(1f), onScreen)
+            AttachmentSourceTile(AppIcons.Image02, "Photos", Modifier.weight(1f), onLibrary)
+            onCamera?.let { AttachmentSourceTile(AppIcons.Camera01, "Camera", Modifier.weight(1f), it) }
         }
         if (showScreen && !screenCaptureAvailable)
             Text(
@@ -123,14 +123,14 @@ fun AttachmentChoiceSheet(
 
 @Composable
 private fun AttachmentSourceTile(icon: ImageVector, title: String, modifier: Modifier, onClick: () -> Unit) {
-    val colors = LocalKairosColors.current
+    val colors = LocalThemeColors.current
     Column(
-        modifier.height(104.dp).background(colors.p(100), KairosUiTokens.cardShape)
-            .pressable(KairosUiTokens.cardShape, onClick = onClick).padding(12.dp),
+        modifier.height(104.dp).background(colors.p(100), UiTokens.cardShape)
+            .pressable(UiTokens.cardShape, onClick = onClick).padding(12.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterVertically),
     ) {
-        KIcon(icon, colors.p(800))
+        AppIcon(icon, colors.p(800))
         Text(title, color = colors.p(800), fontSize = 13.sp, maxLines = 1)
     }
 }
@@ -145,26 +145,26 @@ fun SessionActionsSheet(
     var rename by remember { mutableStateOf(false) }
     var delete by remember { mutableStateOf(false) }
     var title by remember(session.friendlyId) { mutableStateOf(session.displayTitle) }
-    KairosSheet(onDismiss) {
-        SheetAction(KairosIcons.Pen01, "Rename") { rename = true }
-        SheetAction(KairosIcons.Pin, if (session.isPinned) "Unpin" else "Pin") {
+    ModalSheet(onDismiss) {
+        SheetAction(AppIcons.Pen01, "Rename") { rename = true }
+        SheetAction(AppIcons.Pin, if (session.isPinned) "Unpin" else "Pin") {
             chat.pin(session)
             onDismiss()
         }
-        SheetAction(KairosIcons.Settings02, "Chat settings") {
+        SheetAction(AppIcons.Settings02, "Chat settings") {
             chat.openConversationSettings(session.friendlyId)
             onDismiss()
         }
         if (allowFork)
-            SheetAction(KairosIcons.CopyLink, "Fork") {
+            SheetAction(AppIcons.CopyLink, "Fork") {
                 chat.fork()
                 onDismiss()
             }
-        SheetAction(KairosIcons.Delete01, "Delete") { delete = true }
+        SheetAction(AppIcons.Delete01, "Delete") { delete = true }
     }
     if (rename)
-        KairosDialog("Rename conversation", { rename = false }) {
-            KairosField(title, { title = it })
+        ContentDialog("Rename conversation", { rename = false }) {
+            TextField(title, { title = it })
             DialogActions("Save", { rename = false }) {
                 chat.rename(session, title)
                 onDismiss()
@@ -191,29 +191,29 @@ fun MessageActionsSheet(
     ephemeral: Boolean = false,
 ) {
     var delete by remember { mutableStateOf(false) }
-    KairosSheet(onDismiss) {
-        SheetAction(KairosIcons.Copy01, "Copy") {
+    ModalSheet(onDismiss) {
+        SheetAction(AppIcons.Copy01, "Copy") {
             onCopy(message.copyText())
             onDismiss()
         }
         // Throwaway turns are memory-only: copy stays, mutations are meaningless.
-        if (ephemeral) return@KairosSheet
+        if (ephemeral) return@ModalSheet
         if (message.role == "user")
-            SheetAction(KairosIcons.PencilEdit02, "Edit") {
+            SheetAction(AppIcons.PencilEdit02, "Edit") {
                 chat.edit(message)
                 onDismiss()
             }
-        SheetAction(KairosIcons.CopyLink, "Fork") {
+        SheetAction(AppIcons.CopyLink, "Fork") {
             chat.fork(message)
             onDismiss()
         }
-        SheetAction(KairosIcons.Delete01, "Delete") { delete = true }
+        SheetAction(AppIcons.Delete01, "Delete") { delete = true }
         if (
             message.role == "assistant" &&
                 message.canRetry &&
                 message.status in listOf("error", "interrupted")
         )
-            SheetAction(KairosIcons.Refresh, "Retry") {
+            SheetAction(AppIcons.Refresh, "Retry") {
                 chat.retry(message)
                 onDismiss()
             }
@@ -232,19 +232,19 @@ fun MessageActionsSheet(
 
 @Composable
 fun ModelsSheet(chat: ChatViewModel, onDismiss: () -> Unit) {
-    val colors = LocalKairosColors.current
+    val colors = LocalThemeColors.current
     val catalog by chat.catalog.collectAsStateWithLifecycle()
     var query by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
     val activeModel = chat.activeSession?.settings?.model?.ifBlank { chat.model } ?: chat.model
-    KairosSheet(onDismiss) {
+    ModalSheet(onDismiss) {
         Text(
             "Model",
             color = colors.p(900),
             fontWeight = FontWeight.Medium,
         )
         Spacer(Modifier.height(12.dp))
-        KairosField(query, { query = it }, "Search models", search = true)
+        TextField(query, { query = it }, "Search models", search = true)
         Column(
             Modifier.heightIn(max = 420.dp)
                 .verticalScroll(rememberScrollState())
@@ -298,7 +298,7 @@ fun ModelsSheet(chat: ChatViewModel, onDismiss: () -> Unit) {
                                     style = TextStyle(fontFeatureSettings = "tnum"),
                                 )
                             }
-                            if (model.key == activeModel) KIcon(KairosIcons.Tick02, colors.p(900))
+                            if (model.key == activeModel) AppIcon(AppIcons.Tick02, colors.p(900))
                             if (
                                 catalog.capabilities.canSelectModel &&
                                     model.key == activeModel &&
@@ -328,7 +328,7 @@ fun ModelsSheet(chat: ChatViewModel, onDismiss: () -> Unit) {
 
 @Composable
 fun ActivitySheet(turn: JsonObject, mcpLabels: Map<String, String> = emptyMap(), onDismiss: () -> Unit) {
-    val colors = LocalKairosColors.current
+    val colors = LocalThemeColors.current
     val split = remember(turn) { splitAssistantActivity(turn) }
     val streaming = split.let { isAssistantStreaming(turn) }
     val steps = remember(split.activityIndexes, turn, mcpLabels) {
@@ -341,7 +341,7 @@ fun ActivitySheet(turn: JsonObject, mcpLabels: Map<String, String> = emptyMap(),
             kotlinx.coroutines.delay(1000)
         }
     }
-    KairosSheet(onDismiss) {
+    ModalSheet(onDismiss) {
         Row(
             Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
@@ -386,21 +386,21 @@ private fun formatElapsed(elapsedMs: Long): String = formatActivityDuration(elap
 
 @Composable
 private fun ActivityRow(step: ActivityStep, hasConnector: Boolean) {
-    val colors = LocalKairosColors.current
+    val colors = LocalThemeColors.current
     val openBrowser = rememberOpenBrowser()
     Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
         Column(Modifier.width(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             Box(Modifier.height(24.dp), contentAlignment = Alignment.Center) {
                 when (step) {
-                    is ActivityStep.Thinking -> KIcon(KairosIcons.AiMagic, colors.p(500), size = 20.dp)
+                    is ActivityStep.Thinking -> AppIcon(AppIcons.AiMagic, colors.p(500), size = 20.dp)
                     is ActivityStep.Narration ->
                         Box(Modifier.size(6.dp).background(colors.p(300), CircleShape))
                     is ActivityStep.Tool ->
-                        KIcon(
+                        AppIcon(
                             when {
-                                step.failed -> KairosIcons.AlertCircle
-                                step.web -> KairosIcons.Search01
-                                else -> KairosIcons.Settings02
+                                step.failed -> AppIcons.AlertCircle
+                                step.web -> AppIcons.Search01
+                                else -> AppIcons.Settings02
                             },
                             if (step.running) colors.p(800) else colors.p(500),
                             size = 20.dp,
@@ -478,7 +478,7 @@ private fun ActivityRow(step: ActivityStep, hasConnector: Boolean) {
 
 @Composable
 private fun ThinkingStep(step: ActivityStep.Thinking) {
-    val colors = LocalKairosColors.current
+    val colors = LocalThemeColors.current
     var open by remember { mutableStateOf(step.streaming) }
     Row(
         Modifier.pressable(pressedColor = colors.p(200)) { open = !open }.padding(vertical = 1.dp),
@@ -491,8 +491,8 @@ private fun ThinkingStep(step: ActivityStep.Thinking) {
             fontSize = 14.sp,
             modifier = if (step.streaming) Modifier.pulsing() else Modifier,
         )
-        KIcon(
-            KairosIcons.ArrowDown01,
+        AppIcon(
+            AppIcons.ArrowDown01,
             colors.p(500),
             Modifier.rotate(if (open) 180f else 0f),
             size = 20.dp,

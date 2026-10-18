@@ -20,7 +20,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import org.kairos.android.chat.ChatViewModel
 import org.kairos.android.data.ConversationSettings
-import org.kairos.android.ui.theme.LocalKairosColors
+import org.kairos.android.ui.theme.LocalThemeColors
 
 private val efforts = listOf("none", "minimal", "low", "medium", "high", "xhigh", "max")
 
@@ -40,7 +40,7 @@ private fun labelToEffort(label: String) =
  */
 @Composable
 fun ConversationSettingsSheet(chat: ChatViewModel, onDismiss: () -> Unit) {
-    val colors = LocalKairosColors.current
+    val colors = LocalThemeColors.current
     val session = chat.sessions.collectAsStateWithLifecycle().value.find {
         it.friendlyId == chat.conversationSettingsTarget
     }
@@ -55,7 +55,7 @@ fun ConversationSettingsSheet(chat: ChatViewModel, onDismiss: () -> Unit) {
     var webSearch by remember(initial.webSearch) { mutableStateOf(initial.webSearch) }
     var mathTools by remember(initial.mathTools) { mutableStateOf(initial.mathTools) }
     var advanced by remember(initial.advanced) { mutableStateOf(initial.advanced) }
-    KairosSheet(onDismiss) {
+    ModalSheet(onDismiss) {
         Text("Chat settings", color = colors.p(900), fontWeight = FontWeight.Medium)
         Column(
             Modifier.fillMaxWidth()
@@ -188,7 +188,7 @@ fun ConversationSettingsSheet(chat: ChatViewModel, onDismiss: () -> Unit) {
 
 @Composable
 private fun SettingsCard(title: String, content: @Composable ColumnScope.() -> Unit) {
-    val colors = LocalKairosColors.current
+    val colors = LocalThemeColors.current
     Column(
         Modifier.fillMaxWidth()
             .background(colors.p(100).copy(alpha = 0.5f), RoundedCornerShape(12.dp))
@@ -202,7 +202,7 @@ private fun SettingsCard(title: String, content: @Composable ColumnScope.() -> U
 
 @Composable
 private fun MultilineField(value: String, onChange: (String) -> Unit, placeholder: String) {
-    val colors = LocalKairosColors.current
+    val colors = LocalThemeColors.current
     val shape = RoundedCornerShape(8.dp)
     BasicTextField(
         value,

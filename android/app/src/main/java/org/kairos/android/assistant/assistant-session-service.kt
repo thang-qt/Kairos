@@ -5,5 +5,5 @@ import android.service.voice.VoiceInteractionSession
 import android.service.voice.VoiceInteractionSessionService
 
 class KairosSessionService : VoiceInteractionSessionService() {
-    override fun onNewSession(args: Bundle?): VoiceInteractionSession = KairosSession(this)
+    override fun onNewSession(args: Bundle?): VoiceInteractionSession = AssistantSession(this)
 }

@@ -18,7 +18,7 @@ import okhttp3.RequestBody.Companion.toRequestBody
 
 class ApiException(val code: Int, message: String) : IOException(message)
 
-class KairosApi(val server: ServerStore, val tokens: TokenStore) {
+class BackendApi(val server: ServerStore, val tokens: TokenStore) {
     val client =
         OkHttpClient.Builder()
             .connectTimeout(15, TimeUnit.SECONDS)

@@ -64,7 +64,7 @@ fun openBrowser(context: Context, href: String) {
 
 /** Slide-up entry shared by every overlay → app handoff. */
 fun openAppOptions(context: Context): Bundle =
-    ActivityOptions.makeCustomAnimation(context, R.anim.kairos_open_enter, R.anim.kairos_hold)
+    ActivityOptions.makeCustomAnimation(context, R.anim.app_open_enter, R.anim.hold_position)
         .toBundle()
 
 fun mainAppIntent(context: Context, sessionId: String? = null): Intent =

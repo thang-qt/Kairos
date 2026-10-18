@@ -15,8 +15,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.serialization.json.Json
 import org.kairos.android.data.McpApproval
-import org.kairos.android.ui.icons.KairosIcons
-import org.kairos.android.ui.theme.LocalKairosColors
+import org.kairos.android.ui.icons.AppIcons
+import org.kairos.android.ui.theme.LocalThemeColors
 
 private val pretty = Json { prettyPrint = true }
 
@@ -32,7 +32,7 @@ fun McpApprovalCard(
     onDecide: (decision: String, scope: String?) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val colors = LocalKairosColors.current
+    val colors = LocalThemeColors.current
     val approval = approvals.firstOrNull() ?: return
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(Unit) {
@@ -46,8 +46,8 @@ fun McpApprovalCard(
     Column(
         modifier
             .fillMaxWidth()
-            .background(colors.surface, KairosUiTokens.dialogShape)
-            .border(1.dp, colors.p(200), KairosUiTokens.dialogShape)
+            .background(colors.surface, UiTokens.dialogShape)
+            .border(1.dp, colors.p(200), UiTokens.dialogShape)
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
@@ -59,7 +59,7 @@ fun McpApprovalCard(
                 Modifier.size(36.dp)
                     .background(colors.p(100), RoundedCornerShape(12.dp)),
                 contentAlignment = Alignment.Center,
-            ) { KIcon(KairosIcons.PlugSocket, colors.p(700)) }
+            ) { AppIcon(AppIcons.PlugSocket, colors.p(700)) }
             Column(Modifier.weight(1f)) {
                 Text(
                     "Allow ${approval.toolName} on ${approval.serverName}?",
@@ -110,16 +110,16 @@ fun McpApprovalCard(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                KairosButton(
+                ActionButton(
                     "Deny",
                     modifier = Modifier.weight(1f),
-                    style = KairosButtonStyle.Ghost,
+                    style = ButtonStyle.Ghost,
                     enabled = !busy,
                 ) { onDecide("denied", null) }
-                KairosButton(
+                ActionButton(
                     "Always",
                     modifier = Modifier.weight(1f),
-                    style = KairosButtonStyle.Secondary,
+                    style = ButtonStyle.Secondary,
                     enabled = !busy,
                 ) { onDecide("approved", "tool") }
                 PrimaryButton(

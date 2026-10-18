@@ -21,12 +21,12 @@ import org.kairos.android.assistant.isDefaultAssistant
 import org.kairos.android.assistant.openAssistantSettings
 import org.kairos.android.chat.ChatViewModel
 import org.kairos.android.data.*
-import org.kairos.android.ui.icons.KairosIcons
+import org.kairos.android.ui.icons.AppIcons
 import org.kairos.android.ui.theme.*
 
 @Composable
 fun SettingsScreen(chat: ChatViewModel) {
-    val colors = LocalKairosColors.current
+    val colors = LocalThemeColors.current
     val context = LocalContext.current
     var confirmation by remember { mutableStateOf<String?>(null) }
     Column(
@@ -40,7 +40,7 @@ fun SettingsScreen(chat: ChatViewModel) {
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            GhostIconButton(KairosIcons.ArrowLeft01, "Back", chat::back)
+            GhostIconButton(AppIcons.ArrowLeft01, "Back", chat::back)
             Text(
                 "Settings",
                 fontSize = 16.sp,
@@ -69,7 +69,7 @@ fun SettingsScreen(chat: ChatViewModel) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text("Palette", color = colors.p(900))
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        KairosPalettes.forEachIndexed { index, palette ->
+                        ColorPalettes.forEachIndexed { index, palette ->
                             val pair =
                                 if (chat.app.preferences.dark) palette.dark else palette.light
                             val selected = chat.app.preferences.paletteIndex == index
@@ -151,14 +151,14 @@ fun SettingsScreen(chat: ChatViewModel) {
 
 @Composable
 private fun SettingsSection(title: String, content: @Composable ColumnScope.() -> Unit) {
-    val colors = LocalKairosColors.current
+    val colors = LocalThemeColors.current
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(title, color = colors.p(500), fontSize = 12.sp)
         Column(
             Modifier.fillMaxWidth()
                 .background(colors.surface, RoundedCornerShape(12.dp))
-                .border(1.dp, colors.p(200), KairosUiTokens.cardShape)
-                .clip(KairosUiTokens.cardShape),
+                .border(1.dp, colors.p(200), UiTokens.cardShape)
+                .clip(UiTokens.cardShape),
             content = content,
         )
     }
@@ -171,10 +171,10 @@ private fun SettingsRow(
     divider: Boolean = true,
     onClick: (() -> Unit)? = null,
 ) {
-    val colors = LocalKairosColors.current
+    val colors = LocalThemeColors.current
     Row(
         Modifier.fillMaxWidth()
-            .heightIn(min = KairosUiTokens.controlHeight)
+            .heightIn(min = UiTokens.controlHeight)
             .then(if (onClick != null) Modifier.pressable(onClick = onClick) else Modifier)
             .padding(horizontal = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -190,14 +190,14 @@ private fun SettingsRow(
             maxLines = 1,
             overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
         )
-        if (onClick != null) KIcon(KairosIcons.ArrowUpRight01, colors.p(500))
+        if (onClick != null) AppIcon(AppIcons.ArrowUpRight01, colors.p(500))
     }
     if (divider) Box(Modifier.fillMaxWidth().height(1.dp).background(colors.p(100)))
 }
 
 @Composable
 private fun RendererSetting(title: String, value: AssistantRenderer, onChange: (AssistantRenderer) -> Unit) {
-    val colors = LocalKairosColors.current
+    val colors = LocalThemeColors.current
     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text(title, color = colors.p(900))
         Text(

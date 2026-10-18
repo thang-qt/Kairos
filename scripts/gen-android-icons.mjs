@@ -46,7 +46,7 @@ const ICONS = [
 
 const output = fileURLToPath(
   new URL(
-    '../android/app/src/main/java/org/kairos/android/ui/icons/KairosIcons.kt',
+    '../android/app/src/main/java/org/kairos/android/ui/icons/app-icons.kt',
     import.meta.url,
   ),
 )
@@ -137,7 +137,7 @@ private fun ImageVector.Builder.path(
     )
 }
 
-object KairosIcons {
+object AppIcons {
 ${icons.join('\n\n')}
 }
 `

@@ -33,7 +33,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        app = (application as KairosApplication).container
+        app = (application as ChatApplication).container
         chat =
             ViewModelProvider(
                 this,
@@ -93,8 +93,8 @@ class MainActivity : ComponentActivity() {
                         )
                 enableEdgeToEdge(statusBarStyle = style, navigationBarStyle = style)
             }
-            KairosTheme(colors, dark) {
-                KairosNavigation(chat, ::activityBridge, ::copy)
+            AppTheme(colors, dark) {
+                AppNavigation(chat, ::activityBridge, ::copy)
             }
         }
     }

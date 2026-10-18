@@ -1,6 +1,5 @@
 package org.kairos.android.app
 
-import android.app.Application
 import android.content.Context
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
@@ -9,19 +8,6 @@ import org.kairos.android.data.*
 import org.kairos.android.assistant.LibraryAttachment
 import java.io.File
 import java.security.MessageDigest
-
-class KairosApplication : Application() {
-    lateinit var container: AppContainer
-        private set
-
-    val theme
-        get() = container.preferences
-
-    override fun onCreate() {
-        super.onCreate()
-        container = AppContainer(this)
-    }
-}
 
 class AppContainer(context: Context) {
     private val appContext = context.applicationContext
@@ -47,7 +33,7 @@ class AppContainer(context: Context) {
     private val cache = DiskCache(cacheRoot)
     private val historyCache =
         DiskCache(File(cacheRoot, "history"), maxBytes = 8L * 1024 * 1024)
-    val api = KairosApi(server, tokens)
+    val api = BackendApi(server, tokens)
     val mcpLabels = McpLabels(api)
     val pendingSends = PendingSendStore(cache)
     val lastSession = LastSessionStore(cache)
@@ -82,24 +68,4 @@ class AppContainer(context: Context) {
     }
 
     fun conversation() = ConversationRepository(api, sessions, historyCache, pendingSends)
-}
-
-sealed interface Screen {
-    data object Connect : Screen
-
-    data object SignIn : Screen
-
-    data object Chat : Screen
-
-    data object Settings : Screen
-}
-
-/** Navigation intent from UI actions; only the NavHost owns destination history. */
-sealed interface NavigationRequest {
-    data object Connect : NavigationRequest
-    data object SignIn : NavigationRequest
-    data object Settings : NavigationRequest
-    data object Search : NavigationRequest
-    data object Back : NavigationRequest
-    data class Chat(val friendlyId: String?) : NavigationRequest
 }

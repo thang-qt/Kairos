@@ -8,7 +8,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.serialization.json.*
 
 /** Presentation labels only. Tool eligibility and approvals remain backend-owned. */
-class McpLabels(private val api: KairosApi) {
+class McpLabels(private val api: BackendApi) {
     var labels by mutableStateOf<Map<String, String>>(emptyMap())
         private set
 

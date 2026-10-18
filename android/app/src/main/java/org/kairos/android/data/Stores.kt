@@ -13,7 +13,7 @@ import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import org.kairos.android.ui.theme.KairosPalettes
+import org.kairos.android.ui.theme.ColorPalettes
 
 fun normalizeServerUrl(input: String): String {
     val trimmed = input.trim().trimEnd('/')
@@ -173,7 +173,7 @@ enum class AssistantRenderer(val label: String) {
 class PreferencesStore(context: Context) {
     private val prefs = context.getSharedPreferences("appearance", Context.MODE_PRIVATE)
     var paletteIndex by
-        mutableIntStateOf(prefs.getInt("palette", 0).coerceIn(KairosPalettes.indices))
+        mutableIntStateOf(prefs.getInt("palette", 0).coerceIn(ColorPalettes.indices))
         private set
 
     var mode by
@@ -216,7 +216,7 @@ class PreferencesStore(context: Context) {
             }
 
     val colors
-        get() = KairosPalettes[paletteIndex].let { if (dark) it.dark else it.light }
+        get() = ColorPalettes[paletteIndex].let { if (dark) it.dark else it.light }
 
     fun palette(index: Int) {
         paletteIndex = index

@@ -58,19 +58,19 @@ for (const match of css.matchAll(
       colors.push(`Color(0xFF${hex(value)})`)
     }
     modes.push(
-      `        ${mode} = KairosColors(listOf(${colors.slice(0, 11).join(', ')}), ${colors[11]}, ${colors[12]})`,
+      `        ${mode} = PaletteColors(listOf(${colors.slice(0, 11).join(', ')}), ${colors[11]}, ${colors[12]})`,
     )
   }
-  palettes.push(`    KairosPalette("${name}",\n${modes.join(',\n')}\n    )`)
+  palettes.push(`    ColorPalette("${name}",\n${modes.join(',\n')}\n    )`)
 }
 if (palettes.length !== 6) throw new Error('Expected six palettes')
 const target = new URL(
-  '../android/app/src/main/java/org/kairos/android/ui/theme/KairosPalettes.kt',
+  '../android/app/src/main/java/org/kairos/android/ui/theme/color-palettes.kt',
   import.meta.url,
 )
 await mkdir(new URL('.', target), { recursive: true })
 await writeFile(
   target,
-  `// Generated from src/styles.css by scripts/gen-android-theme.mjs. Do not edit.\npackage org.kairos.android.ui.theme\n\nimport androidx.compose.ui.graphics.Color\n\ndata class KairosColors(val primary: List<Color>, val surface: Color, val ink: Color) {\n    fun p(step: Int): Color = primary[listOf(${steps.join(', ')}).indexOf(step)]\n}\ndata class KairosPalette(val name: String, val light: KairosColors, val dark: KairosColors)\n\nval KairosPalettes = listOf(\n${palettes.join(',\n')}\n)\n`,
+  `// Generated from src/styles.css by scripts/gen-android-theme.mjs. Do not edit.\npackage org.kairos.android.ui.theme\n\nimport androidx.compose.ui.graphics.Color\n\ndata class PaletteColors(val primary: List<Color>, val surface: Color, val ink: Color) {\n    fun p(step: Int): Color = primary[listOf(${steps.join(', ')}).indexOf(step)]\n}\ndata class ColorPalette(val name: String, val light: PaletteColors, val dark: PaletteColors)\n\nval ColorPalettes = listOf(\n${palettes.join(',\n')}\n)\n`,
 )
 console.log('Generated all six Android palettes (light and dark).')

@@ -13,16 +13,16 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 
-import org.kairos.android.ui.KairosUiTokens
+import org.kairos.android.ui.UiTokens
 
-val LocalKairosColors = staticCompositionLocalOf { KairosPalettes[0].light }
+val LocalThemeColors = staticCompositionLocalOf { ColorPalettes[0].light }
 
 @Composable
-fun KairosTheme(colors: KairosColors, dark: Boolean, content: @Composable () -> Unit) {
+fun AppTheme(colors: PaletteColors, dark: Boolean, content: @Composable () -> Unit) {
     val scheme = if (dark) darkColorScheme() else lightColorScheme()
     // Mirrors html/body in src/styles.css: system sans, -0.15px tracking, text-sm for UI.
     val body = TextStyle(fontFamily = FontFamily.SansSerif, fontWeight = FontWeight.Normal, fontSize = 14.sp, lineHeight = 20.sp, letterSpacing = (-0.15).sp)
-    CompositionLocalProvider(LocalKairosColors provides colors) {
+    CompositionLocalProvider(LocalThemeColors provides colors) {
         MaterialTheme(
             colorScheme = scheme.copy(
                 primary = colors.p(950), onPrimary = colors.p(50),
@@ -47,7 +47,7 @@ fun KairosTheme(colors: KairosColors, dark: Boolean, content: @Composable () -> 
                 bodyLarge = body, bodyMedium = body, bodySmall = body.copy(fontSize = 12.sp, lineHeight = 16.sp),
                 labelLarge = body, labelMedium = body.copy(fontSize = 12.sp, lineHeight = 16.sp), labelSmall = body.copy(fontSize = 11.sp, lineHeight = 16.sp),
             ),
-            shapes = Shapes(small = KairosUiTokens.controlShape, medium = KairosUiTokens.cardShape, large = KairosUiTokens.dialogShape),
+            shapes = Shapes(small = UiTokens.controlShape, medium = UiTokens.cardShape, large = UiTokens.dialogShape),
             content = content,
         )
     }

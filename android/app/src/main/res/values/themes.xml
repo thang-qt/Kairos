@@ -1,5 +1,5 @@
 <resources>
-    <style name="Theme.Kairos" parent="android:style/Theme.Material.Light.NoActionBar">
+    <style name="Theme.App" parent="android:style/Theme.Material.Light.NoActionBar">
         <item name="android:fontFamily">sans</item>
         <item name="android:windowLightStatusBar">true</item>
         <item name="android:windowActionModeOverlay">true</item>
@@ -7,7 +7,7 @@
         <item name="android:windowBackground">#FFFFFF</item>
         <item name="android:colorAccent">#444444</item>
     </style>
-    <style name="Theme.Kairos.Overlay" parent="android:style/Theme.Material.Light.NoActionBar">
+    <style name="Theme.AssistantOverlay" parent="android:style/Theme.Material.Light.NoActionBar">
         <item name="android:windowIsTranslucent">true</item>
         <item name="android:windowBackground">@android:color/transparent</item>
         <item name="android:windowNoTitle">true</item>

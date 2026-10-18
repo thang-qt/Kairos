@@ -7,7 +7,7 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.kairos.android.assistant.ScreenAttachment
-import org.kairos.android.data.KairosApi
+import org.kairos.android.data.BackendApi
 import org.kairos.android.transcript.readBoundedAsset
 import okhttp3.Call
 import okhttp3.Callback
@@ -28,7 +28,7 @@ internal fun transcriptImageSampleSize(width: Int, height: Int, maxEdge: Int = 1
 
 /** Bounds image requests and decoded memory for native transcript rows. */
 internal class TranscriptAssetImageLoader(
-    private val api: KairosApi,
+    private val api: BackendApi,
     private val identityVersion: Long = 0L,
     private val identityVersionProvider: () -> Long = { identityVersion },
 ) {

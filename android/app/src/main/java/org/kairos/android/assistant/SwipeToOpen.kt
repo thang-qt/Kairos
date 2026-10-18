@@ -24,9 +24,9 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
-import org.kairos.android.ui.KIcon
-import org.kairos.android.ui.icons.KairosIcons
-import org.kairos.android.ui.theme.LocalKairosColors
+import org.kairos.android.ui.AppIcon
+import org.kairos.android.ui.icons.AppIcons
+import org.kairos.android.ui.theme.LocalThemeColors
 
 /**
  * Swipe up on the header to continue in the app. Travel is capped at [threshold];
@@ -136,7 +136,7 @@ fun rememberSwipeToOpen(generation: Int, onOpen: () -> Unit): SwipeToOpenState {
 @Composable
 fun SwipeHint(progress: Float, modifier: Modifier = Modifier) {
     if (progress <= 0f) return
-    val colors = LocalKairosColors.current
+    val colors = LocalThemeColors.current
     val shape = RoundedCornerShape(16.dp)
     Row(
         modifier
@@ -147,7 +147,7 @@ fun SwipeHint(progress: Float, modifier: Modifier = Modifier) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        KIcon(KairosIcons.ArrowUp02, colors.p(700), size = 20.dp)
+        AppIcon(AppIcons.ArrowUp02, colors.p(700), size = 20.dp)
         Text(
             if (progress >= 1f) "Release to open Kairos" else "Swipe up to open Kairos",
             color = colors.p(900),

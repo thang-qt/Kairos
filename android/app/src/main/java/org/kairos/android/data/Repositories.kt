@@ -14,7 +14,7 @@ import kotlinx.serialization.json.*
  * warm before any network round-trip, then reconciled by the user-scoped SSE stream.
  */
 class SessionsRepository(
-    private val api: KairosApi,
+    private val api: BackendApi,
     private val cache: DiskCache,
     private val tokens: TokenStore,
 ) {
@@ -207,7 +207,7 @@ class SessionsRepository(
     }
 }
 
-class ModelsRepository(private val api: KairosApi, private val cache: DiskCache) {
+class ModelsRepository(private val api: BackendApi, private val cache: DiskCache) {
     private val restored = cache.readModels()
     private val _catalog = MutableStateFlow(restored?.catalog ?: ModelsResponse())
     val catalog = _catalog.asStateFlow()
@@ -261,7 +261,7 @@ class ModelsRepository(private val api: KairosApi, private val cache: DiskCache)
 }
 
 class ConversationRepository(
-    private val api: KairosApi,
+    private val api: BackendApi,
     private val sessions: SessionsRepository,
     private val historyCache: DiskCache,
     private val pendingSends: PendingSendStore? = null,

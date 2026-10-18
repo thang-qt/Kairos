@@ -8,12 +8,12 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.webkit.WebViewFeature
-import org.kairos.android.app.KairosApplication
+import org.kairos.android.app.ChatApplication
 import kotlinx.serialization.json.JsonObject
 import org.kairos.android.transcript.TranscriptBridge
 import org.kairos.android.transcript.TranscriptTheme
 import org.kairos.android.transcript.TranscriptPresentation
-import org.kairos.android.ui.theme.KairosPalettes
+import org.kairos.android.ui.theme.ColorPalettes
 
 fun supportsOverlayWebView(): Boolean =
     WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER) &&
@@ -22,7 +22,7 @@ fun supportsOverlayWebView(): Boolean =
 /** Owns an isolated transcript: never reparent the full app's WebView into the assistant. */
 @Composable
 fun OverlayTranscript(
-    app: KairosApplication,
+    app: ChatApplication,
     response: JsonObject,
     sessionId: String?,
     generation: Int,
@@ -54,7 +54,7 @@ fun OverlayTranscript(
         onDispose { bridge.destroy() }
     }
     val background = app.theme.colors.surface.toArgb()
-    val theme = TranscriptTheme(KairosPalettes[app.theme.paletteIndex].name, if (app.theme.dark) "dark" else "light")
+    val theme = TranscriptTheme(ColorPalettes[app.theme.paletteIndex].name, if (app.theme.dark) "dark" else "light")
     val labels = app.container.mcpLabels.labels
     SideEffect {
         bridge.webView.setBackgroundColor(background)

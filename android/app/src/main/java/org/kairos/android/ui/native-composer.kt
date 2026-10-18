@@ -34,8 +34,8 @@ import org.kairos.android.assistant.ScreenAttachment
 import org.kairos.android.assistant.ScreenCaptureState
 import org.kairos.android.assistant.ScreenThumbnail
 import org.kairos.android.assistant.openAssistantSettings
-import org.kairos.android.ui.icons.KairosIcons
-import org.kairos.android.ui.theme.LocalKairosColors
+import org.kairos.android.ui.icons.AppIcons
+import org.kairos.android.ui.theme.LocalThemeColors
 
 private const val SCREEN_HINT =
     "Turn on 'Use text from screen' and 'Use screenshot' in Digital assistant settings"
@@ -69,7 +69,7 @@ fun NativeComposer(
     onScreenSettingsOpened: () -> Unit = {},
     contentPadding: PaddingValues = PaddingValues(start = 20.dp, end = 20.dp, bottom = 12.dp),
 ) {
-    val colors = LocalKairosColors.current
+    val colors = LocalThemeColors.current
     val context = LocalContext.current
     val focusRequester = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
@@ -133,7 +133,7 @@ fun NativeComposer(
                     fontSize = 12.sp,
                     lineHeight = 16.sp,
                 )
-                KIcon(KairosIcons.ArrowUpRight01, colors.p(600), size = 20.dp)
+                AppIcon(AppIcons.ArrowUpRight01, colors.p(600), size = 20.dp)
             }
         }
         val shape = RoundedCornerShape(if (assistantStyle) 36.dp else 22.dp)
@@ -176,7 +176,7 @@ fun NativeComposer(
             ) {
                 var choosing by remember { mutableStateOf(false) }
                 if (!assistantStyle || !streaming) GhostIconButton(
-                    KairosIcons.PlusSign,
+                    AppIcons.PlusSign,
                     "Attach content",
                     { if (!editing) { keyboard?.hide(); choosing = true } },
                     tint = colors.p(900), round = true,
@@ -267,7 +267,7 @@ fun NativeComposer(
                             ),
                         contentAlignment = Alignment.Center,
                     ) {
-                        KIcon(KairosIcons.ArrowUp02, if (assistantStyle) colors.p(900) else colors.p(50))
+                        AppIcon(AppIcons.ArrowUp02, if (assistantStyle) colors.p(900) else colors.p(50))
                     }
                 }
             }
@@ -282,7 +282,7 @@ private fun ScreenAttachmentChip(
     onRemove: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val colors = LocalKairosColors.current
+    val colors = LocalThemeColors.current
     Row(
         modifier
             .widthIn(max = 220.dp)
@@ -316,7 +316,7 @@ private fun ScreenAttachmentChip(
             )
         }
         GhostIconButton(
-            KairosIcons.Cancel01,
+            AppIcons.Cancel01,
             "Remove attachment",
             onRemove,
             tint = colors.p(800),

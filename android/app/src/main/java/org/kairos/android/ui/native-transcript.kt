@@ -27,14 +27,14 @@ import org.kairos.android.assistant.ScreenThumbnail
 import org.kairos.android.assistant.overlayImages
 import org.kairos.android.data.*
 import org.kairos.android.markdown.OverlayMarkdown
-import org.kairos.android.ui.theme.LocalKairosColors
+import org.kairos.android.ui.theme.LocalThemeColors
 
 /** Native conversation renderer shared by the app and the assistant's current answer. */
 @Composable
 fun NativeTranscript(
     messages: List<JsonObject>,
     dark: Boolean,
-    api: KairosApi,
+    api: BackendApi,
     identityVersion: Long,
     identityVersionProvider: () -> Long,
     modifier: Modifier = Modifier,
@@ -153,7 +153,7 @@ private fun NativeMessage(
     showModel: Boolean,
     showActivity: Boolean,
 ) {
-    val colors = LocalKairosColors.current
+    val colors = LocalThemeColors.current
     val user = message.role == "user"
     val activity = remember(message) { splitAssistantActivity(message) }
     Column(

@@ -44,7 +44,7 @@ Cleartext HTTP is allowed for development. Public HTTP hosts show “Not encrypt
 
 ```text
 Go backend (authoritative behavior and durable state)
-  └─ Kotlin data layer: KairosApi, DTOs, SSE EventStream, disk caches, stores
+  └─ Kotlin data layer: BackendApi, DTOs, SSE EventStream, disk caches, stores
       └─ Feature repositories: sessions, models, conversation history, ephemeral, approvals
           └─ ChatViewModel (one per activity), OverlayConversation (per overlay session)
               └─ Navigation Compose destinations

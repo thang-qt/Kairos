@@ -26,7 +26,7 @@ import java.util.concurrent.ConcurrentHashMap
  * asset-sourced history images render without ever exposing the bearer token to the page.
  */
 class TranscriptBridge(
-    private val api: KairosApi,
+    private val api: BackendApi,
     val context: MutableContextWrapper,
     private val identityVersionProvider: () -> Long = { 0L },
     private val authIdentityProvider: () -> String = {

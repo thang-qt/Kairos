@@ -20,7 +20,7 @@ import kotlinx.serialization.json.*
  * there is no server revision to race against. Stopping aborts the request and marks live
  * turns locally, mirroring the web's cancelEphemeralTurns.
  */
-class EphemeralConversation(private val api: KairosApi) {
+class EphemeralConversation(private val api: BackendApi) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var sendJob: Job? = null
     private val _history = MutableStateFlow(History())

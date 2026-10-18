@@ -14,7 +14,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
-import org.kairos.android.ui.theme.LocalKairosColors
+import org.kairos.android.ui.theme.LocalThemeColors
 
 /** Assistant windows cannot create Activity-type dialogs. Portal sheets into their own window. */
 class InlineSheetHost {
@@ -49,14 +49,14 @@ internal fun PresentInlineSheet(host: InlineSheetHost, onDismiss: () -> Unit, co
 @Composable
 fun InlineSheetLayer(host: InlineSheetHost) {
     val sheet = host.sheet ?: return
-    val colors = LocalKairosColors.current
+    val colors = LocalThemeColors.current
     val density = LocalDensity.current
     var entered by remember(sheet.owner) { mutableStateOf(false) }
     LaunchedEffect(sheet.owner) { withFrameNanos {}; entered = true }
     val progress by animateFloatAsState(if (entered) 1f else 0f,
         animationSpec = spring(dampingRatio = 0.9f, stiffness = 400f), label = "attachment-entry")
     BoxWithConstraints(Modifier.fillMaxSize()) {
-        Box(Modifier.fillMaxSize().background(colors.ink.copy(alpha = KairosUiTokens.scrimAlpha * progress.coerceIn(0f, 1f)))
+        Box(Modifier.fillMaxSize().background(colors.ink.copy(alpha = UiTokens.scrimAlpha * progress.coerceIn(0f, 1f)))
             .clickable { sheet.dismiss() })
         Column(
             Modifier.align(Alignment.BottomCenter).widthIn(max = 640.dp).fillMaxWidth()
@@ -66,7 +66,7 @@ fun InlineSheetLayer(host: InlineSheetHost) {
                     translationY = with(density) { 56.dp.toPx() } * (1f - progress)
                     alpha = progress.coerceIn(0f, 1f)
                 }
-                .clip(KairosUiTokens.sheetShape).background(colors.p(50))
+                .clip(UiTokens.sheetShape).background(colors.p(50))
                 .clickable(indication = null, interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }) {}
                 .padding(16.dp),
         ) {
