@@ -46,7 +46,7 @@ fun KairosSheet(
         return
     }
     val colors = LocalKairosColors.current
-    val shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp)
+    val shape = KairosUiTokens.sheetShape
     // No outline: a full-width border reads as a stray line across the screen. The scrim and
     // the surface step provide the separation instead.
     ModalBottomSheet(
@@ -56,7 +56,7 @@ fun KairosSheet(
         containerColor = colors.p(50),
         contentColor = colors.p(900),
         tonalElevation = 0.dp,
-        scrimColor = colors.p(950).copy(alpha = 0.2f),
+        scrimColor = colors.ink.copy(alpha = KairosUiTokens.scrimAlpha),
         dragHandle = {
             Box(
                 Modifier.padding(vertical = 12.dp)
@@ -125,8 +125,8 @@ fun AttachmentChoiceSheet(
 private fun AttachmentSourceTile(icon: ImageVector, title: String, modifier: Modifier, onClick: () -> Unit) {
     val colors = LocalKairosColors.current
     Column(
-        modifier.height(104.dp).background(colors.p(200), RoundedCornerShape(24.dp))
-            .pressable(RoundedCornerShape(24.dp), onClick = onClick).padding(12.dp),
+        modifier.height(104.dp).background(colors.p(100), KairosUiTokens.cardShape)
+            .pressable(KairosUiTokens.cardShape, onClick = onClick).padding(12.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterVertically),
     ) {
@@ -165,19 +165,18 @@ fun SessionActionsSheet(
     if (rename)
         KairosDialog("Rename conversation", { rename = false }) {
             KairosField(title, { title = it })
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text("Cancel", Modifier.weight(1f).pressable { rename = false }.padding(10.dp))
-                PrimaryButton("Save", modifier = Modifier.weight(1f)) {
-                    chat.rename(session, title)
-                    onDismiss()
-                }
+            DialogActions("Save", { rename = false }) {
+                chat.rename(session, title)
+                onDismiss()
             }
         }
     if (delete)
-        ConfirmDialog("Delete this conversation?", "Delete", { delete = false }) {
+        ConfirmDialog(
+            "Delete conversation?",
+            "Delete",
+            { delete = false },
+            description = "This permanently deletes this conversation. This action cannot be undone.",
+        ) {
             chat.deleteSession(session)
             onDismiss()
         }
@@ -221,9 +220,10 @@ fun MessageActionsSheet(
     }
     if (delete)
         ConfirmDialog(
-            "Delete this message and everything after it?",
+            "Delete message?",
             "Delete",
             { delete = false },
+            description = "This removes this message and everything after it from the conversation.",
         ) {
             chat.deleteMessage(message)
             onDismiss()

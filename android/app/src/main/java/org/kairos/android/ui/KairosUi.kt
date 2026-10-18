@@ -32,6 +32,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -45,7 +46,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.sp
 import org.kairos.android.ui.icons.KairosIcons
 import org.kairos.android.ui.theme.LocalKairosColors
@@ -90,9 +90,10 @@ fun GhostIconButton(
     onLongClick: (() -> Unit)? = null,
 ) {
     val colors = LocalKairosColors.current
-    val shape = if (round) CircleShape else RoundedCornerShape(8.dp)
+    val shape = if (round) CircleShape else KairosUiTokens.controlShape
     Box(
         modifier.size(size)
+            .alpha(if (enabled) 1f else 0.5f)
             .background(if (selected) colors.p(200) else Color.Transparent, shape)
             .semantics { contentDescription = label }
             .pressable(shape, enabled = enabled, onLongClick = onLongClick, onClick = onClick),
@@ -162,7 +163,7 @@ fun LoadingState(label: String, modifier: Modifier = Modifier) {
         )
     Row(
         modifier.fillMaxSize().padding(24.dp),
-        horizontalArrangement = Arrangement.Center,
+        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         KIcon(KairosIcons.Loading03, colors.p(600), Modifier.rotate(angle))

@@ -441,7 +441,11 @@ fun ChatScreen(
                             fontSize = 12.sp,
                             modifier = Modifier.weight(1f, fill = false),
                         )
-                        if (connection != ConnectionState.Reconnecting || chat.error != null)
+                        if (
+                            chat.error != null ||
+                                ((chat.offline || connection == ConnectionState.Offline) &&
+                                    connection != ConnectionState.Reconnecting)
+                        )
                             Text(
                                 "· Retry",
                                 Modifier.pressable(onClick = chat::retryConnection),

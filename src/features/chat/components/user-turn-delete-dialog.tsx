@@ -38,13 +38,13 @@ export function UserTurnDeleteDialog({
   return (
     <AlertDialogRoot open={open} onOpenChange={onOpenChange}>
       <AlertDialogContent>
-        <div className="p-4">
-          <AlertDialogTitle className="mb-1">Delete message</AlertDialogTitle>
-          <AlertDialogDescription className="mb-4">
+        <div className="p-5">
+          <AlertDialogTitle className="mb-1.5">Delete message</AlertDialogTitle>
+          <AlertDialogDescription className="mb-5">
             This removes "{preview}" and everything after it from this
             conversation.
           </AlertDialogDescription>
-          <div className="flex justify-end gap-2">
+          <div className="mt-5 flex flex-wrap justify-end gap-2">
             <AlertDialogCancel onClick={onCancel}>Cancel</AlertDialogCancel>
             <AlertDialogAction onClick={onConfirm}>Delete</AlertDialogAction>
           </div>

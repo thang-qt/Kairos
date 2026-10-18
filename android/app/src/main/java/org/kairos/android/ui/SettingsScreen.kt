@@ -11,7 +11,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -97,38 +96,13 @@ fun SettingsScreen(chat: ChatViewModel) {
                         }
                     }
                 }
-                Row(
-                    Modifier.fillMaxWidth().height(48.dp).padding(horizontal = 16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text("Mode", Modifier.weight(1f), color = colors.p(900))
-                    Row(
-                        Modifier.height(32.dp)
-                            .background(colors.p(100), RoundedCornerShape(8.dp))
-                            .padding(2.dp)
-                    ) {
-                        ThemeMode.entries.forEach { mode ->
-                            val selected = chat.app.preferences.mode == mode
-                            Box(
-                                Modifier.fillMaxHeight()
-                                    .then(
-                                        if (selected)
-                                            Modifier.shadow(2.dp, RoundedCornerShape(8.dp))
-                                                .background(
-                                                    colors.surface,
-                                                    RoundedCornerShape(8.dp),
-                                                )
-                                        else Modifier
-                                    )
-                                    .pressable { chat.app.preferences.mode(mode) }
-                                    .padding(horizontal = 10.dp),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                Text(mode.name, color = colors.p(900), fontSize = 12.sp)
-                            }
-                        }
-                    }
-                }
+                SegmentedRow(
+                    "Mode",
+                    ThemeMode.entries.map { it.name },
+                    chat.app.preferences.mode.name,
+                    { name -> chat.app.preferences.mode(ThemeMode.valueOf(name)) },
+                    Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                )
             }
             SettingsSection("Conversation") {
                 RendererSetting(
@@ -183,7 +157,8 @@ private fun SettingsSection(title: String, content: @Composable ColumnScope.() -
         Column(
             Modifier.fillMaxWidth()
                 .background(colors.surface, RoundedCornerShape(12.dp))
-                .border(1.dp, colors.p(200), RoundedCornerShape(12.dp)),
+                .border(1.dp, colors.p(200), KairosUiTokens.cardShape)
+                .clip(KairosUiTokens.cardShape),
             content = content,
         )
     }
@@ -199,16 +174,18 @@ private fun SettingsRow(
     val colors = LocalKairosColors.current
     Row(
         Modifier.fillMaxWidth()
-            .height(48.dp)
+            .heightIn(min = KairosUiTokens.controlHeight)
             .then(if (onClick != null) Modifier.pressable(onClick = onClick) else Modifier)
             .padding(horizontal = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        Text(label, color = colors.p(900))
-        Spacer(Modifier.weight(1f))
+        Text(label, Modifier.weight(1f), color = colors.p(900), maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
         Text(
             value,
+            modifier = Modifier.weight(1f),
+            textAlign = androidx.compose.ui.text.style.TextAlign.End,
+            style = androidx.compose.ui.text.TextStyle(fontFeatureSettings = "tnum"),
             color = colors.p(600),
             maxLines = 1,
             overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,

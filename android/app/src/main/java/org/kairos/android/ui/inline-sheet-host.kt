@@ -56,22 +56,22 @@ fun InlineSheetLayer(host: InlineSheetHost) {
     val progress by animateFloatAsState(if (entered) 1f else 0f,
         animationSpec = spring(dampingRatio = 0.9f, stiffness = 400f), label = "attachment-entry")
     BoxWithConstraints(Modifier.fillMaxSize()) {
-        Box(Modifier.fillMaxSize().background(colors.p(950).copy(alpha = 0.25f * progress.coerceIn(0f, 1f)))
+        Box(Modifier.fillMaxSize().background(colors.ink.copy(alpha = KairosUiTokens.scrimAlpha * progress.coerceIn(0f, 1f)))
             .clickable { sheet.dismiss() })
         Column(
             Modifier.align(Alignment.BottomCenter).widthIn(max = 640.dp).fillMaxWidth()
-                .navigationBarsPadding().imePadding().padding(8.dp)
+                .navigationBarsPadding().imePadding()
                 .heightIn(max = maxHeight * 0.8f)
                 .graphicsLayer {
                     translationY = with(density) { 56.dp.toPx() } * (1f - progress)
                     alpha = progress.coerceIn(0f, 1f)
                 }
-                .clip(RoundedCornerShape(32.dp)).background(colors.p(100))
+                .clip(KairosUiTokens.sheetShape).background(colors.p(50))
                 .clickable(indication = null, interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }) {}
                 .padding(16.dp),
         ) {
             Box(Modifier.fillMaxWidth().padding(top = 2.dp, bottom = 20.dp), contentAlignment = Alignment.Center) {
-                Box(Modifier.size(36.dp, 4.dp).background(colors.p(300), RoundedCornerShape(2.dp)))
+                Box(Modifier.size(40.dp, 4.dp).background(colors.p(300), RoundedCornerShape(2.dp)))
             }
             sheet.content(this)
         }

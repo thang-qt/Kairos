@@ -15,6 +15,11 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.alpha
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -47,11 +52,11 @@ fun KairosField(
     val interaction = remember { MutableInteractionSource() }
     val focused by interaction.collectIsFocusedAsState()
     var revealed by remember { mutableStateOf(false) }
-    val shape = RoundedCornerShape(8.dp)
+    val shape = KairosUiTokens.controlShape
     Row(
         modifier
             .fillMaxWidth()
-            .height(if (search) 32.dp else 40.dp)
+            .heightIn(min = if (search) 40.dp else KairosUiTokens.controlHeight)
             .background(if (search) colors.p(100).copy(alpha = 0.6f) else colors.surface, shape)
             .border(1.dp, if (focused) colors.p(400) else colors.p(200), shape)
             .padding(horizontal = 12.dp),
@@ -99,6 +104,54 @@ fun KairosField(
     }
 }
 
+enum class KairosButtonStyle { Primary, Secondary, Ghost }
+
+/** Shared label, shape, touch target and feedback for all text actions. */
+@Composable
+fun KairosButton(
+    label: String,
+    modifier: Modifier = Modifier,
+    style: KairosButtonStyle = KairosButtonStyle.Primary,
+    busy: Boolean = false,
+    enabled: Boolean = true,
+    onClick: () -> Unit,
+) {
+    val colors = LocalKairosColors.current
+    val primary = style == KairosButtonStyle.Primary
+    val background = when (style) {
+        KairosButtonStyle.Primary -> colors.p(950)
+        KairosButtonStyle.Secondary -> colors.p(100)
+        KairosButtonStyle.Ghost -> Color.Transparent
+    }
+    Box(
+        modifier
+            .heightIn(min = KairosUiTokens.controlHeight)
+            .alpha(if (enabled) 1f else 0.5f)
+            .clip(KairosUiTokens.controlShape)
+            .background(background)
+            .pressable(
+                shape = KairosUiTokens.controlShape,
+                pressedColor = if (primary) colors.p(900) else colors.p(200),
+                enabled = enabled && !busy,
+                onClick = onClick,
+            )
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (busy) {
+            val transition = rememberInfiniteTransition(label = "busy")
+            val angle by transition.animateFloat(
+                0f, 360f,
+                infiniteRepeatable(tween(900, easing = LinearEasing)),
+                label = "spinner",
+            )
+            KIcon(KairosIcons.Loading03, if (primary) colors.p(50) else colors.p(900), Modifier.rotate(angle))
+        } else {
+            Text(label, color = if (primary) colors.p(50) else colors.p(900), fontSize = 14.sp, fontWeight = FontWeight.Medium)
+        }
+    }
+}
+
 @Composable
 fun PrimaryButton(
     label: String,
@@ -107,32 +160,7 @@ fun PrimaryButton(
     enabled: Boolean = true,
     onClick: () -> Unit,
 ) {
-    val colors = LocalKairosColors.current
-    Box(
-        modifier
-            .fillMaxWidth()
-            .height(40.dp)
-            .background(
-                if (enabled) colors.p(950) else colors.p(950).copy(alpha = 0.4f),
-                RoundedCornerShape(8.dp),
-            )
-            .pressable(pressedColor = colors.p(900), enabled = enabled) {
-                if (!busy) onClick()
-            },
-        contentAlignment = Alignment.Center,
-    ) {
-        if (busy) {
-            val transition = rememberInfiniteTransition(label = "busy")
-            val angle by
-                transition.animateFloat(
-                    0f,
-                    360f,
-                    infiniteRepeatable(tween(900, easing = LinearEasing)),
-                    label = "spinner",
-                )
-            KIcon(KairosIcons.Loading03, colors.p(50), Modifier.rotate(angle))
-        } else Text(label, color = colors.p(50), fontWeight = FontWeight.Medium)
-    }
+    KairosButton(label, modifier.fillMaxWidth(), busy = busy, enabled = enabled, onClick = onClick)
 }
 
 @Composable
@@ -141,12 +169,12 @@ fun ErrorBox(message: String) {
     Row(
         Modifier.fillMaxWidth()
             .background(colors.p(100), RoundedCornerShape(12.dp))
-            .border(1.dp, colors.p(300), RoundedCornerShape(12.dp))
+            .border(1.dp, colors.p(200), KairosUiTokens.cardShape)
             .padding(12.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         KIcon(KairosIcons.AlertCircle, colors.p(800))
-        Text(message, color = colors.p(900))
+        Text(message, color = colors.p(900), fontSize = 14.sp, lineHeight = 20.sp)
     }
 }
 
@@ -160,9 +188,9 @@ fun KairosDialog(
     Dialog(onDismissRequest = onDismiss) {
         Column(
             Modifier.fillMaxWidth()
-                .background(colors.p(50), RoundedCornerShape(16.dp))
-                .border(1.dp, colors.p(200), RoundedCornerShape(16.dp))
-                .padding(24.dp),
+                .background(colors.surface, KairosUiTokens.dialogShape)
+                .border(1.dp, colors.p(200), KairosUiTokens.dialogShape)
+                .padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             Text(title, color = colors.p(950), fontWeight = FontWeight.Medium, fontSize = 16.sp)
@@ -171,21 +199,33 @@ fun KairosDialog(
     }
 }
 
+/** Shared action row for confirmation and edit dialogs. */
 @Composable
-fun ConfirmDialog(title: String, action: String, onDismiss: () -> Unit, onConfirm: () -> Unit) {
+fun DialogActions(action: String, onDismiss: () -> Unit, onConfirm: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+    ) {
+        KairosButton("Cancel", style = KairosButtonStyle.Ghost, onClick = onDismiss)
+        KairosButton(action, onClick = onConfirm)
+    }
+}
+
+@Composable
+fun ConfirmDialog(
+    title: String,
+    action: String,
+    onDismiss: () -> Unit,
+    description: String? = null,
+    onConfirm: () -> Unit,
+) {
     val colors = LocalKairosColors.current
     KairosDialog(title, onDismiss) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Text(
-                "Cancel",
-                Modifier.weight(1f).pressable(onClick = onDismiss).padding(10.dp),
-                color = colors.p(900),
-            )
-            PrimaryButton(action, modifier = Modifier.weight(1f), onClick = onConfirm)
+        if (description != null) {
+            Text(description, color = colors.p(600), fontSize = 14.sp, lineHeight = 21.sp)
         }
+        DialogActions(action, onDismiss, onConfirm)
     }
 }
 
@@ -202,12 +242,11 @@ fun KSwitch(
         animateDpAsState(if (checked) 20.dp else 2.dp, tween(150), label = "switch-knob")
     Box(
         modifier
+            .alpha(if (enabled) 1f else 0.5f)
             .size(44.dp, 26.dp)
             .clip(RoundedCornerShape(13.dp))
             .background(if (checked) colors.p(950) else colors.p(300))
-            .pressable(RoundedCornerShape(13.dp), enabled = enabled) {
-                if (enabled) onChange(!checked)
-            },
+            .toggleable(value = checked, enabled = enabled, role = Role.Switch, onValueChange = onChange),
     ) {
         Box(
             Modifier.offset(x = position)
@@ -232,7 +271,7 @@ fun ToggleCard(
     content: (@Composable ColumnScope.() -> Unit)? = null,
 ) {
     val colors = LocalKairosColors.current
-    val shape = RoundedCornerShape(12.dp)
+    val shape = KairosUiTokens.cardShape
     Column(
         Modifier.fillMaxWidth()
             .background(colors.p(50), shape)
@@ -272,7 +311,7 @@ fun NumberFieldRow(
     val interaction = remember { MutableInteractionSource() }
     val focused by interaction.collectIsFocusedAsState()
     Row(
-        modifier.fillMaxWidth().height(40.dp),
+        modifier.fillMaxWidth().heightIn(min = KairosUiTokens.controlHeight),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
@@ -289,7 +328,7 @@ fun NumberFieldRow(
             textStyle =
                 TextStyle(
                     color = colors.p(950),
-                    fontSize = 13.sp,
+                    fontSize = 14.sp,
                     fontFeatureSettings = "tnum",
                     textAlign = TextAlign.End,
                 ),
@@ -305,7 +344,7 @@ fun NumberFieldRow(
     }
 }
 
-/** Horizontally scrolling segmented pills; selected renders inverted like the theme mode row. */
+/** Shared segmented selector with a raised surface for the selected option. */
 @Composable
 fun SegmentedRow(
     label: String,
@@ -325,21 +364,23 @@ fun SegmentedRow(
             Modifier.weight(1f, fill = false)
                 .horizontalScroll(rememberScrollState())
                 .background(colors.p(100), RoundedCornerShape(8.dp))
+                .selectableGroup()
                 .padding(2.dp),
             horizontalArrangement = Arrangement.spacedBy(2.dp),
         ) {
             options.forEach { option ->
                 val isSelected = option == selected
                 Box(
-                    Modifier.background(if (isSelected) colors.p(950) else Color.Transparent, RoundedCornerShape(8.dp))
-                        .pressable(RoundedCornerShape(8.dp), pressedColor = colors.p(200)) {
-                            onSelect(option)
-                        }
-                        .padding(horizontal = 10.dp, vertical = 5.dp)
+                    Modifier.heightIn(min = 40.dp)
+                        .clip(KairosUiTokens.controlShape)
+                        .background(if (isSelected) colors.surface else Color.Transparent)
+                        .selectable(selected = isSelected, role = Role.Tab, onClick = { onSelect(option) })
+                        .padding(horizontal = 10.dp, vertical = 10.dp)
                 ) {
                     Text(
                         option,
-                        color = if (isSelected) colors.p(50) else colors.p(800),
+                        color = if (isSelected) colors.p(950) else colors.p(600),
+                        fontWeight = if (isSelected) FontWeight.Medium else FontWeight.Normal,
                         fontSize = 12.sp,
                     )
                 }

@@ -46,8 +46,8 @@ fun McpApprovalCard(
     Column(
         modifier
             .fillMaxWidth()
-            .background(colors.surface, RoundedCornerShape(22.dp))
-            .border(1.dp, colors.ink.copy(alpha = 0.1f), RoundedCornerShape(22.dp))
+            .background(colors.surface, KairosUiTokens.dialogShape)
+            .border(1.dp, colors.p(200), KairosUiTokens.dialogShape)
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
@@ -110,39 +110,18 @@ fun McpApprovalCard(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Box(
-                    Modifier.weight(1f)
-                        .height(40.dp)
-                        .background(colors.p(100), RoundedCornerShape(8.dp))
-                        .pressable(pressedColor = colors.p(200), enabled = !busy) {
-                            onDecide("denied", null)
-                        },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        "Deny",
-                        color = colors.p(900),
-                        fontWeight = FontWeight.Medium,
-                        fontSize = 14.sp,
-                    )
-                }
-                Box(
-                    Modifier.weight(1f)
-                        .height(40.dp)
-                        .background(colors.p(100), RoundedCornerShape(8.dp))
-                        .border(1.dp, colors.p(300), RoundedCornerShape(8.dp))
-                        .pressable(pressedColor = colors.p(200), enabled = !busy) {
-                            onDecide("approved", "tool")
-                        },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        "Always",
-                        color = colors.p(900),
-                        fontWeight = FontWeight.Medium,
-                        fontSize = 14.sp,
-                    )
-                }
+                KairosButton(
+                    "Deny",
+                    modifier = Modifier.weight(1f),
+                    style = KairosButtonStyle.Ghost,
+                    enabled = !busy,
+                ) { onDecide("denied", null) }
+                KairosButton(
+                    "Always",
+                    modifier = Modifier.weight(1f),
+                    style = KairosButtonStyle.Secondary,
+                    enabled = !busy,
+                ) { onDecide("approved", "tool") }
                 PrimaryButton(
                     "Allow once",
                     busy = busy,
