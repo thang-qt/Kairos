@@ -32,6 +32,7 @@ class MainActivity : ComponentActivity() {
     private var transcriptBridge: TranscriptBridge? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        setTheme(org.kairos.android.R.style.Theme_App)
         super.onCreate(savedInstanceState)
         app = (application as ChatApplication).container
         chat =
