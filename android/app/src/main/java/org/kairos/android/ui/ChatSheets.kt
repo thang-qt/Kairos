@@ -331,8 +331,9 @@ fun ActivitySheet(turn: JsonObject, mcpLabels: Map<String, String> = emptyMap(),
     val colors = LocalKairosColors.current
     val split = remember(turn) { splitAssistantActivity(turn) }
     val streaming = split.let { isAssistantStreaming(turn) }
-    val indexes = visibleActivityIndexes(turn, split.activityIndexes, streaming)
-    val steps = remember(indexes, turn, mcpLabels) { activitySteps(turn, indexes, mcpLabels) }
+    val steps = remember(split.activityIndexes, turn, mcpLabels) {
+        activitySteps(turn, split.activityIndexes, mcpLabels)
+    }
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(streaming) {
         while (streaming) {

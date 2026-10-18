@@ -159,22 +159,6 @@ fun activityLabel(
         else -> "Activity"
     }
 
-/** While a turn streams, web steps wait for their results so they appear once, complete. */
-fun visibleActivityIndexes(
-    message: JsonObject,
-    activityIndexes: List<Int>,
-    streaming: Boolean,
-): List<Int> {
-    if (!streaming) return activityIndexes
-    val parts = message.parts()
-    return activityIndexes.filter { index ->
-        val part = parts.getOrNull(index) ?: return@filter true
-        if (part.string("type") != "toolCall") return@filter true
-        !(part.string("name") == "web_search" || part.string("name") == "web_fetch") ||
-            part.string("status") !in listOf(null, "running")
-    }
-}
-
 /** One rendered step in the activity timeline. */
 sealed interface ActivityStep {
     data class Thinking(val content: String, val streaming: Boolean) : ActivityStep
@@ -218,20 +202,21 @@ private fun resultText(result: JsonObject?): String =
     result?.parts()?.filter { it.string("type") == "text" }?.joinToString("") { it.text("text").orEmpty() }
         ?.trim().orEmpty()
 
+/** Results arrive on streamed tool-result steps before the final turn details are assembled. */
 private fun webEvents(message: JsonObject, callId: String?): List<JsonObject> {
-    val details = message.record("details") ?: return emptyList()
-    val events = (details["webTools"] as? JsonArray)?.mapNotNull { it as? JsonObject }.orEmpty()
-    return events.filter { event ->
-        val name = event.text("name") ?: return@filter false
-        if (name != "web_search" && name != "web_fetch") return@filter false
-        val id = event.text("id")
-        if (callId != null) id == callId else true
-    }
+    val records = listOfNotNull(message.record("details")) +
+        (message["steps"] as? JsonArray).orEmpty()
+            .mapNotNull { (it as? JsonObject)?.record("details") }
+    return records.flatMap { details ->
+        (details["webTools"] as? JsonArray).orEmpty().mapNotNull { it as? JsonObject }
+    }.filter { event ->
+        event.text("name") in listOf("web_search", "web_fetch") &&
+            (callId == null || event.text("id") == callId)
+    }.distinctBy { it.text("id") ?: it.toString() }
 }
 
 fun webSources(message: JsonObject, callId: String?): List<WebSource> {
-    val details = message.record("details") ?: return emptyList()
-    val events = (details["webTools"] as? JsonArray)?.mapNotNull { it as? JsonObject }.orEmpty()
+    val events = webEvents(message, callId)
     val sources = linkedMapOf<String, WebSource>()
     for (event in events) {
         val name = event.text("name") ?: continue
@@ -291,11 +276,20 @@ private fun toolStep(
                 args?.text("query") ?: out?.text("query"),
                 args?.text("url") ?: out?.text("url"))
         }.ifEmpty { listOf(Triple(name, arguments?.text("query"), arguments?.text("url"))) }
+        val sources = webSources(message, callId)
+        val readUrl = requests.firstOrNull { it.first == "web_fetch" }?.third
+        val readTitle = sources.firstOrNull()?.title
+            ?: readUrl?.let { url -> webSources(message, null).firstOrNull { it.url == url }?.title }
+        val errors = events.mapNotNull { it.text("error") }.ifEmpty {
+            if (failed) listOf(error ?: resultText(result).ifEmpty { "No result was saved for this call." })
+            else emptyList()
+        }
         return webStep(
             requests,
-            events.mapNotNull { it.text("error") },
-            running = running,
-            webSources(message, callId),
+            errors,
+            running = running && errors.isEmpty() && events.none { it.record("result") != null },
+            sources,
+            readTitle,
         )
     }
     val input = part.record("arguments")
@@ -337,6 +331,7 @@ private fun webStep(
     errors: List<String>,
     running: Boolean,
     sources: List<WebSource>,
+    readTitle: String?,
 ): ActivityStep.Tool {
     val title =
         when {
@@ -355,7 +350,7 @@ private fun webStep(
                     searches > 1 -> "$searchVerb $searches queries"
                     fetches > 1 -> "$readVerb $fetches pages"
                     fetches == 1 -> {
-                        val target = sources.firstOrNull()?.title ?: events[0].third
+                        val target = readTitle ?: events[0].third?.let { hostnameFromUrl(it) ?: it }
                         if (target != null) "$readVerb $target" else readVerb
                     }
                     else -> {

@@ -92,7 +92,7 @@ class ActivityModelTest {
             "role":"assistant","content":[{"type":"toolCall","id":"fetch","name":"web_fetch","status":"completed","arguments":{"url":"https://example.com/page"}}]
         }""")
         assertEquals("Searching “Kairos”", search.title)
-        assertEquals("Read https://example.com/page", fetch.title)
+        assertEquals("Read example.com", fetch.title)
         assertFalse(fetch.running)
     }
 
@@ -105,6 +105,81 @@ class ActivityModelTest {
         }""")
         assertEquals(listOf("One", "Two"), step.sources.map { it.title })
         assertEquals("Preview", step.sources.first().content)
+    }
+
+    @Test
+    fun runningWebCallsRemainVisibleInActivity() {
+        val message = wireJson.parseToJsonElement("""{
+            "role":"assistant","status":"running",
+            "content":[
+                {"type":"toolCall","id":"search","name":"web_search","status":"running","arguments":{"query":"Kairos"}},
+                {"type":"toolCall","id":"fetch","name":"web_fetch","status":"running","arguments":{"url":"https://www.example.com/page"}}
+            ]
+        }""").jsonObject
+        val steps = activitySteps(message, splitAssistantActivity(message).activityIndexes)
+            .map { it as ActivityStep.Tool }
+        assertEquals(listOf("Searching “Kairos”", "Reading example.com"), steps.map { it.title })
+        assertTrue(steps.all { it.running })
+    }
+
+    @Test
+    fun streamedToolResultUpdatesReadTitleBeforeAnswerCompletes() {
+        val before = wireJson.parseToJsonElement("""{
+            "id":"answer","role":"assistant","status":"running",
+            "content":[{"type":"toolCall","id":"fetch","name":"web_fetch","status":"running","arguments":{"url":"https://example.com/page"}}],
+            "steps":[]
+        }""").jsonObject
+        val event = wireJson.decodeFromString<ConversationEvent>("""{
+            "state":"delta","turnId":"answer","runId":"run-1",
+            "turnPatch":[{"op":"set","path":["steps","0"],"value":{
+                "role":"toolResult","toolCallId":"fetch",
+                "details":{"webTools":[{"id":"fetch","name":"web_fetch","arguments":{"url":"https://example.com/page"},"result":{"url":"https://example.com/page","title":"Kairos guide","text":"Page content"}}]}
+            }}]
+        }""")
+        val updated = applyConversationEvent(listOf(before), event).single()
+        val step = activitySteps(updated, splitAssistantActivity(updated).activityIndexes).single() as ActivityStep.Tool
+        assertTrue(isAssistantStreaming(updated))
+        assertEquals("Read Kairos guide", step.title)
+        assertEquals("Page content", step.sources.single().content)
+        assertFalse(step.running)
+    }
+
+    @Test
+    fun runningReadUsesTitleFromEarlierSearchResultForTheSameUrl() {
+        val step = tool("""{
+            "role":"assistant","status":"running",
+            "content":[{"type":"toolCall","id":"fetch","name":"web_fetch","arguments":{"url":"https://example.com/page"}}],
+            "steps":[{"role":"toolResult","toolCallId":"search","details":{"webTools":[{"id":"search","name":"web_search","result":{"results":[{"url":"https://example.com/other","title":"Other page"},{"url":"https://example.com/page","title":"Kairos guide"}]}}]}}]
+        }""")
+        assertEquals("Reading Kairos guide", step.title)
+        assertTrue(step.running)
+        assertTrue(step.sources.isEmpty())
+    }
+
+    @Test
+    fun completedWebEventsAreDeduplicatedAcrossStepsAndFinalDetails() {
+        val event = """{"id":"search","name":"web_search","arguments":{"query":"Kairos"},"result":{"results":[{"url":"https://example.com/page","title":"Kairos guide"}]}}"""
+        val step = tool("""{
+            "role":"assistant","status":"running",
+            "content":[{"type":"toolCall","id":"search","name":"web_search"}],
+            "details":{"webTools":[$event]},
+            "steps":[{"role":"toolResult","toolCallId":"search","details":{"webTools":[$event]}}]
+        }""")
+        assertEquals("Searched “Kairos”", step.title)
+        assertEquals(1, step.sources.size)
+        assertFalse(step.running)
+    }
+
+    @Test
+    fun streamedWebFailureDoesNotStayRunning() {
+        val step = tool("""{
+            "role":"assistant","status":"running",
+            "content":[{"type":"toolCall","id":"fetch","name":"web_fetch","arguments":{"url":"https://example.com/page"}}],
+            "steps":[{"role":"toolResult","toolCallId":"fetch","isError":true,"details":{"webTools":[{"id":"fetch","name":"web_fetch","error":"Page unavailable"}]}}]
+        }""")
+        assertTrue(step.failed)
+        assertFalse(step.running)
+        assertEquals("Page unavailable", step.meta)
     }
 
 }
