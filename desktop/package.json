@@ -20,7 +20,7 @@
     "electron-builder": "26.17.0",
     "typescript": "^5.7.2"
   },
-  "version": "0.2.1",
+  "version": "0.2.2",
   "productName": "Kairos",
   "description": "Kairos desktop client for a hosted Kairos server",
   "author": {
