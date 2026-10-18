@@ -69,7 +69,8 @@ fun AssistantOverlay(
             onDragStarted = { keyboard?.hide(); focusManager.clearFocus() },
             onDragStopped = { velocity -> swipe.release(velocity) },
         )
-        val response = currentOverlayResponse(conversation.messages)
+        val activityResponse = currentOverlayResponse(conversation.messages)?.takeIf { isAssistantStreaming(it) }
+        val response = displayedOverlayResponse(conversation.messages)
         var measuredReplyHeight by remember(generation, response?.id) { mutableStateOf(160.dp) }
         val baseReplyHeight by animateDpAsState(
             if (response == null) 64.dp else measuredReplyHeight.coerceIn(96.dp, 420.dp),
@@ -154,8 +155,8 @@ fun AssistantOverlay(
                         key(generation) {
                             NativeComposer(
                                 streaming = conversation.streaming, assistantStyle = true,
-                                workingLabel = overlayWorkingLabel(response, app.container.mcpLabels.labels),
-                                onWorkingClick = response?.id?.let { id -> ({ selectedActivityId = id }) },
+                                workingLabel = overlayWorkingLabel(activityResponse, app.container.mcpLabels.labels),
+                                onWorkingClick = activityResponse?.id?.let { id -> ({ selectedActivityId = id }) },
                                 onSend = { text ->
                                     keyboard?.hide(); focusManager.clearFocus()
                                     conversation.send(text, screenCapture.takeAttachments())

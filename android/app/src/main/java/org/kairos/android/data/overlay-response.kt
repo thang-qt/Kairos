@@ -2,11 +2,21 @@ package org.kairos.android.data
 
 import kotlinx.serialization.json.JsonObject
 
-/** Do not keep the previous answer on screen after the next user request has started. */
+/** The latest request owns composer activity, independently of the answer displayed above it. */
 fun currentOverlayResponse(messages: List<JsonObject>): JsonObject? {
     val requestIndex = messages.indexOfLast { it.role == "user" }
     return messages.drop(requestIndex + 1).lastOrNull { it.role == "assistant" }
 }
+
+/** Keep the last visible answer until a later assistant turn has answer content to render. */
+fun displayedOverlayResponse(messages: List<JsonObject>): JsonObject? =
+    messages.lastOrNull { message ->
+        if (message.role != "assistant") return@lastOrNull false
+        val parts = message.parts()
+        splitAssistantActivity(message).answerIndexes.any { index ->
+            !parts.getOrNull(index)?.string("text").isNullOrBlank()
+        }
+    }
 
 /** Only backend message parts/results supply the activity label; never invent execution state. */
 fun overlayWorkingLabel(message: JsonObject?, labels: Map<String, String> = emptyMap()): String {
