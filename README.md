@@ -6,11 +6,28 @@ It is a lightweight open WebUI alternative for hosted models only: no local mode
 
 ## Screenshots
 
-![Default chat view](docs/screenshots/chat-default.png)
-
-![Focused chat with right navigator](docs/screenshots/focused-chat-with-right-navigator.png)
-
-![Theme settings](docs/screenshots/theme-settings.png)
+<table>
+  <tr>
+    <td width="50%" align="center">
+      <a href="docs/screenshots/chat-default.png"><img src="docs/screenshots/chat-default.png" alt="Focused desktop chat with tables and rich text" width="600"></a>
+      <br><sub>Desktop chat</sub>
+    </td>
+    <td width="50%" align="center">
+      <a href="docs/screenshots/chat-activity.png"><img src="docs/screenshots/chat-activity.png" alt="Desktop research conversation with tool activity and sources" width="600"></a>
+      <br><sub>Tool activity and sources</sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center">
+      <a href="docs/screenshots/android-chat.png"><img src="docs/screenshots/android-chat.png" alt="Kairos chat on Android" width="280"></a>
+      <br><sub>Android chat</sub>
+    </td>
+    <td align="center">
+      <a href="docs/screenshots/android-assistant.png"><img src="docs/screenshots/android-assistant.png" alt="Kairos assistant overlay answering a question about another app" width="280"></a>
+      <br><sub>Android assistant</sub>
+    </td>
+  </tr>
+</table>
 
 ## Desktop app
 
@@ -46,78 +63,22 @@ Local environment values live in `.env`.
 
 Common settings:
 
-- `HTTP_ADDR` for the server bind address
-- `KAIROS_DB_PATH` for the SQLite database path
-- `MAX_TOOL_CALLS` for the default maximum tool-call rounds per response (users can override it in **Web tools** settings)
-- `AUTH_ENABLED` to enable authentication
-- `ALLOW_SIGNUP` to allow or block self-service signup
-- `ALLOW_REMOTE_IMPORT` to enable conversation imports from remote clients (default: `false`, localhost only)
-- `PROVIDER_SECRET_KEY` for encrypting stored provider credentials
-- `BOOTSTRAP_ADMIN`, `ADMIN_EMAIL`, and `ADMIN_PASSWORD` for first admin setup
+- `APP_ENV`: `development`, `test`, or `production`
+- `HTTP_ADDR`: server bind address
+- `KAIROS_DB_PATH`: SQLite database path
+- `MAX_TOOL_CALLS`: default maximum tool-call rounds per response
+- `AUTH_ENABLED`: enable authentication
+- `ALLOW_SIGNUP`: allow self-service signup
+- `ALLOW_REMOTE_IMPORT`: allow conversation imports from remote clients (default: `false`)
+- `PROVIDER_SECRET_KEY`: encryption key for stored provider and tool credentials
+- `BOOTSTRAP_ADMIN`, `ADMIN_EMAIL`, `ADMIN_PASSWORD`: initial admin account
+- `ASSET_STORAGE`: image storage backend — `inline` (default), `local`, or `s3`
 
-Set `APP_ENV` to `development`, `test`, or `production`. Production requires an
-explicit `PROVIDER_SECRET_KEY` with at least 32 characters; authentication and
-secure session cookies are required. Self-service signup and user-defined
-provider base URLs default to disabled. Back up the key with the database:
-changing or losing it makes stored provider, web-tool, and MCP credentials
-unreadable, so users must enter those credentials again. Use HTTPS through a
-reverse proxy that preserves the original `Host` header. Keep signup closed
-when providing a server-paid model; there are no per-user spending quotas.
+Production requires authentication, secure session cookies, and a
+`PROVIDER_SECRET_KEY` of at least 32 characters.
 
-Settings → Chat defaults → Offline cache controls whether this browser saves
-recent conversations. Turning it off clears saved browser cache data for all
-users of this site and prevents further cache writes and restores. Server-side
-conversations remain available after signing in. On Unix, newly created database
-directories use `0700`; the database and SQLite sidecar files use `0600`.
-
-See [.env.example](.env.example) for the full list.
-
-## Image storage
-
-Images use inline base64 storage by default, preserving existing installations.
-Set `ASSET_STORAGE=local` to write new images under `ASSET_LOCAL_DIR` (default
-`./tmp/assets`), or use a private S3 bucket:
-
-```dotenv
-ASSET_STORAGE=s3
-S3_BUCKET=your-private-bucket
-S3_REGION=us-east-1
-S3_PREFIX=kairos/assets
-```
-
-The server uses the standard AWS credential chain, including `AWS_ACCESS_KEY_ID`
-and `AWS_SECRET_ACCESS_KEY`, shared AWS configuration, and IAM roles. Grant
-`s3:PutObject`, `s3:GetObject`, `s3:DeleteObject`, and `s3:AbortMultipartUpload`
-for the configured prefix. Assets larger than 5 MiB upload in 5 MiB parts, with
-per-part retries and cleanup on failure or cancellation. Smaller assets use a
-single PUT. Multipart uploads do not resume across server restarts; browser
-uploads still use a single request and images are decoded in memory before
-storage. A bucket lifecycle rule to abort incomplete multipart uploads can
-clean up parts left by a server crash.
-Kairos does not create buckets or make objects public. For an S3-compatible
-service, set `S3_ENDPOINT` and, if needed, `S3_FORCE_PATH_STYLE=true`.
-
-Chat attachments and imported images use the selected backend. Messages retain
-stable asset IDs; authenticated `/api/assets/{assetId}` requests serve images
-only to their owner. Provider requests resolve stored images to bytes on the
-server, so providers do not need access to the bucket. Throwaway chats keep new
-images inline and do not persist them to asset storage.
-
-Changing `ASSET_STORAGE` affects new images only. Existing inline images remain
-readable, and local and S3 readers can coexist. Keep the original local directory
-and S3 bucket, endpoint, and prefix configured while those assets are in use;
-changing these locations does not migrate existing objects. Back up SQLite and
-asset storage together. There is no bulk migration of existing inline images.
-
-Unused assets are collected by a background worker using durable SQLite jobs
-and indexed message references. Cleanup does not scan conversation JSON on sends
-or hold the conversation command lock during object deletion. Assets referenced
-by cloned conversations are retained. Failed object deletions are logged and
-retried after one minute, including after a restart; physical deletion is
-asynchronous. The first startup after upgrading backfills references for existing
-messages. After an interrupted upload, an object written before its metadata
-committed can remain orphaned and require storage-level reconciliation. Run a
-single Kairos server per database for asset cleanup coordination.
+See [.env.example](.env.example) for all settings, including local image paths
+and S3 options.
 
 ## Production Build
 
