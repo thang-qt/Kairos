@@ -71,9 +71,17 @@ sealed interface StreamUpdate {
     data class Connection(val state: ConnectionState) : StreamUpdate
 }
 
-class EventStream(private val api: BackendApi) {
+class EventStream(
+    private val api: BackendApi,
+    private val expectedIdentity: RepositoryIdentity? = null,
+) {
     fun events(id: String, cursor: Long) =
         callbackFlow {
+                val frozenRequest =
+                    api.request(
+                        api.sessionPath(id) + "/events",
+                        expectedIdentity = expectedIdentity,
+                    )
                 val currentCall = AtomicReference<Call?>()
                 val worker =
                     launch(Dispatchers.IO) {
@@ -95,7 +103,7 @@ class EventStream(private val api: BackendApi) {
                             )
                             try {
                                 val request =
-                                    api.request(api.sessionPath(id) + "/events")
+                                    frozenRequest
                                         .newBuilder()
                                         .header("Accept", "text/event-stream")
                                 if (resume > 0) request.header("Last-Event-ID", resume.toString())
@@ -178,8 +186,13 @@ class EventStream(private val api: BackendApi) {
  * some conversation changed for this user, on this device or another one. The payload is empty
  * by design; clients refresh the list. A 401 closes the flow after clearing the token.
  */
-fun sessionListEvents(api: BackendApi): Flow<Unit> =
+fun sessionListEvents(
+    api: BackendApi,
+    expectedIdentity: RepositoryIdentity? = null,
+): Flow<Unit> =
     callbackFlow {
+        val frozenRequest =
+            api.request("/api/me/sessions/events", expectedIdentity = expectedIdentity)
         val currentCall = AtomicReference<Call?>()
         val worker =
             launch(Dispatchers.IO) {
@@ -187,7 +200,7 @@ fun sessionListEvents(api: BackendApi): Flow<Unit> =
                 while (isActive) {
                     try {
                         val request =
-                            api.request("/api/me/sessions/events")
+                            frozenRequest
                                 .newBuilder()
                                 .header("Accept", "text/event-stream")
                                 .build()

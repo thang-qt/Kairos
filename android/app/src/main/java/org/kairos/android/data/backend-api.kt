@@ -18,7 +18,19 @@ import okhttp3.RequestBody.Companion.toRequestBody
 
 class ApiException(val code: Int, message: String) : IOException(message)
 
-class BackendApi(val server: ServerStore, val tokens: TokenStore) {
+private data class ApiRequestOwner(
+    val serverUrl: String,
+    val token: String?,
+    val tokenGeneration: Long,
+    val authenticated: Boolean,
+    val identity: RepositoryIdentity?,
+)
+
+open class BackendApi(
+    val server: ServerStore,
+    val tokens: TokenStore,
+    private val identityProvider: (() -> RepositoryIdentity)? = null,
+) {
     val client =
         OkHttpClient.Builder()
             .connectTimeout(15, TimeUnit.SECONDS)
@@ -28,11 +40,15 @@ class BackendApi(val server: ServerStore, val tokens: TokenStore) {
             .addInterceptor { chain ->
                 val request = chain.request()
                 val response = chain.proceed(request)
+                val owner = request.tag(ApiRequestOwner::class.java)
+                val currentIdentity = identityProvider?.invoke()
                 if (
                     response.code == 401 &&
-                        request.header("Authorization") == tokens.token?.let { "Bearer $it" }
+                        owner?.authenticated == true && owner.token != null &&
+                        owner.serverUrl == server.url &&
+                        (owner.identity == null || owner.identity == currentIdentity)
                 )
-                    tokens.clear()
+                    tokens.clearIfCurrent(owner.token, owner.tokenGeneration)
                 response
             }
             .build()
@@ -44,9 +60,27 @@ class BackendApi(val server: ServerStore, val tokens: TokenStore) {
         body: String? = null,
         base: String = server.url,
         authenticated: Boolean = true,
+        expectedIdentity: RepositoryIdentity? = null,
     ): Request {
         val builder = Request.Builder().url(base + path).header("Accept", "application/json")
-        if (authenticated) tokens.token?.let { builder.header("Authorization", "Bearer $it") }
+        val currentIdentity = identityProvider?.invoke()
+        if (expectedIdentity != null) {
+            val expectedIsCurrent =
+                if (identityProvider != null) currentIdentity == expectedIdentity
+                else expectedIdentity.serverUrl == base && expectedIdentity.token == tokens.token
+            if (!expectedIsCurrent || expectedIdentity.serverUrl != base)
+                throw StaleIdentityException()
+        }
+        if (expectedIdentity == null && authenticated && currentIdentity != null &&
+            currentIdentity.serverUrl != base
+        ) throw StaleIdentityException()
+        val token = tokens.token
+        val tokenGeneration = tokens.generation
+        builder.tag(
+            ApiRequestOwner::class.java,
+            ApiRequestOwner(base, token, tokenGeneration, authenticated, currentIdentity),
+        )
+        if (authenticated) token?.let { builder.header("Authorization", "Bearer $it") }
         builder.method(
             method,
             if (method in listOf("GET", "HEAD")) null
@@ -55,15 +89,18 @@ class BackendApi(val server: ServerStore, val tokens: TokenStore) {
         return builder.build()
     }
 
-    suspend fun raw(
+    open suspend fun raw(
         path: String,
         method: String = "GET",
         body: String? = null,
         base: String = server.url,
         authenticated: Boolean = true,
-    ): String =
-        withContext(Dispatchers.IO) {
-            val call = client.newCall(request(path, method, body, base, authenticated))
+    ): String {
+        // Freeze the URL and bearer before the first suspension. Dispatching to IO first can
+        // otherwise attach a later account's token to a request created under an older stamp.
+        val frozenRequest = request(path, method, body, base, authenticated)
+        return withContext(Dispatchers.IO) {
+            val call = client.newCall(frozenRequest)
             suspendCancellableCoroutine { continuation ->
                 continuation.invokeOnCancellation { call.cancel() }
                 call.enqueue(
@@ -88,6 +125,7 @@ class BackendApi(val server: ServerStore, val tokens: TokenStore) {
                 )
             }
         }
+    }
 
     fun error(code: Int, content: String): ApiException =
         ApiException(
@@ -180,10 +218,11 @@ class BackendApi(val server: ServerStore, val tokens: TokenStore) {
     suspend fun postStream(
         path: String,
         body: String,
+        expectedIdentity: RepositoryIdentity? = null,
         onFrame: (SseFrame) -> Unit,
-    ): Unit =
+    ): Unit {
+        val call = client.newCall(request(path, "POST", body, expectedIdentity = expectedIdentity))
         withContext(Dispatchers.IO) {
-            val call = client.newCall(request(path, "POST", body))
             val job = coroutineContext[Job]
             val handle = job?.invokeOnCompletion { cause -> if (cause != null) call.cancel() }
             try {
@@ -213,4 +252,5 @@ class BackendApi(val server: ServerStore, val tokens: TokenStore) {
                 handle?.dispose()
             }
         }
+    }
 }

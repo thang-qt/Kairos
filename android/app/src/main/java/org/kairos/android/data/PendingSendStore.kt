@@ -51,27 +51,37 @@ class PendingSendStore(private val cache: DiskCache) {
         return digest.digest().joinToString("") { "%02x".format(it) }
     }
 
-    suspend fun acquire(fingerprint: String): String = mutex.withLock {
+    suspend fun acquire(
+        fingerprint: String,
+        expectedGeneration: Long = cache.generation,
+    ): String = mutex.withLock {
+        if (expectedGeneration != cache.generation) throw StaleIdentityException()
         withContext(Dispatchers.IO) {
+            if (expectedGeneration != cache.generation) throw StaleIdentityException()
             val stored = cache.readString(PENDING_SEND_FILE)?.let { text ->
                 runCatching { wireJson.decodeFromString<PendingSendRecord>(text) }.getOrNull()
             }
             if (stored?.fingerprint == fingerprint) {
+                if (expectedGeneration != cache.generation) throw StaleIdentityException()
                 stored.clientId
             } else {
                 val next = PendingSendRecord(fingerprint, UUID.randomUUID().toString())
-                cache.writeString(PENDING_SEND_FILE, wireJson.encodeToString(next))
+                cache.writeString(PENDING_SEND_FILE, wireJson.encodeToString(next), expectedGeneration)
+                if (expectedGeneration != cache.generation) throw StaleIdentityException()
                 next.clientId
             }
         }
     }
 
-    suspend fun forgetIf(clientId: String) = mutex.withLock {
+    suspend fun forgetIf(clientId: String, expectedGeneration: Long = cache.generation) = mutex.withLock {
+        if (expectedGeneration != cache.generation) return@withLock
         withContext(Dispatchers.IO) {
+            if (expectedGeneration != cache.generation) return@withContext
             val stored = cache.readString(PENDING_SEND_FILE)?.let { text ->
                 runCatching { wireJson.decodeFromString<PendingSendRecord>(text) }.getOrNull()
             }
-            if (stored?.clientId == clientId) cache.delete(PENDING_SEND_FILE)
+            if (expectedGeneration == cache.generation && stored?.clientId == clientId)
+                cache.delete(PENDING_SEND_FILE, expectedGeneration)
         }
     }
 }

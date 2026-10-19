@@ -20,9 +20,15 @@ import kotlinx.serialization.json.*
  * there is no server revision to race against. Stopping aborts the request and marks live
  * turns locally, mirroring the web's cancelEphemeralTurns.
  */
-class EphemeralConversation(private val api: BackendApi) {
+class EphemeralConversation(
+    private val api: BackendApi,
+    private val identityProvider: () -> RepositoryIdentity = {
+        RepositoryIdentity(0L, api.server.url, api.tokens.token, 0L)
+    },
+) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var sendJob: Job? = null
+    @Volatile private var generation = 0L
     private val _history = MutableStateFlow(History())
     val history = _history.asStateFlow()
     private val _streaming = MutableStateFlow(false)
@@ -34,6 +40,7 @@ class EphemeralConversation(private val api: BackendApi) {
         get() = sendJob?.isActive == true
 
     fun reset() {
+        generation++
         sendJob?.cancel()
         sendJob = null
         _history.value = History()
@@ -60,6 +67,8 @@ class EphemeralConversation(private val api: BackendApi) {
         if (sendJob?.isActive == true) return
         _error.value = null
         val clientId = UUID.randomUUID().toString()
+        val epoch = generation
+        val identity = identityProvider()
         val previous = _history.value.messages
         _history.value =
             _history.value.copy(messages = previous + optimisticTurn(clientId, text, attachments))
@@ -83,11 +92,13 @@ class EphemeralConversation(private val api: BackendApi) {
                                 attachments = attachments,
                             )
                         ),
+                        expectedIdentity = identity,
                     ) { frame ->
                         val event =
                             runCatching {
                                 wireJson.decodeFromString<ConversationEvent>(frame.data)
                             }.getOrNull() ?: return@postStream
+                        if (epoch != generation || identity != identityProvider()) return@postStream
                         received = true
                         if (event.state == "heartbeat") return@postStream
                         _history.value =
@@ -100,9 +111,11 @@ class EphemeralConversation(private val api: BackendApi) {
                     }
                 } catch (e: CancellationException) {
                     // Stop = abort the request; live turns are marked locally, content stays.
-                    _history.value =
-                        _history.value.copy(messages = cancelledTurns(_history.value.messages))
+                    if (epoch == generation && identity == identityProvider())
+                        _history.value =
+                            _history.value.copy(messages = cancelledTurns(_history.value.messages))
                 } catch (e: Exception) {
+                    if (epoch != generation || identity != identityProvider()) return@launch
                     if (!received) {
                         _history.value =
                             _history.value.copy(
@@ -115,8 +128,10 @@ class EphemeralConversation(private val api: BackendApi) {
                         _error.value = e.message ?: "The model request failed."
                     }
                 } finally {
-                    _streaming.value = false
-                    if (sendJob?.isCancelled != true) sendJob = null
+                    if (epoch == generation && identity == identityProvider()) {
+                        _streaming.value = false
+                        if (sendJob?.isCancelled != true) sendJob = null
+                    }
                 }
             }
     }

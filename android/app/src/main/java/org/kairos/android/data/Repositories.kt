@@ -17,6 +17,9 @@ class SessionsRepository(
     private val api: BackendApi,
     private val cache: DiskCache,
     private val tokens: TokenStore,
+    private val identityProvider: () -> RepositoryIdentity = {
+        RepositoryIdentity(0L, api.server.url, api.tokens.token, cache.generation)
+    },
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val list: SessionListCache = cache.readSessions() ?: SessionListCache()
@@ -41,13 +44,24 @@ class SessionsRepository(
         _hasMore.value = list.nextCursor != null
     }
 
-    private fun persist() {
-        val snapshot = list.encoded()
-        val cacheGeneration = cache.generation
-        scope.launch(Dispatchers.IO) { cache.writeSessions(snapshot, cacheGeneration) }
+    fun captureIdentity(): RepositoryIdentity = identityProvider()
+
+    fun isCurrent(identity: RepositoryIdentity): Boolean = identity == identityProvider()
+
+    fun requireCurrent(identity: RepositoryIdentity) {
+        if (!isCurrent(identity)) throw StaleIdentityException()
     }
 
-    suspend fun refresh() {
+    private fun persist(identity: RepositoryIdentity = captureIdentity()) {
+        val snapshot = list.encoded()
+        scope.launch(Dispatchers.IO) {
+            if (isCurrent(identity)) cache.writeSessions(snapshot, identity.cacheGeneration)
+        }
+    }
+
+    suspend fun refresh(expectedIdentity: RepositoryIdentity? = null) {
+        val identity = expectedIdentity ?: captureIdentity()
+        requireCurrent(identity)
         // Refetch every loaded page; page 0 failures propagate to the caller so the UI can
         // surface them, older pages keep their previous slice when a refetch fails.
         val pageCount = list.pageCount
@@ -61,6 +75,7 @@ class SessionsRepository(
             }
             try {
                 val response = api.get<SessionsResponse>("/api/sessions?" + query)
+                requireCurrent(identity)
                 list.set(index, cursor, response.sessions)
                 // The list-wide cursor is the one from the deepest successfully refetched page.
                 if (index >= lastUpdated) {
@@ -72,38 +87,48 @@ class SessionsRepository(
                 if (index == 0) throw e
             }
         }
+        requireCurrent(identity)
         list.setNextCursor(lastNext)
         publish()
         _ready.value = true
-        persist()
+        persist(identity)
     }
 
-    suspend fun loadMore() {
+    suspend fun loadMore(expectedIdentity: RepositoryIdentity? = null) {
         if (_loadingMore.value) return
         val cursor = list.nextCursor ?: return
+        val identity = expectedIdentity ?: captureIdentity()
+        requireCurrent(identity)
+        val loadingGeneration = ++loadingMoreGeneration
         _loadingMore.value = true
         try {
             val response =
                 api.get<SessionsResponse>("/api/sessions?limit=50&" + api.parameter("cursor", cursor))
+            requireCurrent(identity)
             list.append(cursor, response.sessions, response.nextCursor)
             publish()
-            persist()
+            persist(identity)
         } finally {
-            _loadingMore.value = false
+            if (loadingGeneration == loadingMoreGeneration) _loadingMore.value = false
         }
     }
 
+    private var loadingMoreGeneration = 0L
+
     /** Single-session lookup for ids missing from the loaded pages (deep links, old pages). */
     suspend fun fetch(friendlyId: String): SessionSummary {
+        val identity = captureIdentity()
         val session = api.get<SessionSummary>(api.sessionPath(friendlyId))
-        upsert(session)
+        requireCurrent(identity)
+        upsert(session, identity)
         return session
     }
 
-    fun upsert(session: SessionSummary) {
+    fun upsert(session: SessionSummary, identity: RepositoryIdentity = captureIdentity()) {
+        if (!isCurrent(identity)) return
         list.upsert(session)
         publish()
-        persist()
+        persist(identity)
     }
 
     suspend fun rename(session: SessionSummary, label: String) {
@@ -131,40 +156,55 @@ class SessionsRepository(
         next: SessionSummary,
         mutation: suspend () -> SessionSummary,
     ) {
-        upsert(next)
+        val identity = captureIdentity()
+        requireCurrent(identity)
+        upsert(next, identity)
         try {
-            upsert(mutation())
+            val response = mutation()
+            requireCurrent(identity)
+            upsert(response, identity)
         } catch (e: Exception) {
-            upsert(old)
+            requireCurrent(identity)
+            upsert(old, identity)
             throw e
         }
-        refresh()
+        refresh(identity)
     }
 
     suspend fun delete(session: SessionSummary) {
+        val identity = captureIdentity()
+        requireCurrent(identity)
         val previous = _sessions.value
         list.remove(session.friendlyId)
         publish()
-        persist()
+        persist(identity)
         try {
             api.raw(api.sessionPath(session.friendlyId), "DELETE")
+            requireCurrent(identity)
         } catch (e: Exception) {
+            requireCurrent(identity)
             list.clear()
             for (item in previous) list.upsert(item)
             publish()
-            persist()
+            persist(identity)
             throw e
         }
-        refresh()
+        refresh(identity)
     }
 
-    suspend fun search(query: String): List<SearchResult> =
-        api.get<SearchResponse>("/api/sessions/search?" + api.query(query)).sessions
+    suspend fun search(query: String): List<SearchResult> {
+        val identity = captureIdentity()
+        val results = api.get<SearchResponse>("/api/sessions/search?" + api.query(query)).sessions
+        requireCurrent(identity)
+        return results
+    }
 
     fun clear() {
+        loadingMoreGeneration++
         list.clear()
         publish()
         _ready.value = false
+        _loadingMore.value = false
         cache.delete(SESSIONS_CACHE_FILE)
     }
 
@@ -181,14 +221,17 @@ class SessionsRepository(
                     if (signedIn && api.server.url.isNotBlank()) {
                         if (streamJob?.isActive != true) {
                             streamJob = launch {
+                                val identity = captureIdentity()
                                 try {
-                                    refresh()
+                                    refresh(identity)
                                 } catch (e: CancellationException) {
                                     throw e
                                 } catch (_: Exception) {
                                     // The stream and later notifications still reconcile.
                                 }
-                                sessionListEvents(api).collect { scheduler.schedule() }
+                                sessionListEvents(api, identity).collect {
+                                    if (isCurrent(identity)) scheduler.schedule()
+                                }
                             }
                         }
                     } else {
@@ -207,19 +250,29 @@ class SessionsRepository(
     }
 }
 
-class ModelsRepository(private val api: BackendApi, private val cache: DiskCache) {
+class ModelsRepository(
+    private val api: BackendApi,
+    private val cache: DiskCache,
+    private val identityProvider: () -> RepositoryIdentity = {
+        RepositoryIdentity(0L, api.server.url, api.tokens.token, cache.generation)
+    },
+) {
     private val restored = cache.readModels()
     private val _catalog = MutableStateFlow(restored?.catalog ?: ModelsResponse())
     val catalog = _catalog.asStateFlow()
     var chatSettings = restored?.chatSettings ?: ChatSettingsPreferences()
         private set
 
-    suspend fun refresh() {
+    suspend fun refresh(expectedIdentity: RepositoryIdentity? = null) {
+        val identity = expectedIdentity ?: identityProvider()
+        requireCurrent(identity)
         val response = api.get<ModelsResponse>("/api/models")
+        requireCurrent(identity)
         val settings = api.get<ChatSettingsResponse>("/api/me/chat-settings").settings
+        requireCurrent(identity)
         _catalog.value = response
         chatSettings = settings
-        persist()
+        persist(identity)
     }
 
     fun clear() {
@@ -243,20 +296,29 @@ class ModelsRepository(private val api: BackendApi, private val cache: DiskCache
 
     /** PATCH /api/me/preferences; the response is the updated preferences object. */
     suspend fun setDefault(modelId: String) {
+        val identity = identityProvider()
         val response =
             api.write<PreferencesResponse, PreferencesRequest>(
                 "/api/me/preferences",
                 "PATCH",
                 PreferencesRequest(modelId),
             )
+        requireCurrent(identity)
         _catalog.value = _catalog.value.copy(preferences = response.preferences)
-        persist()
+        persist(identity)
     }
 
-    private suspend fun persist() {
+    private fun requireCurrent(identity: RepositoryIdentity) {
+        if (identity != identityProvider()) throw StaleIdentityException()
+    }
+
+    private suspend fun persist(identity: RepositoryIdentity) {
+        requireCurrent(identity)
         val snapshot = ModelsCacheState(catalog = _catalog.value, chatSettings = chatSettings)
-        val cacheGeneration = cache.generation
-        withContext(Dispatchers.IO) { cache.writeModels(snapshot, cacheGeneration) }
+        withContext(Dispatchers.IO) {
+            if (identity == identityProvider())
+                cache.writeModels(snapshot, identity.cacheGeneration)
+        }
     }
 }
 
@@ -265,6 +327,7 @@ class ConversationRepository(
     private val sessions: SessionsRepository,
     private val historyCache: DiskCache,
     private val pendingSends: PendingSendStore? = null,
+    private val identityProvider: () -> RepositoryIdentity = sessions::captureIdentity,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var stream: Job? = null
@@ -293,6 +356,8 @@ class ConversationRepository(
         private set
 
     fun open(id: String?) {
+        val identity = identityProvider()
+        val cacheGeneration = historyCache.generation
         ambiguousSend = null
         generation++
         refreshGeneration++
@@ -309,24 +374,34 @@ class ConversationRepository(
             val epoch = generation
             scope.launch {
                 val cached = withContext(Dispatchers.IO) { historyCache.readHistory(id) }
-                if (epoch == generation && cached != null && cached.revision > _history.value.revision)
+                if (
+                    epoch == generation && sessions.isCurrent(identity) &&
+                        cacheGeneration == historyCache.generation && cached != null &&
+                        cached.revision > _history.value.revision
+                )
                     _history.value = cached
             }
             refresh()
-            connect(id)
+            connect(id, identity)
         }
     }
 
-    private fun connect(id: String) {
+    private fun connect(id: String, expectedIdentity: RepositoryIdentity? = null) {
+        val identity = expectedIdentity ?: identityProvider()
+        if (!sessions.isCurrent(identity)) return
+        val cacheGeneration = historyCache.generation
         stream?.cancel()
         val epoch = generation
         stream =
             scope.launch {
-                EventStream(api)
+                EventStream(api, identity)
                     .events(id, _history.value.cursor)
-                    .catch { if (epoch == generation) _connection.value = ConnectionState.Offline }
+                    .catch {
+                        if (epoch == generation && sessions.isCurrent(identity))
+                            _connection.value = ConnectionState.Offline
+                    }
                     .collect { update ->
-                        if (epoch != generation) return@collect
+                        if (epoch != generation || !sessions.isCurrent(identity)) return@collect
                         when (update) {
                             is StreamUpdate.Connection -> _connection.value = update.state
                             is StreamUpdate.Event -> {
@@ -349,9 +424,10 @@ class ConversationRepository(
                                         )
                                 }
                                 if (!applied.accepted) return@collect
-                                if (update.event.state != "delta") persistHistory(applied.history)
-                                update.event.session?.let(sessions::upsert)
-                                if (applied.refetch) refresh()
+                                if (update.event.state != "delta")
+                                    persistHistory(applied.history, id, identity, cacheGeneration)
+                                update.event.session?.let { sessions.upsert(it, identity) }
+                                if (applied.refetch) refresh(identity)
                                 // Terminal meaning comes from the turn, including
                                 // aborted/interrupted error events.
                                 if (
@@ -366,19 +442,25 @@ class ConversationRepository(
                                                 )
                                     } == true || update.event.state == "title"
                                 )
-                                    scope.launch { runCatching { sessions.refresh() } }
+                                    scope.launch {
+                                        if (sessions.isCurrent(identity))
+                                            runCatching { sessions.refresh(identity) }
+                                    }
                             }
                         }
                     }
             }
     }
 
-    fun refresh() {
+    fun refresh(expectedIdentity: RepositoryIdentity? = null) {
         val id = sessionId ?: return
+        val identity = expectedIdentity ?: identityProvider()
+        if (!sessions.isCurrent(identity)) return
         if (refreshJob?.isActive == true) {
             refreshAgain = true
             return
         }
+        val cacheGeneration = historyCache.generation
         val epoch = generation
         val refreshEpoch = refreshGeneration
         refreshJob =
@@ -386,52 +468,67 @@ class ConversationRepository(
                 try {
                     val fetched = api.get<History>(api.sessionPath(id) + "/history")
                     if (
-                        epoch == generation &&
+                        epoch == generation && sessions.isCurrent(identity) &&
                             refreshEpoch == refreshGeneration &&
                             fetched.revision >= _history.value.revision &&
                             fetched.cursor >= _history.value.cursor
                     ) {
                         _history.value = fetched
-                        persistHistory(fetched)
+                        persistHistory(fetched, id, identity, cacheGeneration)
                     }
                 } catch (e: Exception) {
                     if (e is CancellationException) throw e
-                    if (epoch == generation && refreshEpoch == refreshGeneration)
+                    if (
+                        epoch == generation && sessions.isCurrent(identity) &&
+                            refreshEpoch == refreshGeneration
+                    )
                         _connection.value = ConnectionState.Offline
                 } finally {
-                    if (epoch == generation && refreshEpoch == refreshGeneration) {
+                    if (
+                        epoch == generation && refreshEpoch == refreshGeneration &&
+                            sessions.isCurrent(identity)
+                    ) {
                         refreshJob = null
                         if (refreshAgain) {
                             refreshAgain = false
-                            refresh()
+                            refresh(identity)
                         }
                     }
                 }
             }
     }
 
-    private fun persistHistory(history: History) {
-        val id = sessionId ?: return
+    private fun persistHistory(
+        history: History,
+        id: String,
+        identity: RepositoryIdentity,
+        cacheGeneration: Long,
+    ) {
         val epoch = generation
-        val cacheGeneration = historyCache.generation
         scope.launch(Dispatchers.IO) {
-            if (generation == epoch && sessionId == id) {
+            if (
+                generation == epoch && sessionId == id && sessions.isCurrent(identity) &&
+                    historyCache.generation == cacheGeneration
+            ) {
                 historyCache.writeHistory(id, history, cacheGeneration)
             }
         }
     }
 
     fun retryConnection() {
+        val identity = identityProvider()
         sessionId?.let {
-            refresh()
-            connect(it)
+            refresh(identity)
+            connect(it, identity)
         }
     }
 
-    suspend fun readyRevision(): Long {
+    suspend fun readyRevision(identity: RepositoryIdentity = identityProvider()): Long {
+        sessions.requireCurrent(identity)
         if (_history.value.revision < 0) {
             val id = checkNotNull(sessionId)
             val fetched = api.get<History>(api.sessionPath(id) + "/history")
+            sessions.requireCurrent(identity)
             if (sessionId == id) {
                 _history.value =
                     handleConversationEvent(_history.value, ConversationEvent(snapshot = fetched))
@@ -449,6 +546,7 @@ class ConversationRepository(
     ): String? {
         val id = sessionId
         val epoch = generation
+        val identity = identityProvider()
         val prior = ambiguousSend
         // Hashing can cover megabytes of attachment bytes; never do it on the main thread.
         val fingerprint =
@@ -457,9 +555,10 @@ class ConversationRepository(
                     store.fingerprint(id, editId, text, settings, attachments)
                 }
             }
+        sessions.requireCurrent(identity)
         val clientId =
             if (fingerprint != null) {
-                checkNotNull(pendingSends).acquire(fingerprint)
+                checkNotNull(pendingSends).acquire(fingerprint, identity.cacheGeneration)
             } else if (
                 prior != null &&
                     prior.sessionId == id &&
@@ -468,9 +567,11 @@ class ConversationRepository(
                     prior.attachments == attachments &&
                     prior.settings == settings
             ) prior.clientId else UUID.randomUUID().toString()
+        sessions.requireCurrent(identity)
         ambiguousSend = null
         val previous = _history.value
-        val revision = if (id != null) readyRevision() else null
+        val revision = if (id != null) readyRevision(identity) else null
+        sessions.requireCurrent(identity)
         val optimistic = buildJsonObject {
             put("id", "optimistic-$clientId")
             put("clientId", clientId)
@@ -531,21 +632,29 @@ class ConversationRepository(
                         if (editId == null) "/messages"
                         else "/messages/${api.encodePath(editId)}/edit"
             val ack = api.write<CommandAck, SendRequest>(path, "POST", request)
-            pendingSends?.forgetIf(clientId)
+            sessions.requireCurrent(identity)
+            pendingSends?.forgetIf(clientId, identity.cacheGeneration)
+            sessions.requireCurrent(identity)
             if (epoch != generation) return ack.friendlyId.ifBlank { id }
             acceptCommand(ack)
             if (id == null) {
                 sessionId = ack.friendlyId
                 connect(ack.friendlyId)
             }
-            refresh()
-            scope.launch { runCatching { sessions.refresh() } }
+            refresh(identity)
+            scope.launch {
+                if (sessions.isCurrent(identity)) runCatching { sessions.refresh(identity) }
+            }
             return sessionId
         } catch (e: Exception) {
+            if (!sessions.isCurrent(identity)) throw StaleIdentityException()
             if (e is ApiException && e.code != 408 && e.code < 500) {
                 // A definitive rejection cannot be replayed as the same command.
-                withContext(NonCancellable) { pendingSends?.forgetIf(clientId) }
+                withContext(NonCancellable) {
+                    pendingSends?.forgetIf(clientId, identity.cacheGeneration)
+                }
             }
+            sessions.requireCurrent(identity)
             if (epoch == generation && e !is CancellationException) {
                 // A timeout, transport error, or 5xx may occur after backend acceptance.
                 // Keep the idempotency key for the user's next matching retry.
@@ -563,7 +672,7 @@ class ConversationRepository(
                                 .filter { it.clientId != clientId }
                                 .let { turns -> if (editId != null) previous.messages else turns }
                     )
-                refresh()
+                refresh(identity)
                 if (e !is ApiException) _connection.value = ConnectionState.Offline
             }
             throw e
@@ -585,33 +694,41 @@ class ConversationRepository(
     suspend fun stop() {
         val id = sessionId ?: return
         val runId = activeRunId(_history.value) ?: return
+        val identity = identityProvider()
         api.write<JsonObject, StopRequest>(
             api.sessionPath(id) + "/stop",
             "POST",
             StopRequest(runId),
         )
-        refresh()
+        sessions.requireCurrent(identity)
+        refresh(identity)
     }
 
     suspend fun retry(turn: JsonObject) {
         val id = sessionId ?: return
         val epoch = generation
+        val identity = identityProvider()
+        val revision = readyRevision(identity)
+        sessions.requireCurrent(identity)
         val ack =
             api.write<CommandAck, RetryRequest>(
                 api.sessionPath(id) + "/runs/${api.encodePath(turn.runId)}/retry",
                 "POST",
-                RetryRequest(UUID.randomUUID().toString(), readyRevision()),
+                RetryRequest(UUID.randomUUID().toString(), revision),
             )
+        sessions.requireCurrent(identity)
         if (epoch == generation) {
             acceptCommand(ack)
-            refresh()
+            refresh(identity)
         }
     }
 
     suspend fun deleteUser(turnId: String) {
         val id = sessionId ?: return
         val epoch = generation
-        val revision = readyRevision()
+        val identity = identityProvider()
+        val revision = readyRevision(identity)
+        sessions.requireCurrent(identity)
         val previous = _history.value
         if (epoch == generation)
             _history.value =
@@ -625,15 +742,17 @@ class ConversationRepository(
                         "DELETE",
                     )
                 )
+            sessions.requireCurrent(identity)
             if (epoch == generation) {
                 acceptCommand(ack)
-                refresh()
+                refresh(identity)
             }
-            sessions.refresh()
+            sessions.refresh(identity)
         } catch (e: Exception) {
+            if (!sessions.isCurrent(identity)) throw StaleIdentityException()
             if (epoch == generation) {
                 _history.value = previous
-                refresh()
+                refresh(identity)
             }
             throw e
         }
@@ -641,25 +760,29 @@ class ConversationRepository(
 
     suspend fun fork(messageId: String): String {
         val id = checkNotNull(sessionId)
+        val identity = identityProvider()
         val result =
             api.write<CommandAck, CloneRequest>(
                 api.sessionPath(id) + "/clone",
                 "POST",
                 CloneRequest(messageId),
             )
-        sessions.refresh()
+        sessions.requireCurrent(identity)
+        sessions.refresh(identity)
+        sessions.requireCurrent(identity)
         return result.friendlyId
     }
 
     suspend fun settings(settings: ConversationSettings) {
         val id = sessionId ?: return
-        sessions.upsert(
-            api.write<SessionSummary, SettingsRequest>(
+        val identity = identityProvider()
+        val response = api.write<SessionSummary, SettingsRequest>(
                 api.sessionPath(id) + "/settings",
                 "PATCH",
                 SettingsRequest(settings),
             )
-        )
+        sessions.requireCurrent(identity)
+        sessions.upsert(response, identity)
     }
 
     fun pause() {
@@ -672,9 +795,10 @@ class ConversationRepository(
     }
 
     fun resume() {
+        val identity = identityProvider()
         sessionId?.let {
-            refresh()
-            connect(it)
+            refresh(identity)
+            connect(it, identity)
         }
     }
 

@@ -60,8 +60,15 @@ class DiskCache(private val root: File, private val maxBytes: Long = 0) {
     }
 
     fun delete(name: String) {
-        runCatching { file(name).delete() }
+        synchronized(lock) { runCatching { file(name).delete() } }
     }
+
+    /** Delete only if the caller's identity still owns the cache generation. */
+    fun delete(name: String, expectedGeneration: Long): Boolean =
+        synchronized(lock) {
+            if (expectedGeneration != generation) return@synchronized false
+            runCatching { file(name).delete() }.getOrDefault(false)
+        }
 
     fun clear() {
         synchronized(lock) {

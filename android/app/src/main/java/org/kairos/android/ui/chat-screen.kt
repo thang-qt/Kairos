@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
@@ -87,6 +88,75 @@ fun ChatScreen(
     val decay = rememberSplineBasedDecay<Float>()
     var animationJob by remember { mutableStateOf<Job?>(null) }
     var width by remember { mutableFloatStateOf(1f) }
+    val attachmentIdentity = chat.app.savedStateIdentity()
+    // Keep the original launcher ticket across account/selection changes and recreation. The
+    // Activity Result callback has no request id, so this single slot stays occupied until its
+    // own launcher returns; otherwise a late result could inherit a newer request's identity.
+    var attachmentRequestId by rememberSaveable { mutableStateOf<String?>(null) }
+    var attachmentRequestIdentity by rememberSaveable { mutableStateOf<String?>(null) }
+    var attachmentRequestIdentityGeneration by rememberSaveable {
+        mutableLongStateOf(-1L)
+    }
+    var attachmentRequestSelectionGeneration by rememberSaveable {
+        mutableIntStateOf(-1)
+    }
+    var attachmentRequestSessionId by rememberSaveable {
+        mutableStateOf<String?>(null)
+    }
+    var attachmentRequestSource by rememberSaveable { mutableStateOf<String?>(null) }
+    var cameraUri by androidx.compose.runtime.saveable.rememberSaveable {
+        mutableStateOf<String?>(null)
+    }
+    fun activeAttachmentRequest(
+        source: org.kairos.android.assistant.MainAttachmentRequest.Source? = null,
+    ): org.kairos.android.assistant.MainAttachmentRequest? {
+        val id = attachmentRequestId ?: return null
+        val identity = attachmentRequestIdentity ?: return null
+        val requestSource =
+            when (attachmentRequestSource) {
+                "picker" -> org.kairos.android.assistant.MainAttachmentRequest.Source.Picker
+                "camera" -> org.kairos.android.assistant.MainAttachmentRequest.Source.Camera
+                else -> return null
+            }
+        if (source != null && source != requestSource) return null
+        return org.kairos.android.assistant.MainAttachmentRequest(
+            id,
+            identity,
+            attachmentRequestIdentityGeneration,
+            attachmentRequestSelectionGeneration,
+            attachmentRequestSessionId,
+            requestSource,
+        )
+    }
+    fun rememberAttachmentRequest(request: org.kairos.android.assistant.MainAttachmentRequest) {
+        attachmentRequestId = request.requestId
+        attachmentRequestIdentity = request.identity
+        attachmentRequestIdentityGeneration = request.identityGeneration
+        attachmentRequestSelectionGeneration = request.selectionGeneration
+        attachmentRequestSessionId = request.sessionId
+        attachmentRequestSource =
+            if (request.source == org.kairos.android.assistant.MainAttachmentRequest.Source.Picker)
+                "picker"
+            else "camera"
+    }
+    fun clearAttachmentRequest(request: org.kairos.android.assistant.MainAttachmentRequest) {
+        if (activeAttachmentRequest(request.source) != request) return
+        attachmentRequestId = null
+        attachmentRequestIdentity = null
+        attachmentRequestIdentityGeneration = -1L
+        attachmentRequestSelectionGeneration = -1
+        attachmentRequestSessionId = null
+        attachmentRequestSource = null
+    }
+    fun acceptsAttachmentRequest(request: org.kairos.android.assistant.MainAttachmentRequest) =
+        request.accepts(
+            deliveredRequestId = attachmentRequestId.orEmpty(),
+            deliveredSource = request.source,
+            currentIdentity = chat.app.savedStateIdentity(),
+            currentIdentityGeneration = chat.app.identityVersion,
+            currentSelectionGeneration = chat.selectionGeneration,
+            currentSessionId = chat.sessionId,
+        )
     val history by chat.history.collectAsStateWithLifecycle()
     val connection by chat.connection.collectAsStateWithLifecycle()
     var bannerHeight by remember { mutableFloatStateOf(0f) }
@@ -99,47 +169,63 @@ fun ChatScreen(
             else null
     LaunchedEffect(banner) { if (banner == null) bannerHeight = 0f }
     var attachments by
-        remember(chat.sessionId) { mutableStateOf<List<ScreenAttachment>>(emptyList()) }
+        remember(chat.sessionId, chat.app.identityVersion) { mutableStateOf<List<ScreenAttachment>>(emptyList()) }
     LaunchedEffect(chat.editing?.id) { if (chat.editing != null) attachments = emptyList() }
     val picker =
         androidx.activity.compose.rememberLauncherForActivityResult(
             androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia()
         ) { uri ->
-            val target = chat.sessionId
-            if (uri != null)
-                scope.launch {
-                    try {
-                        val image =
-                            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                                ScreenAttachment.fromUri(context, uri)
-                            }
-                        if (chat.sessionId == target) attachments = attachments + image
-                    } catch (e: Exception) {
-                        if (e is CancellationException) throw e
-                        chat.showError("Unable to attach this image.")
-                    }
+            val request =
+                org.kairos.android.assistant.MainAttachmentRequest.callbackTicket(
+                    activeAttachmentRequest(),
+                    org.kairos.android.assistant.MainAttachmentRequest.Source.Picker,
+                ) ?: return@rememberLauncherForActivityResult
+            if (uri == null || !acceptsAttachmentRequest(request)) {
+                clearAttachmentRequest(request)
+                return@rememberLauncherForActivityResult
+            }
+            scope.launch {
+                try {
+                    val image =
+                        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                            ScreenAttachment.fromUri(context, uri)
+                        }
+                    if (acceptsAttachmentRequest(request)) attachments = attachments + image
+                } catch (e: Exception) {
+                    if (e is CancellationException) throw e
+                    if (acceptsAttachmentRequest(request)) chat.showError("Unable to attach this image.")
+                } finally {
+                    clearAttachmentRequest(request)
                 }
+            }
         }
-    var cameraUri by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf<String?>(null) }
     val camera = androidx.activity.compose.rememberLauncherForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.TakePicture()
     ) { success ->
+        val request =
+            org.kairos.android.assistant.MainAttachmentRequest.callbackTicket(
+                activeAttachmentRequest(),
+                org.kairos.android.assistant.MainAttachmentRequest.Source.Camera,
+            ) ?: return@rememberLauncherForActivityResult
         val uri = cameraUri?.let(android.net.Uri::parse)
         cameraUri = null
-        val target = chat.sessionId
-        if (success && uri != null) scope.launch {
+        if (success && uri != null && acceptsAttachmentRequest(request)) scope.launch {
             try {
                 val image = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                     org.kairos.android.assistant.ScreenAttachment.fromUri(context, uri)
                 }
-                if (chat.sessionId == target) attachments = attachments + image
+                if (acceptsAttachmentRequest(request)) attachments = attachments + image
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
-                chat.showError("Unable to attach this photo.")
+                if (acceptsAttachmentRequest(request)) chat.showError("Unable to attach this photo.")
             } finally {
                 org.kairos.android.assistant.CameraAttachment.remove(context, uri)
+                clearAttachmentRequest(request)
             }
-        } else org.kairos.android.assistant.CameraAttachment.remove(context, uri)
+        } else {
+            org.kairos.android.assistant.CameraAttachment.remove(context, uri)
+            clearAttachmentRequest(request)
+        }
     }
     LaunchedEffect(chat.sessionId) { chat.app.mcpLabels.refresh() }
     SideEffect {
@@ -477,23 +563,49 @@ fun ChatScreen(
                     onRemoveAttachment = { selected ->
                         attachments = attachments.filter { it.id != selected.id }
                     },
-                    onAttach = {
-                        picker.launch(
-                            androidx.activity.result.PickVisualMediaRequest(
-                                androidx.activity.result.contract.ActivityResultContracts
-                                    .PickVisualMedia
-                                    .ImageOnly
+                    onAttach = onAttach@{
+                        if (!org.kairos.android.assistant.MainAttachmentRequest.canLaunch(activeAttachmentRequest())) return@onAttach
+                        val request =
+                            org.kairos.android.assistant.MainAttachmentRequest.begin(
+                                attachmentIdentity,
+                                chat.app.identityVersion,
+                                chat.selectionGeneration,
+                                chat.sessionId,
+                                org.kairos.android.assistant.MainAttachmentRequest.Source.Picker,
+                            ) ?: return@onAttach
+                        rememberAttachmentRequest(request)
+                        try {
+                            picker.launch(
+                                androidx.activity.result.PickVisualMediaRequest(
+                                    androidx.activity.result.contract.ActivityResultContracts
+                                        .PickVisualMedia
+                                        .ImageOnly
+                                )
                             )
-                        )
+                        } catch (_: Exception) {
+                            clearAttachmentRequest(request)
+                            chat.showError("Unable to open image selection.")
+                        }
                     },
-                    onTakePhoto = {
+                    onTakePhoto = onTakePhoto@{
+                        if (!org.kairos.android.assistant.MainAttachmentRequest.canLaunch(activeAttachmentRequest())) return@onTakePhoto
+                        val request =
+                            org.kairos.android.assistant.MainAttachmentRequest.begin(
+                                attachmentIdentity,
+                                chat.app.identityVersion,
+                                chat.selectionGeneration,
+                                chat.sessionId,
+                                org.kairos.android.assistant.MainAttachmentRequest.Source.Camera,
+                            ) ?: return@onTakePhoto
                         try {
                             val uri = org.kairos.android.assistant.CameraAttachment.create(context)
+                            rememberAttachmentRequest(request)
                             cameraUri = uri.toString()
                             camera.launch(uri)
                         } catch (_: Exception) {
                             org.kairos.android.assistant.CameraAttachment.remove(context, cameraUri?.let(android.net.Uri::parse))
                             cameraUri = null
+                            clearAttachmentRequest(request)
                             chat.showError("Unable to open camera.")
                         }
                     },

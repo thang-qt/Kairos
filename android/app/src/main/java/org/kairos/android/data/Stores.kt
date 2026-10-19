@@ -62,37 +62,59 @@ fun isUnencryptedRemote(url: String): Boolean {
     return true
 }
 
-class ServerStore(context: Context) {
-    private val prefs = context.getSharedPreferences("server", Context.MODE_PRIVATE)
-    var url: String = prefs.getString("url", "").orEmpty()
+class ServerStore private constructor(
+    private val prefs: android.content.SharedPreferences?,
+    initialUrl: String,
+) {
+    constructor(context: Context) :
+        this(
+            context.getSharedPreferences("server", Context.MODE_PRIVATE),
+            context.getSharedPreferences("server", Context.MODE_PRIVATE).getString("url", "").orEmpty(),
+        )
+
+    internal constructor(initialUrl: String) : this(null, initialUrl)
+
+    var url: String = initialUrl
         private set
 
     fun save(value: String) {
         url = normalizeServerUrl(value)
-        prefs.edit().putString("url", url).apply()
+        prefs?.edit()?.putString("url", url)?.apply()
     }
 
     fun clear() {
         url = ""
-        prefs.edit().clear().apply()
+        prefs?.edit()?.clear()?.apply()
     }
 
     val host
         get() = runCatching { URI(url).authority }.getOrNull().orEmpty()
 }
 
-class TokenStore(context: Context) {
-    private val prefs = context.getSharedPreferences("auth", Context.MODE_PRIVATE)
+class TokenStore private constructor(
+    private val prefs: android.content.SharedPreferences?,
+    initialToken: String?,
+) {
+    constructor(context: Context) :
+        this(context.getSharedPreferences("auth", Context.MODE_PRIVATE), null) {
+        cached = read()
+        _signedIn.value = cached != null
+    }
+
+    internal constructor(initialToken: String?) : this(null, initialToken)
+
     private val alias = "kairos.bearer.v1"
-    private val initialToken = read()
     private val _signedIn = MutableStateFlow(initialToken != null)
     val signedIn = _signedIn.asStateFlow()
     @Volatile private var cached: String? = initialToken
+    @Volatile private var tokenGeneration = 0L
     val token
         get() = cached
+    val generation: Long
+        get() = tokenGeneration
 
     val email
-        get() = prefs.getString("email", "").orEmpty()
+        get() = prefs?.getString("email", "").orEmpty()
 
     private fun key(): SecretKey {
         val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
@@ -114,6 +136,7 @@ class TokenStore(context: Context) {
     }
 
     private fun read(): String? {
+        val prefs = checkNotNull(prefs)
         if (prefs.getLong("expiresAt", 0) <= System.currentTimeMillis() / 1000) {
             prefs.edit().clear().apply()
             return null
@@ -133,6 +156,13 @@ class TokenStore(context: Context) {
 
     @Synchronized
     fun save(response: TokenResponse) {
+        val prefs = prefs
+        if (prefs == null) {
+            cached = response.token
+            tokenGeneration++
+            _signedIn.value = true
+            return
+        }
         val cipher =
             Cipher.getInstance("AES/GCM/NoPadding").apply { init(Cipher.ENCRYPT_MODE, key()) }
         val encrypted = cipher.doFinal(response.token.toByteArray(Charsets.UTF_8))
@@ -148,13 +178,26 @@ class TokenStore(context: Context) {
             "Unable to save sign-in."
         }
         cached = response.token
+        tokenGeneration++
         _signedIn.value = true
     }
 
     @Synchronized
     fun clear() {
+        clearLocked()
+    }
+
+    @Synchronized
+    fun clearIfCurrent(expectedToken: String?, expectedGeneration: Long): Boolean {
+        if (cached != expectedToken || tokenGeneration != expectedGeneration) return false
+        clearLocked()
+        return true
+    }
+
+    private fun clearLocked() {
         cached = null
-        prefs.edit().clear().apply()
+        tokenGeneration++
+        prefs?.edit()?.clear()?.apply()
         _signedIn.value = false
     }
 }

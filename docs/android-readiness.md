@@ -4,7 +4,7 @@ Assessment scope: the main Android client, native/WebView transcript renderers, 
 
 ## Verdict
 
-As of the 2026-10-19 reassessment, the client is suitable for continued private testing, but public OSS beta distribution should wait for the account-isolation findings below and recorded device gates. The architecture is a credible base and does not need a rewrite. It is not yet verified for an unrestricted production release. Compiling a debug APK and passing JVM tests cannot validate a service-backed WebView, OEM assistant invocation, external camera/picker handoffs, or process recreation.
+As of the 2026-10-19 reassessment and isolation follow-up, the account-isolation findings below have code fixes and regression coverage. Public OSS beta distribution should still wait for recorded device gates and a release artifact/update path. The architecture is a credible base and does not need a rewrite. It is not yet verified for an unrestricted production release. Compiling a debug APK and passing JVM tests cannot validate a service-backed WebView, OEM assistant invocation, external camera/picker handoffs, or process recreation.
 
 Keep the existing Go backend as the authority for configuration, permissions, approvals, idempotency, and run transitions. Renderer choice is a device-local presentation preference; neither renderer should decide whether a tool can execute.
 
@@ -12,7 +12,7 @@ Keep the existing Go backend as the authority for configuration, permissions, ap
 
 The startup fixes were committed as `be88cf2`: fresh ViewModels no longer reopen the disk-cached last conversation, and new chats initialize their model from the cached catalog or restored settings draft. Android saved-state navigation restoration remains separate from a fresh launch. The user confirmed installing the rebuilt APK on a Pixel 9 Pro; this does not constitute a completed device matrix.
 
-Verification on this checkout:
+Baseline verification recorded during the reassessment:
 
 - `pnpm check`: passed, 57 test files / 253 tests.
 - `assembleDebug testDebugUnitTest`: passed, 15 JVM suites / 72 tests, no failures.
@@ -20,19 +20,26 @@ Verification on this checkout:
 - `pnpm backend:check`: formatting, vet, and tests passed.
 - Physical-device lifecycle, accessibility, API 26, and second-OEM results remain unrecorded. There are no checked-in Android instrumentation tests under `src/androidTest`.
 
-### Findings to address before public beta
+Isolation follow-up verification on this checkout:
 
-1. **High: late responses can repopulate cleared identity state.** `SessionsRepository.refresh`, `loadMore`, `fetch`, mutation completions, and `ModelsRepository.refresh` publish responses without checking the identity or a repository epoch captured before the request. `AppContainer.clearUserData` clears their current contents, but it cannot invalidate these response publications. For example, a model refresh started by `ChatViewModel.bootstrap` can finish after sign-out and refill the catalog; a session fetch can upsert an old account's summary. Persistence captures the cache generation after publication, so the disk-write guard alone does not reject the old response. Fence both publication and persistence against the request's original identity/generation, including mutation rollback paths. Test delayed responses across logout, server change, and a subsequent sign-in. This is a static code finding, not a reproduced cross-account exploit.
-2. **High: account changes retain composer drafts and new-chat configuration.** `ChatViewModel` keeps `drafts`, the `conversationDrafts` saved-state entry, and `newChatSettings` across logout and `changeConnect`. `select(null)` seeds the composer from the existing new-chat draft, and a later sign-in calls it again. The new account can therefore receive the prior account's unsent text and settings draft, potentially including its system prompt. Clear identity-owned drafts, settings, editor state, and matching saved-state keys on every identity transition. Add a regression covering both explicit logout and token-expiry/401 teardown.
-3. **Medium: main-app attachment ownership is weaker than the overlay's.** `ui/chat-screen.kt` records the target session when a picker/camera result returns, rather than when the request launches, and checks only that session during decoding. It has no identity-bound request ticket like the overlay's `AttachmentHandoff`. A result delivered after navigation or restoration can be assigned to the current chat instead of its original owner. Bind launch, delivery, decoding, and cleanup to an identity and request/session generation, then exercise process recreation and account changes on a device. This is a code-level gap; its exact lifecycle manifestations need device reproduction.
+- `pnpm check`: passed, 57 test files / 253 tests.
+- `assembleDebug testDebugUnitTest lintDebug`: passed; Android JVM suite 19 XML suites / 82 tests. Lint completed with 57 warnings and no errors; review the report before release.
+- No backend files changed, and the backend check was not rerun for this follow-up.
+- Physical-device picker/camera recreation, 401 teardown, and OEM behavior remain unverified.
+
+### Isolation findings and follow-up status
+
+1. **High: late responses could repopulate cleared identity state. Fixed in code.** Repositories now capture a shared identity stamp before requests and check it before publication, persistence, mutation rollback, and deferred refresh work. The stamp includes a persisted generation, server, token, and cache generation; pending-send journal operations also require the original cache generation. Delayed session/model response and stale mutation rollback tests exercise repository publication and persistence across a clear and a new identity. These tests establish the code boundary, not a reproduced cross-account exploit.
+2. **High: drafts and new-chat settings could survive account changes. Fixed in code.** Chat state and restored `SavedStateHandle` values are bound to a digest of the current server/account identity. Logout, server/account transitions, and 401 teardown clear drafts, new-chat settings, selection, editor state, and operation-owned UI state. Old task errors and `finally` blocks cannot overwrite a newer operation. A saved-state regression verifies restoration for the matching identity and clearing for a different identity; device-driven logout and token-expiry flows remain in the gate list.
+3. **Medium: main-app attachment results could attach to a newer chat. Fixed in code; device validation remains open.** Picker and camera launches persist the original identity, identity generation, selection generation, session ID, and source. The single outstanding ticket remains occupied through selection/account invalidation and decoding until that launcher's callback drains, so a second request cannot inherit a late result. The result is rechecked after decode and camera files are cleaned on completion or rejection. JVM tests cover account/session/selection/source matching and ticket ownership. External picker/camera recreation and OEM delivery behavior still need device validation. If Android never returns an outstanding launch result, new attachments remain blocked until the owning activity state is discarded; releasing the ticket early could misattribute a late callback.
 
 ### Architecture and OSS maintainability
 
 The main boundaries are appropriate: Go owns durable behavior; Kotlin repositories own HTTP and history projections; Compose owns presentation; WebView is an offline rendering adapter. Cursor/revision reconciliation, digest-only pending-send journaling, encrypted bearer storage, disabled app backup, bounded image loading, and separate activity/overlay WebViews are useful foundations. Keep those boundaries.
 
-The highest-value structural change is an explicit authenticated-session lifetime. The application container currently owns repositories that survive account transitions, while each subsystem applies its own token checks, operation epochs, coroutine scopes, and cache generations. Create one identity/session generation contract and use it at every asynchronous state boundary. Cancellation helps, but publication must also reject late completions. This is more valuable than adding modules or a dependency-injection framework.
+The highest-value structural change, an explicit authenticated-session lifetime, is now represented by a shared identity stamp used at asynchronous state boundaries. The application container still owns repositories across account transitions, so the generation checks must remain in place as those boundaries evolve. Cancellation helps, but publication must also reject late completions. This is more valuable than adding modules or a dependency-injection framework.
 
-After the isolation fixes, split the broad `ChatViewModel` by auth, chat coordination, and settings responsibility. Its current 544 lines are not themselves a release blocker; the reason to split is to make identity cleanup and operation ownership testable. Separate `Repositories.kt` into focused repository files as those seams are tested. Add small transport/cache abstractions where needed for deterministic delayed-response tests, rather than mocking Android UI to test repository correctness.
+After the isolation fixes, split the broad `ChatViewModel` by auth, chat coordination, and settings responsibility. Its size is not itself a release blocker; the reason to split is to make identity cleanup and operation ownership testable. Separate `Repositories.kt` into focused repository files as those seams are tested. Add small transport/cache abstractions where needed for deterministic delayed-response tests, rather than mocking Android UI to test repository correctness.
 
 Maintaining native and shared-WebView renderers creates two presentation test matrices, even though both share the data layer. Keep one authoritative reducer/contract and test both renderers against representative history fixtures. Do not duplicate approval or model policy in either renderer. Existing JVM contract tests are useful, but they do not exercise actual navigation, service windows, or WebView readiness.
 
@@ -40,7 +47,7 @@ For an OSS beta, the repository already has an MIT license, contribution guidanc
 
 Add an Android entry point to the root README, concise bug-report instructions with Android/WebView versions and renderer choice, and a private security-reporting path. Document local cached-data behavior, HTTP deployment support, deliberate feature exclusions, and how testers recover or report failures without sharing prompts/tokens. Telemetry is optional; useful diagnostics can remain local and user-redacted.
 
-Public-beta exit criteria: resolve the two high-severity isolation findings, close or explicitly constrain the attachment handoff gap, record the controlled-beta device checks below, and publish an installable artifact with a stable update identity. Instrumentation should first cover account changes, fresh launch versus restoration, renderer switching, and overlay/picker handoffs. Broader UI decomposition and polish can follow during beta.
+Public-beta exit criteria: preserve the isolation regressions, record the controlled-beta device checks below, and publish an installable artifact with a stable update identity. Instrumentation should first cover account changes, fresh launch versus restoration, renderer switching, and overlay/picker handoffs. Broader UI decomposition and polish can follow during beta.
 
 ## Assessment and refactor
 
