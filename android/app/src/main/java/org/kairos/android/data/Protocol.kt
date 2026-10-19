@@ -53,7 +53,7 @@ data class ConversationSettings(
     val advanced: AdvancedSettings = AdvancedSettings(),
 )
 
-/** The backend's frozen configuration for an accepted command (see chat-api-contract.md). */
+/** The backend's frozen configuration for an accepted command. */
 @Serializable
 data class EffectiveConfiguration(
     val model: String = "",
@@ -203,7 +203,7 @@ data class EphemeralRequest(
 
 /**
  * A chat command: create, send, or edit. Omitted generation fields inherit the backend's
- * authoritative settings (see docs/chat-api-contract.md). For creation, `settings` is the
+ * authoritative settings. For creation, `settings` is the
  * user's draft and is persisted as the new conversation's settings; for existing
  * conversations the backend reads its own saved settings, so `settings` stays null.
  */

@@ -18,7 +18,7 @@ A Linux desktop app with a tray icon and a global hotkey is available from the
 [releases page](https://github.com/thang-qt/Kairos/releases). See
 [desktop/README.md](desktop/README.md) to install it.
 
-## Development
+## Run locally
 
 ```bash
 pnpm install
@@ -26,6 +26,19 @@ pnpm dev
 ```
 
 Copy `.env.example` to `.env` first if you want to override local defaults. `pnpm dev` starts the Vite frontend on `http://localhost:3000` and the Go backend on `http://localhost:8080`.
+
+## Android app
+
+The Android app connects to your Kairos server and supports an optional system
+assistant overlay. See [Android installation and usage](android/README.md).
+
+## Guides
+
+- [Import ChatGPT conversations](docs/conversation-import.md)
+- [Export conversations](docs/conversation-export.md)
+- [Connect remote MCP tools](docs/remote-mcp.md)
+- [Model information and pricing](docs/model-metadata.md)
+- [Build and contribute](CONTRIBUTING.md)
 
 ## Configuration
 
@@ -122,5 +135,3 @@ The original interface was extracted and adapted from [webclaw](https://github.c
 ## License
 
 See [LICENSE](LICENSE).
-
-Conversation architecture, API contracts and upgrade notes are documented in [docs/agent-runtime.md](docs/agent-runtime.md).

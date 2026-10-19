@@ -621,7 +621,7 @@ class ConversationRepository(
                 attachments = attachments,
                 // Creation persists this draft as the new conversation's settings. Existing
                 // conversations send no generation fields at all: omitted overrides inherit
-                // the backend's authoritative saved settings (docs/chat-api-contract.md).
+                // the backend's authoritative saved settings.
                 settings = if (id == null) settings else null,
             )
         try {
