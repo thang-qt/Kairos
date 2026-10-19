@@ -16,6 +16,20 @@ Use Android Studio or a standard Android SDK installation with JDK 17 and Node.j
 
 Install `app/build/outputs/apk/debug/app-debug.apk` on the phone. No emulator or device is needed for the build or JVM tests. From a normal Android devShell, `pnpm android:apk` builds the transcript and APK.
 
+## Download a build on your phone
+
+The [CI workflow](https://github.com/thang-qt/Kairos/actions/workflows/ci.yml) builds on pushes to `main` and `android-prototype`. Open the latest successful run for your branch in your phone's browser while signed in to GitHub, then tap **Download Kairos APK** in the Android job summary (or the `kairos-<commit>.apk` artifact). The download is an APK directly, with no ZIP to extract. Tap the file and allow your browser to install apps when Android asks. Updates preserve app data when signed with the same key.
+
+Downloads remain available for 30 days. Pull requests run the build/tests/lint without the personal signing key and do not publish an installable artifact. Once this workflow is on the default branch, **Run workflow** can also build a selected branch manually.
+
+One-time repository setup: save your existing development keystore as the Actions secret `ANDROID_DEBUG_KEYSTORE_BASE64`, so every CI build uses the same signing certificate as the installed app. With GitHub CLI authenticated, run this on the computer that built the installed APK:
+
+```sh
+base64 -w0 "$HOME/.android/debug.keystore" | gh secret set ANDROID_DEBUG_KEYSTORE_BASE64 --repo thang-qt/Kairos
+```
+
+Keep a backup of that keystore. Do not commit it or its encoded contents. Builds intended for download fail clearly if the secret is missing, rather than generating a different signing key. This is a personal debug-build distribution path, not a production release pipeline.
+
 Existing versions remain Kotlin 2.2.21, AGP 8.11.1, Gradle 8.14.4, Compose BOM 2025.04.01, activity-compose 1.10.1, WebKit 1.13.0 and lifecycle 2.9.1. Added dependencies are OkHttp 4.12.0, kotlinx-serialization-json 1.9.0, the Kotlin serialization plugin at 2.2.21 and lifecycle-viewmodel-compose at 2.9.1. Photo Picker uses the existing activity-compose dependency. SDK 35, minSdk 26, JDK 17; no NDK.
 
 ## Connect to a development server
