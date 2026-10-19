@@ -4,7 +4,7 @@ name: Desktop Linux
 # ignore path filters, so release tags always build.
 on:
   push:
-    branches: [main, desktop-electron]
+    branches: [main]
     tags: ['desktop-v*']
     paths: &package-paths
       - desktop/**

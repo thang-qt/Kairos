@@ -1,0 +1,879 @@
+[
+  {
+    "name": "full replacement and replay",
+    "messages": [],
+    "event": {
+      "state": "delta",
+      "revision": 1,
+      "runId": "run",
+      "message": {
+        "id": "a",
+        "role": "assistant",
+        "revision": 1,
+        "status": "running",
+        "runId": "run",
+        "content": [
+          {
+            "type": "text",
+            "text": "Hello"
+          }
+        ],
+        "steps": [],
+        "extra": {
+          "untouched": true
+        }
+      }
+    },
+    "expected": [
+      {
+        "id": "a",
+        "role": "assistant",
+        "revision": 1,
+        "status": "running",
+        "runId": "run",
+        "content": [
+          {
+            "type": "text",
+            "text": "Hello"
+          }
+        ],
+        "steps": [],
+        "extra": {
+          "untouched": true
+        },
+        "__streamRunId": "run"
+      }
+    ]
+  },
+  {
+    "name": "optimistic client identity",
+    "messages": [
+      {
+        "id": "local",
+        "clientId": "client",
+        "role": "user",
+        "status": "sending"
+      }
+    ],
+    "event": {
+      "state": "user",
+      "revision": 1,
+      "message": {
+        "id": "u",
+        "role": "user",
+        "clientId": "client",
+        "revision": 1,
+        "content": [
+          {
+            "type": "text",
+            "text": "Hello"
+          }
+        ]
+      }
+    },
+    "expected": [
+      {
+        "id": "u",
+        "role": "user",
+        "clientId": "client",
+        "revision": 1,
+        "content": [
+          {
+            "type": "text",
+            "text": "Hello"
+          }
+        ],
+        "__streamRunId": null
+      }
+    ]
+  },
+  {
+    "name": "obsolete revision",
+    "messages": [
+      {
+        "id": "a",
+        "role": "assistant",
+        "revision": 1,
+        "status": "running",
+        "runId": "run",
+        "content": [
+          {
+            "type": "text",
+            "text": "Hello"
+          }
+        ],
+        "steps": [],
+        "extra": {
+          "untouched": true
+        }
+      }
+    ],
+    "event": {
+      "state": "delta",
+      "revision": 0,
+      "message": {
+        "id": "obsolete"
+      }
+    },
+    "expected": [
+      {
+        "id": "a",
+        "role": "assistant",
+        "revision": 1,
+        "status": "running",
+        "runId": "run",
+        "content": [
+          {
+            "type": "text",
+            "text": "Hello"
+          }
+        ],
+        "steps": [],
+        "extra": {
+          "untouched": true
+        }
+      }
+    ]
+  },
+  {
+    "name": "missing message identity",
+    "messages": [
+      {
+        "id": "a",
+        "role": "assistant",
+        "revision": 1,
+        "status": "running",
+        "runId": "run",
+        "content": [
+          {
+            "type": "text",
+            "text": "Hello"
+          }
+        ],
+        "steps": [],
+        "extra": {
+          "untouched": true
+        }
+      }
+    ],
+    "event": {
+      "state": "delta",
+      "message": {
+        "role": "assistant"
+      }
+    },
+    "expected": [
+      {
+        "id": "a",
+        "role": "assistant",
+        "revision": 1,
+        "status": "running",
+        "runId": "run",
+        "content": [
+          {
+            "type": "text",
+            "text": "Hello"
+          }
+        ],
+        "steps": [],
+        "extra": {
+          "untouched": true
+        }
+      }
+    ]
+  },
+  {
+    "name": "retry clears previous partial text",
+    "messages": [
+      {
+        "id": "a",
+        "role": "assistant",
+        "revision": 1,
+        "status": "running",
+        "runId": "run",
+        "content": [
+          {
+            "type": "text",
+            "text": "Hello"
+          }
+        ],
+        "steps": [],
+        "extra": {
+          "untouched": true
+        }
+      }
+    ],
+    "event": {
+      "state": "delta",
+      "revision": 1,
+      "runId": "run",
+      "message": {
+        "id": "a",
+        "role": "assistant",
+        "revision": 1,
+        "status": "queued",
+        "runId": "run",
+        "content": [],
+        "steps": [],
+        "extra": {
+          "untouched": true
+        }
+      }
+    },
+    "expected": [
+      {
+        "id": "a",
+        "role": "assistant",
+        "revision": 1,
+        "status": "queued",
+        "runId": "run",
+        "content": [],
+        "steps": [],
+        "extra": {
+          "untouched": true
+        },
+        "__streamRunId": "run"
+      }
+    ]
+  },
+  {
+    "name": "aborted error event uses turn status",
+    "messages": [
+      {
+        "id": "a",
+        "role": "assistant",
+        "revision": 1,
+        "status": "running",
+        "runId": "run",
+        "content": [
+          {
+            "type": "text",
+            "text": "Hello"
+          }
+        ],
+        "steps": [],
+        "extra": {
+          "untouched": true
+        }
+      }
+    ],
+    "event": {
+      "state": "error",
+      "revision": 1,
+      "runId": "run",
+      "message": {
+        "id": "a",
+        "role": "assistant",
+        "revision": 1,
+        "status": "aborted",
+        "runId": "run",
+        "content": [
+          {
+            "type": "text",
+            "text": "Hello"
+          }
+        ],
+        "steps": [],
+        "extra": {
+          "untouched": true
+        }
+      }
+    },
+    "expected": [
+      {
+        "id": "a",
+        "role": "assistant",
+        "revision": 1,
+        "status": "aborted",
+        "runId": "run",
+        "content": [
+          {
+            "type": "text",
+            "text": "Hello"
+          }
+        ],
+        "steps": [],
+        "extra": {
+          "untouched": true
+        },
+        "__streamRunId": null
+      }
+    ]
+  },
+  {
+    "name": "interrupted error event uses turn status",
+    "messages": [
+      {
+        "id": "a",
+        "role": "assistant",
+        "revision": 1,
+        "status": "running",
+        "runId": "run",
+        "content": [
+          {
+            "type": "text",
+            "text": "Hello"
+          }
+        ],
+        "steps": [],
+        "extra": {
+          "untouched": true
+        }
+      }
+    ],
+    "event": {
+      "state": "error",
+      "revision": 1,
+      "runId": "run",
+      "message": {
+        "id": "a",
+        "role": "assistant",
+        "revision": 1,
+        "status": "interrupted",
+        "runId": "run",
+        "content": [
+          {
+            "type": "text",
+            "text": "Hello"
+          }
+        ],
+        "steps": [],
+        "extra": {
+          "untouched": true
+        },
+        "canRetry": true
+      }
+    },
+    "expected": [
+      {
+        "id": "a",
+        "role": "assistant",
+        "revision": 1,
+        "status": "interrupted",
+        "runId": "run",
+        "content": [
+          {
+            "type": "text",
+            "text": "Hello"
+          }
+        ],
+        "steps": [],
+        "extra": {
+          "untouched": true
+        },
+        "canRetry": true,
+        "__streamRunId": null
+      }
+    ]
+  },
+  {
+    "name": "compact append tool and null paths",
+    "messages": [
+      {
+        "id": "a",
+        "role": "assistant",
+        "revision": 1,
+        "status": "running",
+        "runId": "run",
+        "content": [
+          {
+            "type": "text",
+            "text": "Hello"
+          }
+        ],
+        "steps": [],
+        "extra": {
+          "untouched": true
+        }
+      }
+    ],
+    "event": {
+      "state": "delta",
+      "revision": 1,
+      "turnId": "a",
+      "runId": "run",
+      "turnPatch": [
+        {
+          "op": "append",
+          "path": ["content", "0", "text"],
+          "value": " world"
+        },
+        {
+          "op": "set",
+          "path": ["steps", "0"],
+          "value": {
+            "id": "tool",
+            "role": "toolResult",
+            "toolCallId": "call",
+            "content": [
+              {
+                "type": "text",
+                "text": "4"
+              }
+            ]
+          }
+        },
+        {
+          "op": "set",
+          "path": ["details"],
+          "value": null
+        }
+      ]
+    },
+    "expected": [
+      {
+        "id": "a",
+        "role": "assistant",
+        "revision": 1,
+        "status": "running",
+        "runId": "run",
+        "content": [
+          {
+            "type": "text",
+            "text": "Hello world"
+          }
+        ],
+        "steps": [
+          {
+            "id": "tool",
+            "role": "toolResult",
+            "toolCallId": "call",
+            "content": [
+              {
+                "type": "text",
+                "text": "4"
+              }
+            ]
+          }
+        ],
+        "extra": {
+          "untouched": true
+        },
+        "details": null,
+        "__streamRunId": "run"
+      }
+    ]
+  },
+  {
+    "name": "remove array and object paths",
+    "messages": [
+      {
+        "id": "a",
+        "role": "assistant",
+        "revision": 1,
+        "status": "running",
+        "runId": "run",
+        "content": [
+          {
+            "type": "text",
+            "text": "Hello"
+          }
+        ],
+        "steps": [],
+        "extra": {
+          "untouched": true
+        }
+      }
+    ],
+    "event": {
+      "state": "delta",
+      "revision": 1,
+      "turnId": "a",
+      "turnPatch": [
+        {
+          "op": "remove",
+          "path": ["extra"]
+        },
+        {
+          "op": "remove",
+          "path": ["content", "0"]
+        }
+      ]
+    },
+    "expected": [
+      {
+        "id": "a",
+        "role": "assistant",
+        "revision": 1,
+        "status": "running",
+        "runId": "run",
+        "content": [],
+        "steps": [],
+        "__streamRunId": null
+      }
+    ]
+  },
+  {
+    "name": "unknown patch target",
+    "messages": [
+      {
+        "id": "a",
+        "role": "assistant",
+        "revision": 1,
+        "status": "running",
+        "runId": "run",
+        "content": [
+          {
+            "type": "text",
+            "text": "Hello"
+          }
+        ],
+        "steps": [],
+        "extra": {
+          "untouched": true
+        }
+      }
+    ],
+    "event": {
+      "state": "delta",
+      "revision": 1,
+      "turnId": "missing",
+      "turnPatch": [
+        {
+          "op": "set",
+          "path": ["status"],
+          "value": "completed"
+        }
+      ]
+    },
+    "expected": [
+      {
+        "id": "a",
+        "role": "assistant",
+        "revision": 1,
+        "status": "running",
+        "runId": "run",
+        "content": [
+          {
+            "type": "text",
+            "text": "Hello"
+          }
+        ],
+        "steps": [],
+        "extra": {
+          "untouched": true
+        }
+      }
+    ]
+  },
+  {
+    "name": "unsafe path",
+    "messages": [
+      {
+        "id": "a",
+        "role": "assistant",
+        "revision": 1,
+        "status": "running",
+        "runId": "run",
+        "content": [
+          {
+            "type": "text",
+            "text": "Hello"
+          }
+        ],
+        "steps": [],
+        "extra": {
+          "untouched": true
+        }
+      }
+    ],
+    "event": {
+      "state": "delta",
+      "revision": 1,
+      "turnId": "a",
+      "turnPatch": [
+        {
+          "op": "set",
+          "path": ["__proto__", "x"],
+          "value": true
+        }
+      ]
+    },
+    "expected": [
+      {
+        "id": "a",
+        "role": "assistant",
+        "revision": 1,
+        "status": "running",
+        "runId": "run",
+        "content": [
+          {
+            "type": "text",
+            "text": "Hello"
+          }
+        ],
+        "steps": [],
+        "extra": {
+          "untouched": true
+        }
+      }
+    ]
+  },
+  {
+    "name": "invalid append value",
+    "messages": [
+      {
+        "id": "a",
+        "role": "assistant",
+        "revision": 1,
+        "status": "running",
+        "runId": "run",
+        "content": [
+          {
+            "type": "text",
+            "text": "Hello"
+          }
+        ],
+        "steps": [],
+        "extra": {
+          "untouched": true
+        }
+      }
+    ],
+    "event": {
+      "state": "delta",
+      "revision": 1,
+      "turnId": "a",
+      "turnPatch": [
+        {
+          "op": "append",
+          "path": ["content", "0", "text"],
+          "value": 1
+        }
+      ]
+    },
+    "expected": [
+      {
+        "id": "a",
+        "role": "assistant",
+        "revision": 1,
+        "status": "running",
+        "runId": "run",
+        "content": [
+          {
+            "type": "text",
+            "text": "Hello"
+          }
+        ],
+        "steps": [],
+        "extra": {
+          "untouched": true
+        }
+      }
+    ]
+  },
+  {
+    "name": "array bounds",
+    "messages": [
+      {
+        "id": "a",
+        "role": "assistant",
+        "revision": 1,
+        "status": "running",
+        "runId": "run",
+        "content": [
+          {
+            "type": "text",
+            "text": "Hello"
+          }
+        ],
+        "steps": [],
+        "extra": {
+          "untouched": true
+        }
+      }
+    ],
+    "event": {
+      "state": "delta",
+      "revision": 1,
+      "turnId": "a",
+      "turnPatch": [
+        {
+          "op": "set",
+          "path": ["content", "3"],
+          "value": {}
+        }
+      ]
+    },
+    "expected": [
+      {
+        "id": "a",
+        "role": "assistant",
+        "revision": 1,
+        "status": "running",
+        "runId": "run",
+        "content": [
+          {
+            "type": "text",
+            "text": "Hello"
+          }
+        ],
+        "steps": [],
+        "extra": {
+          "untouched": true
+        }
+      }
+    ]
+  },
+  {
+    "name": "command invalidates old runs and removed turns",
+    "messages": [
+      {
+        "id": "u",
+        "role": "user",
+        "clientId": "client",
+        "revision": 1,
+        "content": [
+          {
+            "type": "text",
+            "text": "Hello"
+          }
+        ]
+      },
+      {
+        "id": "a",
+        "role": "assistant",
+        "revision": 1,
+        "status": "running",
+        "runId": "run",
+        "content": [
+          {
+            "type": "text",
+            "text": "Hello"
+          }
+        ],
+        "steps": [],
+        "extra": {
+          "untouched": true
+        }
+      },
+      {
+        "id": "later",
+        "role": "user",
+        "revision": 1
+      }
+    ],
+    "command": {
+      "revision": 2,
+      "invalidatedRunIds": ["run"],
+      "removedTurnIds": ["later"],
+      "userTurn": {
+        "id": "u",
+        "role": "user",
+        "clientId": "client",
+        "revision": 2,
+        "content": [
+          {
+            "type": "text",
+            "text": "edited"
+          }
+        ]
+      }
+    },
+    "expected": [
+      {
+        "id": "u",
+        "role": "user",
+        "clientId": "client",
+        "revision": 2,
+        "content": [
+          {
+            "type": "text",
+            "text": "edited"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "command reconciles optimistic user",
+    "messages": [
+      {
+        "id": "local",
+        "clientId": "client",
+        "role": "user"
+      }
+    ],
+    "command": {
+      "revision": 1,
+      "userTurn": {
+        "id": "u",
+        "role": "user",
+        "clientId": "client",
+        "revision": 1,
+        "content": [
+          {
+            "type": "text",
+            "text": "Hello"
+          }
+        ]
+      }
+    },
+    "expected": [
+      {
+        "id": "u",
+        "role": "user",
+        "clientId": "client",
+        "revision": 1,
+        "content": [
+          {
+            "type": "text",
+            "text": "Hello"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "absent set value is invalid while explicit null is a value",
+    "messages": [
+      {
+        "id": "a",
+        "role": "assistant",
+        "revision": 1,
+        "status": "running",
+        "runId": "run",
+        "content": [
+          {
+            "type": "text",
+            "text": "Hello"
+          }
+        ],
+        "steps": [],
+        "extra": {
+          "untouched": true
+        }
+      }
+    ],
+    "event": {
+      "state": "delta",
+      "revision": 1,
+      "turnId": "a",
+      "turnPatch": [
+        {
+          "op": "set",
+          "path": ["details"]
+        }
+      ]
+    },
+    "expected": [
+      {
+        "id": "a",
+        "role": "assistant",
+        "revision": 1,
+        "status": "running",
+        "runId": "run",
+        "content": [
+          {
+            "type": "text",
+            "text": "Hello"
+          }
+        ],
+        "steps": [],
+        "extra": {
+          "untouched": true
+        }
+      }
+    ]
+  }
+]

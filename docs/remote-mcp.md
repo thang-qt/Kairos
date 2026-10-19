@@ -1,27 +1,62 @@
 # Remote MCP servers
 
-Kairos connects to user-managed remote MCP servers using Streamable HTTP. Add connections in **Settings → MCP servers**, select anonymous or bearer authentication, save the connection, and Kairos tests it, discovers tools, and enables all discovered tools automatically. If discovery fails, the connection stays saved with an error to fix or retry. Individual servers and tools can be disabled in Settings or in the **MCP tools** tab of the chat’s right sidebar, which also switches a tool between asking first and always allowed. Discovery is cached; refresh explicitly to update it. Rediscovery preserves tool choices, while removed tools become unavailable. Editing an endpoint invalidates its cached tools.
+Kairos can use tools from remote MCP servers that support Streamable HTTP.
+In **Settings → MCP servers**, add a connection, choose anonymous or bearer-token
+authentication, and save it. Kairos tests the connection and discovers its tools.
+If discovery fails, the connection stays saved so you can correct it and retry.
 
-## GitHub setup
+Disable individual servers or tools in Settings or the chat sidebar's
+**MCP tools** tab. Refresh discovery when a server's available tools change;
+your choices are preserved for tools that remain available.
 
-Select the GitHub read-only preset (`https://api.githubcopilot.com/mcp/readonly`) or standard preset (`https://api.githubcopilot.com/mcp/`). Create a personal access token at https://github.com/settings/personal-access-tokens with only the repositories and permissions needed for your selected tools. Organization policies, repository access, and SSO authorization can further restrict access. Paste the token, save, test, then enable tools. GitHub uses the same client as custom servers; there is no special GitHub executor or OAuth flow.
+## Connect GitHub
 
-Stored tokens cannot be read back. Replace a token by editing its connection. Production credential storage requires an explicitly configured `PROVIDER_SECRET_KEY` of at least 32 characters; protect and back up this key with the database. The key encrypts both MCP bearer tokens and user-defined LLM provider API keys. Losing or changing it makes existing encrypted credentials unreadable, so users must enter them again. Development uses the existing development encryption configuration.
+Choose the GitHub read-only preset or the standard preset. Create a
+[personal access token](https://github.com/settings/personal-access-tokens)
+with only the repository access and permissions needed by your tools, then
+paste it into the connection settings. Organization policies and SSO may require
+additional authorization.
 
-## Runtime and approvals
+Saved tokens cannot be read back from Kairos. Edit the connection to replace one.
 
-A unified registry combines existing built-in tools with enabled, user-owned MCP tools. Stable 64-character aliases map back to server IDs and original tool names. Both Chat Completions and Responses feed the same agent loop, tool checkpoints, lease fencing, cancellation, and stable assistant turn.
+## Approvals and activity
 
-By default remote calls ask for approval, including tools annotated read-only. Server annotations are untrusted. While a call waits, the approval replaces the chat composer at the bottom of the screen and shows the server, tool, immutable arguments and time left (the typed draft is kept and returns afterwards). Choose **Allow once** for this exact invocation, **Allow in this chat** for future invocations of this same tool in that conversation, **Always allow** for future invocations across your chats, or **Deny**. Remote calls appear in the activity sidebar as “Calling Server · tool” with their arguments. Broader choices authorize different future arguments. Each execution still creates a durable record bound to the user, server revision, tool/schema, run, lease, call ID, and exact arguments; the backend consumes that record once. Migration `0026_mcp_tool_grants.sql` stores explicit broader grants by user, tool, and optional conversation. Grants never bypass disabled connections/tools, schema validation, lease ownership, or crash protection. Switch a tool to **Ask first** or use **Reset approvals** to revoke both chat and persistent grants. Disabling a server/tool or editing the connection also revokes grants; discovery revokes grants for removed tools or changed schemas. Configuration changes, revoked permissions, expired leases, changed conversation revisions, and cancellation invalidate execution. Approval waits expire after three minutes; the whole tool operation is bounded to four minutes. Waiting occupies one of the existing bounded runtime worker slots.
+Remote tools ask for approval by default, including tools described as read-only.
+The approval shows the server, tool, arguments, and time remaining. Your typed
+message is kept while the approval is displayed.
 
-Tool progress and normalized results appear in the existing assistant turn. Canceling sends best-effort MCP cancellation and releases the session. Cancellation cannot undo an external side effect. Crashed or interrupted running attempts are not automatically replayed. Explicit retries can repeat effects; remembered permissions also apply to retries, so verify external state before retrying. MCP tools are unavailable in stateless throwaway chats because their approvals require a durable run.
+- **Allow once** permits this invocation.
+- **Allow in this chat** permits future invocations of that tool in this chat.
+- **Always allow** permits future invocations of that tool across your chats.
+- **Deny** rejects the invocation.
 
-## Security and deployment
+Broader permissions also cover different future arguments. Switch a tool to
+**Ask first** or use **Reset approvals** to revoke remembered permissions.
+Disabling a connection or tool, editing the connection, or changing its tool
+schema also invalidates the corresponding grants. Approval requests expire
+after three minutes.
 
-Migration `0025_remote_mcp.sql` adds user-owned connections, encrypted bearer credentials, cached tools/permissions, and durable approval records. The deployment remains one Go binary and SQLite. The official `github.com/modelcontextprotocol/go-sdk` v1.8.0 requires Go 1.25.
+Tool progress, arguments, and results appear in the answer's activity panel.
+Stopping a run attempts to cancel the remote call, but cannot undo an external
+side effect. Interrupted calls are not retried automatically. Before manually
+retrying a tool that changes external data, check whether its action already
+completed. Remembered permissions also apply to retries.
 
-Only HTTPS endpoints are accepted. URL credentials, queries, fragments, local hostnames, private/loopback/link-local/metadata addresses, and non-public DNS answers are rejected. Every request resolves and validates DNS again, pins the selected public IP, and verifies TLS against the original hostname. The environment proxy remains in use. Redirects and cross-origin requests are rejected; bearer credentials are attached only to the configured endpoint. Remote errors are replaced with safe messages, and known credential forms are scrubbed from remote metadata, progress, and results. Kairos does not start remote servers. It reuses initialized MCP sessions and HTTPS connections across discovery and successful calls to reduce repeated negotiation, DNS/TLS, and proxy overhead. Every HTTP request still revalidates DNS and pins a public IP. Sessions are isolated by connection/configuration revision, calls per session are serialized with cancellable waits, and idle sessions close after two minutes. The cache holds at most 64 sessions; excess connections are short-lived. Cancellation, failures, connection changes, disabling, deletion, and shutdown close sessions. A subsequent request may establish a fresh session, but tool calls are never retried automatically.
+Remote MCP tools are unavailable in throwaway chats.
 
-Limits include 16 servers per user, 256 discovered tools per server, 16 discovery pages, 512 enabled remote tools per user, 64 KiB tool schemas and call arguments, bounded schema depth with local references only, 2 MiB transport responses/events, 256 KiB normalized results, and 30-second discovery timeouts. Disabling a tool cancels active operations for its server. Cached discovery does not continuously monitor upstream authorization; each new call reconnects and rechecks local permissions, and upstream failures are reported.
+## Supported servers and privacy
 
-Remote descriptions and outputs remain untrusted model inputs. Approval controls authorization but cannot make an untrusted server's implementation honest. Use trusted servers and review arguments. There is no OAuth, stdio, executable installation, resource/prompt browsing, sampling, elicitation, or separate MCP agent runtime.
+Only public HTTPS endpoints are supported. Local/private-network servers,
+URL credentials, queries, fragments, and redirects are rejected. Kairos does not
+install or launch servers, and does not support stdio connections or MCP OAuth.
+Use bearer tokens where authentication is required.
+
+Use servers you trust and review tool arguments before approving them. Tool
+arguments are sent to the selected remote server, and results become part of
+the conversation used by the model. Approval does not guarantee that a remote
+server behaves honestly.
+
+For self-hosted deployments, set `PROVIDER_SECRET_KEY` to at least 32 characters
+in production and back it up with the database. It encrypts stored MCP and model
+provider credentials. Losing or changing the key makes existing credentials
+unreadable, so users must enter them again.

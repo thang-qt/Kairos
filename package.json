@@ -20,7 +20,9 @@
     "format": "oxfmt --write .",
     "format:check": "oxfmt --check .",
     "typecheck": "tsc --noEmit",
-    "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test"
+    "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test",
+    "build:transcript": "node scripts/gen-android-theme.mjs && node scripts/gen-android-icons.mjs && vite build --config vite.transcript.config.ts",
+    "android:apk": "pnpm build:transcript && cd android && ./gradlew assembleDebug"
   },
   "dependencies": {
     "@base-ui/react": "^1.1.0",

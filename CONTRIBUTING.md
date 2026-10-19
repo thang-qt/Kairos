@@ -1,15 +1,15 @@
-Contributing
+# Contributing
 
 Kairos is intentionally simple.
 The goal is to build a focused AI chat app, not the biggest one.
 
-Before opening a PR
+## Before opening a PR
 
 - keep changes small and focused
 - avoid adding heavy dependencies or complexity
 - discuss big ideas in an issue first
 
-What we welcome
+## What we welcome
 
 - performance improvements
 - streaming / chat UX improvements
@@ -17,15 +17,16 @@ What we welcome
 - small, clear UI polish
 - docs that make setup easier
 
-What we avoid
+## What we avoid
 
 - large refactors without clear benefit
 - opinionated features that add weight
 - anything that hurts simplicity or local-first usage
 
-PR rules
+## PR rules
 
 - one change per PR
 - clear title + short description
 - screenshots or video for UI changes
 - must run locally with zero friction
+- run `pnpm check`; for Go changes, also run `pnpm backend:check`

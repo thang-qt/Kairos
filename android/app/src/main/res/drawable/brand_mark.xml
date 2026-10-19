@@ -1,0 +1,12 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <!-- Keep the complete 84-unit mark inside the adaptive icon safe zone. -->
+    <group android:scaleX="0.64" android:scaleY="0.64"
+        android:translateX="27.12" android:translateY="27.12">
+        <path android:fillColor="@color/brand_ink"
+            android:pathData="M19,8 H47 A11,11 0,0 1,58 19 V47 A11,11 0,0 1,47 58 H19 A11,11 0,0 1,8 47 V19 A11,11 0,0 1,19 8 Z" />
+        <path android:fillColor="@color/brand_accent"
+            android:pathData="M34,58 A24,24 0,1 0,82 58 A24,24 0,1 0,34 58 Z" />
+    </group>
+</vector>

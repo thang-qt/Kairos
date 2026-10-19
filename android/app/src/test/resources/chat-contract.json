@@ -1,0 +1,106 @@
+{
+  "sendRequest": {
+    "expectedRevision": 6,
+    "message": "Continue the conversation",
+    "model": "test-model",
+    "systemPrompt": "Be concise",
+    "webSearch": true,
+    "mathTools": false,
+    "advanced": {
+      "reasoning": {
+        "effort": "medium"
+      },
+      "sampling": {
+        "temperature": 0.4,
+        "topP": 0.9
+      },
+      "maxTokens": 512
+    },
+    "idempotencyKey": "send-contract-1",
+    "clientId": "client-contract-1",
+    "clientTime": "2026-10-16T03:00:00Z",
+    "clientTimeZone": "Asia/Ho_Chi_Minh",
+    "attachments": [
+      {
+        "mimeType": "image/png",
+        "content": "AQID"
+      }
+    ]
+  },
+  "commandAck": {
+    "revision": 7,
+    "userTurn": {
+      "id": "user-contract-1",
+      "role": "user",
+      "content": [
+        {
+          "type": "text",
+          "text": "Continue the conversation"
+        }
+      ]
+    },
+    "invalidatedRunIds": ["run-old-1"],
+    "removedTurnIds": ["assistant-old-1"],
+    "friendlyId": "friendly-contract-1",
+    "runId": "run-contract-1",
+    "sessionKey": "session-contract-1",
+    "userTurnId": "user-contract-1",
+    "assistantTurnId": "assistant-contract-1",
+    "clientId": "client-contract-1",
+    "effectiveConfiguration": {
+      "model": "system:fixture:test-model",
+      "systemPrompt": "Be concise",
+      "webSearch": true,
+      "mathTools": false,
+      "advanced": {
+        "reasoning": {
+          "effort": "medium"
+        },
+        "sampling": {
+          "temperature": 0.4,
+          "topP": 0.9,
+          "topK": null
+        },
+        "penalties": null,
+        "maxTokens": 512
+      }
+    }
+  },
+  "sseFrame": "id: 19\ndata: {\"turnPatch\":[{\"op\":\"append\",\"path\":[\"content\",\"0\",\"text\"],\"value\":\" there\"}],\"revision\":7,\"turnId\":\"assistant-contract-1\",\"cursor\":19,\"runId\":\"run-contract-1\",\"sessionKey\":\"session-contract-1\",\"friendlyId\":\"friendly-contract-1\",\"state\":\"delta\"}\n\ndata: {\"revision\":7,\"turnId\":\"assistant-contract-1\",\"cursor\":20,\"runId\":\"run-contract-1\",\"sessionKey\":\"session-contract-1\",\"friendlyId\":\"friendly-contract-1\",\"state\":\"final\",\"message\":{\"id\":\"assistant-contract-1\",\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"Hello there\"}]}}\n\n",
+  "minimalSendRequest": {
+    "message": "Hello from a thin client",
+    "idempotencyKey": "minimal-contract-1"
+  },
+  "settingsSendRequest": {
+    "message": "Use my draft",
+    "settings": {
+      "model": "test-model",
+      "webSearch": false,
+      "advanced": {
+        "reasoning": true,
+        "reasoningEffort": "high",
+        "sampling": true,
+        "temperature": 0.4
+      }
+    }
+  },
+  "defaultSettings": {
+    "model": "",
+    "systemPrompt": "",
+    "webSearch": true,
+    "mathTools": true,
+    "advanced": {
+      "reasoning": false,
+      "reasoningEffort": "medium",
+      "sampling": false,
+      "temperature": 0.7,
+      "topP": 1,
+      "topK": 0,
+      "penalties": false,
+      "frequencyPenalty": 0,
+      "presencePenalty": 0,
+      "maxTokens": false,
+      "maxTokensValue": 4096
+    }
+  }
+}

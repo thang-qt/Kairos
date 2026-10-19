@@ -1,0 +1,7 @@
+<resources>
+    <!-- Kairos canopy palette, matching the existing web app icon. -->
+    <color name="brand_background">#f3f3e6</color>
+    <color name="brand_ink">#31352b</color>
+    <color name="brand_accent">#8d9d78</color>
+    <color name="app_background">#f5f4ef</color>
+</resources>

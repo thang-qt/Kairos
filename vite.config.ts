@@ -18,6 +18,11 @@ const config = defineConfig({
     },
   },
   server: {
+    // Native shells carry huge build trees (e.g. android/.gradle-home) that would
+    // exhaust inotify watchers; the web app never imports from them.
+    watch: {
+      ignored: ['**/android/**', '**/desktop/**', '**/.direnv/**'],
+    },
     proxy: {
       '/api': {
         target: 'http://127.0.0.1:8080',
