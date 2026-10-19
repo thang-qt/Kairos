@@ -105,5 +105,3 @@ may want if your server runs a newer Kairos than the app.
 
 Uninstalling the app leaves your settings in `~/.config/Kairos`; delete that
 folder to remove them.
-
-To build or package the desktop app, see [Contributing](../CONTRIBUTING.md).

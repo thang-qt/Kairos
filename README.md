@@ -38,7 +38,7 @@ assistant overlay. See [Android installation and usage](android/README.md).
 - [Export conversations](docs/conversation-export.md)
 - [Connect remote MCP tools](docs/remote-mcp.md)
 - [Model information and pricing](docs/model-metadata.md)
-- [Build and contribute](CONTRIBUTING.md)
+- [Contributing](CONTRIBUTING.md)
 
 ## Configuration
 

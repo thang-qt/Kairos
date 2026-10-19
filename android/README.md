@@ -97,6 +97,3 @@ Background streaming is not guaranteed; reopen a conversation to reconnect.
 - **Photo selection does not return:** finish or cancel the system picker/camera
   before starting another selection. If Android loses the result, fully close
   and reopen Kairos.
-
-To build the app yourself or configure CI signing, see
-[Contributing](../CONTRIBUTING.md).
