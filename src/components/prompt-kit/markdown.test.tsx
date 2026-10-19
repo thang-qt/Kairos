@@ -69,4 +69,47 @@ describe('Markdown', function () {
     expect(html).toContain('\\(\\beta\\)')
     expect(html).toContain('\\[\\gamma\\]')
   })
+
+  it('keeps benchmark currency comparisons as literal text', function () {
+    const html = renderToStaticMarkup(
+      <Markdown>
+        {'- Vals Index: me $0.64, him $3.24. ~5x.\n- Vibe Code Bench: me $0.58, him $6.23. ~10x.\n- Code Migration: me $1.86, him $6.51.'}
+      </Markdown>,
+    )
+
+    for (const price of [
+      '$0.64',
+      '$3.24',
+      '$0.58',
+      '$6.23',
+      '$1.86',
+      '$6.51',
+    ]) {
+      expect(html).toContain(price)
+    }
+    expect(html).not.toContain('class="katex"')
+  })
+
+  it('keeps prices literal alongside real inline math', function () {
+    const html = renderToStaticMarkup(
+      <Markdown>
+        {'Prices: $1,234.56 and $390K. Formula: $x^2 + y^2$ and $2 + 2 = 4$.'}
+      </Markdown>,
+    )
+
+    expect(html).toContain('$1,234.56')
+    expect(html).toContain('$390K')
+    expect(html.match(/class="katex"/g)).toHaveLength(2)
+  })
+
+  it('preserves display math and leaves dollar signs in inline code alone', function () {
+    const html = renderToStaticMarkup(
+      <Markdown>{'Use `$10` literally; price $20, or display $$E=mc^2$$.'}</Markdown>,
+    )
+
+    expect(html).toContain('$10')
+    expect(html).toContain('$20')
+    expect(html.match(/class="katex"/g)).toHaveLength(1)
+  })
+
 })
