@@ -415,6 +415,7 @@
 
             packages = [
               androidComposition.androidsdk
+              androidPkgs.android-tools
               androidPkgs.jdk17
               androidPkgs.gradle_8
               androidPkgs.nodejs
