@@ -78,11 +78,12 @@ class ChatViewModel(val app: AppContainer, private val savedState: SavedStateHan
 
     var sessionId by mutableStateOf(
         savedState.get<String>("selectedConversation")
-            ?: if (app.tokens.signedIn.value) app.lastSession.initial else null
     )
         private set
 
-    var model by mutableStateOf("")
+    var model by mutableStateOf(
+        newChatSettings?.model?.takeIf { it.isNotBlank() } ?: app.models.defaultModel()
+    )
         private set
 
     var busy by mutableStateOf(false)
