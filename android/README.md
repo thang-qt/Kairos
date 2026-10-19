@@ -28,7 +28,7 @@ One-time repository setup: save your existing development keystore as the Action
 base64 -w0 "$HOME/.android/debug.keystore" | gh secret set ANDROID_DEBUG_KEYSTORE_BASE64 --repo thang-qt/Kairos
 ```
 
-Keep a backup of that keystore. Do not commit it or its encoded contents. Builds intended for download fail clearly if the secret is missing, rather than generating a different signing key. This is a personal debug-build distribution path, not a production release pipeline.
+Keep a backup of that keystore. Do not commit it or its encoded contents. CI selects it explicitly through `KAIROS_DEBUG_KEYSTORE` and verifies the APK certificate before uploading. Builds intended for download fail clearly if the secret is missing, rather than generating a different signing key. This is a personal debug-build distribution path, not a production release pipeline.
 
 Existing versions remain Kotlin 2.2.21, AGP 8.11.1, Gradle 8.14.4, Compose BOM 2025.04.01, activity-compose 1.10.1, WebKit 1.13.0 and lifecycle 2.9.1. Added dependencies are OkHttp 4.12.0, kotlinx-serialization-json 1.9.0, the Kotlin serialization plugin at 2.2.21 and lifecycle-viewmodel-compose at 2.9.1. Photo Picker uses the existing activity-compose dependency. SDK 35, minSdk 26, JDK 17; no NDK.
 

@@ -73,11 +73,19 @@ jobs:
             echo "::error::Set ANDROID_DEBUG_KEYSTORE_BASE64 to keep APK updates signed with the same key. See android/README.md."
             exit 1
           fi
-          mkdir -p "$HOME/.android"
-          printf '%s' "$ANDROID_DEBUG_KEYSTORE_BASE64" | base64 --decode > "$HOME/.android/debug.keystore"
-          chmod 600 "$HOME/.android/debug.keystore"
+          printf '%s' "$ANDROID_DEBUG_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/kairos-debug.keystore"
+          chmod 600 "$RUNNER_TEMP/kairos-debug.keystore"
+          printf 'KAIROS_DEBUG_KEYSTORE=%s\n' "$RUNNER_TEMP/kairos-debug.keystore" >> "$GITHUB_ENV"
       - run: pnpm install --frozen-lockfile
       - run: cd android && ./gradlew --no-daemon assembleDebug testDebugUnitTest lintDebug
+      - name: Verify APK signing certificate
+        if: github.event_name != 'pull_request'
+        run: |
+          SDK_ROOT="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
+          APK_CERT=$("$SDK_ROOT/build-tools/35.0.0/apksigner" verify --print-certs android/app/build/outputs/apk/debug/app-debug.apk | sed -n 's/Signer #1 certificate SHA-256 digest: //p')
+          KEY_CERT=$(keytool -exportcert -keystore "$KAIROS_DEBUG_KEYSTORE" -storepass android -alias androiddebugkey | sha256sum | cut -d' ' -f1)
+          test -n "$APK_CERT"
+          test "$APK_CERT" = "$KEY_CERT"
       - name: Prepare downloadable APK
         if: github.event_name != 'pull_request'
         run: |
@@ -99,4 +107,4 @@ jobs:
           printf '### Android app\n\n[Download Kairos APK](%s)\n\nOpen this link while signed in to GitHub on your phone, download the APK, and tap it to install.\n' "$APK_URL" >> "$GITHUB_STEP_SUMMARY"
       - name: Remove signing key
         if: always() && github.event_name != 'pull_request'
-        run: rm -f "$HOME/.android/debug.keystore"
+        run: rm -f "$RUNNER_TEMP/kairos-debug.keystore"

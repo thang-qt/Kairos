@@ -15,6 +15,14 @@ android {
         versionCode = 1
         versionName = "0.2-demo"
     }
+    signingConfigs.getByName("debug") {
+        providers.environmentVariable("KAIROS_DEBUG_KEYSTORE").orNull?.let { path ->
+            storeFile = file(path)
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+    }
     buildFeatures { compose = true; buildConfig = true }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
