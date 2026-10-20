@@ -148,4 +148,43 @@ describe('Markdown', function () {
     expect(html).not.toContain('echo \\$10')
     expect(html).not.toContain('class="katex"')
   })
+  it.each([
+    'Prices are $10/month and $20/month; math is $x^2$.',
+    'Prices are $10€ and $20元; math is $x^2$.',
+    'Prices are $10USD and $20CAD; math is $x^2$.',
+    'Prices are $10🙂 and $20🙂; math is $x^2$.',
+  ])('uses delimiter rules regardless of price suffix: %s', function (text) {
+    const html = renderToStaticMarkup(<Markdown>{text}</Markdown>)
+    expect(html).toContain('$10')
+    expect(html).toContain('$20')
+    expect(html.match(/class="katex"/g)).toHaveLength(1)
+  })
+
+  it('preserves numeric expressions as math', function () {
+    const html = renderToStaticMarkup(
+      <Markdown>
+        {'Values: $1$, $2 + 2 = 4$, $1,234.56$, and $390K$.'}
+      </Markdown>,
+    )
+    expect(html.match(/class="katex"/g)).toHaveLength(4)
+  })
+
+  it.each(['$ x$', '$x $', '$x$2', '$x\ny$'])(
+    'rejects invalid single-dollar boundaries: %s',
+    function (expression) {
+      const html = renderToStaticMarkup(
+        <Markdown>{'Invalid: ' + expression + '. Valid: $y^2$.'}</Markdown>,
+      )
+      expect(html.match(/class="katex"/g)).toHaveLength(1)
+    },
+  )
+
+  it('leaves escaped currency literal beside math', function () {
+    const html = renderToStaticMarkup(
+      <Markdown>{String.raw`Prices: \$10 and \$20. Math: $2 + 2$.`}</Markdown>,
+    )
+    expect(html).toContain('$10')
+    expect(html).toContain('$20')
+    expect(html.match(/class="katex"/g)).toHaveLength(1)
+  })
 })

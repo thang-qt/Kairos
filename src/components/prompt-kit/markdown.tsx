@@ -4,6 +4,7 @@ import 'katex/dist/katex.min.css'
 import { Streamdown } from 'streamdown'
 import { fromMarkdown } from 'mdast-util-from-markdown'
 import { CodeBlock } from './code-block'
+import { remarkMathWithBoundaries } from './remark-math-with-boundaries'
 import type { ComponentProps, ReactNode } from 'react'
 import { cn } from '@/lib/utils'
 
@@ -78,91 +79,6 @@ function findLatexMathClose(
   }
 
   return -1
-}
-
-const CURRENCY_AMOUNT =
-  /^\$(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?[kKmMbB]?(?=\s|[.,;:!?)}\]–—/"'’-]|$)/
-
-/** Match the native parser's rules: no space before the close or digit after it. */
-function findInlineMathClose(markdown: string, start: number): number {
-  if (!markdown[start] || /\s/.test(markdown[start])) return -1
-
-  let cursor = start
-  while (cursor < markdown.length) {
-    const close = markdown.indexOf('$', cursor)
-    if (close === -1 || markdown.slice(cursor, close).includes('\n')) return -1
-
-    const after = markdown[close + 1] ?? ''
-    if (
-      close > start &&
-      markdown[close - 1] !== '\\' &&
-      !/\s/.test(markdown[close - 1]) &&
-      !/\d/.test(after) &&
-      after !== '$'
-    )
-      return close
-
-    cursor = close + 1
-  }
-  return -1
-}
-
-/** Escape only currency dollars; keep inline and display LaTeX untouched. */
-function protectCurrencyDollars(markdown: string): string {
-  let protectedText = ''
-  let cursor = 0
-
-  while (cursor < markdown.length) {
-    if (markdown[cursor] === '\\' && cursor + 1 < markdown.length) {
-      protectedText += markdown.slice(cursor, cursor + 2)
-      cursor += 2
-      continue
-    }
-
-    if (markdown[cursor] === '`') {
-      const run = backtickRunLength(markdown, cursor)
-      const close = findClosingBackticks(markdown, cursor + run, run)
-      if (close === -1) {
-        protectedText += markdown.slice(cursor)
-        break
-      }
-      protectedText += markdown.slice(cursor, close + run)
-      cursor = close + run
-      continue
-    }
-
-    if (markdown.startsWith('$$', cursor)) {
-      const close = markdown.indexOf('$$', cursor + 2)
-      const end = close === -1 ? markdown.length : close + 2
-      protectedText += markdown.slice(cursor, end)
-      cursor = end
-      continue
-    }
-
-    if (markdown[cursor] === '$') {
-      const close = findInlineMathClose(markdown, cursor + 1)
-      // A dollar immediately before a digit starts the next price, not the
-      // closing delimiter. Don't pair a price with a later equation either.
-      if (
-        CURRENCY_AMOUNT.test(markdown.slice(cursor)) &&
-        (close === -1 || markdown.slice(cursor + 1, close).includes('$'))
-      ) {
-        protectedText += '\\$'
-        cursor += 1
-        continue
-      }
-      if (close !== -1) {
-        protectedText += markdown.slice(cursor, close + 1)
-        cursor = close + 1
-        continue
-      }
-    }
-
-    protectedText += markdown[cursor]
-    cursor += 1
-  }
-
-  return protectedText
 }
 
 function normalizeLatexMathDelimiters(markdown: string): string {
@@ -242,16 +158,11 @@ function prepareMarkdown(markdown: string): string {
   let result = ''
   let cursor = 0
   for (const range of codeRanges) {
-    result += normalizeLatexMathDelimiters(
-      protectCurrencyDollars(markdown.slice(cursor, range.start)),
-    )
+    result += normalizeLatexMathDelimiters(markdown.slice(cursor, range.start))
     result += markdown.slice(range.start, range.end)
     cursor = range.end
   }
-  return (
-    result +
-    normalizeLatexMathDelimiters(protectCurrencyDollars(markdown.slice(cursor)))
-  )
+  return result + normalizeLatexMathDelimiters(markdown.slice(cursor))
 }
 
 const INITIAL_COMPONENTS: Record<string, React.ComponentType<any>> = {
@@ -366,7 +277,10 @@ const INITIAL_COMPONENTS: Record<string, React.ComponentType<any>> = {
 }
 
 const STREAMDOWN_PLUGINS = {
-  math: createMathPlugin({ singleDollarTextMath: true }),
+  math: {
+    ...createMathPlugin(),
+    remarkPlugin: remarkMathWithBoundaries,
+  },
 }
 
 function ImportedImage({ alt }: { alt?: string }) {
