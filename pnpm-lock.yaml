@@ -59,6 +59,9 @@ importers:
       katex:
         specifier: ^0.16.42
         version: 0.16.42
+      mdast-util-from-markdown:
+        specifier: ^2.0.2
+        version: 2.0.2
       motion:
         specifier: ^12.29.2
         version: 12.33.0(react-dom@19.2.4(react@19.2.4))(react@19.2.4)

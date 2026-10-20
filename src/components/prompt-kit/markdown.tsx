@@ -2,6 +2,7 @@ import { Children, isValidElement, memo, useMemo } from 'react'
 import { createMathPlugin } from '@streamdown/math'
 import 'katex/dist/katex.min.css'
 import { Streamdown } from 'streamdown'
+import { fromMarkdown } from 'mdast-util-from-markdown'
 import { CodeBlock } from './code-block'
 import type { ComponentProps, ReactNode } from 'react'
 import { cn } from '@/lib/utils'
@@ -80,7 +81,7 @@ function findLatexMathClose(
 }
 
 const CURRENCY_AMOUNT =
-  /^\$(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?[kKmMbB]?(?=\s|[.,;:!?)}\]–—-]|$)/
+  /^\$(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?[kKmMbB]?(?=\s|[.,;:!?)}\]–—/"'’-]|$)/
 
 /** Match the native parser's rules: no space before the close or digit after it. */
 function findInlineMathClose(markdown: string, start: number): number {
@@ -98,7 +99,8 @@ function findInlineMathClose(markdown: string, start: number): number {
       !/\s/.test(markdown[close - 1]) &&
       !/\d/.test(after) &&
       after !== '$'
-    ) return close
+    )
+      return close
 
     cursor = close + 1
   }
@@ -208,6 +210,48 @@ function normalizeLatexMathDelimiters(markdown: string): string {
   }
 
   return normalized
+}
+
+type MarkdownNode = {
+  type: string
+  position?: {
+    start: { offset?: number }
+    end: { offset?: number }
+  }
+  children?: Array<MarkdownNode>
+}
+
+function prepareMarkdown(markdown: string): string {
+  const codeRanges: Array<{ start: number; end: number }> = []
+
+  function collectCodeRanges(node: MarkdownNode): void {
+    if (node.type === 'code' || node.type === 'inlineCode') {
+      const start = node.position?.start.offset
+      const end = node.position?.end.offset
+      if (start !== undefined && end !== undefined) {
+        codeRanges.push({ start, end })
+      }
+      return
+    }
+    node.children?.forEach(collectCodeRanges)
+  }
+
+  // Use Markdown's parser so nested, indented, and either fence style all
+  // preserve the original source, including the content copied from snippets.
+  collectCodeRanges(fromMarkdown(markdown))
+  let result = ''
+  let cursor = 0
+  for (const range of codeRanges) {
+    result += normalizeLatexMathDelimiters(
+      protectCurrencyDollars(markdown.slice(cursor, range.start)),
+    )
+    result += markdown.slice(range.start, range.end)
+    cursor = range.end
+  }
+  return (
+    result +
+    normalizeLatexMathDelimiters(protectCurrencyDollars(markdown.slice(cursor)))
+  )
 }
 
 const INITIAL_COMPONENTS: Record<string, React.ComponentType<any>> = {
@@ -374,7 +418,7 @@ function MarkdownComponent({
       components={markdownComponents}
       plugins={STREAMDOWN_PLUGINS}
     >
-      {normalizeLatexMathDelimiters(protectCurrencyDollars(children))}
+      {prepareMarkdown(children)}
     </Streamdown>
   )
 }
