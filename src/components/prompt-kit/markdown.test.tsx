@@ -69,4 +69,122 @@ describe('Markdown', function () {
     expect(html).toContain('\\(\\beta\\)')
     expect(html).toContain('\\[\\gamma\\]')
   })
+
+  it('keeps benchmark currency comparisons as literal text', function () {
+    const html = renderToStaticMarkup(
+      <Markdown>
+        {
+          '- Vals Index: me $0.64, him $3.24. ~5x.\n- Vibe Code Bench: me $0.58, him $6.23. ~10x.\n- Code Migration: me $1.86, him $6.51.'
+        }
+      </Markdown>,
+    )
+
+    for (const price of [
+      '$0.64',
+      '$3.24',
+      '$0.58',
+      '$6.23',
+      '$1.86',
+      '$6.51',
+    ]) {
+      expect(html).toContain(price)
+    }
+    expect(html).not.toContain('class="katex"')
+  })
+
+  it('keeps prices literal alongside real inline math', function () {
+    const html = renderToStaticMarkup(
+      <Markdown>
+        {'Prices: $1,234.56 and $390K. Formula: $x^2 + y^2$ and $2 + 2 = 4$.'}
+      </Markdown>,
+    )
+
+    expect(html).toContain('$1,234.56')
+    expect(html).toContain('$390K')
+    expect(html.match(/class="katex"/g)).toHaveLength(2)
+  })
+
+  it('preserves display math and leaves dollar signs in inline code alone', function () {
+    const html = renderToStaticMarkup(
+      <Markdown>
+        {'Use `$10` literally; price $20, or display $$E=mc^2$$.'}
+      </Markdown>,
+    )
+
+    expect(html).toContain('$10')
+    expect(html).toContain('$20')
+    expect(html.match(/class="katex"/g)).toHaveLength(1)
+  })
+
+  it.each([
+    'Plans are $10/month and $20/month',
+    'Plans are "$10" and "$20"',
+    "Plans are '$10' and '$20'",
+    'Plans are $10/day and $20/year; formula: $2 + 2 = 4$',
+  ])('keeps quoted prices and prices with units literal: %s', function (text) {
+    const html = renderToStaticMarkup(<Markdown>{text}</Markdown>)
+
+    expect(html).toContain('$10')
+    expect(html).toContain('$20')
+    expect(html.match(/class="katex"/g) ?? []).toHaveLength(
+      text.includes('formula:') ? 1 : 0,
+    )
+  })
+
+  it.each([
+    '~~~sh\necho $10\n~~~',
+    '~~~sh\necho $10',
+    '    echo $10',
+    '\techo $10',
+    '> ~~~sh\n> echo $10\n> ~~~',
+    '- example:\n\n      echo $10',
+    '````sh\necho $10\n```\n````',
+  ])('preserves currency inside Markdown code blocks: %s', function (code) {
+    const html = renderToStaticMarkup(
+      <Markdown>{code + '\n\nPlans cost $20/month and $30/month.'}</Markdown>,
+    )
+
+    expect(html).toContain('echo $10')
+    expect(html).not.toContain('echo \\$10')
+    expect(html).not.toContain('class="katex"')
+  })
+  it.each([
+    'Prices are $10/month and $20/month; math is $x^2$.',
+    'Prices are $10€ and $20元; math is $x^2$.',
+    'Prices are $10USD and $20CAD; math is $x^2$.',
+    'Prices are $10🙂 and $20🙂; math is $x^2$.',
+  ])('uses delimiter rules regardless of price suffix: %s', function (text) {
+    const html = renderToStaticMarkup(<Markdown>{text}</Markdown>)
+    expect(html).toContain('$10')
+    expect(html).toContain('$20')
+    expect(html.match(/class="katex"/g)).toHaveLength(1)
+  })
+
+  it('preserves numeric expressions as math', function () {
+    const html = renderToStaticMarkup(
+      <Markdown>
+        {'Values: $1$, $2 + 2 = 4$, $1,234.56$, and $390K$.'}
+      </Markdown>,
+    )
+    expect(html.match(/class="katex"/g)).toHaveLength(4)
+  })
+
+  it.each(['$ x$', '$x $', '$x$2', '$x\ny$'])(
+    'rejects invalid single-dollar boundaries: %s',
+    function (expression) {
+      const html = renderToStaticMarkup(
+        <Markdown>{'Invalid: ' + expression + '. Valid: $y^2$.'}</Markdown>,
+      )
+      expect(html.match(/class="katex"/g)).toHaveLength(1)
+    },
+  )
+
+  it('leaves escaped currency literal beside math', function () {
+    const html = renderToStaticMarkup(
+      <Markdown>{String.raw`Prices: \$10 and \$20. Math: $2 + 2$.`}</Markdown>,
+    )
+    expect(html).toContain('$10')
+    expect(html).toContain('$20')
+    expect(html.match(/class="katex"/g)).toHaveLength(1)
+  })
 })
