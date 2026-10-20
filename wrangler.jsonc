@@ -1,0 +1,10 @@
+{
+  "name": "kairos",
+  "compatibility_date": "2026-10-19",
+  "build": {
+    "command": "pnpm site:build",
+  },
+  "assets": {
+    "directory": "./dist/site",
+  },
+}
