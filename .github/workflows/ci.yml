@@ -14,7 +14,49 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Decides which jobs this change can affect. Skipped jobs report success, so
+  # required checks still pass. Manual runs build everything.
+  changes:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      frontend: ${{ steps.filter.outputs.frontend }}
+      backend: ${{ steps.filter.outputs.backend }}
+      android: ${{ steps.filter.outputs.android }}
+    steps:
+      - uses: actions/checkout@v7
+      - id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            frontend:
+              # pnpm check formats every file of these types across the repo.
+              - '**/*.{ts,tsx,js,mjs,cjs,json,jsonc,md,yml,yaml,css,html}'
+              - '.oxfmtrc.json'
+              - '.prettierignore'
+              - '.gitignore'
+            backend:
+              - 'cmd/**'
+              - 'internal/**'
+              - 'go.mod'
+              - 'go.sum'
+              - '.github/workflows/ci.yml'
+            android:
+              - 'android/**'
+              # Inputs of the shared transcript the APK packages (see generateTranscript).
+              - 'src/**'
+              - 'transcript.html'
+              - 'vite.transcript.config.ts'
+              - 'scripts/gen-android-*.mjs'
+              - 'package.json'
+              - 'pnpm-lock.yaml'
+              - '.github/workflows/ci.yml'
+
   frontend:
+    needs: changes
+    if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.frontend == 'true'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
@@ -27,6 +69,8 @@ jobs:
       - run: pnpm check
 
   backend:
+    needs: changes
+    if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.backend == 'true'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
@@ -44,6 +88,8 @@ jobs:
       - run: pnpm backend:check
 
   android:
+    needs: changes
+    if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.android == 'true'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7

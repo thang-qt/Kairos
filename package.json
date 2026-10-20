@@ -22,7 +22,10 @@
     "typecheck": "tsc --noEmit",
     "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test",
     "build:transcript": "node scripts/gen-android-theme.mjs && node scripts/gen-android-icons.mjs && vite build --config vite.transcript.config.ts",
-    "android:apk": "pnpm build:transcript && cd android && ./gradlew assembleDebug"
+    "android:apk": "pnpm build:transcript && cd android && ./gradlew assembleDebug",
+    "site:dev": "vite dev --config vite.site.config.ts --port 3001",
+    "site:build": "vite build --config vite.site.config.ts",
+    "site:preview": "vite preview --config vite.site.config.ts --port 3001"
   },
   "dependencies": {
     "@base-ui/react": "^1.1.0",

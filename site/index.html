@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Kairos: a focused chat app for hosted LLMs</title>
+    <meta
+      name="description"
+      content="Kairos is an open-source chat app for hosted LLMs. One Go binary serves the web app and API; Linux and Android apps connect to your server."
+    />
+    <meta property="og:title" content="Kairos" />
+    <meta
+      property="og:description"
+      content="A focused chat app for hosted LLMs. Web, Linux and Android."
+    />
+    <meta property="og:image" content="../docs/screenshots/chat-default.png" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="./apple-touch-icon.png" />
+    <script>
+      // Paint the right palette and mode before the bundle loads.
+      ;(function () {
+        var palette = 'canopy'
+        try {
+          palette = localStorage.getItem('kairos-site-palette') || palette
+        } catch (error) {}
+        var dark = matchMedia('(prefers-color-scheme: dark)').matches
+        document.documentElement.className =
+          'theme-' + palette + (dark ? ' dark' : ' light')
+      })()
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="./main.tsx"></script>
+  </body>
+</html>

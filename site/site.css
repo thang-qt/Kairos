@@ -1,0 +1,36 @@
+@import '../src/styles.css';
+
+/* The site's Vite root is site/, so point Tailwind at the shared app sources. */
+@source "../src/components";
+@source "../src/features/chat/components";
+
+html {
+  scroll-behavior: smooth;
+  background: var(--theme-surface);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+}
+
+/*
+ * Tailwind's color tokens resolve once at :root. A theme scope re-resolves them
+ * so an element carrying its own palette or mode class renders with it.
+ */
+.theme-scope {
+  --color-surface: var(--theme-surface);
+  --color-ink: var(--theme-ink);
+  --color-primary-50: var(--theme-primary-50);
+  --color-primary-100: var(--theme-primary-100);
+  --color-primary-200: var(--theme-primary-200);
+  --color-primary-300: var(--theme-primary-300);
+  --color-primary-400: var(--theme-primary-400);
+  --color-primary-500: var(--theme-primary-500);
+  --color-primary-600: var(--theme-primary-600);
+  --color-primary-700: var(--theme-primary-700);
+  --color-primary-800: var(--theme-primary-800);
+  --color-primary-900: var(--theme-primary-900);
+  --color-primary-950: var(--theme-primary-950);
+}
