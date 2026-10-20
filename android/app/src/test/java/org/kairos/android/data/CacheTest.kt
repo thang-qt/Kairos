@@ -51,12 +51,12 @@ class CacheTest {
         val root = Files.createTempDirectory("kairos-cache-lru").toFile()
         val cache = DiskCache(root, maxBytes = 120)
         cache.writeString("a.json", "x".repeat(60))
+        // Writes enforce the budget immediately, so establish the eviction order
+        // before the next write can exceed it. Do not rely on filesystem clock resolution.
+        assertTrue(root.resolve("a.json").setLastModified(1000))
         cache.writeString("b.json", "y".repeat(60))
+        assertTrue(root.resolve("b.json").setLastModified(2000))
         cache.writeString("c.json", "z".repeat(60))
-        root.resolve("a.json").setLastModified(1000)
-        root.resolve("b.json").setLastModified(2000)
-        root.resolve("c.json").setLastModified(3000)
-        cache.enforceBudget()
         assertNull(cache.readString("a.json"))
         assertNotNull(cache.readString("b.json"))
         assertNotNull(cache.readString("c.json"))
