@@ -2,6 +2,8 @@ package org.kairos.android.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -151,6 +153,16 @@ fun NativeComposer(
                 )
                 .background(if (assistantStyle) colors.p(50) else colors.surface.copy(alpha = if (floating) 0.96f else 0.86f), shape)
                 .then(if (assistantStyle) Modifier else Modifier.border(1.dp, colors.ink.copy(alpha = 0.1f), shape))
+                // The surface padding must catch taps before the overlay's dismiss backdrop.
+                .then(if (assistantStyle) Modifier.clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                ) {
+                    if (!streaming) {
+                        focusRequester.requestFocus()
+                        keyboard?.show()
+                    }
+                } else Modifier)
         ) {
             handle?.invoke()
             if (attachments.isNotEmpty())
