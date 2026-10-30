@@ -39,6 +39,11 @@ func TestOpenAICompatibleDriverUsesOfficialSDKForModelsAndStreaming(t *testing.T
 				if _, ok := message.(map[string]any)["phase"]; ok {
 					t.Fatal("phase leaked to Chat Completions")
 				}
+				if calls, ok := message.(map[string]any)["tool_calls"]; ok {
+					if calls == nil || len(calls.([]any)) == 0 {
+						t.Error("tool_calls must be omitted when there are no tool calls")
+					}
+				}
 			}
 			streamOptions, _ := body["stream_options"].(map[string]any)
 			if includeUsage, _ := streamOptions["include_usage"].(bool); !includeUsage {
@@ -84,6 +89,9 @@ func TestOpenAICompatibleDriverUsesOfficialSDKForModelsAndStreaming(t *testing.T
 		ChatGenerationRequest{
 			Model: "gpt-test",
 			Messages: []ProviderMessage{{
+				Role:  "assistant",
+				Parts: []ProviderMessagePart{{Type: "text", Text: "How can I help?"}},
+			}, {
 				Role:  "user",
 				Parts: []ProviderMessagePart{{Type: "text", Text: "Search Kairos", Phase: "final_answer", PhaseSource: "provider"}},
 			}},

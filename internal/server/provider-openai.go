@@ -229,7 +229,7 @@ func buildOpenAIMessages(messages []ProviderMessage) []openai.ChatCompletionMess
 }
 
 func buildOpenAIAssistantMessage(message ProviderMessage) openai.ChatCompletionMessageParamUnion {
-	toolCalls := make([]openai.ChatCompletionMessageToolCallUnionParam, 0)
+	var toolCalls []openai.ChatCompletionMessageToolCallUnionParam
 	for _, part := range message.Parts {
 		if strings.TrimSpace(part.Type) != "toolCall" {
 			continue
