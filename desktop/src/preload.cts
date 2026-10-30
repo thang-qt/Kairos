@@ -19,6 +19,9 @@ contextBridge.exposeInMainWorld('kairosDesktop', {
   setServer: function setServer(url: string) {
     return ipcRenderer.invoke('kairos:set-server', url)
   },
+  getAppInfo: function getAppInfo() {
+    return ipcRenderer.invoke('kairos:app-info')
+  },
   settings: {
     get: function getSettings() {
       return ipcRenderer.invoke('kairos:desktop-settings')

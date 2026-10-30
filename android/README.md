@@ -6,6 +6,11 @@ Android 8.0 or later and a running Kairos server.
 
 ## Install and update
 
+Public Android releases will be available on the
+[releases page](https://github.com/thang-qt/Kairos/releases?q=android-v&expanded=true).
+See [publishing](publishing.md) for signed releases, Obtainium setup, and F-Droid
+submission requirements. The CI builds below remain development builds.
+
 Open the [CI builds](https://github.com/thang-qt/Kairos/actions/workflows/ci.yml)
 in your phone's browser while signed in to GitHub. Choose the latest successful
 run for the branch you use, then tap **Download Kairos APK** in the build summary

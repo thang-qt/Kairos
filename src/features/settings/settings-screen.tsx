@@ -10,6 +10,7 @@ import { MCPServersPanel } from './components/mcp-servers-panel'
 import { ChatSettingsPanel } from './components/chat-settings-panel'
 import { ConversationExportPanel } from './components/conversation-export-panel'
 import { ConversationImportPanel } from './components/conversation-import-panel'
+import { AboutSettingsPanel } from './components/about-settings-panel'
 import { DesktopSettingsPanel } from './components/desktop-settings-panel'
 import {
   SettingsSidebar,
@@ -31,6 +32,7 @@ export type SettingsTab =
   | 'account'
   | 'appearance'
   | 'desktop'
+  | 'about'
   | 'providers'
   | 'models'
   | 'chat'
@@ -49,6 +51,8 @@ function renderTabPanel(
   onTabChange: (tab: SettingsTab) => void,
 ) {
   switch (activeTab) {
+    case 'about':
+      return <AboutSettingsPanel />
     case 'appearance':
       return <AppearanceSettingsPanel />
     case 'desktop':

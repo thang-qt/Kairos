@@ -12,8 +12,8 @@ android {
         applicationId = "org.kairos.android"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.2-demo"
+        versionCode = 2
+        versionName = "0.2.2"
     }
     signingConfigs.getByName("debug") {
         providers.environmentVariable("KAIROS_DEBUG_KEYSTORE").orNull?.let { path ->
@@ -21,6 +21,18 @@ android {
             storePassword = "android"
             keyAlias = "androiddebugkey"
             keyPassword = "android"
+        }
+    }
+    val releaseKeystore = providers.environmentVariable("KAIROS_RELEASE_KEYSTORE").orNull
+    if (releaseKeystore != null) {
+        signingConfigs.create("release") {
+            storeFile = file(releaseKeystore)
+            storePassword = providers.environmentVariable("KAIROS_RELEASE_STORE_PASSWORD").get()
+            keyAlias = providers.environmentVariable("KAIROS_RELEASE_KEY_ALIAS").get()
+            keyPassword = providers.environmentVariable("KAIROS_RELEASE_KEY_PASSWORD").get()
+        }
+        buildTypes.getByName("release") {
+            signingConfig = signingConfigs.getByName("release")
         }
     }
     buildFeatures { compose = true; buildConfig = true }

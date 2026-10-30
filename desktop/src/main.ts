@@ -174,6 +174,10 @@ async function start(): Promise<void> {
       )
     },
   )
+  ipcMain.handle('kairos:app-info', function readAppInfo(event) {
+    validateSender(event)
+    return { version: app.getVersion() }
+  })
   ipcMain.handle('kairos:set-server', changeServer)
   ipcMain.handle(
     'kairos:desktop-settings',

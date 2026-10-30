@@ -34,3 +34,7 @@ android/build/
 android/app/build/
 android/local.properties
 android/app/src/main/assets/transcript/
+
+# Private Android signing material
+*.keystore
+*.jks

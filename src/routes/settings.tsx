@@ -4,6 +4,7 @@ import { requireAuthenticatedUser } from '@/lib/route-auth'
 import { SettingsScreen } from '@/features/settings/settings-screen'
 
 const SETTINGS_TABS = new Set<SettingsTab>([
+  'about',
   'account',
   'appearance',
   'desktop',

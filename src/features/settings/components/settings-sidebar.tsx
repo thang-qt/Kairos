@@ -1,6 +1,7 @@
 import { HugeiconsIcon } from '@hugeicons/react'
 import type { IconSvgElement } from '@hugeicons/react'
 import {
+  InformationCircleIcon,
   ArrowLeft01Icon,
   BubbleChatIcon,
   CloudServerIcon,
@@ -48,6 +49,7 @@ const SETTINGS_GROUPS: Array<{ label: string; items: Array<SettingsNavItem> }> =
           icon: ComputerIcon,
           desktopOnly: true,
         },
+        { id: 'about', label: 'About', icon: InformationCircleIcon },
       ],
     },
     {
@@ -154,9 +156,11 @@ export function SettingsSidebar({
           <nav aria-label="Settings" className="space-y-5 px-2 py-2">
             {SETTINGS_GROUPS.map((group) => (
               <div key={group.label} className="flex flex-col gap-px">
-                <div className="px-1.5 pb-1 text-xs text-primary-500">
-                  {group.label}
-                </div>
+                {group.label ? (
+                  <div className="px-1.5 pb-1 text-xs text-primary-500">
+                    {group.label}
+                  </div>
+                ) : null}
                 {group.items.map((item) => {
                   if (item.desktopOnly && !shell.canConfigureDesktop)
                     return null

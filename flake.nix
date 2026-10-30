@@ -391,7 +391,7 @@
           ];
         };
 
-        # Android prototype toolchain: `nix develop .#android`.
+        # Android development and release toolchain: `nix develop .#android`.
         devShells.android =
           let
             androidPkgs = import nixpkgs {

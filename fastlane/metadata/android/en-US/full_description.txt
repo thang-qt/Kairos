@@ -1,0 +1,7 @@
+Kairos is an open-source Android client for a self-hosted Kairos server.
+
+Stream AI responses, manage conversations, attach images, and review tool approval requests. Choose light or dark mode and customize your color palette. Kairos can also serve as your Android digital assistant with an optional overlay and screenshot attachments.
+
+Requires Android 8.0 or later, a running Kairos server, and an account on that server. Configure AI providers in the web app. Sending messages requires a network connection; recent conversations can be read from the device cache.
+
+The client connects to your chosen server. AI providers configured on that server may be proprietary services and may charge for usage. Kairos does not include a hosted AI service or an on-device model.

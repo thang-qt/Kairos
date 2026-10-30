@@ -18,6 +18,7 @@ export type KairosDesktop = {
   server: string | null
   setServer: (url: string) => Promise<ServerResult>
   // Missing in desktop builds older than the Desktop settings tab.
+  getAppInfo?: () => Promise<{ version: string }>
   settings?: {
     get: () => Promise<DesktopSettings>
     setHotkeyAction: (action: HotkeyAction) => Promise<DesktopSettings>
