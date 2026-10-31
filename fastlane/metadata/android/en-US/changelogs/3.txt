@@ -1,0 +1,2 @@
+First signed public Android release.
+Improved assistant overlay composer interaction and compatibility with AI provider responses.
