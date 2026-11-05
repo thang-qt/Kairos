@@ -383,6 +383,7 @@ function ModelChatSettings({
             models={models}
             selectedModelId={modelId}
             showModelInfo={false}
+            systemPromptDebounceMs={500}
             value={override}
             onChange={save}
           />

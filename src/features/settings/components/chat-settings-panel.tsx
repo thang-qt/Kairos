@@ -190,6 +190,7 @@ export function ChatSettingsPanel() {
             selectedModelId={defaultModelId || ''}
             defaultModelId={defaultModelId}
             showModelInfo={false}
+            systemPromptDebounceMs={500}
             value={defaults}
             onChange={saveDefaults}
           />

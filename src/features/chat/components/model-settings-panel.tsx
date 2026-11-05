@@ -6,7 +6,7 @@ import { Select } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { ModelDetails } from '@/components/model-details'
 import { providerModelDisplayName, providerModelKey } from '@/lib/model-utils'
-import { cn } from '@/lib/utils'
+import { SystemPromptField } from './system-prompt-field'
 import {
   modelReasoningEfforts,
   resolveReasoningEffort,
@@ -28,6 +28,7 @@ type ModelSettingsPanelProps = {
   canSelectModel?: boolean
   defaultModelLocked?: boolean
   showModelInfo?: boolean
+  systemPromptDebounceMs?: number
   value: ModelSettingsValue
   onChange: (updates: Partial<ModelSettingsValue>) => void
 }
@@ -168,6 +169,7 @@ export function ModelSettingsPanel({
   selectedModelId,
   loading = false,
   showModelInfo = true,
+  systemPromptDebounceMs = 0,
   value,
   onChange,
 }: ModelSettingsPanelProps) {
@@ -199,18 +201,12 @@ export function ModelSettingsPanel({
           label="System prompt"
           description="Custom instructions for assistant persona and behavior."
         >
-          <textarea
+          <SystemPromptField
             value={value.systemPrompt}
-            onChange={function handleChange(
-              event: React.ChangeEvent<HTMLTextAreaElement>,
-            ) {
-              onChange({ systemPrompt: event.target.value })
+            debounceMs={systemPromptDebounceMs}
+            onChange={function handleSystemPromptChange(systemPrompt) {
+              onChange({ systemPrompt })
             }}
-            placeholder="You are a concise assistant..."
-            className={cn(
-              'min-h-28 w-full resize-y rounded-lg border border-primary-200 bg-surface px-3 py-2 text-sm text-primary-900 outline-none transition-colors placeholder:text-primary-600/70 focus:border-primary-500',
-              'text-pretty',
-            )}
           />
         </FieldBlock>
       </PanelSection>
