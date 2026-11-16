@@ -62,14 +62,26 @@ its own login.
 - **Start at login** in the tray menu opens Kairos when you sign in. On Nix,
   this needs Kairos installed in your system or user profile.
 
-On Wayland, your desktop may ask you to confirm the shortcut the first time. If
-it never works, bind a custom shortcut in your desktop settings to:
+The built-in hotkey only works while Kairos is running. On KDE, to use one
+shortcut that also launches Kairos after quitting, assign a shortcut to the
+**Kairos application** in **System Settings → Keyboard → Shortcuts → Add New →
+Application**. The main launcher starts Kairos when closed, shows it when hidden
+or behind another window, and hides it when focused. There is no separate
+show/hide action.
+
+If you already have a **Kairos shortcut: Ctrl+Alt+Space** entry, that is the
+running app's portal shortcut, not an application launcher. Clear that binding
+before assigning the same keys to the Kairos application to avoid a conflict.
+
+On Wayland, your desktop may ask you to confirm the built-in shortcut the first
+time. Alternatively, bind a custom command in your desktop settings to:
 
 ```sh
-kairos --toggle
+kairos
 ```
 
-For an AppImage, use the AppImage's path instead of `kairos`.
+For an AppImage, use the AppImage's path instead of `kairos`. The older
+`kairos --toggle` command also still works.
 
 ## Settings
 

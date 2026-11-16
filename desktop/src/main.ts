@@ -77,9 +77,8 @@ app.commandLine.appendSwitch('enable-features', 'GlobalShortcutsPortal')
 if (!app.requestSingleInstanceLock()) {
   app.quit()
 } else {
-  app.on('second-instance', function secondInstance(_event, argv) {
-    if (argv.includes('--toggle')) toggleMain()
-    else openMain()
+  app.on('second-instance', function secondInstance() {
+    toggleMain()
   })
   app.on('activate', openMain)
   app.on('before-quit', function beforeQuit() {
@@ -475,8 +474,9 @@ function openMain(): void {
   mainView?.webContents.focus()
 }
 
-// The hotkey and `--toggle`. Showing can also start a new chat, depending on
-// the Desktop settings; the tray and a plain relaunch only show the window.
+// The hotkey and application launcher (including legacy `--toggle` calls).
+// Showing can also start a new chat, depending on the Desktop settings;
+// the tray always just shows the window.
 function toggleMain(): void {
   if (mainWindow?.isVisible() && mainWindow.isFocused()) {
     wantMain = false

@@ -2,8 +2,16 @@ import assert from 'node:assert/strict'
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { test } from 'node:test'
 import { desktopEntry, setAutostart } from './desktop-entry.js'
+
+test('the application launcher is the only desktop action', function () {
+  const directory = fileURLToPath(new URL('..', import.meta.url))
+  const entry = desktopEntry(directory, 'kairos')
+  assert.match(entry, /^Exec="kairos"$/m)
+  assert.doesNotMatch(entry, /^Actions=|^\[Desktop Action /m)
+})
 
 test('desktop and autostart entries use the packaged launcher with safe quoting', function () {
   const directory = mkdtempSync(join(tmpdir(), 'kairos-entry-'))
