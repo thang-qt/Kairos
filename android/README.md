@@ -44,8 +44,9 @@ current server before returning to connection setup.
 
 - Open the sidebar to find, search, rename, pin, or delete saved conversations.
 - Use the model picker and conversation settings to choose how a chat runs.
-- Attach images from Photos or Camera. Long-press a message for its available
-  actions, including copy, edit, retry, and fork.
+- Attach one or multiple images at once from Photos, or take a photo with Camera.
+  Sent images leave the composer immediately; a failed send restores them for retry.
+  Long-press a message for its available actions, including copy, edit, retry, and fork.
 - Tap an answer's activity chip to inspect thinking, tool calls, and results.
 - Review remote-tool approval requests before allowing or denying them.
 - Use a throwaway chat when you do not want a saved conversation. Remote MCP
@@ -97,6 +98,11 @@ Background streaming is not guaranteed; reopen a conversation to reconnect.
 - **Sign-in stops working:** sign in again; expired or revoked tokens are cleared.
 - **Assistant does not open:** check Android's default assistant setting and your
   device's gesture configuration.
+- **Circle to Search is unavailable:** on supported devices, Google's Circle to
+  Search requires Google as the default digital assistant and screen/app data
+  access enabled. Selecting Kairos as the default assistant can disable it;
+  switch the default back to Google to use Circle to Search. Kairos does not
+  prohibit screenshots in the main app.
 - **Screen attachment is unavailable:** enable screenshot access in assistant
   settings; some apps prohibit capture.
 - **Photo selection does not return:** finish or cancel the system picker/camera

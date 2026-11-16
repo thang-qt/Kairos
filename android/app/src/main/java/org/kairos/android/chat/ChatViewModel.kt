@@ -423,7 +423,11 @@ class ChatViewModel(val app: AppContainer, private val savedState: SavedStateHan
         mergedHistory.value = History()
     }
 
-    fun send(text: String, attachments: List<AttachmentPayload> = emptyList()) = task {
+    fun send(
+        text: String,
+        attachments: List<AttachmentPayload> = emptyList(),
+        onFailedWithoutAcceptance: () -> Unit = {},
+    ) = task {
         val operationGeneration = viewModelOperationGeneration
         sending = true
         val generation = selectionGeneration
@@ -433,7 +437,12 @@ class ChatViewModel(val app: AppContainer, private val savedState: SavedStateHan
                 ?: app.models.defaults(model.ifBlank { app.models.defaultModel() })
         try {
             if (ephemeralMode) {
-                ephemeral.send(text, selected, attachments) { seed(text) }
+                ephemeral.send(text, selected, attachments) {
+                    if (operationGeneration == viewModelOperationGeneration && generation == selectionGeneration) {
+                        seed(text)
+                        onFailedWithoutAcceptance()
+                    }
+                }
             } else {
                 val next = conversation.send(text, selected, attachments, editing?.id)
                 if (generation == selectionGeneration) {
@@ -453,7 +462,10 @@ class ChatViewModel(val app: AppContainer, private val savedState: SavedStateHan
             if (
                 e !is CancellationException && operationGeneration == viewModelOperationGeneration &&
                     generation == selectionGeneration
-            ) seed(text)
+            ) {
+                seed(text)
+                onFailedWithoutAcceptance()
+            }
             throw e
         } finally {
             if (operationGeneration == viewModelOperationGeneration) sending = false

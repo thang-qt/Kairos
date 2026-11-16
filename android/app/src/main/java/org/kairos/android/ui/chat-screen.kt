@@ -173,24 +173,24 @@ fun ChatScreen(
     LaunchedEffect(chat.editing?.id) { if (chat.editing != null) attachments = emptyList() }
     val picker =
         androidx.activity.compose.rememberLauncherForActivityResult(
-            androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia()
-        ) { uri ->
+            androidx.activity.result.contract.ActivityResultContracts.PickMultipleVisualMedia()
+        ) { uris ->
             val request =
                 org.kairos.android.assistant.MainAttachmentRequest.callbackTicket(
                     activeAttachmentRequest(),
                     org.kairos.android.assistant.MainAttachmentRequest.Source.Picker,
                 ) ?: return@rememberLauncherForActivityResult
-            if (uri == null || !acceptsAttachmentRequest(request)) {
+            if (uris.isEmpty() || !acceptsAttachmentRequest(request)) {
                 clearAttachmentRequest(request)
                 return@rememberLauncherForActivityResult
             }
             scope.launch {
                 try {
-                    val image =
+                    val images =
                         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                            ScreenAttachment.fromUri(context, uri)
+                            uris.map { uri -> ScreenAttachment.fromUri(context, uri) }
                         }
-                    if (acceptsAttachmentRequest(request)) attachments = attachments + image
+                    if (acceptsAttachmentRequest(request)) attachments = attachments + images
                 } catch (e: Exception) {
                     if (e is CancellationException) throw e
                     if (acceptsAttachmentRequest(request)) chat.showError("Unable to attach this image.")
@@ -545,11 +545,11 @@ fun ChatScreen(
                     onSend = { text ->
                         keyboard?.hide()
                         focusManager.clearFocus()
-                        scope.launch {
-                            chat.send(text, attachments.map { it.payload() }).join()
-                            if (chat.error == null) {
-                                attachments = emptyList()
-                            }
+                        val sentAttachments = attachments
+                        attachments = emptyList()
+                        chat.send(text, sentAttachments.map { it.payload() }) {
+                            val currentIds = attachments.map { it.id }.toSet()
+                            attachments = sentAttachments.filterNot { it.id in currentIds } + attachments
                         }
                     },
                     onStop = { chat.stop() },

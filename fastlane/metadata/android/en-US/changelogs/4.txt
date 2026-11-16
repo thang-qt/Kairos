@@ -1,0 +1,3 @@
+Images now leave the composer immediately when sent and are restored for retry if sending fails.
+Select multiple photos at once from the main app's photo picker.
+Clarified Circle to Search requirements when using Kairos as the default assistant.
